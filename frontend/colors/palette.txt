@@ -1,0 +1,35 @@
+/* Coolors Exported Palette - https://coolors.co/0fa3b1-b5e2fa-f9f7f3-eddea4-f7a072 */
+
+- Tailwind
+
+{ 'moonstone': { DEFAULT: '#0fa3b1', 100: '#032124', 200: '#064247', 300: '#09636b', 400: '#0c848f', 500: '#0fa3b1', 600: '#16d9eb', 700: '#50e3f0', 800: '#8becf5', 900: '#c5f6fa' }, 'uranian_blue': { DEFAULT: '#b5e2fa', 100: '#063751', 200: '#0b6da2', 300: '#15a3ef', 400: '#66c3f4', 500: '#b5e2fa', 600: '#c6e8fb', 700: '#d4eefc', 800: '#e2f4fd', 900: '#f1f9fe' }, 'baby_powder': { DEFAULT: '#f9f7f3', 100: '#413621', 200: '#826d42', 300: '#b79f6f', 400: '#d7cab0', 500: '#f9f7f3', 600: '#faf8f4', 700: '#fbfaf7', 800: '#fcfbfa', 900: '#fefdfc' }, 'vanilla': { DEFAULT: '#eddea4', 100: '#43380d', 200: '#87711b', 300: '#caa928', 400: '#e0c762', 500: '#eddea4', 600: '#f1e5b7', 700: '#f4ecc9', 800: '#f8f2db', 900: '#fbf9ed' }, 'atomic_tangerine': { DEFAULT: '#f7a072', 100: '#441b04', 200: '#893508', 300: '#cd500c', 400: '#f3732f', 500: '#f7a072', 600: '#f8b48f', 700: '#fac7ab', 800: '#fcdac7', 900: '#fdece3' } }
+
+- CSV
+
+0fa3b1,b5e2fa,f9f7f3,eddea4,f7a072
+
+- With #
+
+#0fa3b1, #b5e2fa, #f9f7f3, #eddea4, #f7a072
+
+- Array
+
+["0fa3b1","b5e2fa","f9f7f3","eddea4","f7a072"]
+
+- Object
+
+{"Moonstone":"0fa3b1","Uranian Blue":"b5e2fa","Baby powder":"f9f7f3","Vanilla":"eddea4","Atomic tangerine":"f7a072"}
+
+- Extended Array
+
+[{"name":"Moonstone","hex":"0fa3b1","rgb":[15,163,177],"cmyk":[92,8,0,31],"hsb":[185,92,69],"hsl":[185,84,38],"lab":[61,-29,-17]},{"name":"Uranian Blue","hex":"b5e2fa","rgb":[181,226,250],"cmyk":[28,10,0,2],"hsb":[201,28,98],"hsl":[201,87,85],"lab":[88,-9,-16]},{"name":"Baby powder","hex":"f9f7f3","rgb":[249,247,243],"cmyk":[0,1,2,2],"hsb":[40,2,98],"hsl":[40,33,96],"lab":[97,0,2]},{"name":"Vanilla","hex":"eddea4","rgb":[237,222,164],"cmyk":[0,6,31,7],"hsb":[48,31,93],"hsl":[48,67,79],"lab":[88,-3,30]},{"name":"Atomic tangerine","hex":"f7a072","rgb":[247,160,114],"cmyk":[0,35,54,3],"hsb":[21,54,97],"hsl":[21,89,71],"lab":[74,28,37]}]
+
+- XML
+
+<palette>
+  <color name="Moonstone" hex="0fa3b1" r="15" g="163" b="177" />
+  <color name="Uranian Blue" hex="b5e2fa" r="181" g="226" b="250" />
+  <color name="Baby powder" hex="f9f7f3" r="249" g="247" b="243" />
+  <color name="Vanilla" hex="eddea4" r="237" g="222" b="164" />
+  <color name="Atomic tangerine" hex="f7a072" r="247" g="160" b="114" />
+</palette>
