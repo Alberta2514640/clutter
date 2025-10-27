@@ -50,6 +50,7 @@ Now that we have covered what the Go code structure looks like, I would like to 
 1. `cd backend/api`
 2. `./build.sh`
    - this will build all the `main.go` files into their respective `/deploy` folders
+   - has only been tested on my Windows x86 machine, not sure if this runs into any issues on Mac or Linux. Please post in the Discord if this does not work on your machine
 3. `cd ../infra`
 4. Navigate to [AWS Access Portal](https://d-9267ff1cd3.awsapps.com/start/) and log in
 5. Under `AWS Accounts` select the `Capstone` dropdown
@@ -64,3 +65,4 @@ Now that we have covered what the Go code structure looks like, I would like to 
     - you will be prompted to perform actions. You can type `yes` to continue
 13. If the output prints `Apply complete! Resources: 0 added, 1 changed, 0 destroyed.` you have successfully deployed AWS resources using Terraform!
     - the reason it says `1 changed` is because you zipped the source code on your machine and Terraform keeps track of any changes to the "code" by using a source_code_hash comparison. If it detects a new hash, it will assume a change has been made, and since you ran `.build.sh` it is either creating a new zip file or overwriting the old zip file. This doesn't always mean something in your code or the functionality changed, just that you made a new zip file.
+
