@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Alberta2514640/clutter/backend/generic"
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
