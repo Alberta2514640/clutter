@@ -13,5 +13,5 @@ func main() {
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	return generic.Response(200, generic.Json{"message": "diagram-create Lambda is working!"})
+	return generic.Response(200, generic.Json{"message": "diagram-get-list Lambda is working!"})
 }
