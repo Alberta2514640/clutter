@@ -39,7 +39,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## notes
 
-### initializations
+### initializations ( no need to run again)
 
 `chmod +x init.bash`
 to give the bash script permissions
