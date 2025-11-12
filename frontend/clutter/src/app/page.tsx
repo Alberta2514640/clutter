@@ -18,7 +18,7 @@ export default function Home() {
           {/* CTA Button */}
           <div className="pt-8">
             <Link
-              href="/get-started"
+              href="/login"
               className="inline-block px-12 py-5 bg-teal-500 hover:bg-teal-600 text-white text-xl font-semibold rounded-2xl transition-all transform hover:scale-105 shadow-lg hover:shadow-teal-500/50"
             >
               Start Here
