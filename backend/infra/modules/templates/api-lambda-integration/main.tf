@@ -26,7 +26,7 @@ resource "aws_api_gateway_integration" "lambda-integration" {
 resource "aws_lambda_permission" "lambda-permission" {
   statement_id  = "AllowExecutionFromAPIGateway-${var.path_part}"
   action        = "lambda:InvokeFunction"
-  function_name = var.func_name
+  function_name = var.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.execution_arn}/*/${var.http_method}${var.path}"
 }
@@ -47,7 +47,7 @@ resource "aws_api_gateway_method" "options-method" {
 resource "aws_api_gateway_integration" "options-integration" {
   rest_api_id = var.rest_api_id
   resource_id = var.resource_id
-  http_method = aws_api_gateway_method.options_method.http_method
+  http_method = aws_api_gateway_method.options-method.http_method
   type        = "MOCK"
 
   request_templates = {
@@ -59,7 +59,7 @@ resource "aws_api_gateway_integration" "options-integration" {
 resource "aws_api_gateway_method_response" "options-response" {
   rest_api_id = var.rest_api_id
   resource_id = var.resource_id
-  http_method = aws_api_gateway_method.options_method.http_method
+  http_method = aws_api_gateway_method.options-method.http_method
   status_code = "200"
 
   response_models = {
@@ -77,8 +77,8 @@ resource "aws_api_gateway_method_response" "options-response" {
 resource "aws_api_gateway_integration_response" "options-integration-response" {
   rest_api_id = var.rest_api_id
   resource_id = var.resource_id
-  http_method = aws_api_gateway_method.options_method.http_method
-  status_code = aws_api_gateway_method_response.options_response.status_code
+  http_method = aws_api_gateway_method.options-method.http_method
+  status_code = aws_api_gateway_method_response.options-response.status_code
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
