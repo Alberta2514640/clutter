@@ -56,4 +56,11 @@ resource "aws_lambda_function" "lambda" {
     architectures       = ["arm64"]
     memory_size         = 128
 
+    dynamic "environment" {
+    for_each = length(var.environment_variables) > 0 ? [1] : []
+    content {
+        variables = var.environment_variables
+        }
+    }
+
 }
