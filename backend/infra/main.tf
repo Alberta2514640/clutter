@@ -23,19 +23,6 @@ module "diagram-get-lambda" {
   zip_dir_slice = "diagram/get"
 
 }
-module "diagram-get-list-lambda" {
-
-  source = "./modules/templates/lambda"
-  function_name = "diagram-get-list"
-  actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
-  ]
-  resources = ["*"]
-  zip_dir_slice = "diagram/get-list"
-
-}
 module "diagram-update-lambda" {
 
   source = "./modules/templates/lambda"
@@ -64,7 +51,20 @@ module "diagram-delete-lambda" {
 module "clutter-api-gateway" {
     source = "./modules/api-gateway"
 }
-# Create API Gateway Validation Models
+# Paths
+module "diagram-api-path" {
+  source = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id = module.clutter-api-gateway.root_resource_id
+  path_part = "diagram"
+}
+module "diagram-api-cors-compliance" {
+  source = "./modules/templates/api-path-cors-compliance"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  resource_id = module.diagram-api-path.resource_id
+  http_methods = [ "POST", "GET", "PUT", "DELETE" ]
+}
+# Validation Models
 module "test-model" {
     source = "./modules/templates/api-models"
     rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -72,24 +72,55 @@ module "test-model" {
     description = "Test model"
     schema_filename = "test.json"
 }
-# Paths
-module "diagram-create-api-path" {
-  source = "./modules/templates/api-path"
-  rest_api_id = module.clutter-api-gateway.rest_api_id
-  parent_id = module.clutter-api-gateway.root_resource_id
-  path_part = "diagram"
-}
 # Integrations
-module "diagram-reate-api-integration" {
+# POST diagram
+module "diagram-create-api-integration" {
+  source                = "./modules/templates/api-lambda-integration"
+  rest_api_id           = module.clutter-api-gateway.rest_api_id
+  resource_id           = module.diagram-api-path.resource_id
+  http_method           = "POST"
+  invoke_arn            = module.diagram-create-lambda.invoke_arn
+  function_name         = module.diagram-create-lambda.function_name
+  path_part             = module.diagram-api-path.path_part
+  execution_arn         = module.clutter-api-gateway.execution_arn
+  path                  = module.diagram-api-path.path
+  request_validator_id  = module.clutter-api-gateway.body_validator_id
+  model_name            = module.test-model.model_name
+}# GET diagram
+module "diagram-get-api-integration" {
   source = "./modules/templates/api-lambda-integration"
   rest_api_id = module.clutter-api-gateway.rest_api_id
-  resource_id = module.diagram-create-api-path.resource_id
-  http_method = "POST"
-  invoke_arn = module.diagram-create-lambda.invoke_arn
-  function_name = module.diagram-create-lambda.function_name
-  path_part = module.diagram-create-api-path.path_part
+  resource_id = module.diagram-api-path.resource_id
+  http_method = "GET"
+  invoke_arn = module.diagram-get-lambda.invoke_arn
+  function_name = module.diagram-get-lambda.function_name
+  path_part = module.diagram-api-path.path_part
   execution_arn = module.clutter-api-gateway.execution_arn
-  path = module.diagram-create-api-path.path
+  path = module.diagram-api-path.path
+}
+# UPDATE diagram
+module "diagram-update-api-integration" {
+  source = "./modules/templates/api-lambda-integration"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  resource_id = module.diagram-api-path.resource_id
+  http_method = "PUT"
+  invoke_arn = module.diagram-update-lambda.invoke_arn
+  function_name = module.diagram-update-lambda.function_name
+  path_part = module.diagram-api-path.path_part
+  execution_arn = module.clutter-api-gateway.execution_arn
+  path = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name = module.test-model.model_name
+}
+# DELETE diagram
+module "diagram-delete-api-integration" {
+  source = "./modules/templates/api-lambda-integration"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  resource_id = module.diagram-api-path.resource_id
+  http_method = "DELETE"
+  invoke_arn = module.diagram-delete-lambda.invoke_arn
+  function_name = module.diagram-delete-lambda.function_name
+  path_part = module.diagram-api-path.path_part
+  execution_arn = module.clutter-api-gateway.execution_arn
+  path = module.diagram-api-path.path
 }
