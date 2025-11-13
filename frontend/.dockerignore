@@ -1,0 +1,15 @@
+# don't send huge folders to Docker
+node_modules
+clutter/node_modules
+**/node_modules
+
+# build output
+dist
+
+# git stuff
+.git
+.gitignore
+
+npm-debug.log*
+Dockerfile*
+docker-compose*.yml

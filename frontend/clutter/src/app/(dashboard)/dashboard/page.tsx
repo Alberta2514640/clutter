@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { useEffect, useState } from 'react';
+import DashboardContent from './_components/DashboardContent';
 import DashboardLoading from './_components/DashboardLoading';
 import DashboardOnboarding from './_components/DashboardOnboarding';
-import DashboardContent from './_components/DashboardContent';
 
 interface Project {
   projectId: string;
@@ -78,7 +78,7 @@ export default function DashboardPage() {
   }
 
   // State 2: No Tenant (Onboarding)
-  if (userData && userData.tenantId) {
+  if (userData && !userData.tenantId) {
     return <DashboardOnboarding />;
   }
 
