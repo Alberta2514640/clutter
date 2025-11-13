@@ -1,9 +1,3 @@
-# API Gateway resource path
-resource "aws_api_gateway_resource" "path" {
-  rest_api_id = var.rest_api_id
-  parent_id   = var.root_resource_id
-  path_part   = var.path_part
-}
 # Model for validation
 resource "aws_api_gateway_model" "model" {
   rest_api_id  = var.rest_api_id
@@ -15,7 +9,7 @@ resource "aws_api_gateway_model" "model" {
 # Method definition
 resource "aws_api_gateway_method" "method" {
   rest_api_id          = var.rest_api_id
-  resource_id          = aws_api_gateway_resource.path.id
+  resource_id          = var.resource_id
   http_method          = var.http_method
   authorization        = "NONE"
   request_validator_id = var.request_validator_id
@@ -27,7 +21,7 @@ resource "aws_api_gateway_method" "method" {
 # Lambda Integration
 resource "aws_api_gateway_integration" "lambda-integration" {
   rest_api_id             = var.rest_api_id
-  resource_id             = aws_api_gateway_resource.path.id
+  resource_id             = var.resource_id
   http_method             = aws_api_gateway_method.method.http_method
   integration_http_method = var.http_method
   type                    = "AWS_PROXY"
@@ -39,7 +33,7 @@ resource "aws_lambda_permission" "lambda-permission" {
   action        = "lambda:InvokeFunction"
   function_name = var.func_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${var.execution_arn}/*/${var.http_method}/${var.path_part}"
+  source_arn    = "${var.execution_arn}/*/${var.http_method}${var.path}"
 }
 
 # ==============================================================================
@@ -49,7 +43,7 @@ resource "aws_lambda_permission" "lambda-permission" {
 # OPTIONS method for preflight request
 resource "aws_api_gateway_method" "options-method" {
   rest_api_id   = var.rest_api_id
-  resource_id   = aws_api_gateway_resource.path.id
+  resource_id   = var.resource_id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -57,7 +51,7 @@ resource "aws_api_gateway_method" "options-method" {
 # Mock integration to handle OPTIONS
 resource "aws_api_gateway_integration" "options-integration" {
   rest_api_id = var.rest_api_id
-  resource_id = aws_api_gateway_resource.path.id
+  resource_id = var.resource_id
   http_method = aws_api_gateway_method.options_method.http_method
   type        = "MOCK"
 
@@ -69,7 +63,7 @@ resource "aws_api_gateway_integration" "options-integration" {
 # OPTIONS method response
 resource "aws_api_gateway_method_response" "options-response" {
   rest_api_id = var.rest_api_id
-  resource_id = aws_api_gateway_resource.path.id
+  resource_id = var.resource_id
   http_method = aws_api_gateway_method.options_method.http_method
   status_code = "200"
 
@@ -87,13 +81,13 @@ resource "aws_api_gateway_method_response" "options-response" {
 # Integration response with CORS headers
 resource "aws_api_gateway_integration_response" "options-integration-response" {
   rest_api_id = var.rest_api_id
-  resource_id = aws_api_gateway_resource.path.id
+  resource_id = var.resource_id
   http_method = aws_api_gateway_method.options_method.http_method
   status_code = aws_api_gateway_method_response.options_response.status_code
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS,GET'"
+    "method.response.header.Access-Control-Allow-Methods" = "'${var.http_method},OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
