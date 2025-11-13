@@ -5,7 +5,7 @@ import Link from "next/link";
 export default function Navbar() {
   return (
     <header className="w-full border-b border-slate-800/50 bg-black/20 backdrop-blur-md">
-      <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+      <div className="container mx-auto py-4 flex items-center justify-between">
         {/* Left: logo */}
         <Link href="/" className="flex items-center gap-3">
           <Image
