@@ -30,7 +30,7 @@ variable "invoke_arn" {
   description = "Lambda invoke ARN"
   type        = string
 }
-variable "func_name" {
+variable "function_name" {
   description = "Lambda function name"
   type        = string
 }
