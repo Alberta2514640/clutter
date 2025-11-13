@@ -1,17 +1,16 @@
-# Create the Lambda functions
+# Create Lambda functions
 module "diagram-create-lambda" {
 
-    source = ".modules/lambda-template"
+    source = ".modules/template/lambda"
     function_name = "diagram-create"
     actions = ["dynamodb:PutItem"]
     resources = ["*"]
     zip_dir_slice = "diagram/create"
 
 }
-
 module "diagram-get-lambda" {
 
-    source = ".modules/lambda-template"
+    source = ".modules/template/lambda"
     function_name = "diagram-get"
     actions = [
         "dynamodb:GetItem",
@@ -22,10 +21,9 @@ module "diagram-get-lambda" {
     zip_dir_slice = "diagram/get"
 
 }
-
 module "diagram-get-list-lambda" {
 
-    source = ".modules/lambda-template"
+    source = ".modules/template/lambda"
     function_name = "diagram-get-list"
     actions = [
         "dynamodb:GetItem",
@@ -36,10 +34,9 @@ module "diagram-get-list-lambda" {
     zip_dir_slice = "diagram/get-list"
 
 }
-
 module "diagram-update-lambda" {
 
-    source = ".modules/lambda-template"
+    source = ".modules/template/lambda"
     function_name = "diagram-update"
     actions = [
         "dynamodb:UpdateItem"
@@ -48,10 +45,9 @@ module "diagram-update-lambda" {
     zip_dir_slice = "diagram/update"
 
 }
-
 module "diagram-delete-lambda" {
 
-    source = ".modules/lambda-template"
+    source = ".modules/template/lambda"
     function_name = "diagram-delete"
     actions = [
         "dynamodb:DeleteItem"
