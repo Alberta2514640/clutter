@@ -8,7 +8,7 @@ export default function Home() {
       <Navbar />
 
       {/* Hero Section */}
-      <main className="flex flex-col items-center justify-center min-h-screen px-6">
+      <main className="flex flex-col min-h-screen items-center justify-center px-6">
         <div className="max-w-5xl mx-auto text-center space-y-12">
           {/* Main Heading */}
           <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight">
