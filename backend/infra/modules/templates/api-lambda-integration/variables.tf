@@ -1,17 +1,8 @@
+# ================
+# Method Variables
+# ================
 variable "rest_api_id" {
   description = "Parent API Gateway ID"
-  type        = string
-}
-variable "model_name" {
-  description = "Name of the API Gateway model"
-  type        = string
-}
-variable "description" {
-  description = "Description of the model"
-  type        = string
-}
-variable "schema" {
-  description = "JSON schema for validation"
   type        = string
 }
 variable "resource_id" {
@@ -23,9 +14,18 @@ variable "http_method" {
   type        = string
 }
 variable "request_validator_id" {
-  description = "Validator ID for request body validation"
+  description = "Validator ID for request body validation (optional)"
   type        = string
+  default = null
 }
+variable "model_name" {
+  description = "Name of the API Gateway model (optional)"
+  type        = string
+  default     = null
+}
+# ============================
+# Lambda Integration Variables
+# ============================
 variable "invoke_arn" {
   description = "Lambda invoke ARN"
   type        = string
@@ -44,5 +44,5 @@ variable "execution_arn" {
 }
 variable "path" {
   description = "The full path of the API resource (e.g., /diagram or /parent/child)"
-  type = string
+  type        = string
 }

@@ -1,22 +1,17 @@
-# Model for validation
-resource "aws_api_gateway_model" "model" {
-  rest_api_id  = var.rest_api_id
-  name         = var.model_name
-  description  = var.description
-  content_type = "application/json"
-  schema       = var.schema
-}
 # Method definition
 resource "aws_api_gateway_method" "method" {
   rest_api_id          = var.rest_api_id
   resource_id          = var.resource_id
   http_method          = var.http_method
   authorization        = "NONE"
-  request_validator_id = var.request_validator_id
-
-  request_models = {
-    "application/json" = aws_api_gateway_model.model.name
-  }
+  # if var.validator_id is not null then request_validator_id = var.request_validator_id
+  # otherwise request_validator_id = null
+  request_validator_id = var.request_validator_id != null ? var.request_validator_id : null
+  # if var.model_name is not null then request_models = var.model_name
+  # otherwise request_models = empty map
+  request_models = var.model_name != null ? {
+    "application/json" = var.model_name
+  } : {}
 }
 # Lambda Integration
 resource "aws_api_gateway_integration" "lambda-integration" {
