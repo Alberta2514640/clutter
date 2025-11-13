@@ -8,7 +8,7 @@ export default function Home() {
       <Navbar />
 
       {/* Hero Section */}
-      <main className="flex flex-col items-center justify-center min-h-screen px-6">
+      <main className="flex flex-col min-h-screen items-center justify-center px-6">
         <div className="max-w-5xl mx-auto text-center space-y-12">
           {/* Main Heading */}
           <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight">
@@ -18,7 +18,7 @@ export default function Home() {
           {/* CTA Button */}
           <div className="pt-8">
             <Link
-              href="/get-started"
+              href="/login"
               className="inline-block px-12 py-5 bg-teal-500 hover:bg-teal-600 text-white text-xl font-semibold rounded-2xl transition-all transform hover:scale-105 shadow-lg hover:shadow-teal-500/50"
             >
               Start Here

@@ -1,0 +1,19 @@
+# Ignore git metadata
+.git
+.gitignore
+
+# Node junk
+node_modules
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml
+
+# Docker & CI stuff
+Dockerfile*
+.github
+
+# Logs, temp files
+*.log
+*.tmp
+dist
+build
