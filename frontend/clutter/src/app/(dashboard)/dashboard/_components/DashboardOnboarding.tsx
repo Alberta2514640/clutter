@@ -10,7 +10,7 @@ export default function DashboardOnboarding() {
   const router = useRouter();
 
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-5rem)] px-6">
+    <div className="flex items-center justify-center min-h-[calc(100vh-20rem)] px-6">
       <Card className="max-w-2xl w-full bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
         <CardHeader>
           <div className="flex items-center gap-3 mb-4">
@@ -55,8 +55,8 @@ export default function DashboardOnboarding() {
               </p>
               <Button 
                 onClick={() => router.push('/onboarding/join-tenant')}
-                variant="outline"
-                className="w-full border-slate-600 text-white hover:bg-slate-800"
+                variant="secondary"
+                className="w-full bg-slate-600 hover:bg-slate-700   text-white transition-colors"
               >
                 Join Organization
               </Button>
