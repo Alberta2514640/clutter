@@ -5,7 +5,6 @@ set -euo pipefail
 LAMBDA_DIRS=(
   "diagram/create"
   "diagram/get"
-  "diagram/get-list"
   "diagram/update"
   "diagram/delete"
 )
