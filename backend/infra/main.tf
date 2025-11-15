@@ -1,3 +1,12 @@
+# ================================
+# Cognito User-Pools and Providers
+# ================================
+module "cognito" {
+  source = "./modules/templates/cognito"
+  google_client_id = var.google_client_id
+  google_client_secret = var.google_client_secret
+  frontend_url = var.frontend_url
+}
 # ================
 # Lambda Functions
 # ================
