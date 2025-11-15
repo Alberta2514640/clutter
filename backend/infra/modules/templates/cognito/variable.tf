@@ -1,7 +1,3 @@
-variable "aws_region" {
-  type        = string
-  description = "The AWS region to deploy resources to"
-}
 variable "google_client_id" {
   type        = string
   description = "Google OAuth client ID"
