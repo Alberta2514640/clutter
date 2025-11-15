@@ -1,5 +1,5 @@
-import Navbar from '@/components/common/Navbar';
-import Link from 'next/link';
+import Navbar from "@/components/common/Navbar";
+import Link from "next/link";
 
 export default function Home() {
   return (
@@ -11,16 +11,11 @@ export default function Home() {
       <main className="flex flex-col min-h-screen items-center justify-center px-6">
         <div className="max-w-5xl mx-auto text-center space-y-12">
           {/* Main Heading */}
-          <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight">
-            Infrastructure, simplified
-          </h1>
+          <h1 className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight">Infrastructure, simplified</h1>
 
           {/* CTA Button */}
           <div className="pt-8">
-            <Link
-              href="/login"
-              className="inline-block px-12 py-5 bg-teal-500 hover:bg-teal-600 text-white text-xl font-semibold rounded-2xl transition-all transform hover:scale-105 shadow-lg hover:shadow-teal-500/50"
-            >
+            <Link href="/login" className="inline-block px-12 py-5 bg-teal-500 hover:bg-teal-600 text-white text-xl font-semibold rounded-2xl transition-all transform hover:scale-105 shadow-lg hover:shadow-teal-500/50">
               Start Here
             </Link>
           </div>
