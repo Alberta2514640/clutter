@@ -31,24 +31,6 @@ resource "aws_cognito_identity_provider" "google" {
   }
 }
 
-# resource "aws_cognito_identity_provider" "apple" {
-#   user_pool_id  = aws_cognito_user_pool.main.id
-#   provider_name = "SignInWithApple"
-#   provider_type = "SignInWithApple"
-
-#   provider_details = {
-#     client_id        = var.apple_client_id
-#     team_id          = var.apple_team_id
-#     key_id           = var.apple_key_id
-#     private_key      = var.apple_private_key
-#     authorize_scopes = "email name"
-#   }
-
-#   attribute_mapping = {
-#     email = "email"
-#   }
-# }
-
 resource "aws_cognito_user_pool_client" "client" {
   name         = "clutter-frontend-client"
   user_pool_id = aws_cognito_user_pool.clutter-user-pool.id
@@ -68,6 +50,5 @@ resource "aws_cognito_user_pool_client" "client" {
   supported_identity_providers = [
     "COGNITO",
     "Google",
-    # "SignInWithApple"
   ]
 }
