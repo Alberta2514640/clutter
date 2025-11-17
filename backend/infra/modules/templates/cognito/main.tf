@@ -22,6 +22,13 @@ resource "aws_cognito_identity_provider" "google" {
   attribute_mapping = {
     email = "email"
   }
+  
+  lifecycle {
+    ignore_changes = [
+      attribute_mapping["username"],
+      provider_details,
+    ]
+  }
 }
 
 # resource "aws_cognito_identity_provider" "apple" {
