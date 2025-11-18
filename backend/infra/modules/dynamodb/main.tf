@@ -1,6 +1,6 @@
-# Clutter IaC Designer - Single-table DynamoDB design
+# Clutter - Single-table DynamoDB design
 # Stores: TENANT, USER, MEMBERSHIP, PROJECT, CANVAS, NODE, EDGE, WORKSPACE, VAR_SET, MODULE_SET, RUN, ACCOUNT_LINK
-resource "aws_dynamodb_table" "iac_designer" {
+resource "aws_dynamodb_table" "clutter_ddb" {
   name         = var.table_name
   billing_mode = var.billing_mode
   hash_key     = "pk"

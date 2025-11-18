@@ -14,7 +14,7 @@ module "cognito" {
 module "dynamodb" {
   source = "./modules/dynamodb"
 
-  table_name                    = "IaCDesigner"
+  table_name                    = "clutter-table"
   billing_mode                  = "PROVISIONED"
   enable_point_in_time_recovery = true
   enable_streams                = false
