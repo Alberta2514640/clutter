@@ -1,9 +1,9 @@
 # Method definition
 resource "aws_api_gateway_method" "method" {
-  rest_api_id          = var.rest_api_id
-  resource_id          = var.resource_id
-  http_method          = var.http_method
-  authorization        = "NONE"
+  rest_api_id   = var.rest_api_id
+  resource_id   = var.resource_id
+  http_method   = var.http_method
+  authorization = "NONE"
   # if var.validator_id is not null then request_validator_id = var.request_validator_id
   # otherwise request_validator_id = null
   request_validator_id = var.request_validator_id != null ? var.request_validator_id : null
