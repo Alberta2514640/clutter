@@ -16,7 +16,7 @@ variable "http_method" {
 variable "request_validator_id" {
   description = "Validator ID for request body validation (optional)"
   type        = string
-  default = null
+  default     = null
 }
 variable "model_name" {
   description = "Name of the API Gateway model (optional)"
