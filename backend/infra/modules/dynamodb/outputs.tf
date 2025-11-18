@@ -1,3 +1,3 @@
 output "table_arn" {
-  value = aws_dynamodb_table.iac_designer.arn
+  value = aws_dynamodb_table.clutter_ddb.arn
 }
