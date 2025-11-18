@@ -14,16 +14,10 @@ module "cognito" {
 module "dynamodb" {
   source = "./modules/dynamodb"
 
-  table_name                    = var.dynamodb_table_name
-  billing_mode                  = var.dynamodb_billing_mode
-  enable_point_in_time_recovery = var.dynamodb_enable_pitr
-  enable_streams                = var.dynamodb_enable_streams
-  environment                   = var.environment
-
-  tags = {
-    Project = "Clutter-IaC"
-    Service = "Backend"
-  }
+  table_name                    = "IaCDesigner"
+  billing_mode                  = "PROVISIONED"
+  enable_point_in_time_recovery = true
+  enable_streams                = false
 }
 
 # ===
@@ -33,15 +27,9 @@ module "s3" {
   source = "./modules/s3"
 
   aws_region           = var.aws_region
-  enable_versioning    = var.s3_enable_versioning
-  enable_cors          = var.s3_enable_cors
-  cors_allowed_origins = var.s3_cors_origins
-  environment          = var.environment
-
-  tags = {
-    Project = "Clutter-IaC"
-    Service = "Backend"
-  }
+  enable_versioning    = true
+  enable_cors          = true
+  cors_allowed_origins = ["*"]
 }
 # ================
 # Lambda Functions
