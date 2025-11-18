@@ -2,22 +2,13 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
-resource "aws_s3_bucket" "iac_storage" {
+resource "aws_s3_bucket" "clutter_bucket" {
   bucket = "clutter-${var.aws_region}-${random_id.suffix.hex}"
-
-  tags = merge(
-    var.tags,
-    {
-      Name        = "clutter-${var.aws_region}-${random_id.suffix.hex}"
-      Environment = var.environment
-      ManagedBy   = "Terraform"
-    }
-  )
 }
 
 # Block all public access
-resource "aws_s3_bucket_public_access_block" "iac_storage" {
-  bucket = aws_s3_bucket.iac_storage.id
+resource "aws_s3_bucket_public_access_block" "clutter_bucket" {
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -26,8 +17,8 @@ resource "aws_s3_bucket_public_access_block" "iac_storage" {
 }
 
 # Versioning for data protection
-resource "aws_s3_bucket_versioning" "iac_storage" {
-  bucket = aws_s3_bucket.iac_storage.id
+resource "aws_s3_bucket_versioning" "clutter_bucket" {
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   versioning_configuration {
     status = var.enable_versioning ? "Enabled" : "Suspended"
@@ -35,8 +26,8 @@ resource "aws_s3_bucket_versioning" "iac_storage" {
 }
 
 # Server-side encryption (AES256 or KMS)
-resource "aws_s3_bucket_server_side_encryption_configuration" "iac_storage" {
-  bucket = aws_s3_bucket.iac_storage.id
+resource "aws_s3_bucket_server_side_encryption_configuration" "clutter_bucket" {
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -48,9 +39,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "iac_storage" {
 }
 
 # CORS for frontend access
-resource "aws_s3_bucket_cors_configuration" "iac_storage" {
+resource "aws_s3_bucket_cors_configuration" "clutter_bucket" {
   count  = var.enable_cors ? 1 : 0
-  bucket = aws_s3_bucket.iac_storage.id
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   cors_rule {
     allowed_headers = ["*"]
@@ -62,8 +53,8 @@ resource "aws_s3_bucket_cors_configuration" "iac_storage" {
 }
 
 # Bucket policy - enforce HTTPS and encryption
-resource "aws_s3_bucket_policy" "iac_storage" {
-  bucket = aws_s3_bucket.iac_storage.id
+resource "aws_s3_bucket_policy" "clutter_bucket" {
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -74,8 +65,8 @@ resource "aws_s3_bucket_policy" "iac_storage" {
         Principal = "*"
         Action    = "s3:*"
         Resource = [
-          aws_s3_bucket.iac_storage.arn,
-          "${aws_s3_bucket.iac_storage.arn}/*"
+          aws_s3_bucket.clutter_bucket.arn,
+          "${aws_s3_bucket.clutter_bucket.arn}/*"
         ]
         Condition = {
           Bool = {
@@ -88,7 +79,7 @@ resource "aws_s3_bucket_policy" "iac_storage" {
         Effect    = "Deny"
         Principal = "*"
         Action    = "s3:PutObject"
-        Resource  = "${aws_s3_bucket.iac_storage.arn}/*"
+        Resource  = "${aws_s3_bucket.clutter_bucket.arn}/*"
         Condition = {
           StringNotEquals = {
             "s3:x-amz-server-side-encryption" = var.kms_key_arn != null ? "aws:kms" : "AES256"
@@ -100,8 +91,8 @@ resource "aws_s3_bucket_policy" "iac_storage" {
 }
 
 # Object ownership
-resource "aws_s3_bucket_ownership_controls" "iac_storage" {
-  bucket = aws_s3_bucket.iac_storage.id
+resource "aws_s3_bucket_ownership_controls" "clutter_bucket" {
+  bucket = aws_s3_bucket.clutter_bucket.id
 
   rule {
     object_ownership = "BucketOwnerEnforced"

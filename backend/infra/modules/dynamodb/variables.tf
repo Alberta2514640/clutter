@@ -51,15 +51,3 @@ variable "kms_key_arn" {
   description = "KMS key ARN for encryption"
   default     = null
 }
-
-variable "environment" {
-  type        = string
-  description = "Environment name"
-  default     = "dev"
-}
-
-variable "tags" {
-  type        = map(string)
-  description = "Additional tags"
-  default     = {}
-}

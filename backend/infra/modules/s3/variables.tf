@@ -26,15 +26,3 @@ variable "cors_allowed_origins" {
   description = "List of allowed origins for CORS"
   default     = ["*"]
 }
-
-variable "environment" {
-  type        = string
-  description = "Environment name (dev, staging, prod)"
-  default     = "dev"
-}
-
-variable "tags" {
-  type        = map(string)
-  description = "Additional tags for the S3 bucket"
-  default     = {}
-}

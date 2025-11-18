@@ -150,14 +150,4 @@ resource "aws_dynamodb_table" "iac_designer" {
   # DynamoDB Streams for change data capture
   stream_enabled   = var.enable_streams
   stream_view_type = var.enable_streams ? "NEW_AND_OLD_IMAGES" : null
-
-  tags = merge(
-    var.tags,
-    {
-      Name        = var.table_name
-      Environment = var.environment
-      ManagedBy   = "Terraform"
-      Project     = "Clutter-IaC"
-    }
-  )
 }
