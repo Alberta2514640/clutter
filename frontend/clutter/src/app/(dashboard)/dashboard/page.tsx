@@ -1,11 +1,15 @@
-'use client';
+"use client";
 
-import { apiClient } from '@/lib/api-client';
-import { useEffect, useState } from 'react';
-import DashboardContent from './_components/DashboardContent';
-import DashboardLoading from './_components/DashboardLoading';
-import DashboardOnboarding from './_components/DashboardOnboarding';
+import { apiClient } from "@/lib/api-client";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { useEffect, useState } from "react";
+import DashboardContent from "./_components/DashboardContent";
+import DashboardLoading from "./_components/DashboardLoading";
+import DashboardOnboarding from "./_components/DashboardOnboarding";
 
+const session = await getServerSession(authOptions);
 interface Project {
   projectId: string;
   name: string;
@@ -20,8 +24,8 @@ interface Run {
   projectId: string;
   projectName: string;
   workspaceId: string;
-  action: 'plan' | 'apply';
-  status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  action: "plan" | "apply";
+  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
   startedAt: string;
   endedAt?: string;
 }
@@ -43,6 +47,9 @@ export default function DashboardPage() {
   const [recentRuns, setRecentRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  if (!session) {
+    redirect("/login");
+  }
 
   useEffect(() => {
     fetchDashboardData();
@@ -57,16 +64,13 @@ export default function DashboardPage() {
       setUserData(user);
 
       if (user.tenantId) {
-        const [projectsData, runsData] = await Promise.all([
-          apiClient.getProjects(),
-          apiClient.getRecentRuns()
-        ]);
+        const [projectsData, runsData] = await Promise.all([apiClient.getProjects(), apiClient.getRecentRuns()]);
 
         setProjects(projectsData.projects || []);
         setRecentRuns(runsData.runs || []);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }
@@ -83,12 +87,5 @@ export default function DashboardPage() {
   }
 
   // State 3: Dashboard Content
-  return (
-    <DashboardContent
-      userData={userData}
-      projects={projects}
-      recentRuns={recentRuns}
-      error={error}
-    />
-  );
+  return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
 }

@@ -7,9 +7,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Sidebar */}
       <DashboardSidebar />
 
-      <main className="container mx-auto">
-        {children}
-      </main>
+      <main className="container mx-auto">{children}</main>
     </div>
   );
 }
