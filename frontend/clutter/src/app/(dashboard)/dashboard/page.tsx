@@ -78,7 +78,7 @@ export default function DashboardPage() {
   }
 
   // State 2: No Tenant (Onboarding)
-  if (userData && userData.tenantId) {
+  if (userData && !userData.tenantId) {
     return <DashboardOnboarding />;
   }
 
