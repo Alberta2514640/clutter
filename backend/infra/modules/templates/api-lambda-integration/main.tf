@@ -1,0 +1,32 @@
+# Method definition
+resource "aws_api_gateway_method" "method" {
+  rest_api_id   = var.rest_api_id
+  resource_id   = var.resource_id
+  http_method   = var.http_method
+  authorization = "NONE"
+  # if var.validator_id is not null then request_validator_id = var.request_validator_id
+  # otherwise request_validator_id = null
+  request_validator_id = var.request_validator_id != null ? var.request_validator_id : null
+  # if var.model_name is not null then request_models = var.model_name
+  # otherwise request_models = empty map
+  request_models = var.model_name != null ? {
+    "application/json" = var.model_name
+  } : {}
+}
+# Lambda Integration
+resource "aws_api_gateway_integration" "lambda-integration" {
+  rest_api_id             = var.rest_api_id
+  resource_id             = var.resource_id
+  http_method             = aws_api_gateway_method.method.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = var.invoke_arn
+}
+# Permission for API Gateway to invoke the Lambda
+resource "aws_lambda_permission" "lambda-permission" {
+  statement_id  = "AllowExecutionFromAPIGateway-${var.path_part}-${var.http_method}"
+  action        = "lambda:InvokeFunction"
+  function_name = var.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.execution_arn}/*/${var.http_method}${var.path}"
+}
