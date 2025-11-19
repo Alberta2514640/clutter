@@ -3,8 +3,17 @@ set -euo pipefail
 
 # Define a list of directories that contain main.go files
 LAMBDA_DIRS=(
+  "organization/create"
+  "organization/delete"
+  "organization/get"
+  "organization/overview"
+  "organization/update"
+  "project/create"
+  "project/delete"
+  "project/get"
+  "project/update"
   "diagram/create"
-  "diagram/get"
+  "diagram/read"
   "diagram/update"
   "diagram/delete"
 )
