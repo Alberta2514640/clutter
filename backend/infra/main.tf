@@ -38,7 +38,7 @@ module "organization-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "organization-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "organization/create"
 
 }
@@ -49,7 +49,7 @@ module "organization-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "organization/delete"
 
 }
@@ -62,7 +62,7 @@ module "organization-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "organization/get"
 
 }
@@ -75,7 +75,7 @@ module "organization-overview-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "organization/overview"
 
 }
@@ -86,7 +86,7 @@ module "organization-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "organization/update"
 
 }
@@ -96,7 +96,7 @@ module "project-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "project-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "project/create"
 
 }
@@ -107,7 +107,7 @@ module "project-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "project/delete"
 
 }
@@ -120,7 +120,7 @@ module "project-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "project/get"
 
 }
@@ -131,7 +131,7 @@ module "project-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "project/update"
 
 }
@@ -141,7 +141,7 @@ module "diagram-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "diagram/create"
 
 }
@@ -154,7 +154,7 @@ module "diagram-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "diagram/get"
 
 }
@@ -165,7 +165,7 @@ module "diagram-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "diagram/update"
 
 }
@@ -176,7 +176,7 @@ module "diagram-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = ["*"]
+  resources     = [module.dynamodb.table_arn]
   zip_dir_slice = "diagram/delete"
 
 }
