@@ -1,25 +1,25 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import Image from 'next/image';
-import { 
-  LayoutDashboard, 
-  FolderOpen, 
-  Settings, 
-  Users, 
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Rocket,
-  BookTemplate,
-  BarChart3,
-  HelpCircle,
-  Sparkles
-} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  BarChart3,
+  BookTemplate,
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  HelpCircle,
+  LayoutDashboard,
+  Plus,
+  Rocket,
+  Settings,
+  Sparkles,
+  Users
+} from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 
 interface SidebarProps {
   className?: string;
@@ -41,7 +41,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   ];
 
   const bottomItems = [
-    { icon: Settings, label: 'Admin Panel', href: '/settings/organization' },
+    { icon: Settings, label: 'Admin Panel', href: '/settings/organization/manage' },
     { icon: BookTemplate, label: 'Templates', href: '/templates' },
     { icon: BarChart3, label: 'Insights', href: '/insights' },
     { icon: HelpCircle, label: 'Help', href: '/help' },
