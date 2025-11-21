@@ -59,7 +59,7 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
-            <Link key={project.projectId} href={`/projects/${project.projectId}`}>
+            <Link key={project.projectId} href={`/projects/${project.projectId}/diagrams`}>
               <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50 hover:border-teal-500/50 transition-all cursor-pointer group">
                 <CardHeader>
                   <CardTitle className="text-white group-hover:text-teal-400 transition-colors">

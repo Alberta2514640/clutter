@@ -150,7 +150,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
               {projects.map((project) => (
                 <Link
                   key={project.id}
-                  href={`/projects/${project.id}`}
+                  href={`/projects/${project.id}/diagrams`}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-lg transition-all',
                     pathname.includes(`/projects/${project.id}`)

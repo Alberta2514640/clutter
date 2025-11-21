@@ -1,0 +1,16 @@
+'use client';
+
+import { useParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+
+export default function ProjectRedirect() {
+  const params = useParams();
+  const router = useRouter();
+  const projectId = params.projectId as string;
+
+  useEffect(() => {
+    router.replace(`/projects/${projectId}/diagrams`);
+  }, [projectId, router]);
+
+  return null; // Or a loading spinner
+}
