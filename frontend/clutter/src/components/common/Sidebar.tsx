@@ -30,8 +30,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const pathname = usePathname();
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Overview', href: '/dashboard' },
-    { icon: Users, label: 'Personal', href: '/dashboard/personal' },
+    { icon: LayoutDashboard, label: 'Overview', href: '/dashboard' }
   ];
 
   const projects = [
@@ -68,6 +67,17 @@ export default function DashboardSidebar({ className }: SidebarProps) {
         className
       )}
     >
+      {/* Expand Button - when collapsed */}
+      {collapsed && (
+        <button
+          onClick={handleToggle}
+          className="absolute -right-3 top-1/2 z-10 p-1.5 rounded-full 
+                    bg-slate-800 border border-slate-700 hover:bg-slate-700 
+                    transition-colors shadow-lg"
+        >
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        </button>
+      )}
       {/* Collapse/Expand Button - Centered on the right edge */}
       {!collapsed && (
         <button
@@ -170,7 +180,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
         {collapsed && (
           <div className="pt-6 space-y-1">
             <div className="flex items-center justify-center px-2 pb-2">
-              <FolderOpen className=" text-gray-500" />
+              <FolderOpen className=" text-gray-500 px-0.5" />
             </div>
             {projects.slice(0, 3).map((project) => (
               <Link
