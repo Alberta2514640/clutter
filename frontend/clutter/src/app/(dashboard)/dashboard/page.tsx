@@ -1,15 +1,11 @@
 "use client";
 
-import { apiClient } from "@/lib/api-client";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { useEffect, useState } from "react";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 import DashboardOnboarding from "./_components/DashboardOnboarding";
+import { apiClient } from "@/lib/api-client";
 
-const session = await getServerSession(authOptions);
 interface Project {
   projectId: string;
   name: string;
@@ -41,15 +37,12 @@ interface UserData {
   };
 }
 
-export default function DashboardPage() {
+export default function DashboardPageClient() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentRuns, setRecentRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  if (!session) {
-    redirect("/login");
-  }
 
   useEffect(() => {
     fetchDashboardData();
@@ -76,16 +69,8 @@ export default function DashboardPage() {
     }
   };
 
-  // State 1: Loading
-  if (loading) {
-    return <DashboardLoading />;
-  }
+  if (loading) return <DashboardLoading />;
+  if (userData && !userData.tenantId) return <DashboardOnboarding />;
 
-  // State 2: No Tenant (Onboarding)
-  if (userData && !userData.tenantId) {
-    return <DashboardOnboarding />;
-  }
-
-  // State 3: Dashboard Content
   return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
 }

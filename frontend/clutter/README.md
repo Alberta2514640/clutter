@@ -45,3 +45,8 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 to give the bash script permissions
 
 `./init.bash` to run it
+
+## requirements
+
+npx shadcn@latest add https://21st.dev/r/kokonutd/shape-landing-hero
+npx shadcn-ui add input
