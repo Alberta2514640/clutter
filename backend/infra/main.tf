@@ -32,6 +32,7 @@ module "s3" {
 # ================
 # Lambda Functions
 # ================
+
 # Organization
 module "organization-create-lambda" {
 
@@ -231,6 +232,7 @@ module "test-model" {
   description     = "Test model"
   schema_filename = "test.json"
 }
+
 # Integrations
 
 # Organization
