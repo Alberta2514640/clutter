@@ -1,6 +1,7 @@
 # ================================
 # Cognito User-Pools and Providers
 # ================================
+
 module "cognito" {
   source               = "./modules/templates/cognito"
   google_client_id     = var.google_client_id
@@ -10,17 +11,14 @@ module "cognito" {
 # ========
 # DynamoDB
 # ========
+
 module "dynamodb" {
   source = "./modules/dynamodb"
-
-  table_name                    = "clutter-table"
-  billing_mode                  = "PROVISIONED"
-  enable_point_in_time_recovery = true
-  enable_streams                = false
 }
 # ===
 # S3
 # ===
+
 module "s3" {
   source = "./modules/s3"
 
@@ -39,7 +37,7 @@ module "organization-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "organization-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/create"
 
 }
@@ -50,7 +48,7 @@ module "organization-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/delete"
 
 }
@@ -63,7 +61,7 @@ module "organization-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/get"
 
 }
@@ -76,7 +74,7 @@ module "organization-overview-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/overview"
 
 }
@@ -87,7 +85,7 @@ module "organization-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/update"
 
 }
@@ -97,7 +95,7 @@ module "project-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "project-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/create"
 
 }
@@ -108,7 +106,7 @@ module "project-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/delete"
 
 }
@@ -121,7 +119,7 @@ module "project-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/get"
 
 }
@@ -132,7 +130,7 @@ module "project-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/update"
 
 }
@@ -142,7 +140,7 @@ module "diagram-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
   actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/create"
 
 }
@@ -155,7 +153,7 @@ module "diagram-get-lambda" {
     "dynamodb:Query",
     "dynamodb:Scan"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn, module.dynamodb.supported_resurces_metadata_table_arn]
   zip_dir_slice = "diagram/get"
 
 }
@@ -166,7 +164,7 @@ module "diagram-update-lambda" {
   actions = [
     "dynamodb:UpdateItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/update"
 
 }
@@ -177,7 +175,7 @@ module "diagram-delete-lambda" {
   actions = [
     "dynamodb:DeleteItem"
   ]
-  resources     = [module.dynamodb.table_arn]
+  resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/delete"
 
 }
