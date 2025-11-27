@@ -158,7 +158,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	return generic.Response(http.StatusCreated, generic.Json{
-		"message":  "New user created successsfully",
+		"message":  "New user created successfully",
 		"token":    token,
 		"userData": newUserData,
 	})
