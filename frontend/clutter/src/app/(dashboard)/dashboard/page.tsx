@@ -10,7 +10,6 @@ import { useEffect, useState } from "react";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 import DashboardOnboarding from "./_components/DashboardOnboarding";
-import { apiClient } from "@/lib/api-client";
 
 
 // const session = await getServerSession(authOptions);
