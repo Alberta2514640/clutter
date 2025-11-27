@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
@@ -41,17 +39,11 @@ var (
 )
 
 func init() {
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		panic("failed to load AWS config: " + err.Error())
-	}
-
-	ddb = dynamodb.NewFromConfig(cfg)
-
-	tableName = os.Getenv("DDB_TABLE_NAME")
-	if tableName == "" {
-		tableName = "application-data"
-	}
+    var err error
+    ddb, tableName, err = generic.GetDynamodbClient()
+    if err != nil {
+        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+    }
 }
 
 func main() {

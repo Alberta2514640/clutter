@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -43,20 +41,12 @@ var (
 	tableName string
 )
 
-// init runs once when the Lambda container is created
 func init() {
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		panic("failed to load AWS config: " + err.Error())
-	}
-
-	ddb = dynamodb.NewFromConfig(cfg)
-
-	// Prefer env var, fall back to hard-coded name
-	tableName = os.Getenv("DDB_TABLE_NAME")
-	if tableName == "" {
-		tableName = "application-data"
-	}
+    var err error
+    ddb, tableName, err = generic.GetDynamodbClient()
+    if err != nil {
+        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+    }
 }
 
 func main() {
@@ -74,17 +64,6 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 			"error": generic.Json{
 				"code":    "INVALID_JSON",
 				"message": "invalid JSON body",
-			},
-		})
-	}
-
-	// 2. Basic validation
-	if body.OrganizationID == "" || body.Name == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and name are required",
 			},
 		})
 	}
