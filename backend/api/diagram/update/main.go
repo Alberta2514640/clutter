@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -86,11 +87,17 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		UpdateExpression:          aws.String(updateExpr),
 		ExpressionAttributeNames:  exprAttrNames,
 		ExpressionAttributeValues: exprAttrValues,
+		ConditionExpression:       aws.String("attribute_exists(PK)"),
 		ReturnValues:              types.ReturnValueAllNew,
 	})
 
 	if err != nil {
 		fmt.Printf("Error updating item: %v\n", err)
+		// Check if the error is due to condition not being met (item doesn't exist)
+		var condErr *types.ConditionalCheckFailedException
+		if ok := errors.As(err, &condErr); ok {
+			return generic.Response(404, generic.Json{"error": "Diagram not found"})
+		}
 		return generic.Response(500, generic.Json{"error": "Failed to update diagram"})
 	}
 

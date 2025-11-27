@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Alberta2514640/clutter/backend/api/db"
@@ -39,10 +40,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PROJECT#%s", projectID)},
 			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("DIAGRAM#%s", diagramID)},
 		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
 
 	if err != nil {
 		fmt.Printf("Error deleting item: %v\n", err)
+		// Check if the error is due to condition not being met (item doesn't exist)
+		var condErr *types.ConditionalCheckFailedException
+		if ok := errors.As(err, &condErr); ok {
+			return generic.Response(404, generic.Json{"error": "Diagram not found"})
+		}
 		return generic.Response(500, generic.Json{"error": "Failed to delete diagram"})
 	}
 
