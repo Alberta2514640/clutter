@@ -31,6 +31,20 @@ module "s3" {
 # Lambda Functions
 # ================
 
+# Log-in
+module "log-in-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "log-in"
+  actions       = [
+    "dynamodb:PutItem",
+    "dynamodb:GetItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "log-in"
+
+}
+
 # Organization
 module "organization-create-lambda" {
 
