@@ -42,44 +42,6 @@ var (
 )
 
 func init() {
-    var err error
-    ddb, tableName, err = generic.GetDynamodbClient()
-    if err != nil {
-        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-    }
-}
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/google/uuid"
-)
-
-// Incoming request body
-type CreateProjectRequest struct {
-	OrganizationID string `json:"organizationId"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-}
-
-// Project shape we send back to frontend
-type Project struct {
-	ID             string `json:"id"`
-	OrganizationID string `json:"organizationId"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	CreatedBy      string `json:"createdBy"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt,omitempty"`
-}
-
-var (
-	ddb       *dynamodb.Client
-	tableName string
-)
-
-// init runs once when the Lambda container is created
-func init() {
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		panic("failed to load AWS config: " + err.Error())
