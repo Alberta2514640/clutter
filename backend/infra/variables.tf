@@ -17,5 +17,12 @@ variable "frontend_url" {
   description = "Base URL of the frontend application"
 }
 
+variable "ddb_application_table_name" {
+    type        = string
+    description = "DynamoDB application table name"
+}
 
-
+variable "jwt_secret" {
+    type        = string
+    description = "JWT secret key"
+}

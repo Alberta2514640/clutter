@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
-	"github.com/Alberta2514640/clutter/backend/api/db"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -39,6 +39,19 @@ type DiagramEntity struct {
 	Data DiagramData `dynamodbav:"Data"`
 }
 
+var (
+	ddb       *dynamodb.Client
+	tableName string
+)
+
+func init() {
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic("failed to initialize DynamoDB client: " + err.Error())
+	}
+}
+
 func main() {
 	lambda.Start(handler)
 }
@@ -47,16 +60,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// 1. Parse Request Body
 	var req Request
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		return generic.Response(400, generic.Json{"error": "Invalid request body"})
-	}
-
-	// Validate required fields
-	if req.ProjectID == "" || req.Name == "" || req.UserID == "" {
-		return generic.Response(400, generic.Json{"error": "Missing required fields: projectId, name, userId"})
+		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Invalid request body"})
 	}
 
 	// 2. Create Diagram Entity
-	diagramID := uuid.New().String()
+	diagramID := uuid.NewString()
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	entity := DiagramEntity{
@@ -75,29 +83,21 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	item, err := attributevalue.MarshalMap(entity)
 	if err != nil {
 		fmt.Printf("Error marshalling item: %v\n", err)
-		return generic.Response(500, generic.Json{"error": "Internal server error"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Internal server error"})
 	}
 
-	// 4. Get DynamoDB Client
-	svc, err := db.GetClient(ctx)
-	if err != nil {
-		fmt.Printf("Error getting DB client: %v\n", err)
-		return generic.Response(500, generic.Json{"error": "Internal server error"})
-	}
-
-	// 5. Put Item
-	tableName := "application-data" 
-	_, err = svc.PutItem(ctx, &dynamodb.PutItemInput{
+	// 4. Put Item
+	_, err = ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
 	if err != nil {
 		fmt.Printf("Error putting item to DynamoDB: %v\n", err)
-		return generic.Response(500, generic.Json{"error": "Failed to save diagram"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Failed to save diagram"})
 	}
 
 	// 6. Return Success
-	return generic.Response(201, generic.Json{
+	return generic.Response(http.StatusCreated, generic.Json{
 		"message": "Diagram created successfully",
 		"diagram": entity.Data,
 	})
