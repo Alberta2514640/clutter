@@ -1,0 +1,11 @@
+{
+    "type": "object",
+    "properties": {
+        "token": {
+        "type": "string",
+        "minLength": 10,
+        "description": "Google ID token returned from Google OAuth client"
+        }
+    },
+    "required": ["token"]
+}

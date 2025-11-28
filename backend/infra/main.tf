@@ -31,6 +31,24 @@ module "s3" {
 # Lambda Functions
 # ================
 
+# Log-in
+module "log-in-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "log-in"
+  actions       = [
+    "dynamodb:PutItem",
+    "dynamodb:GetItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "log-in"
+  environment_variables = {
+    DDB_TABLE_NAME          = var.ddb_application_table_name
+    JWT_SECRET              = var.jwt_secret
+  }
+
+}
+
 # Organization
 module "organization-create-lambda" {
 
@@ -186,17 +204,17 @@ module "clutter-api-gateway" {
   source = "./modules/api-gateway"
 }
 # Paths
-module "diagram-api-path" {
+module "log-in-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
   parent_id   = module.clutter-api-gateway.root_resource_id
-  path_part   = "diagram"
+  path_part   = "log-in"
 }
-module "diagram-api-cors-compliance" {
+module "log-in-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
-  resource_id  = module.diagram-api-path.resource_id
-  http_methods = ["POST", "GET", "PUT", "DELETE"]
+  resource_id  = module.log-in-api-path.resource_id
+  http_methods = ["POST"]
 }
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
@@ -222,6 +240,19 @@ module "project-api-cors-compliance" {
   resource_id  = module.project-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+module "diagram-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "diagram"
+}
+module "diagram-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.diagram-api-path.resource_id
+  http_methods = ["POST", "GET", "PUT", "DELETE"]
+}
+
 # Validation Models
 module "test-model" {
   source          = "./modules/templates/api-models"
@@ -230,8 +261,30 @@ module "test-model" {
   description     = "Test model"
   schema_filename = "test.json"
 }
+module "log-in-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "login"
+  description     = "Model to validate log-in requests"
+  schema_filename = "log-in.json"
+}
 
 # Integrations
+
+# POST Log-in
+module "log-in-api-integration" {
+  source               = "./modules/templates/api-lambda-integration"
+  rest_api_id          = module.clutter-api-gateway.rest_api_id
+  resource_id          = module.log-in-api-path.resource_id
+  http_method          = "POST"
+  invoke_arn           = module.log-in-lambda.invoke_arn
+  function_name        = module.log-in-lambda.function_name
+  path_part            = module.log-in-api-path.path_part
+  execution_arn        = module.clutter-api-gateway.execution_arn
+  path                 = module.log-in-api-path.path
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.log-in-model.model_name
+}
 
 # Organization
 # POST organization
