@@ -36,7 +36,7 @@ export default function Home() {
                 </div>
                 <p className="text-sm text-slate-300/80 mb-3">Drag AWS resources onto a canvas and connect them with typed rules. Clutter turns the resulting graph into Terraform modules, aligned with your approved ModuleSets and VarSets.</p>
                 <ul className="space-y-1 text-xs text-slate-400">
-                  <li>• React Flow–powered canvas with snap grid</li>
+                  <li>• React Flow powered canvas with snap grid</li>
                   <li>• Deterministic connection rules &amp; cycle prevention</li>
                   <li>• Export Terraform bundles via a single click</li>
                 </ul>
