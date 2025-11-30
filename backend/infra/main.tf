@@ -271,7 +271,7 @@ module "test-model" {
   rest_api_id     = module.clutter-api-gateway.rest_api_id
   model_name      = "test"
   description     = "Test model"
-  schema_filename = "test.json"
+  schema_filename = "project-create.json"
 }
 module "log-in-model" {
   source          = "./modules/templates/api-models"

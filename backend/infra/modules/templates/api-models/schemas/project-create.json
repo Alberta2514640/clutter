@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "required": ["organizationId", "name"],
+  "properties": {
+    "organizationId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
