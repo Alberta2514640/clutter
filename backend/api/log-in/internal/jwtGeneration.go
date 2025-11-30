@@ -2,23 +2,13 @@ package internal
 
 import (
 	"os"
-	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // Generate JWT token
-func GenerateJWT(email string, name string, picture string) (string, error) {
-
-	timeNowUTC := time.Now().UTC()
-
-	claims := map[string]any{
-		jwt.ExpirationKey: timeNowUTC.Add(24 * time.Hour),
-		"email":           email,
-		"name":            name,
-		"picture":         picture,
-	}
+func GenerateJWT(claims map[string]any) (string, error) {
 
 	token := jwt.New()
 
