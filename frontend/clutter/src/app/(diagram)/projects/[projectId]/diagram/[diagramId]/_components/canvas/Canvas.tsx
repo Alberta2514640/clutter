@@ -25,7 +25,7 @@ export function Canvas({
   const { setNodeRef, isOver } = useDroppable({ id: "canvas" });
 
   return (
-    <div className="mt-4 p-4 pt-0">
+    <div className="pt-0">
       <div
         ref={(el) => {
           canvasRef.current = el;

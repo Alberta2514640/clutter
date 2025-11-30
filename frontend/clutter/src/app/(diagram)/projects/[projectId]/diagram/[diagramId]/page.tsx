@@ -159,25 +159,28 @@ export default function DiagramPage() {
 
   return (
     <div className="w-full px-6 py-6">
-      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
-        <div className="px-4 py-4 border-b border-white/10">
-          <div className="mt-4">
-            {!mounted ? (
-              <>
-                <Palette mounted={false} />
-                <div className="mt-4 p-4 pt-0">
-                  <div className="relative w-full min-h-[72vh] rounded-2xl border border-white/10 bg-white/5" />
-                </div>
-              </>
-            ) : (
-              <DndContext
-                sensors={sensors}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragCancel={handleDragCancel}
-              >
-                <Palette mounted={true} />
+      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-6">
+        {!mounted ? (
+          <div className="flex gap-6">
+            <aside className="w-[280px] shrink-0">
+              <Palette mounted={false} />
+            </aside>
 
+            <section className="flex-1 min-w-0">
+              <div className="relative w-full min-h-[72vh] rounded-2xl border border-white/10 bg-white/5" />
+            </section>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="flex gap-6">
+              <Palette mounted />
+            
+              <section className="flex-1 min-w-0">
                 <Canvas
                   canvasRef={canvasRef}
                   nodes={nodes}
@@ -186,22 +189,25 @@ export default function DiagramPage() {
                   onNodeClick={handleNodeClick}
                   onCanvasClick={handleCanvasClick}
                 />
+              </section>
+            </div>
 
-                <DragOverlay dropAnimation={null} modifiers={activeDrag?.kind === "palette" ? [paletteOverlayModifier] : undefined}>
-                  {activeDrag?.kind === "palette" ? (
-                    <div
-                      style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
-                      className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur px-3 py-2 text-xs text-slate-100 shadow-2xl flex items-center gap-2"
-                    >
-                      <NodeIcon type={activeDrag.type} />
-                      <span className="font-medium">{renderNodeLabel(activeDrag.type)}</span>
-                    </div>
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-            )}
-          </div>
-        </div>
+            <DragOverlay
+              dropAnimation={null}
+              modifiers={activeDrag?.kind === "palette" ? [paletteOverlayModifier] : undefined}
+            >
+              {activeDrag?.kind === "palette" ? (
+                <div
+                  style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
+                  className="rounded-xl border border-white/10 bg-slate-900/80 backdrop-blur px-3 py-2 text-xs text-slate-100 shadow-2xl flex items-center gap-2"
+                >
+                  <NodeIcon type={activeDrag.type} />
+                  <span className="font-medium">{renderNodeLabel(activeDrag.type)}</span>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
       </div>
     </div>
   );
