@@ -160,6 +160,9 @@ module "diagram-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/create"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "diagram-get-lambda" {
@@ -173,6 +176,9 @@ module "diagram-get-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn, module.dynamodb.supported_resurces_metadata_table_arn]
   zip_dir_slice = "diagram/get"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "diagram-update-lambda" {
@@ -184,6 +190,9 @@ module "diagram-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/update"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "diagram-delete-lambda" {
@@ -195,6 +204,9 @@ module "diagram-delete-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "diagram/delete"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 # ===========

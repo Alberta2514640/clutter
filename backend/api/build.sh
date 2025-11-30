@@ -14,7 +14,7 @@ LAMBDA_DIRS=(
   "project/get"
   "project/update"
   "diagram/create"
-  "diagram/read"
+  "diagram/get"
   "diagram/update"
   "diagram/delete"
 )
