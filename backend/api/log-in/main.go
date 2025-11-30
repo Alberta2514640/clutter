@@ -117,7 +117,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 		// Return the updated user account details
 		return generic.Response(http.StatusCreated, generic.Json{
-			"message":  "New user created successsfully",
+			"message":  "Existing user retrieved",
 			"token":    token,
 			"userData": updatedExistingData,
 		})

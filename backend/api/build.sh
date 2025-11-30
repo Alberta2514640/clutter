@@ -4,6 +4,7 @@ set -euo pipefail
 # Define a list of directories that contain main.go files
 LAMBDA_DIRS=(
   "log-in"
+  "authorizer"
   "organization/create"
   "organization/delete"
   "organization/get"
@@ -28,6 +29,10 @@ GOARCH=arm64
 
 echo "🏗️  Building Go Lambda functions..."
 
+# Compute latest modification time in generic folder
+GENERIC_DIR="${ROOT_DIR}/generic"
+GENERIC_MOD_TIME=$(find "$GENERIC_DIR" -type f -printf "%T@\n" | sort -n | tail -1 | awk '{print int($1)}' || echo 0)
+
 for dir in "${LAMBDA_DIRS[@]}"; do
   SRC_DIR="${ROOT_DIR}/${dir}"
   DEPLOY_DIR="${SRC_DIR}/deploy"
@@ -39,8 +44,13 @@ for dir in "${LAMBDA_DIRS[@]}"; do
 
   mkdir -p "${DEPLOY_DIR}"
 
-  # Only rebuild if main.go is newer than the binary or if binary doesn't exist
-  if [[ ! -f "$BINARY" ]] || [[ "$MAIN_GO" -nt "$BINARY" ]]; then
+  # Get modification time of Lambda's main.go
+  MAIN_MOD_TIME=$(stat -c %Y "$MAIN_GO" 2>/dev/null || echo 0)
+  BINARY_MOD_TIME=$(stat -c %Y "$BINARY" 2>/dev/null || echo 0)
+
+
+  # Rebuild if main.go is newer than binary, or binary missing, or generic changed
+  if [[ ! -f "$BINARY" ]] || [[ "$MAIN_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then
     echo "   → Compiling Go source..."
     GOOS=$GOOS GOARCH=$GOARCH go build -o "$BINARY" "$MAIN_GO"
 
