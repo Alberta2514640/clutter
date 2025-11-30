@@ -14,4 +14,7 @@ output "body_validator_id" {
   description = "The ID of the body validator rule"
   value       = aws_api_gateway_request_validator.body-validator.id
 }
-
+output "jwt_authorizer_id" {
+  description = "The ID of the API Gateway JWT authorizer"
+  value       = aws_api_gateway_authorizer.jwt-authorizer.id
+}
