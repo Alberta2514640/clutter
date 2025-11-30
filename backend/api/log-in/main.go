@@ -246,6 +246,7 @@ func updateUserProfile(
 	updateExpression string,
 	expressionAttributeValues map[string]types.AttributeValue,
 ) error {
+
 	updateExpression = updateExpression[:len(updateExpression)-2]
 	_, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(tableName),
@@ -257,4 +258,5 @@ func updateUserProfile(
 		return err
 	}
 	return nil
+
 }
