@@ -21,11 +21,11 @@ var (
 )
 
 func init() {
-    var err error
-    ddb, tableName, err = generic.GetDynamodbClient()
-    if err != nil {
-        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-    }
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+	}
 }
 
 func main() {
@@ -56,7 +56,7 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 			"success": false,
 			"error": generic.Json{
 				"code":    "VALIDATION_ERROR",
-					"message": "organizationId and projectId query parameters are required",
+				"message": "organizationId and projectId query parameters are required",
 			},
 		})
 	}
