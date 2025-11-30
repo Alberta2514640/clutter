@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -14,6 +16,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
+
+type UpdateProjectRequest struct {
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+}
 
 type Project struct {
 	ID             string `json:"id"`
@@ -31,12 +39,13 @@ var (
 )
 
 func init() {
-    var err error
-    ddb, tableName, err = generic.GetDynamodbClient()
-    if err != nil {
-        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-    }
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+	}
 }
+
 func main() {
 	lambda.Start(handler)
 }
@@ -45,7 +54,7 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 	ctx := context.Background()
 
 	// 1. Require user identity (authorizer or x-user-id header)
-	_, err := getUserIDFromRequest(req)
+	userID, err := getUserIDFromRequest(req)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"success": false,
@@ -56,21 +65,42 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		})
 	}
 
-	// 2. Read query params
-	orgID := req.QueryStringParameters["organizationId"]
+	// 2. Query param: projectId (required)
 	projectID := req.QueryStringParameters["projectId"]
-
-	if orgID == "" || projectID == "" {
+	if projectID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"success": false,
 			"error": generic.Json{
 				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and projectId query parameters are required",
+				"message": "projectId query parameter is required",
 			},
 		})
 	}
 
-	// 3. Build key and GetItem from DynamoDB
+	// 3. Parse and validate JSON body
+	var body UpdateProjectRequest
+	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INVALID_JSON",
+				"message": "invalid JSON body",
+			},
+		})
+	}
+
+	if body.OrganizationID == "" || body.Name == "" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "organizationId and name are required",
+			},
+		})
+	}
+
+	// 4. Build key
+	orgID := body.OrganizationID
 	key := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{
 			Value: fmt.Sprintf("ORG#%s", orgID),
@@ -80,32 +110,55 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		},
 	}
 
-	out, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(tableName),
-		Key:       key,
+	// 5. Update the item (name, description, updatedAt)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	updateExpr := "SET #d.#name = :name, #d.#description = :description, #d.#updatedAt = :updatedAt"
+	exprNames := map[string]string{
+		"#d":           "Data",
+		"#name":        "name",
+		"#description": "description",
+		"#updatedAt":   "updatedAt",
+	}
+	exprValues := map[string]types.AttributeValue{
+		":name":        &types.AttributeValueMemberS{Value: body.Name},
+		":description": &types.AttributeValueMemberS{Value: body.Description},
+		":updatedAt":   &types.AttributeValueMemberS{Value: now},
+	}
+
+	out, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(tableName),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpr),
+		ExpressionAttributeNames:  exprNames,
+		ExpressionAttributeValues: exprValues,
+		ConditionExpression:       aws.String("attribute_exists(PK) AND attribute_exists(SK)"),
+		ReturnValues:              types.ReturnValueAllNew,
 	})
 	if err != nil {
+		var cfe *types.ConditionalCheckFailedException
+		if errors.As(err, &cfe) {
+			// Item does not exist
+			return generic.Response(http.StatusNotFound, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "NOT_FOUND",
+					"message": "project not found",
+				},
+			})
+		}
+
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"success": false,
 			"error": generic.Json{
 				"code":    "INTERNAL_ERROR",
-				"message": "failed to fetch project",
+				"message": "failed to update project",
 			},
 		})
 	}
 
-	if len(out.Item) == 0 {
-		return generic.Response(http.StatusNotFound, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "NOT_FOUND",
-				"message": "project not found",
-			},
-		})
-	}
-
-	// 4. Decode Data attribute into Project struct
-	dataAttr, ok := out.Item["Data"].(*types.AttributeValueMemberM)
+	// 6. Decode updated item into Project struct
+	dataAttr, ok := out.Attributes["Data"].(*types.AttributeValueMemberM)
 	if !ok {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"success": false,
@@ -126,6 +179,9 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		CreatedAt:      getStringAttr(data, "createdAt"),
 		UpdatedAt:      getStringAttr(data, "updatedAt"),
 	}
+
+	// We don't use userID here yet, but it's validated; could be used for audit later
+	_ = userID
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"success": true,

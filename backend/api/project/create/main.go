@@ -42,17 +42,10 @@ var (
 )
 
 func init() {
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
 	if err != nil {
-		panic("failed to load AWS config: " + err.Error())
-	}
-
-	ddb = dynamodb.NewFromConfig(cfg)
-
-	// Prefer env var, fall back to hard-coded name
-	tableName = os.Getenv("DDB_TABLE_NAME")
-	if tableName == "" {
-		tableName = "application-data"
+		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
 	}
 }
 
@@ -75,20 +68,6 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		})
 	}
 
-<<<<<<< HEAD
-=======
-	// 2. Basic validation
-	if body.OrganizationID == "" || body.Name == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and name are required",
-			},
-		})
-	}
-
->>>>>>> 12b26ce (feat)
 	// 3. Get userId from authorizer (or header for local testing)
 	userID, err := getUserIDFromRequest(req)
 	if err != nil {

@@ -8,6 +8,7 @@ module "cognito" {
   google_client_secret = var.google_client_secret
   frontend_url         = var.frontend_url
 }
+
 # ========
 # DynamoDB
 # ========
@@ -15,6 +16,7 @@ module "cognito" {
 module "dynamodb" {
   source = "./modules/dynamodb"
 }
+
 # ===
 # S3
 # ===
@@ -27,6 +29,7 @@ module "s3" {
   enable_cors          = true
   cors_allowed_origins = ["*"]
 }
+
 # ================
 # Lambda Functions
 # ================
@@ -44,24 +47,6 @@ module "log-in-lambda" {
   zip_dir_slice = "log-in"
   environment_variables = {
     DDB_TABLE_NAME          = var.ddb_application_table_name
-    JWT_SECRET              = var.jwt_secret
-  }
-
-}
-
-# Authorizer
-module "authorizer-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "authorizer"
-  actions       = [
-    "logs:CreateLogGroup",
-    "logs:CreateLogStream",
-    "logs:PutLogEvents"
-  ]
-  resources     = ["*"]
-  zip_dir_slice = "authorizer"
-  environment_variables = {
     JWT_SECRET              = var.jwt_secret
   }
 
@@ -143,6 +128,7 @@ module "organization-update-lambda" {
   zip_dir_slice = "organization/update"
 
 }
+
 # Project
 module "project-create-lambda" {
 
@@ -188,6 +174,7 @@ module "project-update-lambda" {
   zip_dir_slice = "project/update"
 
 }
+
 # Diagram
 module "diagram-create-lambda" {
 
@@ -245,16 +232,17 @@ module "diagram-delete-lambda" {
   }
 
 }
+
 # ===========
 # API Gateway
 # ===========
+
 module "clutter-api-gateway" {
   source = "./modules/api-gateway"
   aws_region = var.aws_region
   jwt_authorizer_arn = module.authorizer-lambda.arn
-  aws_region = var.aws_region
-  jwt_authorizer_arn = module.authorizer-lambda.arn
 }
+
 # Paths
 module "log-in-api-path" {
   source      = "./modules/templates/api-path"
@@ -322,7 +310,6 @@ module "log-in-model" {
 }
 
 # Integrations
-
 # POST Log-in
 module "log-in-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
@@ -353,20 +340,9 @@ module "organization-create-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # GET organization
 module "organization-get-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.organization-get-lambda.invoke_arn
-  function_name     = module.organization-get-lambda.function_name
-  path_part         = module.organization-api-path.path_part
-  execution_arn      = module.clutter-api-gateway.execution_arn
-  path              = module.organization-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.organization-api-path.resource_id
@@ -402,16 +378,6 @@ module "organization-overview-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.organization-overview-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-overview-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.organization-overview-lambda.invoke_arn
-  function_name     = module.organization-overview-lambda.function_name
-  path_part         = module.organization-overview-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-overview-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 # UPDATE organization
 module "organization-update-api-integration" {
@@ -427,20 +393,9 @@ module "organization-update-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE organization
 module "organization-delete-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-api-path.resource_id
-  http_method       = "DELETE"
-  invoke_arn        = module.organization-delete-lambda.invoke_arn
-  function_name     = module.organization-delete-lambda.function_name
-  path_part         = module.organization-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.organization-api-path.resource_id
@@ -468,20 +423,9 @@ module "project-create-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # GET project
 module "project-get-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.project-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.project-get-lambda.invoke_arn
-  function_name     = module.project-get-lambda.function_name
-  path_part         = module.project-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.project-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.project-api-path.resource_id
@@ -507,20 +451,9 @@ module "project-update-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE project
 module "project-delete-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.project-api-path.resource_id
-  http_method       = "DELETE"
-  invoke_arn        = module.project-delete-lambda.invoke_arn
-  function_name     = module.project-delete-lambda.function_name
-  path_part         = module.project-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.project-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.project-api-path.resource_id
@@ -548,19 +481,8 @@ module "diagram-create-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 } # GET diagram
 module "diagram-get-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.diagram-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.diagram-get-lambda.invoke_arn
-  function_name     = module.diagram-get-lambda.function_name
-  path_part         = module.diagram-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.diagram-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.diagram-api-path.resource_id
@@ -586,22 +508,9 @@ module "diagram-update-api-integration" {
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram
 module "diagram-delete-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.diagram-api-path.resource_id
-  http_method       = "DELETE"
-  invoke_arn        = module.diagram-delete-lambda.invoke_arn
-  function_name     = module.diagram-delete-lambda.function_name
-  path_part         = module.diagram-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.diagram-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-}
-
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
   resource_id       = module.diagram-api-path.resource_id
