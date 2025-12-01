@@ -1,87 +1,49 @@
 "use client";
 
-
-
-import { apiClient } from "@/lib/api-client";
-import { getServerSession } from "next-auth";
-// import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/hooks/queries/useAuth";
+import { useProjects } from "@/lib/hooks/queries/useProject";
+import { useRecentRuns } from "@/lib/hooks/queries/useRecentRuns";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
-import DashboardOnboarding from "./_components/DashboardOnboarding";
-
-
-// const session = await getServerSession(authOptions);
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
-
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
 
 export default function DashboardPageClient() {
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [recentRuns, setRecentRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Get user data from React Query
+  const { data: user, isLoading: userLoading } = useAuth();
 
-  // if (!session) {
-  //   redirect("/login");
-  // }
+  // Get projects - only fetch if user exists
+  const { 
+    data: projectsData, 
+    isLoading: projectsLoading 
+  } = useProjects(user?.organizationId || "", {
+    enabled: !!user?.organizationId, // Only fetch if organizationId exists
+  });
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  // Get recent runs - only fetch if user exists
+  const { 
+    data: runsData, 
+    isLoading: runsLoading 
+  } = useRecentRuns({
+    enabled: !!user?.organizationId, // Only fetch if organizationId exists
+  });
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Show loading while fetching initial data
+  if (userLoading) return <DashboardLoading />;
 
-      const user = await apiClient.getUserProfile();
-      setUserData(user);
-
-      if (user.tenantId) {
-        const [projectsData, runsData] = await Promise.all([apiClient.getProjects(), apiClient.getRecentRuns()]);
-
-        setProjects(projectsData.projects || []);
-        setRecentRuns(runsData.runs || []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <DashboardLoading />;
-  if (userData && !userData.tenantId) return <DashboardOnboarding />;
-
-  return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
+  // Show dashboard with data
+  // Note: organizationId is always present since it's created on first login
+  return (
+    <DashboardContent
+      userData={{
+        userId: user?.userId || "",
+        organizationId: user?.organizationId || "",
+        email: user?.email || "",
+        displayName: user?.displayName || "",
+        pictureUrl: user?.pictureUrl || "",
+        createdAt: user?.createdAt || "",
+      }}
+      projects={projectsData?.projects || []}
+      recentRuns={runsData?.runs || []}
+      error={null}
+    />
+  );
 }
