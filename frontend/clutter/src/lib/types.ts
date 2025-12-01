@@ -49,14 +49,25 @@ export interface VarSet {
   vars: Record<string, unknown>;
   secretRefs: { provider: "ssm" | "secretsmanager"; path?: string; arn?: string; envName: string }[];
 }
-export type RunStatus = "QUEUED" | "INIT" | "PLAN" | "APPLY" | "FAILED" | "SUCCEEDED" | "CANCELED";
 export interface Run {
   runId: string;
   workspaceId: string;
+  projectId: string;
+  projectName: string;
   action: "plan" | "apply";
   status: RunStatus;
-  startedAt?: string;
+  startedAt: string;
   endedAt?: string;
   planS3?: string;
   applyLogS3?: string;
+}
+
+export type RunStatus = "QUEUED" | "INIT" | "PLAN" | "APPLY" | "FAILED" | "SUCCEEDED" | "CANCELED";
+export interface User {
+  userId: string;
+  organizationId: string;
+  email: string;
+  displayName: string;
+  pictureUrl: string;
+  createdAt: string;
 }

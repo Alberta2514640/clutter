@@ -13,14 +13,22 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "types": ["next-auth"],
-    "baseUrl": ".",
+    "types": ["node"],
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"],
       "~/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "**/*.mts", "types/**/*.d.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts",
+    "types/**/*.d.ts",
+    "globals.d.ts"
+  ],
   "exclude": ["node_modules"]
 }

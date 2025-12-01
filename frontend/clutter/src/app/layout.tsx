@@ -1,6 +1,7 @@
 // app/layout.tsx
 
 import { QueryProvider } from "@/providers/QueryProvider";
+// @ts-ignore - CSS import
 import "./globals.css";
 import Script from "next/script";
 

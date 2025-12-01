@@ -1,17 +1,7 @@
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Activity } from 'lucide-react';
-
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: 'plan' | 'apply';
-  status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
-  startedAt: string;
-  endedAt?: string;
-}
+import type { Run } from "@/lib/types";
 
 interface ActivitySectionProps {
   runs: Run[];
@@ -20,9 +10,9 @@ interface ActivitySectionProps {
 export default function ActivitySection({ runs }: ActivitySectionProps) {
   const getStatusColor = (status: Run['status']) => {
     switch (status) {
-      case 'SUCCESS': return 'text-green-500';
+      case 'SUCCEEDED': return 'text-green-500';
       case 'FAILED': return 'text-red-500';
-      case 'RUNNING': return 'text-blue-500';
+      case 'APPLY': return 'text-blue-500';
       case 'QUEUED': return 'text-yellow-500';
       default: return 'text-gray-500';
     }
@@ -62,15 +52,15 @@ export default function ActivitySection({ runs }: ActivitySectionProps) {
               {runs.map((run) => (
                 <Link 
                   key={run.runId} 
-                  href={`/projects/${run.projectId}/runs/${run.runId}`}
+                  href={`/projects/${run.workspaceId}/runs/${run.runId}`}
                   className="block p-4 hover:bg-slate-800/30 transition-colors"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-2 h-2 rounded-full ${
-                        run.status === 'SUCCESS' ? 'bg-green-500' :
+                        run.status === 'SUCCEEDED' ? 'bg-green-500' :
                         run.status === 'FAILED' ? 'bg-red-500' :
-                        run.status === 'RUNNING' ? 'bg-blue-500 animate-pulse' :
+                        run.status === 'APPLY' ? 'bg-blue-500 animate-pulse' :
                         'bg-yellow-500'
                       }`} />
                       <div>
