@@ -137,6 +137,9 @@ module "project-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/create"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "project-delete-lambda" {
@@ -148,6 +151,9 @@ module "project-delete-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/delete"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "project-get-lambda" {
@@ -161,6 +167,9 @@ module "project-get-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/get"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "project-update-lambda" {
@@ -172,6 +181,9 @@ module "project-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/update"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 
