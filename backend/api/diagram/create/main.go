@@ -60,10 +60,28 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// 1. Parse Request Body
 	var req Request
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Invalid request body"})
+		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Invalid request body: unable to parse JSON"})
 	}
 
-	// 2. Create Diagram Entity
+	// 2. Validate Required Fields
+	var missingFields []string
+	if req.ProjectID == "" {
+		missingFields = append(missingFields, "projectId")
+	}
+	if req.Name == "" {
+		missingFields = append(missingFields, "name")
+	}
+	if req.UserID == "" {
+		missingFields = append(missingFields, "userId")
+	}
+	if len(missingFields) > 0 {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"error":         "Missing required fields",
+			"missingFields": missingFields,
+		})
+	}
+
+	// 3. Create Diagram Entity
 	diagramID := uuid.NewString()
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
