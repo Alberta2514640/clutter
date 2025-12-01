@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/authorizer/internal"
@@ -44,7 +45,11 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 	}
 
 	// Check if accessToken is expired
-	accessTokenExpiration := jwtTokenClaims["exp"].(time.Time)
+	exp, ok := jwtTokenClaims["exp"].(time.Time)
+	if !ok {
+		return events.APIGatewayCustomAuthorizerResponse{}, errors.New("exp claim is not a time.Time")
+	}
+	accessTokenExpiration := exp
 	timeNowUTC := time.Now().UTC()
 
 	if timeNowUTC.After(accessTokenExpiration) {
