@@ -1,9 +1,33 @@
 // Centralized API client for calling Lambda functions via API Gateway
+import type { Canvas, Node, Edge, Workspace, Run, RunStatus, CanvasBundle } from "@/lib/types";
 
 interface ApiConfig {
   baseUrl: string;
   apiKey?: string;
   useMockData?: boolean; // Enable mock data mode
+}
+
+// User type matching database spec
+export interface User {
+  userId: string;
+  organizationId: string;
+  email: string;
+  displayName: string;
+  pictureUrl: string;
+  createdAt: string;
+}
+
+// API Response from login endpoint
+interface LoginResponse {
+  token: string;
+  userData: {
+    uuid: string;
+    email: string;
+    name: string;
+    pictureUrl: string;
+    accountCreatedOn: string;
+  };
+  message?: string;
 }
 
 class ApiClient {
@@ -15,6 +39,50 @@ class ApiClient {
     this.baseUrl = config.baseUrl;
     this.apiKey = config.apiKey;
     this.useMockData = config.useMockData || false;
+  }
+
+  // ============================================================================
+  // HELPER METHODS
+  // ============================================================================
+
+  /**
+   * Get auth token from localStorage
+   */
+  private getAuthToken(): string | null {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("clutter_auth_token");
+  }
+
+  /**
+   * Set auth token in localStorage
+   */
+  private setAuthToken(token: string): void {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("clutter_auth_token", token);
+    }
+  }
+
+  /**
+   * Clear auth token from localStorage
+   */
+  private clearAuthToken(): void {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("clutter_auth_token");
+    }
+  }
+
+  /**
+   * Map API user response to database spec
+   */
+  private mapUserData(apiUser: LoginResponse["userData"]): User {
+    return {
+      userId: apiUser.uuid,
+      organizationId: apiUser.uuid, // Using uuid as organizationId
+      email: apiUser.email,
+      displayName: apiUser.name,
+      pictureUrl: apiUser.pictureUrl,
+      createdAt: apiUser.accountCreatedOn,
+    };
   }
 
   private async request<T>(
@@ -30,16 +98,15 @@ class ApiClient {
       'Content-Type': 'application/json',
     };
 
-
     if (this.apiKey) {
       headers['x-api-key'] = this.apiKey;
     }
 
-    // TODO: Add auth token when Cognito is set up
-    // const session = await getSession();
-    // if (session?.accessToken) {
-    //   headers['Authorization'] = `Bearer ${session.accessToken}`;
-    // }
+    // Add auth token to requests
+    const authToken = this.getAuthToken();
+    if (authToken) {
+      headers['Authorization'] = `${authToken}`;
+    }
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
@@ -47,11 +114,26 @@ class ApiClient {
     });
 
     if (!response.ok) {
+      // If unauthorized, clear token
+      if (response.status === 401) {
+        this.clearAuthToken();
+      }
+
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || `API Error: ${response.status}`);
     }
 
-    return response.json();
+    const json = await response.json();
+    
+    // Unwrap the data field from API response
+    // API returns: { data: [...], success: true }
+    // We return just the data field
+    if (json && typeof json === 'object' && 'data' in json) {
+      return json.data as T;
+    }
+
+    // If no data field, return as-is (for backward compatibility)
+    return json as T;
   }
 
   // Mock data generator
@@ -59,51 +141,83 @@ class ApiClient {
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Mock user profile
-    if (endpoint === '/user/profile' && method === 'GET') {
+    // Mock login - needed for development
+    if (endpoint === '/log-in' && method === 'POST') {
       return {
-        userId: 'demo_user_001',
-        tenantId: 't_demo_001',
-        email: 'demo@example.com',
-        displayName: 'Demo User',
-        tenant: {
-          tenantId: 't_demo_001',
-          name: 'Demo Organization'
+        token: 'mock_jwt_token_' + Date.now(),
+        userData: {
+          uuid: 'mock_user_001',
+          email: 'demo@clutter.com',
+          name: 'Demo User',
+          pictureUrl: 'https://avatar.vercel.sh/demo',
+          accountCreatedOn: new Date().toISOString(),
         }
       } as T;
     }
 
-    // Mock projects list
-    if (endpoint === '/projects' && method === 'GET') {
+    // Mock current user - needed for auth check (TODO: Build /me endpoint)
+    if (endpoint === '/me' && method === 'GET') {
+      const token = this.getAuthToken();
+      if (!token) {
+        throw new Error('Unauthorized');
+      }
       return {
-        projects: [
+        uuid: 'mock_user_001',
+        email: 'demo@clutter.com',
+        name: 'Demo User',
+        pictureUrl: 'https://avatar.vercel.sh/demo',
+        accountCreatedOn: '2025-01-01T00:00:00Z',
+      } as T;
+    }
+
+    // Mock recent runs (TODO: Build /runs/recent endpoint)
+    if (endpoint === '/runs/recent' && method === 'GET') {
+      return {
+        runs: [
           {
+            runId: 'run_001',
             projectId: 'p_web_app',
-            name: 'Web Application',
-            description: 'Production web application with Lambda, API Gateway, and DynamoDB',
-            createdAt: '2025-01-15T10:00:00Z',
-            updatedAt: '2025-01-20T14:30:00Z',
-            memberCount: 3
+            projectName: 'Web Application',
+            workspaceId: 'ws_prod',
+            action: 'apply',
+            status: 'SUCCEEDED' as RunStatus,
+            startedAt: '2025-01-20T14:00:00Z',
+            endedAt: '2025-01-20T14:05:30Z'
           },
           {
+            runId: 'run_002',
+            projectId: 'p_web_app',
+            projectName: 'Web Application',
+            workspaceId: 'ws_staging',
+            action: 'plan',
+            status: 'SUCCEEDED' as RunStatus,
+            startedAt: '2025-01-19T10:30:00Z',
+            endedAt: '2025-01-19T10:32:15Z'
+          },
+          {
+            runId: 'run_003',
             projectId: 'p_data_pipeline',
-            name: 'Data Pipeline',
-            description: 'ETL pipeline with S3, Lambda, and Glue',
-            createdAt: '2025-01-10T08:00:00Z',
-            updatedAt: '2025-01-18T16:45:00Z',
-            memberCount: 2
+            projectName: 'Data Pipeline',
+            workspaceId: 'ws_prod',
+            action: 'apply',
+            status: 'PLAN' as RunStatus,
+            startedAt: '2025-01-21T08:15:00Z'
           },
           {
+            runId: 'run_004',
             projectId: 'p_monitoring',
-            name: 'Monitoring Stack',
-            description: 'CloudWatch dashboards and alarms',
-            createdAt: '2025-01-05T12:00:00Z',
-            updatedAt: '2025-01-12T09:15:00Z',
-            memberCount: 1
+            projectName: 'Monitoring Stack',
+            workspaceId: 'ws_prod',
+            action: 'apply',
+            status: 'FAILED' as RunStatus,
+            startedAt: '2025-01-18T16:00:00Z',
+            endedAt: '2025-01-18T16:03:45Z'
           }
         ]
       } as T;
     }
+
+    // NOTE: /projects now uses REAL API (not mocked)
 
     // Mock recent runs
     if (endpoint === '/runs/recent' && method === 'GET') {
@@ -115,7 +229,7 @@ class ApiClient {
             projectName: 'Web Application',
             workspaceId: 'ws_prod',
             action: 'apply',
-            status: 'SUCCESS',
+            status: 'SUCCEEDED' as RunStatus,
             startedAt: '2025-01-20T14:00:00Z',
             endedAt: '2025-01-20T14:05:30Z'
           },
@@ -125,7 +239,7 @@ class ApiClient {
             projectName: 'Web Application',
             workspaceId: 'ws_staging',
             action: 'plan',
-            status: 'SUCCESS',
+            status: 'SUCCEEDED' as RunStatus,
             startedAt: '2025-01-19T10:30:00Z',
             endedAt: '2025-01-19T10:32:15Z'
           },
@@ -135,7 +249,7 @@ class ApiClient {
             projectName: 'Data Pipeline',
             workspaceId: 'ws_prod',
             action: 'apply',
-            status: 'RUNNING',
+            status: 'PLAN' as RunStatus,
             startedAt: '2025-01-21T08:15:00Z'
           },
           {
@@ -144,7 +258,7 @@ class ApiClient {
             projectName: 'Monitoring Stack',
             workspaceId: 'ws_prod',
             action: 'apply',
-            status: 'FAILED',
+            status: 'FAILED' as RunStatus,
             startedAt: '2025-01-18T16:00:00Z',
             endedAt: '2025-01-18T16:03:45Z'
           }
@@ -187,11 +301,13 @@ class ApiClient {
     // Mock canvas
     if (endpoint.includes('/canvas/') && method === 'GET') {
       return {
-        canvasId: endpoint.split('/').pop(),
-        name: 'Main Architecture',
+        canvas: {
+          canvasId: endpoint.split('/').pop() || 'canvas_1',
+          name: 'Main Architecture',
+          uiLayout: { viewport: { x: 0, y: 0, zoom: 1 }, nodes: {} }
+        },
         nodes: [],
-        edges: [],
-        uiLayout: { viewport: { x: 0, y: 0, zoom: 1 }, nodes: {} }
+        edges: []
       } as T;
     }
 
@@ -199,7 +315,71 @@ class ApiClient {
     return {} as T;
   }
 
-  // User endpoints
+  // ============================================================================
+  // AUTH ENDPOINTS
+  // ============================================================================
+
+  /**
+   * Login with Google ID token
+   */
+  async login(googleIdToken: string): Promise<{ user: User; token: string }> {
+    const response = await this.request<LoginResponse>('/log-in', {
+      method: 'POST',
+      body: JSON.stringify({ token: googleIdToken }),
+    });
+
+    // Store token in localStorage
+    this.setAuthToken(response.token);
+
+    // Map user data and return
+    const user = this.mapUserData(response.userData);
+
+    return {
+      user,
+      token: response.token,
+    };
+  }
+
+  /**
+   * Get current authenticated user
+   * Returns null if not authenticated
+   */
+  async getCurrentUser(): Promise<User | null> {
+    const token = this.getAuthToken();
+
+    if (!token) {
+      return null;
+    }
+
+    try {
+      // TODO: Update this endpoint to match your backend
+      // For now using /me - update to your actual endpoint
+      const response = await this.request<LoginResponse["userData"]>('/me', {
+        method: 'GET',
+      });
+
+      return this.mapUserData(response);
+    } catch (error) {
+      // If request fails, clear token and return null
+      this.clearAuthToken();
+      return null;
+    }
+  }
+
+  /**
+   * Logout - clear auth token
+   */
+  async logout(): Promise<void> {
+    this.clearAuthToken();
+
+    // Optional: call server-side logout if you have one
+    // await this.request('/logout', { method: 'POST' });
+  }
+
+  // ============================================================================
+  // USER ENDPOINTS
+  // ============================================================================
+
   async getUserProfile() {
     return this.request<{
       userId: string;
@@ -210,28 +390,47 @@ class ApiClient {
     }>('/user/profile', { method: 'GET' });
   }
 
-  // Project endpoints
-  async getProjects() {
-    return this.request<{
-      projects: Array<{
-        projectId: string;
-        name: string;
-        description: string;
-        createdAt: string;
-        updatedAt: string;
-        memberCount?: number;
-      }>;
-    }>('/projects', { method: 'GET' });
+  // ============================================================================
+  // PROJECT ENDPOINTS
+  // ============================================================================
+
+  async getProjects(organizationId: string) {
+    const data = await this.request<Array<{
+      id: string;
+      organizationId: string;
+      name: string;
+      description: string;
+      createdBy: string;
+      createdAt: string;
+      updatedAt?: string;
+    }>>(`/projects?organizationId=${organizationId}`, { method: 'GET' });
+
+
+    console.log("Fetched projects:", data);
+    // Map API response to expected format
+    return {
+      projects: data.map(project => ({
+        projectId: project.id,
+        name: project.name,
+        description: project.description,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt || project.createdAt,
+        memberCount: undefined, // Not provided by API yet
+      }))
+    };
   }
 
-  async getProject(projectId: string) {
-    return this.request(`/projects/${projectId}`, { method: 'GET' });
+  async getProject(organizationId: string, projectId: string) {
+    return this.request(`/projects?organizationId=${organizationId}&projectId=${projectId}`, { method: 'GET' });
   }
 
-  async createProject(data: { name: string; description: string }) {
+  async createProject(organizationId: string, data: { name: string; description: string }) {
     return this.request('/projects', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        ...data,
+        organizationId,
+      }),
     });
   }
 
@@ -246,7 +445,10 @@ class ApiClient {
     return this.request(`/projects/${projectId}`, { method: 'DELETE' });
   }
 
-  // Run endpoints
+  // ============================================================================
+  // RUN ENDPOINTS
+  // ============================================================================
+
   async getRecentRuns() {
     return this.request<{
       runs: Array<{
@@ -255,7 +457,7 @@ class ApiClient {
         projectName: string;
         workspaceId: string;
         action: 'plan' | 'apply';
-        status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+        status: RunStatus;
         startedAt: string;
         endedAt?: string;
       }>;
@@ -266,9 +468,14 @@ class ApiClient {
     return this.request(`/projects/${projectId}/runs/${runId}`, { method: 'GET' });
   }
 
-  // Workspace endpoints
+  // ============================================================================
+  // WORKSPACE ENDPOINTS
+  // ============================================================================
+
   async getWorkspaces(projectId: string) {
-    return this.request(`/projects/${projectId}/workspaces`, { method: 'GET' });
+    return this.request<{
+      workspaces: Workspace[];
+    }>(`/projects/${projectId}/workspaces`, { method: 'GET' });
   }
 
   async createWorkspace(projectId: string, data: any) {
@@ -278,9 +485,12 @@ class ApiClient {
     });
   }
 
-  // Canvas endpoints
+  // ============================================================================
+  // CANVAS ENDPOINTS
+  // ============================================================================
+
   async getCanvas(projectId: string, canvasId: string) {
-    return this.request(`/projects/${projectId}/canvas/${canvasId}`, { method: 'GET' });
+    return this.request<CanvasBundle>(`/projects/${projectId}/canvas/${canvasId}`, { method: 'GET' });
   }
 
   async updateCanvas(projectId: string, canvasId: string, data: any) {
@@ -290,7 +500,10 @@ class ApiClient {
     });
   }
 
-  // Tenant endpoints
+  // ============================================================================
+  // TENANT ENDPOINTS
+  // ============================================================================
+
   async createTenant(data: { name: string; tags?: string[] }) {
     return this.request('/tenant', {
       method: 'POST',
@@ -305,7 +518,7 @@ class ApiClient {
 
 // Export singleton instance with mock data enabled
 export const apiClient = new ApiClient({
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'https://api.your-domain.com',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod',
   apiKey: process.env.NEXT_PUBLIC_API_KEY,
-  useMockData: process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true' || !process.env.NEXT_PUBLIC_API_URL, // Auto-enable if no API URL
+  useMockData: process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true' || !process.env.NEXT_PUBLIC_API_URL,
 });

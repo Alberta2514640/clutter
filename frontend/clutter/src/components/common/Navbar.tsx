@@ -8,9 +8,7 @@ type NavbarProps = {
 
 export default function Navbar({ showLogin = true }: NavbarProps) {
   return (
-    <header
-      className="fixed top-0 inset-x-0 z-50 border-b border-slate-800/50 
-                 bg-black/40 backdrop-blur-xl supports-[backdrop-filter]:bg-black/30">
+    <header className="fixed top-0 inset-x-0 z-50 border-b border-slate-800/50 bg-black/40 backdrop-blur-xl supports-[backdrop-filter]:bg-black/30">
       <div className="container mx-auto py-1 flex items-center justify-between">
         {/* Left: logo */}
         <Link href="/" className="flex items-center gap-3">
