@@ -71,8 +71,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
       {collapsed && (
         <button
           onClick={handleToggle}
-          className="absolute -right-3 top-1/2 z-10 p-1.5 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-colors shadow-lg"
-        >
+          className="absolute -right-3 top-1/2 z-10 p-1.5 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-colors shadow-lg">
           <ChevronRight className="w-4 h-4 text-gray-400" />
         </button>
       )}

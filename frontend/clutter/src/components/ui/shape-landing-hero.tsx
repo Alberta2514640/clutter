@@ -1,11 +1,9 @@
 "use client";
 
-import { motion } from "framer-motion";
-// import { useMotionValue, useTransform, animate } from "framer-motion";
-import Link from "next/link";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { Circle } from "lucide-react";
-// import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { cn } from "~/lib/utils";
 
 function ElegantShape({ className, delay = 0, width = 400, height = 100, rotate = 0, gradient = "from-white/[0.08]" }: { className?: string; delay?: number; width?: number; height?: number; rotate?: number; gradient?: string }) {
   return (
@@ -66,7 +64,7 @@ function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Dig
       transition: {
         duration: 1,
         delay: 0.5 + i * 0.2,
-        ease: [0.25, 0.4, 0.25, 1] as [number, number, number, number],
+        ease: [0.25, 0.4, 0.25, 1],
       },
     }),
   };
@@ -104,22 +102,6 @@ function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Dig
 
           <motion.div custom={2} variants={fadeUpVariants} initial="hidden" animate="visible">
             <p className="text-base sm:text-lg md:text-xl text-white/40 mb-8 leading-relaxed font-light tracking-wide max-w-xl mx-auto px-4">Crafting exceptional digital experiences through innovative design and cutting-edge technology.</p>
-          </motion.div>
-          <motion.div custom={3} variants={fadeUpVariants} initial="hidden" animate="visible">
-            <Link
-              href="/login"
-              className={cn(
-                "inline-flex items-center justify-center",
-                "px-6 py-3 rounded-full font-medium",
-                "text-white/90 bg-white/[0.05]",
-                "border border-white/[0.12]",
-                "backdrop-blur-md shadow-[0_4px_32px_rgba(255,255,255,0.05)]",
-                "transition-all duration-300",
-                "hover:bg-white/[0.08] hover:border-white/[0.2] hover:shadow-[0_6px_40px_rgba(255,255,255,0.08)]",
-                "active:scale-[0.97]"
-              )}>
-              Start Here →
-            </Link>
           </motion.div>
         </div>
       </div>
