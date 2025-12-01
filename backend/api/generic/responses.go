@@ -19,7 +19,10 @@ func Response(status int, body Json, cookie ...string) (events.APIGatewayProxyRe
 	}
 
 	headers := map[string]string{
-		"Content-Type": "application/json",
+		"Content-Type":                 "application/json",
+		"Access-Control-Allow-Origin":  "*",
+		"Access-Control-Allow-Headers": "Content-Type,Authorization",
+		"Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}
 
 	if len(cookie) > 0 {

@@ -31,11 +31,11 @@ var (
 )
 
 func init() {
-    var err error
-    ddb, tableName, err = generic.GetDynamodbClient()
-    if err != nil {
-        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-    }
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+	}
 }
 func main() {
 	lambda.Start(handler)

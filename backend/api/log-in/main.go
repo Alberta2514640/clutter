@@ -78,12 +78,6 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	nameFromGoogle := payload.Claims["name"].(string)
 	pictureUrlFromGoogle := payload.Claims["picture"].(string)
 
-	// Generate app JWT
-	token, err := internal.GenerateJWT(emailFromGoogle, nameFromGoogle, pictureUrlFromGoogle)
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to generate JWT token", "message": err.Error()})
-	}
-
 	// Make input object for DynamoDB request
 	getItemInput := &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
@@ -99,9 +93,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to query DynamoDB", "message": err.Error()})
 	}
 
-	// Check if user details have changed on existingUserData if it exists
 	var emptyUserData UserData
 	if existingUserData != emptyUserData {
+		// Update existing data if it has changed since account creation
 		updatedExistingData, err := checkAndUpdateUserDetailsChanged(
 			ctx,
 			getItemInput,
@@ -113,8 +107,17 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to update user details", "message": err.Error()})
 		}
 
+		// Create JWT token for existing user with updated claims
+		claims := existingUserData.ToJWTClaims()
+		claims["exp"] = time.Now().UTC().Add(24 * time.Hour)
+		token, err := internal.GenerateJWT(claims)
+		if err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to generate JWT token for existing user", "message": err.Error()})
+		}
+
+		// Return the updated user account details
 		return generic.Response(http.StatusCreated, generic.Json{
-			"message":  "New user created successsfully",
+			"message":  "Existing user retrieved",
 			"token":    token,
 			"userData": updatedExistingData,
 		})
@@ -157,6 +160,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to insert user", "message": err.Error()})
 	}
 
+	// Create JWT token for new user
+	claims := newUserData.ToJWTClaims()
+	claims["exp"] = time.Now().UTC().Add(24 * time.Hour)
+	token, err := internal.GenerateJWT(claims)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to generate JWT token for new user", "message": err.Error()})
+	}
+
 	return generic.Response(http.StatusCreated, generic.Json{
 		"message":  "New user created successfully",
 		"token":    token,
@@ -192,6 +203,16 @@ func getExistingUser(ctx context.Context, getItemInput *dynamodb.GetItemInput) (
 		return UserData{}, nil
 	}
 
+}
+
+func (u UserData) ToJWTClaims() map[string]any {
+	return map[string]any{
+		"sub":              u.Uuid,
+		"email":            u.Email,
+		"name":             u.Name,
+		"pictureUrl":       u.PictureUrl,
+		"accountCreatedOn": u.AccountCreatedOn,
+	}
 }
 
 func checkAndUpdateUserDetailsChanged(
@@ -246,6 +267,7 @@ func updateUserProfile(
 	updateExpression string,
 	expressionAttributeValues map[string]types.AttributeValue,
 ) error {
+
 	updateExpression = updateExpression[:len(updateExpression)-2]
 	_, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(tableName),
@@ -257,4 +279,5 @@ func updateUserProfile(
 		return err
 	}
 	return nil
+
 }

@@ -23,6 +23,12 @@ variable "model_name" {
   type        = string
   default     = null
 }
+variable "jwt_authorizer_id" {
+  description = "The ID of the JWT authorizer"
+  type        = string
+  default     = null
+}
+
 # ============================
 # Lambda Integration Variables
 # ============================
