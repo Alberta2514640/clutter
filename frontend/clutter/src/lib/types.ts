@@ -45,8 +45,6 @@ export type NodeData = {
   label: string;
   img: string;
 };
-
-
 export interface Run {
   runId: string;
   workspaceId: string;
