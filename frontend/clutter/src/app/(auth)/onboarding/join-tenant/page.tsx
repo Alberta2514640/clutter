@@ -1,9 +1,7 @@
-import React from 'react'
+import React from "react";
 
 const JoinTenantPage = () => {
-  return (
-    <div>JoinTenantPage</div>
-  )
-}
+  return <div>JoinTenantPage</div>;
+};
 
-export default JoinTenantPage
+export default JoinTenantPage;
