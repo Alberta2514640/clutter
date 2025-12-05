@@ -1,0 +1,13 @@
+{
+    "type": "object",
+    "properties": {
+        "organizationName": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 32,
+            "pattern": "^(?! )[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$",
+            "description": "Organization name must be 4-32 characters, can only have letters, and cannot start, end with, or have repeating spaces."
+        }
+    },
+    "required": ["organizationName"]
+}
