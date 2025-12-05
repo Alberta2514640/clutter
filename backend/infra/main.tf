@@ -320,6 +320,13 @@ module "log-in-model" {
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
 }
+module "organization-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationCreate"
+  description     = "Model to validate organization creation requests"
+  schema_filename = "organization-create.json"
+}
 
 # Integrations
 # POST Log-in
@@ -349,9 +356,9 @@ module "organization-create-api-integration" {
   path_part            = module.organization-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-create-model.model_name
 }
 # GET organization
 module "organization-get-api-integration" {
