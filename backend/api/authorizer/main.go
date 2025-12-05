@@ -65,7 +65,7 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 		"created_at":  claimValues["created_at"],
 	}
 
-	// Return Allow policy on user UUID (sub)
+	// Return Allow policy on user ID (sub)
 	policyResponse := internal.CreatePolicy(claimValues["sub"], "Allow", event.MethodArn, context)
 	return policyResponse, nil
 
