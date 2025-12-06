@@ -17,6 +17,7 @@ func main() {
 
 type requestBody struct {
 	OrganizationName string `json:"organizationName"`
+	Description      string `json:"description"`
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -38,6 +39,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
 	}
 	organizationName := body.OrganizationName
+	description := body.Description
 
-	return generic.Response(200, generic.Json{"message": "organization-create Lambda is working!", "organizationName": organizationName, "userData": userData})
+	return generic.Response(
+		http.StatusOK,
+		generic.Json{"message": "organization-create Lambda is working!", "organizationName": organizationName, "description": description, "userData": userData},
+	)
 }
