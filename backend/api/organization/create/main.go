@@ -104,13 +104,14 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	ctx := context.Background()
 	pk := fmt.Sprintf("USER#%s", userData.Email)
 	sk := fmt.Sprintf("ORG#%s", organizationId)
+	itemType := "ORGANIZATION"
 	err = generic.PutItemInDynamoDB(
 		ctx,
 		ddb,
 		tableName,
 		pk,
 		sk,
-		"ORGANIZATION",
+		itemType,
 		organizationAttributeValueMap,
 	)
 	if err != nil {
