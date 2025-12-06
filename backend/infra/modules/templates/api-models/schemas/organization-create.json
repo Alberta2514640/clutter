@@ -11,8 +11,8 @@
         "description": {
             "type": "string",
             "maxLength": 300,
-            "pattern": "^(?!.*  ).+$",
-            "description": "Optional. Up to 300 characters. Allows all characters. Cannot start or end with whitespace. Cannot have repeating spaces."
+            "pattern": "^(?! )(?!.*  )(?!.*\\s$).+$",
+            "description": "Optional. Up to 300 characters. Allows all characters. Cannot start with whitespace. Cannot have repeating spaces."
         }
     },
     "required": ["organizationName"]
