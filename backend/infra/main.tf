@@ -78,6 +78,9 @@ module "organization-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/create"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
 
 }
 module "organization-delete-lambda" {

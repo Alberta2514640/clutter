@@ -11,7 +11,7 @@
         "description": {
             "type": "string",
             "maxLength": 300,
-            "pattern": "^(?!.*  )\\S[\\s\\S]*\\S$",
+            "pattern": "^(?!.*  ).+$",
             "description": "Optional. Up to 300 characters. Allows all characters. Cannot start or end with whitespace. Cannot have repeating spaces."
         }
     },

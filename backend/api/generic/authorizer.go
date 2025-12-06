@@ -2,6 +2,7 @@ package generic
 
 import (
 	"encoding/json"
+	"errors"
 )
 
 type AuthorizerContextUserData struct {
@@ -16,6 +17,11 @@ func GetUserDataFromAuthorizerContext(context map[string]any) (AuthorizerContext
 
 	// Initialize empty AuthorizerContextUserData struct
 	userData := AuthorizerContextUserData{}
+
+	// Check if the context is empty (nil)
+	if context == nil {
+		return userData, errors.New("authorizer context is missing")
+	}
 
 	// Unmarshal the Auhtorizer Context from map to JSON bytes
 	authorizerContextJsonBytes, err := json.Marshal(context)
