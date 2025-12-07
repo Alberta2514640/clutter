@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -20,7 +22,6 @@ import (
 type Request struct {
 	ProjectID string `json:"projectId"`
 	Name      string `json:"name"`
-	UserID    string `json:"userId"`
 }
 
 // DiagramData defines the inner Data object
@@ -57,13 +58,31 @@ func main() {
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// 1. Parse Request Body
-	var req Request
-	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Invalid request body: unable to parse JSON"})
+	// 1. Extract userId from request
+	userID, err := getUserIDFromRequest(request)
+	if err != nil {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "UNAUTHORIZED",
+				"message": err.Error(),
+			},
+		})
 	}
 
-	// 2. Validate Required Fields
+	// 2. Parse Request Body
+	var req Request
+	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INVALID_JSON",
+				"message": "Invalid request body",
+			},
+		})
+	}
+
+	// 3. Validate Required Fields
 	var missingFields []string
 	if req.ProjectID == "" {
 		missingFields = append(missingFields, "projectId")
@@ -71,17 +90,58 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if req.Name == "" {
 		missingFields = append(missingFields, "name")
 	}
-	if req.UserID == "" {
-		missingFields = append(missingFields, "userId")
-	}
 	if len(missingFields) > 0 {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"error":         "Missing required fields",
-			"missingFields": missingFields,
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": fmt.Sprintf("Missing required fields: %v", missingFields),
+			},
 		})
 	}
 
-	// 3. Create Diagram Entity
+	// 4. Authorization: Get project's organization and check membership
+	orgID, err := generic.GetProjectOrganization(ctx, ddb, tableName, req.ProjectID)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    authErr.Code,
+					"message": authErr.Message,
+				},
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to fetch project",
+			},
+		})
+	}
+
+	// 5. Check organization membership
+	if err := generic.CheckOrganizationMembership(ctx, ddb, tableName, userID, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    authErr.Code,
+					"message": authErr.Message,
+				},
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to check authorization",
+			},
+		})
+	}
+
+	// 6. Create Diagram Entity
 	diagramID := uuid.NewString()
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
@@ -92,31 +152,70 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		Data: DiagramData{
 			ID:        diagramID,
 			Name:      req.Name,
-			CreatedBy: req.UserID,
+			CreatedBy: userID,
 			CreatedAt: timestamp,
 		},
 	}
 
-	// 3. Marshal to DynamoDB AttributeValues
+	// 7. Marshal to DynamoDB AttributeValues
 	item, err := attributevalue.MarshalMap(entity)
 	if err != nil {
-		fmt.Printf("Error marshalling item: %v\n", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Internal server error"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Internal server error",
+			},
+		})
 	}
 
-	// 4. Put Item
+	// 8. Put Item
 	_, err = ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(tableName),
 		Item:      item,
 	})
 	if err != nil {
-		fmt.Printf("Error putting item to DynamoDB: %v\n", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Failed to save diagram"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to save diagram",
+			},
+		})
 	}
 
-	// 6. Return Success
+	// 9. Return Success
 	return generic.Response(http.StatusCreated, generic.Json{
-		"message": "Diagram created successfully",
-		"diagram": entity.Data,
+		"success": true,
+		"data":    entity.Data,
 	})
+}
+
+// getUserIDFromRequest pulls user identity from authorizer or headers
+func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
+	if req.RequestContext.Authorizer != nil {
+		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["email"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+	}
+
+	for k, v := range req.Headers {
+		if strings.ToLower(k) == "x-user-id" && v != "" {
+			return v, nil
+		}
+	}
+
+	return "", errors.New("missing user identity in request context")
 }
