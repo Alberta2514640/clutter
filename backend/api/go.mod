@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.26
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.2
 	github.com/google/uuid v1.6.0
+	github.com/leanovate/gopter v0.2.11
 	github.com/lestrrat-go/jwx/v3 v3.0.12
 	google.golang.org/api v0.256.0
 )

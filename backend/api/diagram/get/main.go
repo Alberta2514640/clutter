@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -32,11 +34,70 @@ func main() {
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// 1. Extract userId from request
+	userID, err := getUserIDFromRequest(request)
+	if err != nil {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "UNAUTHORIZED",
+				"message": err.Error(),
+			},
+		})
+	}
+
 	projectID := request.QueryStringParameters["projectId"]
 	diagramID := request.QueryStringParameters["diagramId"]
 
 	if projectID == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Missing required query parameter: projectId"})
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "Missing required query parameter: projectId",
+			},
+		})
+	}
+
+	// 2. Authorization: Get project's organization and check membership
+	orgID, err := generic.GetProjectOrganization(ctx, ddb, tableName, projectID)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    authErr.Code,
+					"message": authErr.Message,
+				},
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to fetch project",
+			},
+		})
+	}
+
+	// 3. Check organization membership
+	if err := generic.CheckOrganizationMembership(ctx, ddb, tableName, userID, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    authErr.Code,
+					"message": authErr.Message,
+				},
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to check authorization",
+			},
+		})
 	}
 
 	// Case 1: Get Single Diagram
@@ -49,25 +110,43 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			},
 		})
 		if err != nil {
-			fmt.Printf("Error getting item: %v\n", err)
-			return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Failed to fetch diagram"})
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "Failed to fetch diagram",
+				},
+			})
 		}
 
 		if out.Item == nil {
-			return generic.Response(http.StatusNotFound, generic.Json{"error": "Diagram not found"})
+			return generic.Response(http.StatusNotFound, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "NOT_FOUND",
+					"message": "Diagram not found",
+				},
+			})
 		}
 
 		var entity map[string]interface{}
 		if err := attributevalue.UnmarshalMap(out.Item, &entity); err != nil {
-			fmt.Printf("Error unmarshalling item: %v\n", err)
-			return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Internal server error"})
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "Internal server error",
+				},
+			})
 		}
 
-		return generic.Response(http.StatusOK, generic.Json{"diagram": entity["Data"]})
+		return generic.Response(http.StatusOK, generic.Json{
+			"success": true,
+			"data":    entity["Data"],
+		})
 	}
 
 	// Case 2: List Diagrams for Project
-	// Query PK = PROJECT#<projectId> and SK begins_with DIAGRAM#
 	out, err := ddb.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(tableName),
 		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk)"),
@@ -77,8 +156,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		},
 	})
 	if err != nil {
-		fmt.Printf("Error querying items: %v\n", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Failed to list diagrams"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to list diagrams",
+			},
+		})
 	}
 
 	var diagrams []interface{}
@@ -91,5 +175,37 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		}
 	}
 
-	return generic.Response(http.StatusOK, generic.Json{"diagrams": diagrams})
+	return generic.Response(http.StatusOK, generic.Json{
+		"success": true,
+		"data":    diagrams,
+	})
+}
+
+// getUserIDFromRequest pulls user identity from authorizer or headers
+func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
+	if req.RequestContext.Authorizer != nil {
+		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["email"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+	}
+
+	for k, v := range req.Headers {
+		if strings.ToLower(k) == "x-user-id" && v != "" {
+			return v, nil
+		}
+	}
+
+	return "", errors.New("missing user identity in request context")
 }
