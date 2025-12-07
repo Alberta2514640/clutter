@@ -1,4 +1,3 @@
-// Package main implements the diagram UPDATE Lambda function for updating diagrams in PostgreSQL
 package main
 
 import (
@@ -13,14 +12,30 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/jackc/pgx/v5"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type UpdateRequest struct {
 	ProjectID string                 `json:"projectId"`
 	DiagramID string                 `json:"diagramId"`
 	Name      *string                `json:"name,omitempty"`
-	UILayout  *generic.DiagramLayout `json:"uiLayout,omitempty"`
+	UILayout  map[string]interface{} `json:"uiLayout,omitempty"`
+}
+
+var (
+	ddb       *dynamodb.Client
+	tableName string
+)
+
+func init() {
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic("failed to initialize DynamoDB client: " + err.Error())
+	}
 }
 
 func main() {
@@ -29,7 +44,7 @@ func main() {
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// 1. Extract userId from request
-	userID, err := generic.GetUserIDFromRequest(request)
+	userID, err := getUserIDFromRequest(request)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"success": false,
@@ -62,45 +77,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate at least one field is being updated
-	if req.Name == nil && req.UILayout == nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "At least one field (name or uiLayout) must be provided for update",
-			},
-		})
-	}
-
-	// Validate name length if provided
-	if req.Name != nil && len(*req.Name) > 32 {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "Diagram name must not exceed 32 characters",
-			},
-		})
-	}
-
-	// Note: Empty uiLayout {} is valid - allows clearing diagram data
-
-	// 3. Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to connect to database",
-			},
-		})
-	}
-	defer conn.Close(ctx)
-
-	// 4. Authorization: Get project's organization and check membership
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, req.ProjectID)
+	// 3. Authorization: Get project's organization and check membership
+	orgID, err := generic.GetProjectOrganization(ctx, ddb, tableName, req.ProjectID)
 	if err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
@@ -120,8 +98,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 5. Check organization membership
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
+	// 4. Check organization membership
+	if err := generic.CheckOrganizationMembership(ctx, ddb, tableName, userID, orgID); err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
 				"success": false,
@@ -140,28 +118,61 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 6. Start transaction for atomic fetch + history + update
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+	// 5. Build Update Expression
+	// NOTE: "Data" is a DynamoDB reserved keyword, so we must use expression attribute names (#Data)
+	// to reference nested attributes within the Data map. The correct syntax is #Data.#fieldName.
+	pk := fmt.Sprintf("PROJECT#%s", req.ProjectID)
+	sk := fmt.Sprintf("DIAGRAM#%s", req.DiagramID)
 
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to start transaction",
-			},
-		})
+	updateExpr := "SET #Data.#updatedAt = :updatedAt"
+	exprAttrNames := map[string]string{
+		"#Data":      "Data",
+		"#updatedAt": "updatedAt",
 	}
-	defer tx.Rollback(ctx) // Rollback if not committed
+	exprAttrValues := map[string]types.AttributeValue{
+		":updatedAt": &types.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+	}
 
-	// 7. Fetch current diagram state with lock (FOR UPDATE prevents race conditions)
-	var oldName string
-	var oldData []byte
-	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2 FOR UPDATE`
-	err = tx.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
+	if req.Name != nil {
+		updateExpr += ", #Data.#name = :name"
+		exprAttrNames["#name"] = "name"
+		exprAttrValues[":name"] = &types.AttributeValueMemberS{Value: *req.Name}
+	}
+
+	if req.UILayout != nil {
+		updateExpr += ", #Data.#uiLayout = :uiLayout"
+		exprAttrNames["#uiLayout"] = "uiLayout"
+
+		av, err := attributevalue.Marshal(req.UILayout)
+		if err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "Internal server error",
+				},
+			})
+		}
+		exprAttrValues[":uiLayout"] = av
+	}
+
+	// 6. Update item
+	_, err = ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(tableName),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pk},
+			"SK": &types.AttributeValueMemberS{Value: sk},
+		},
+		UpdateExpression:          aws.String(updateExpr),
+		ExpressionAttributeNames:  exprAttrNames,
+		ExpressionAttributeValues: exprAttrValues,
+		ConditionExpression:       aws.String("attribute_exists(PK)"),
+		ReturnValues:              types.ReturnValueAllNew,
+	})
+
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		var condErr *types.ConditionalCheckFailedException
+		if ok := errors.As(err, &condErr); ok {
 			return generic.Response(http.StatusNotFound, generic.Json{
 				"success": false,
 				"error": generic.Json{
@@ -174,100 +185,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"success": false,
 			"error": generic.Json{
 				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch diagram for update",
-			},
-		})
-	}
-
-	// 8. Get next version number (safe now due to FOR UPDATE lock above)
-	var nextVersion int
-	versionQuery := `SELECT COALESCE(MAX(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1`
-	err = tx.QueryRow(ctx, versionQuery, req.DiagramID).Scan(&nextVersion)
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to get version number",
-			},
-		})
-	}
-
-	// Insert into history
-	historyQuery := `
-		INSERT INTO diagram_history (diagram_id, version, updated_by, updated_at, name, data, comment)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
-	_, err = tx.Exec(ctx, historyQuery, req.DiagramID, nextVersion, userID, timestamp, oldName, oldData, "Auto-saved before update")
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to save diagram history",
-			},
-		})
-	}
-
-	// 8. Build Update Query
-	// Always update latest_update_at and latest_update_by
-	setClauses := []string{"latest_update_at = $3", "latest_update_by = $4"}
-	args := []interface{}{req.DiagramID, req.ProjectID, timestamp, userID}
-	argCount := 4
-
-	if req.Name != nil {
-		argCount++
-		setClauses = append(setClauses, "name = $"+fmt.Sprintf("%d", argCount))
-		args = append(args, *req.Name)
-	}
-
-	if req.UILayout != nil {
-		argCount++
-		uiLayoutJSON, err := json.Marshal(req.UILayout)
-		if err != nil {
-			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Internal server error",
-				},
-			})
-		}
-		setClauses = append(setClauses, "data = $"+fmt.Sprintf("%d", argCount))
-		args = append(args, string(uiLayoutJSON))
-	}
-
-	query := "UPDATE diagrams SET " + strings.Join(setClauses, ", ") +
-		" WHERE id = $1 AND project_id = $2"
-
-	// 9. Execute Update within transaction
-	_, err = tx.Exec(ctx, query, args...)
-	if err != nil {
-		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
-			return generic.Response(http.StatusConflict, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "CONFLICT",
-					"message": "A diagram with this name already exists in the project",
-				},
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
 				"message": "Failed to update diagram",
-			},
-		})
-	}
-
-	// 10. Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to commit update",
 			},
 		})
 	}
@@ -276,4 +194,33 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"success": true,
 		"message": "Diagram updated successfully",
 	})
+}
+
+// getUserIDFromRequest pulls user identity from authorizer or headers
+func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
+	if req.RequestContext.Authorizer != nil {
+		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["email"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+	}
+
+	for k, v := range req.Headers {
+		if strings.ToLower(k) == "x-user-id" && v != "" {
+			return v, nil
+		}
+	}
+
+	return "", errors.New("missing user identity in request context")
 }

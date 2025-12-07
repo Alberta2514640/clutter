@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.2
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.7.6
+	github.com/leanovate/gopter v0.2.11
 	github.com/lestrrat-go/jwx/v3 v3.0.12
 	github.com/pashagolub/pgxmock/v4 v4.9.0
 	google.golang.org/api v0.256.0
