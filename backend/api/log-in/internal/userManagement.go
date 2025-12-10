@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -28,6 +29,9 @@ func CreateNewUser(conn *pgx.Conn, ctx context.Context, email string, fullName s
 		RETURNING created_at
 	`
 
+	// Initialize createdAt as a time.Time
+	var createdAt time.Time
+
 	insertedUserRow := conn.QueryRow(
 		ctx,
 		queryInsertNewUser,
@@ -36,10 +40,13 @@ func CreateNewUser(conn *pgx.Conn, ctx context.Context, email string, fullName s
 		newUserData.FullName,
 		newUserData.PictureUrl,
 	)
-	err := insertedUserRow.Scan(&newUserData.CreatedAt)
+	err := insertedUserRow.Scan(&createdAt)
 	if err != nil {
 		return UserData{}, err
 	}
+
+	// Convert time.Time to string to be used in UserData{} struct
+	newUserData.CreatedAt = createdAt.Format(time.RFC3339)
 
 	return newUserData, nil
 

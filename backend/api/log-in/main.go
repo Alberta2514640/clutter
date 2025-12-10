@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/log-in/internal"
@@ -54,23 +55,29 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	defer conn.Close(ctx)
 
-	// Check if user exists
+	// Initialize vars that the table will scan onto
 	var existingUser internal.UserData
+	var createdAt time.Time
+
 	// Create query to get user using their e-mail
 	queryExistingUser := `
 		SELECT id, email, full_name, picture_url, created_at
 		FROM users
 		WHERE email=$1
 	`
-	// Query row and store returned values (if any) into UserData{} struct
+
+	// Query row and store returned values (if any) into UserData{} struct and createdAt time.Time value
 	existingUserRow := conn.QueryRow(ctx, queryExistingUser, emailFromGoogle)
 	err = existingUserRow.Scan(
 		&existingUser.Uuid,
 		&existingUser.Email,
 		&existingUser.FullName,
 		&existingUser.PictureUrl,
-		&existingUser.CreatedAt,
+		&createdAt,
 	)
+
+	// Convert time.Time to string to be used in UserData{} struct
+	existingUser.CreatedAt = createdAt.Format(time.RFC3339)
 
 	// Ensure error for if no rows are returned does not lead to API failure response
 	if err != nil && err != pgx.ErrNoRows {
@@ -83,7 +90,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		// Create the new user given the information from Google
 		newUserData, err := internal.CreateNewUser(conn, ctx, emailFromGoogle, fullNameFromGoogle, pictureUrlFromGoogle)
 		if err != nil {
-			generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to create new user", "message": err.Error()})
+			return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to create new user", "message": err.Error()})
 		}
 
 		// Generate JWT token for new user
