@@ -46,7 +46,7 @@ module "log-in-lambda" {
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "log-in"
   environment_variables = {
-    DDB_TABLE_NAME          = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
     JWT_SECRET              = var.jwt_secret
   }
 
