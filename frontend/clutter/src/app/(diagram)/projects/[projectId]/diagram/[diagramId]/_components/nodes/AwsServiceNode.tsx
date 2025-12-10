@@ -7,7 +7,7 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
   return (
     <div
       className={[
-        "rounded-xl border px-4 py-3 shadow-lg backdrop-blur-sm transition-all",
+        "rounded-xl border px-4 py-3 shadow-lg transition-all",
         "bg-[rgba(30,35,45,0.85)]",
         selected
           ? "border-[rgba(100,180,255,0.8)] shadow-[0_0_20px_rgba(100,180,255,0.3)]"

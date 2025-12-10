@@ -7,6 +7,7 @@ import {
 import React, { useCallback, useMemo } from "react";
 
 import Palette from "./Palette";
+import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 import type { NodeData, PaletteItem } from "./types";
 
@@ -76,23 +77,8 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,rgb(10,15,25),rgb(15,20,30))] p-5">
-      {/* top bar */}
-      <div className="mb-4 flex items-center justify-between">
-        <button
-          onClick={() => window.history.back()}
-          className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/10"
-        >
-          ← Back
-        </button>
-
-        <button
-          onClick={onSave}
-          className="rounded-lg border border-blue-400/20 bg-blue-500/20 px-5 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-blue-500/30"
-        >
-          Save
-        </button>
-      </div>
-
+       <TopNav onSave={onSave} />
+       
       {/* main card */}
       <div className="rounded-xl border border-white/10 bg-[rgba(20,25,35,0.4)] p-4 shadow-xl backdrop-blur-sm">
         <div className="flex gap-4">
