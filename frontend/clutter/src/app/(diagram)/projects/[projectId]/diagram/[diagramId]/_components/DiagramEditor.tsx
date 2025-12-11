@@ -1,39 +1,29 @@
 "use client";
-
-import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes, } from "@xyflow/react";
-import { Background, BackgroundVariant, Controls, ReactFlow, useReactFlow, } from "@xyflow/react";
-import React, { useCallback, useEffect, useMemo } from "react";
-
-import { useDiagramStore } from "@/lib/stores/diagramStore";
+import { useDiagramActions, useDiagramState } from "@/lib/stores/diagramStore";
 import type { DiagramEdge, DiagramNode, PaletteItem } from "@/lib/types";
-
-
+import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, useReactFlow } from "@xyflow/react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 
 const DND_MIME = "application/x-palette-item";
 
-export default function DiagramEditor({ projectId, diagramId, }: { projectId: string; diagramId: string;}) 
-{
+export default function DiagramEditor({
+  projectId,
+  diagramId,
+}: {
+  projectId: string;
+  diagramId: string;
+}) {
   const { screenToFlowPosition } = useReactFlow();
 
   // ----- Zustand state -----
-  const nodes = useDiagramStore((s) => s.nodes);
-  const edges = useDiagramStore((s) => s.edges);
+  const { nodes, edges, dirty, isSaving, isLoading } = useDiagramState();
+  const { addNode, applyNodeChanges, applyEdgeChanges, addEdgeFromConnection, saveDiagram, setContext, loadDiagram } = useDiagramActions();
 
-  const setContext = useDiagramStore((s) => s.setContext);
-  const applyNodeChanges = useDiagramStore((s) => s.applyNodeChanges);
-  const applyEdgeChanges = useDiagramStore((s) => s.applyEdgeChanges);
-  const addEdgeFromConnection = useDiagramStore((s) => s.addEdgeFromConnection);
-  const addNode = useDiagramStore((s) => s.addNode);
-
-  const loadDiagram = useDiagramStore((s) => s.loadDiagram);
-  const saveDiagram = useDiagramStore((s) => s.saveDiagram);
-  const isLoading = useDiagramStore((s) => s.isLoading);
-  const isSaving = useDiagramStore((s) => s.isSaving);
-  const dirty = useDiagramStore((s) => s.dirty);
-  const error = useDiagramStore((s) => s.error);
+  console.log(nodes, edges, dirty);
 
   useEffect(() => {
     setContext(projectId, diagramId);
@@ -78,20 +68,16 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-
       const raw = e.dataTransfer.getData(DND_MIME);
       if (!raw) return;
-
       const item: PaletteItem = JSON.parse(raw);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-
       const newNode: DiagramNode = {
         id: crypto.randomUUID(),
         type: "awsService",
         position,
         data: { label: item.label, img: item.img },
       };
-
       addNode(newNode);
     },
     [screenToFlowPosition, addNode]
@@ -101,17 +87,18 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
     saveDiagram();
   }, [saveDiagram]);
 
-
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,rgb(10,15,25),rgb(15,20,30))] p-5">
+    <div className="min-h-screen px-12 py-8">
       <TopNav onSave={onSave} />
-
-      <div className="rounded-xl border border-white/10 bg-[rgba(20,25,35,0.4)] p-4 shadow-xl backdrop-blur-sm">
-        <div className="flex gap-4">
+      
+      {/* Main container - matching project page style */}
+      <div>
+        <div className="flex gap-4 p-4">
           <Palette />
-
-          <div className="flex-1 overflow-hidden rounded-xl border border-white/10 bg-[rgba(15,20,30,0.6)]">
-            <div className="h-[72vh]">
+          
+          {/* Canvas area - bigger, clean design */}
+          <div className="flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+            <div className="h-[80vh]">
               <ReactFlow
                 colorMode="dark"
                 nodes={nodes}
@@ -125,7 +112,12 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
                 snapToGrid
                 snapGrid={[20, 20]}
               >
-                <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+                <Background 
+                  variant={BackgroundVariant.Dots} 
+                  gap={20} 
+                  size={1.5}
+                  
+                />
                 <Controls />
               </ReactFlow>
             </div>

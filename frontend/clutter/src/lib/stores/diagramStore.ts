@@ -1,8 +1,8 @@
 // src/lib/stores/diagramStore.ts
-import { addEdge, applyEdgeChanges, applyNodeChanges, type Connection, } from "@xyflow/react";
+import { addEdge, applyEdgeChanges, applyNodeChanges } from "@xyflow/react";
 import { create } from "zustand";
 
-import type { DiagramEdge, DiagramNode, DiagramState } from "@/lib/types";
+import type { DiagramEdge, DiagramNode, DiagramStore } from "@/lib/types";
 
 const MOCK_NODES: DiagramNode[] = [
   {
@@ -30,139 +30,160 @@ const MOCK_EDGES: DiagramEdge[] = [
     id: "xy-edge__912e7d9c-62ca-4416-af4c-da5826671e7d-3f9f1679-d083-4bdc-83de-aa72e5c9b148",
     source: "912e7d9c-62ca-4416-af4c-da5826671e7d",
     target: "3f9f1679-d083-4bdc-83de-aa72e5c9b148",
-    type: "default",
-    style: {
-      stroke: "rgba(100,180,255,0.6)",
-      strokeWidth: 2,
-    },
   },
 ];
 
-export const useDiagramStore = create<DiagramState>((set, get) => ({
-  projectId: null,
-  diagramId: null,
-
-  nodes: [],
-  edges: [],
-
-  isLoading: false,
-  isSaving: false,
-  dirty: false,
-  error: null,
-
-  setContext: (projectId, diagramId) => set({ projectId, diagramId }),
-
-  setNodes: (nodes: DiagramNode[]) =>
-    set({
-      nodes,
-      dirty: true,
-    }),
-
-  setEdges: (edges: DiagramEdge[]) =>
-    set({
-      edges,
-      dirty: true,
-    }),
-
-  applyNodeChanges: (changes) =>
-    set((state) => ({
-      nodes: applyNodeChanges<DiagramNode>(changes, state.nodes),
-      dirty: true,
-    })),
-
-  applyEdgeChanges: (changes) =>
-    set((state) => ({
-      edges: applyEdgeChanges(changes, state.edges),
-      dirty: true,
-    })),
-
-  addEdgeFromConnection: (params: Connection) =>
-    set((state) => ({
-      edges: addEdge(
-        {
-          ...params,
-          type: "default",
-          style: { stroke: "rgba(100,180,255,0.6)", strokeWidth: 2 },
-        },
-        state.edges
-      ),
-      dirty: true,
-    })),
-
-  addNode: (node: DiagramNode) =>
-    set((state) => ({
-      nodes: [...state.nodes, node],
-      dirty: true,
-    })),
-
-  reset: () =>
-    set({
-      projectId: null,
-      diagramId: null,
-      nodes: [],
-      edges: [],
-      isLoading: false,
-      isSaving: false,
-      dirty: false,
-      error: null,
-    }),
-
-  // --------- PLACEHOLDER: load from API later ---------
-  loadDiagram: async (projectId: string, diagramId: string) => {
-    set({
-      projectId,
-      diagramId,
-      isLoading: true,
-      error: null,
-    });
-
-    // fake a tiny delay so you can see loading behavior if you want
-    await new Promise((r) => setTimeout(r, 150));
-
-    console.log("[diagramStore] loadDiagram (mock)", {
-      projectId,
-      diagramId,
-      nodes: MOCK_NODES,
-      edges: MOCK_EDGES,
-    });
-
-    // For now: always load the same mock diagram
-    set({
-      nodes: MOCK_NODES,
-      edges: MOCK_EDGES,
-      isLoading: false,
-      dirty: false,
-    });
+export const useDiagramStore = create<DiagramStore>((set, get) => ({
+  state: {
+    projectId: null,
+    diagramId: null,
+    nodes: [],
+    edges: [],
+    isLoading: false,
+    isSaving: false,
+    dirty: false,
+    error: null,
   },
 
+  actions: {
+    setContext: (projectId, diagramId) =>
+      set((s) => ({
+        state: { ...s.state, projectId, diagramId },
+      })
+    ),
 
-  // --------- PLACEHOLDER: save to API later ---------
-  saveDiagram: async () => {
-    const { projectId, diagramId, nodes, edges } = get();
-    if (!projectId || !diagramId) {
-      console.warn("[diagramStore] saveDiagram called without context");
-      return;
-    }
+    setNodes: (nodes) =>
+      set((s) => {
+        console.log("[diagramStore] setNodes -> mark dirty");
+        return {
+          state: { ...s.state, nodes, dirty: true },
+        };
+      }
+    ),
 
-    set({ isSaving: true, error: null });
+    setEdges: (edges) =>
+      set((s) => ({
+        state: { ...s.state, edges, dirty: true },
+      }
+    )),
 
-    try {
-      // TODO: replace with real fetch to your API
-      console.log("[diagramStore] saveDiagram (placeholder)", {
-        projectId,
-        diagramId,
-        nodesCount: nodes.length,
-        edgesCount: edges.length,
-      });
+    applyNodeChanges: (changes) =>
+      set((s) => {
+        // only want dirty in changes that the user makes that is add, remove and position.
+        const shouldMarkDirty = changes.some((change) => change.type === 'position' || change.type === 'add' || change.type === 'remove' );      
+        return {
+          state: {
+            ...s.state,
+            nodes: applyNodeChanges(changes, s.state.nodes),
+            dirty: shouldMarkDirty ? true : s.state.dirty,
+          },
+        };
+      }
+    ),
 
-      set({
-        isSaving: false,
-        dirty: false,
-      });
-    } catch (err: unknown) {
-      set({
-        isSaving: false,
-      });
-    }
+    applyEdgeChanges: (changes) =>
+      set((s) => {
+        const shouldMarkDirty = changes.some((change) => change.type === 'add' || change.type === 'remove');
+        
+        return {
+          state: {
+            ...s.state,
+            edges: applyEdgeChanges(changes, s.state.edges),
+            dirty: shouldMarkDirty ? true : s.state.dirty,
+          },
+        };
+      }
+    ),
+
+
+    addEdgeFromConnection: (conn) =>
+      set((s) => ({
+        state: {
+          ...s.state,
+          edges: addEdge({ ...conn }, s.state.edges),
+          dirty: true,
+        },
+      })
+    ),
+
+    addNode: (node) =>
+      set((s) => ({
+        state: {
+          ...s.state,
+          nodes: [...s.state.nodes, node],
+          dirty: true,
+        },
+      })
+    ),
+
+    reset: () =>
+      set(() => ({
+        state: {
+          projectId: null,
+          diagramId: null,
+          nodes: [],
+          edges: [],
+          isLoading: false,
+          isSaving: false,
+          dirty: false,
+          error: null,
+        },
+      })
+    ),
+
+    loadDiagram: async (projectId, diagramId) => {
+      set((s) => ({
+        state: {
+          ...s.state,
+          projectId,
+          diagramId,
+          isLoading: true,
+          error: null,
+        },
+      }));
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      set((s) => ({
+        state: {
+          ...s.state,
+          nodes: MOCK_NODES,
+          edges: MOCK_EDGES,
+          isLoading: false,
+          dirty: false,
+        },
+      }));
+    },
+
+    saveDiagram: async () => {
+      const { state } = get();
+      const { projectId, diagramId, nodes, edges } = state;
+      if (!projectId || !diagramId) return;
+
+      set((s) => ({
+        state: { ...s.state, isSaving: true, error: null },
+      }));
+
+      try {
+        console.log("[diagramStore] saveDiagram", {
+          projectId,
+          diagramId,
+          nodesCount: nodes.length,
+          edgesCount: edges.length,
+        });
+
+        set((s) => ({
+          state: { ...s.state, isSaving: false, dirty: false },
+        }));
+      } catch (e) {
+        set((s) => ({
+          state: { ...s.state, isSaving: false },
+        }));
+      }
+    },
   },
 }));
+
+export const useDiagramState = () => useDiagramStore((s) => s.state);
+
+export const useDiagramActions = () => useDiagramStore((s) => s.actions);

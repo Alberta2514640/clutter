@@ -6,36 +6,34 @@ import type { Connection, Edge, EdgeChange, Node, NodeChange, } from "@xyflow/re
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;
 
-export type DiagramState = {
+export interface DiagramDataState {
   projectId: string | null;
   diagramId: string | null;
-
   nodes: DiagramNode[];
   edges: DiagramEdge[];
-
-  // NEW flags
   isLoading: boolean;
   isSaving: boolean;
   dirty: boolean;
   error: string | null;
+}
 
+export interface DiagramActions {
   setContext: (projectId: string, diagramId: string) => void;
-
   setNodes: (nodes: DiagramNode[]) => void;
   setEdges: (edges: DiagramEdge[]) => void;
-
   applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
-  applyEdgeChanges: (changes: EdgeChange[]) => void;
-
-  addEdgeFromConnection: (params: Connection) => void;
+  applyEdgeChanges: (changes: EdgeChange<DiagramEdge>[]) => void;
+  addEdgeFromConnection: (conn: Connection) => void;
   addNode: (node: DiagramNode) => void;
-
   reset: () => void;
-
-  // NEW fake persistence actions
   loadDiagram: (projectId: string, diagramId: string) => Promise<void>;
   saveDiagram: () => Promise<void>;
-};
+}
+
+export interface DiagramStore {
+  state: DiagramDataState;
+  actions: DiagramActions;
+}
 
 export type PaletteItem = {
   label: string;
