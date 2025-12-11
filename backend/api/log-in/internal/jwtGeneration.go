@@ -2,13 +2,30 @@ package internal
 
 import (
 	"os"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
+// Generate user specific JWT
+func GenerateUserJWT(user *UserData) (string, int64, error) {
+
+	exp := time.Now().Add(24 * time.Hour).Unix()
+
+	claims := user.toJWTClaims()
+	claims["exp"] = exp
+
+	token, err := generateJWT(claims)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return token, exp, nil
+}
+
 // Generate JWT token
-func GenerateJWT(claims map[string]any) (string, error) {
+func generateJWT(claims map[string]any) (string, error) {
 
 	token := jwt.New()
 
@@ -29,4 +46,14 @@ func GenerateJWT(claims map[string]any) (string, error) {
 
 	return string(signedToken), nil
 
+}
+
+func (u UserData) toJWTClaims() map[string]any {
+	return map[string]any{
+		"sub":         u.Uuid,
+		"email":       u.Email,
+		"full_name":   u.FullName,
+		"picture_url": u.PictureUrl,
+		"created_at":  u.CreatedAt,
+	}
 }
