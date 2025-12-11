@@ -67,6 +67,26 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       }
     )),
 
+    updateNodeData: (id: DiagramNode["id"], partialData: Partial<DiagramNode["data"]> ) =>
+      set((s) => ({
+        state: {
+          ...s.state,
+          nodes: s.state.nodes.map((n) =>
+            n.id === id
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    ...partialData,
+                  },
+                }
+              : n
+          ),
+          dirty: true,
+        },
+      })
+    ),
+
     applyNodeChanges: (changes) =>
       set((s) => {
         // only want dirty in changes that the user makes that is add, remove and position.
@@ -94,7 +114,6 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         };
       }
     ),
-
 
     addEdgeFromConnection: (conn) =>
       set((s) => ({

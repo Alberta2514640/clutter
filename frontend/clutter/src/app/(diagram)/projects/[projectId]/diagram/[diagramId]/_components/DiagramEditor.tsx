@@ -10,18 +10,26 @@ import AwsServiceNode from "./nodes/AwsServiceNode";
 
 const DND_MIME = "application/x-palette-item";
 
-export default function DiagramEditor({
-  projectId,
-  diagramId,
-}: {
-  projectId: string;
+export default function DiagramEditor({ 
+  projectId, 
+  diagramId, 
+}: { 
+  projectId: string; 
   diagramId: string;
 }) {
   const { screenToFlowPosition } = useReactFlow();
-
+  
   // ----- Zustand state -----
   const { nodes, edges, dirty, isSaving, isLoading } = useDiagramState();
-  const { addNode, applyNodeChanges, applyEdgeChanges, addEdgeFromConnection, saveDiagram, setContext, loadDiagram } = useDiagramActions();
+  const { 
+    addNode, 
+    applyNodeChanges, 
+    applyEdgeChanges, 
+    addEdgeFromConnection, 
+    saveDiagram, 
+    setContext, 
+    loadDiagram 
+  } = useDiagramActions();
 
   console.log(nodes, edges, dirty);
 
@@ -88,41 +96,43 @@ export default function DiagramEditor({
   }, [saveDiagram]);
 
   return (
-    <div className="min-h-screen px-12 py-8">
-      <TopNav onSave={onSave} />
-      
-      {/* Main container - matching project page style */}
-      <div>
-        <div className="flex gap-4 p-4">
-          <Palette />
-          
-          {/* Canvas area - bigger, clean design */}
-          <div className="flex-1 overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
-            <div className="h-[80vh]">
-              <ReactFlow
-                colorMode="dark"
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onDragOver={onDragOver}
-                onDrop={onDrop}
-                nodeTypes={nodeTypes}
-                snapToGrid
-                snapGrid={[20, 20]}
-              >
-                <Background 
-                  variant={BackgroundVariant.Dots} 
-                  gap={20} 
-                  size={1.5}
-                  
-                />
-                <Controls />
-              </ReactFlow>
-            </div>
-          </div>
-        </div>
+    <div className="relative h-screen w-screen overflow-hidden">
+      {/* Top Nav - Fixed at top */}
+      <div className="absolute top-0 left-0 right-0 z-30">
+        <TopNav onSave={onSave} />
+      </div>
+
+      {/* Floating Palette - Fixed position on left */}
+      <div className="absolute top-20 left-4 z-20">
+        <Palette />
+      </div>
+
+      {/* Fullscreen React Flow Canvas */}
+      <div className="h-full w-full">
+        <ReactFlow
+          colorMode="dark"
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          nodeTypes={nodeTypes}
+          snapToGrid
+          snapGrid={[20, 20]}
+        >
+          <Background 
+            variant={BackgroundVariant.Dots} 
+            gap={20} 
+            size={1.5}
+          />
+          <Controls 
+            orientation="horizontal"
+            className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
+            showInteractive={false}
+          />
+        </ReactFlow>
       </div>
     </div>
   );
