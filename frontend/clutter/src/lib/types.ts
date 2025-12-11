@@ -21,7 +21,7 @@ export interface DiagramActions {
   setContext: (projectId: string, diagramId: string) => void;
   setNodes: (nodes: DiagramNode[]) => void;
   setEdges: (edges: DiagramEdge[]) => void;
-  updateNodeData: (id: DiagramNode["id"], partialData: Partial<DiagramNode["data"]>) => void;
+  updateNode: (nodeId: string, updates: Partial<DiagramNode>) => void;
   applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
   applyEdgeChanges: (changes: EdgeChange<DiagramEdge>[]) => void;
   addEdgeFromConnection: (conn: Connection) => void;

@@ -67,25 +67,16 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       }
     )),
 
-    updateNodeData: (id: DiagramNode["id"], partialData: Partial<DiagramNode["data"]> ) =>
-      set((s) => ({
-        state: {
-          ...s.state,
-          nodes: s.state.nodes.map((n) =>
-            n.id === id
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    ...partialData,
-                  },
-                }
-              : n
-          ),
-          dirty: true,
-        },
-      })
-    ),
+    updateNode: (nodeId: string, updates: Partial<DiagramNode>) =>
+    set((s) => ({
+      state: {
+        ...s.state,
+        nodes: s.state.nodes.map((node) =>
+          node.id === nodeId ? { ...node, ...updates } : node
+        ),
+        dirty: true,
+      },
+    })),
 
     applyNodeChanges: (changes) =>
       set((s) => {

@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo } from "react";
 import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
+import ConfigPanel from "./nodes/ConfigPanel";
 
 const DND_MIME = "application/x-palette-item";
 
@@ -105,6 +106,10 @@ export default function DiagramEditor({
       {/* Floating Palette - Fixed position on left */}
       <div className="absolute top-20 left-4 z-20">
         <Palette />
+      </div>
+
+      <div className="absolute top-20 right-4 z-20">
+        <ConfigPanel />
       </div>
 
       {/* Fullscreen React Flow Canvas */}
