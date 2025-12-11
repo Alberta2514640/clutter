@@ -1,54 +1,54 @@
-export interface CanvasBundle {
-  canvas: Canvas;
-  nodes: Node[];
-  edges: Edge[];
-  etag?: string;
-  version?: number;
-}
-export interface Canvas {
-  canvasId: string;
-  name: string;
-  uiLayout?: any;
-}
-export interface Node {
-  nodeId: string;
-  canvasId: string;
-  resourceType: string;
-  spec: any;
-  iac?: { moduleAlias: string; moduleSource?: string; version?: string };
-  ui?: any;
-  etag?: string;
-  version?: number;
-}
-export interface Edge {
-  edgeId: string;
-  fromNodeId: string;
-  toNodeId: string;
-  relation: string;
-  props?: any;
-  etag?: string;
-  version?: number;
-}
-export interface Workspace {
-  workspaceId: string;
-  name: string;
-  accountRef: { tenantId: string; accountId: string; alias: string };
-  moduleSetId: string;
-  defaultVarSetIds: string[];
-}
-export interface ModuleSet {
-  moduleSetId: string;
-  entries: { alias: string; source: string; version: string }[];
-  artifactS3?: string;
-}
-export interface VarSet {
-  varSetId: string;
-  name: string;
-  env: string;
-  scope: "project" | "workspace";
-  vars: Record<string, unknown>;
-  secretRefs: { provider: "ssm" | "secretsmanager"; path?: string; arn?: string; envName: string }[];
-}
+import type { Connection, Edge, EdgeChange, Node, NodeChange, } from "@xyflow/react";
+
+//store types 
+
+//diagram types
+export type DiagramNode = Node<NodeData>;
+export type DiagramEdge = Edge;
+
+export type DiagramState = {
+  projectId: string | null;
+  diagramId: string | null;
+
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+
+  // NEW flags
+  isLoading: boolean;
+  isSaving: boolean;
+  dirty: boolean;
+  error: string | null;
+
+  setContext: (projectId: string, diagramId: string) => void;
+
+  setNodes: (nodes: DiagramNode[]) => void;
+  setEdges: (edges: DiagramEdge[]) => void;
+
+  applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
+  applyEdgeChanges: (changes: EdgeChange[]) => void;
+
+  addEdgeFromConnection: (params: Connection) => void;
+  addNode: (node: DiagramNode) => void;
+
+  reset: () => void;
+
+  // NEW fake persistence actions
+  loadDiagram: (projectId: string, diagramId: string) => Promise<void>;
+  saveDiagram: () => Promise<void>;
+};
+
+export type PaletteItem = {
+  label: string;
+  img: string;
+};
+
+export type NodeData = {
+  label: string;
+  img: string;
+};
+
+
+//this was here before idk
 export type RunStatus = "QUEUED" | "INIT" | "PLAN" | "APPLY" | "FAILED" | "SUCCEEDED" | "CANCELED";
 export interface Run {
   runId: string;
