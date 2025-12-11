@@ -1,7 +1,7 @@
 "use client";
 
+import type { NodeData } from "@/lib/types";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import type { NodeData } from "../types";
 
 export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeData>>) {
   return (
@@ -16,11 +16,10 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
     >
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/20 bg-white/10 text-sm font-bold">
-          {data.badge}
+          {data.img}
         </div>
         <div className="leading-tight">
           <div className="text-sm font-semibold text-white">{data.label}</div>
-          <div className="text-[11px] text-white/50">{data.category}</div>
         </div>
       </div>
 

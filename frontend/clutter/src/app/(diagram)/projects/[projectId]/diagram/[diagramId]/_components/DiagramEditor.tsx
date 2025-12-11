@@ -1,25 +1,46 @@
 "use client";
 
-import {
-    addEdge, Background, BackgroundVariant, Controls, MiniMap, ReactFlow, useEdgesState, useNodesState, useReactFlow, type Connection,
-    type Edge, type Node, type NodeProps, type NodeTypes,
-} from "@xyflow/react";
-import React, { useCallback, useMemo } from "react";
+import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes, } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, useReactFlow, } from "@xyflow/react";
+import React, { useCallback, useEffect, useMemo } from "react";
+
+import { useDiagramStore } from "@/lib/stores/diagramStore";
+import type { DiagramEdge, DiagramNode, PaletteItem } from "@/lib/types";
+
 
 import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
-import type { NodeData, PaletteItem } from "./types";
 
 const DND_MIME = "application/x-palette-item";
 
-//projectID and diagramId are the id from the params of the url given by the page
-export default function DiagramEditor({ projectId, diagramId, }: { projectId: string; diagramId: string; }) {
+export default function DiagramEditor({ projectId, diagramId, }: { projectId: string; diagramId: string;}) 
+{
   const { screenToFlowPosition } = useReactFlow();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  // ----- Zustand state -----
+  const nodes = useDiagramStore((s) => s.nodes);
+  const edges = useDiagramStore((s) => s.edges);
 
+  const setContext = useDiagramStore((s) => s.setContext);
+  const applyNodeChanges = useDiagramStore((s) => s.applyNodeChanges);
+  const applyEdgeChanges = useDiagramStore((s) => s.applyEdgeChanges);
+  const addEdgeFromConnection = useDiagramStore((s) => s.addEdgeFromConnection);
+  const addNode = useDiagramStore((s) => s.addNode);
+
+  const loadDiagram = useDiagramStore((s) => s.loadDiagram);
+  const saveDiagram = useDiagramStore((s) => s.saveDiagram);
+  const isLoading = useDiagramStore((s) => s.isLoading);
+  const isSaving = useDiagramStore((s) => s.isSaving);
+  const dirty = useDiagramStore((s) => s.dirty);
+  const error = useDiagramStore((s) => s.error);
+
+  useEffect(() => {
+    setContext(projectId, diagramId);
+    loadDiagram(projectId, diagramId);
+  }, [projectId, diagramId, setContext, loadDiagram]);
+
+  // ----- React Flow registry -----
   const nodeTypes = useMemo<NodeTypes>(
     () => ({
       awsService: AwsServiceNode as React.ComponentType<NodeProps>,
@@ -27,20 +48,26 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
     []
   );
 
+  // ----- Handlers -----
+  const onNodesChange = useCallback(
+    (changes: NodeChange<DiagramNode>[]) => {
+      applyNodeChanges(changes);
+    },
+    [applyNodeChanges]
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange<DiagramEdge>[]) => {
+      applyEdgeChanges(changes);
+    },
+    [applyEdgeChanges]
+  );
+
   const onConnect = useCallback(
     (params: Connection) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            type: "default",
-            style: { stroke: "rgba(100,180,255,0.6)", strokeWidth: 2 },
-          },
-          eds
-        )
-      );
+      addEdgeFromConnection(params);
     },
-    [setEdges]
+    [addEdgeFromConnection]
   );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -58,28 +85,27 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
       const item: PaletteItem = JSON.parse(raw);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
-      const newNode: Node<NodeData> = {
+      const newNode: DiagramNode = {
         id: crypto.randomUUID(),
         type: "awsService",
         position,
-        data: { label: item.label, badge: item.badge, category: item.category },
+        data: { label: item.label, img: item.img },
       };
 
-      setNodes((prev) => [...prev, newNode]);
+      addNode(newNode);
     },
-    [screenToFlowPosition, setNodes]
+    [screenToFlowPosition, addNode]
   );
 
   const onSave = useCallback(() => {
-    console.log("SAVE", { projectId, diagramId, nodes, edges });
-    alert("Diagram saved! Check console for details.");
-  }, [projectId, diagramId, nodes, edges]);
+    saveDiagram();
+  }, [saveDiagram]);
+
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,rgb(10,15,25),rgb(15,20,30))] p-5">
-       <TopNav onSave={onSave} />
-       
-      {/* main card */}
+      <TopNav onSave={onSave} />
+
       <div className="rounded-xl border border-white/10 bg-[rgba(20,25,35,0.4)] p-4 shadow-xl backdrop-blur-sm">
         <div className="flex gap-4">
           <Palette />
@@ -101,7 +127,6 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
               >
                 <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
                 <Controls />
-                <MiniMap pannable zoomable />
               </ReactFlow>
             </div>
           </div>

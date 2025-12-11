@@ -1,23 +1,25 @@
 "use client";
 
+import type { PaletteItem } from "@/lib/types";
 import React, { useMemo } from "react";
-import type { PaletteItem } from "./types";
 
 const DND_MIME = "application/x-palette-item";
 
 export default function Palette() {
+
+    //section need to be given from the api call so it can be added from there
     const sections = useMemo(() => {
         const storage: PaletteItem[] = [
-            { label: "DynamoDB", badge: "DB", category: "STORAGE" },
-            { label: "S3", badge: "S3", category: "STORAGE" },
+            { label: "DynamoDB", img: "DB" },
+            { label: "S3", img: "S3" },
         ];
 
         const compute: PaletteItem[] = [
-            { label: "Lambda", badge: "λ", category: "COMPUTE" },
-            { label: "EC2 Container", badge: "EC2", category: "COMPUTE" }
+            { label: "Lambda", img: "λ" },
+            { label: "EC2 Container", img: "EC2"}
         ];
 
-        const network: PaletteItem[] = [{ label: "API Gateway", badge: "API", category: "NETWORK" }];
+        const network: PaletteItem[] = [{ label: "API Gateway", img: "API" }];
 
         return [
             { title: "COMPUTE", items: compute },
@@ -53,7 +55,7 @@ export default function Palette() {
                     className="flex cursor-grab select-none items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 transition-colors hover:border-white/20 hover:bg-white/10 active:cursor-grabbing"
                     >
                     <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-white/15 bg-white/10 text-xs font-bold">
-                        {item.badge}
+                        {item.img}
                     </div>
                     <div className="text-sm font-medium text-white">{item.label}</div>
                     </div>
