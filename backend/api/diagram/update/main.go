@@ -60,6 +60,39 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
+	// Validate at least one field is being updated
+	if req.Name == nil && req.UILayout == nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "At least one field (name or uiLayout) must be provided for update",
+			},
+		})
+	}
+
+	// Validate name length if provided
+	if req.Name != nil && len(*req.Name) > 32 {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "Diagram name must not exceed 32 characters",
+			},
+		})
+	}
+
+	// Validate UILayout is not empty if provided
+	if req.UILayout != nil && len(req.UILayout) == 0 {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "uiLayout cannot be empty if provided",
+			},
+		})
+	}
+
 	// 3. Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {

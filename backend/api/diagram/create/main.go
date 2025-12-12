@@ -78,6 +78,17 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
+	// Validate name length (max 32 characters per database schema)
+	if len(req.Name) > 32 {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "VALIDATION_ERROR",
+				"message": "Diagram name must not exceed 32 characters",
+			},
+		})
+	}
+
 	// 4. Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {
