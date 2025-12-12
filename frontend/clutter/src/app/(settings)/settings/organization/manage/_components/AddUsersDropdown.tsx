@@ -52,9 +52,7 @@ export default function AddUsersDropdown({ options, onPick, disabled, placeholde
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 pl-9 pr-10 text-sm text-slate-50 placeholder-slate-500
-                     focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-60 transition"
-          aria-expanded={open}
+          className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 pl-9 pr-10 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:opacity-60 transition"
         />
         <ChevronDown
           className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"

@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -17,12 +18,13 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.90.6",
+    "@xyflow/react": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "elkjs": "^0.11.0",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.553.0",
-    "next": "16.0.1",
+    "next": "^16.0.8",
     "next-auth": "^4.24.13",
     "react": "19.2.0",
     "react-dom": "19.2.0",
@@ -33,7 +35,7 @@
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.27",
     "zod": "^4.1.12",
-    "zustand": "^5.0.8"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
