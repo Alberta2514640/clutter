@@ -11,115 +11,74 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	// Connect to PostgreSQL
 	// Externally used for iterating through orgs by row
 	ctx := context.Background()
-	externalConn, err := generic.PsqlConnect()
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return nil, err
 	}
-	defer externalConn.Close(ctx)
-
-	// SQL Queries
+	defer conn.Close(ctx)
 
 	// Get all organization's data
 	// Input:
 	// <$1> = member ID
-	queryAllOrgs := `
-		SELECT orgs.id, orgs.created_by, orgs.name, orgs.description
-		FROM organizations orgs
-		WHERE orgs.id IN (
+	queryAllOrgDataForUser := `
+		SELECT
+			o.id,
+			o.created_by,
+			o.name,
+			o.description,
+			o.created_at,
+			COUNT(DISTINCT p.id) AS total_projects,
+			COUNT(DISTINCT d.id) AS total_diagrams,
+			COUNT(DISTINCT m.member_id) AS total_members,
+			COALESCE(ARRAY_AGG(DISTINCT m.member_id), '{}') AS members
+		FROM organizations o
+		LEFT JOIN projects p ON p.organization_id = o.id
+		LEFT JOIN diagrams d ON d.project_id = p.id
+		LEFT JOIN organization_members m ON m.organization_id = o.id
+		WHERE o.id IN (
 			SELECT organization_id
 			FROM organization_members
 			WHERE member_id = $1
 		)
-	`
-	// Get number of total projects in org
-	// Input:
-	// <$1> = organization ID
-	queryProjectCount := `
-		SELECT COUNT(*) FROM projects WHERE organization_id = $1
-	`
-	// Get number of total diagrams in org
-	// Input:
-	// <$1> = organization ID
-	queryDiagramCount := `
-		SELECT COUNT(*)
-		FROM diagrams d
-		JOIN projects p ON p.id = d.project_id
-		WHERE p.organization_id = $1
-	`
-	// Get members part of the organization by their ID
-	// Input:
-	// <$1> = organization ID
-	queryMemberIds := `
-		SELECT member_id FROM organization_members WHERE organization_id = $1
+		GROUP BY o.id, o.created_by, o.name, o.description
+		ORDER BY MIN(m.joined_at) ASC
 	`
 
-	// Create an empty list of organization overview data
-	orgs := []OrgOverviewData{}
-
-	// Query all orgs a user is part of as rows
-	orgRows, err := externalConn.Query(ctx, queryAllOrgs, userId)
+	// Query all org data into rows
+	rows, err := conn.Query(ctx, queryAllOrgDataForUser, userId)
 	if err != nil {
 		return nil, err
 	}
-	defer orgRows.Close()
+	defer rows.Close()
+
+	// Create empty Org OverviewData slice to append to in the iteration process
+	orgs := []OrgOverviewData{}
 
 	// Iterate through each org
-	for orgRows.Next() {
-
-		// Create an empty OrgOverviewData struct
+	for rows.Next() {
+		// Initialize variables for org struct and members slice
 		var org OrgOverviewData
+		var members []string
 
-		// First scan the org data from organizations table
-		if err = orgRows.Scan(&org.Id, &org.CreatedBy, &org.Name, &org.Description); err != nil {
+		// Scan from row to org parameters and members slice
+		if err := rows.Scan(
+			&org.Id,
+			&org.CreatedBy,
+			&org.Name,
+			&org.Description,
+			&org.CreatedAt,
+			&org.TotalProjects,
+			&org.TotalDiagrams,
+			&org.TotalMembers,
+			&members,
+		); err != nil {
 			return nil, err
 		}
 
-		// Now that you have org.ID, start querying for rest of overview data
-
-		// Connect to PostgreSQL again
-		// Internally used for querying individual org data
-		ctx := context.Background()
-		internalConn, err := generic.PsqlConnect()
-		if err != nil {
-			return nil, err
-		}
-
-		// Query total projects
-		if err = internalConn.QueryRow(ctx, queryProjectCount, org.Id).Scan(&org.TotalProjects); err != nil {
-			return nil, err
-		}
-
-		// Query total diagrams
-		if err = internalConn.QueryRow(ctx, queryDiagramCount, org.Id).Scan(&org.TotalDiagrams); err != nil {
-			return nil, err
-		}
-
-		// Query member IDs
-		memberRows, err := internalConn.Query(ctx, queryMemberIds, org.Id)
-		if err != nil {
-			return nil, err
-		}
-		// Created empty list for members
-		members := []string{}
-		// Iterate through each member in org
-		for memberRows.Next() {
-			var memberId string
-			if err := memberRows.Scan(&memberId); err != nil {
-				return nil, err
-			}
-			members = append(members, memberId)
-		}
-		// Close rows opened for member query
-		memberRows.Close()
-		// Close internalConn since it is no longer needed
-		internalConn.Close(ctx)
-		// Assign member values acquired to orgOverviewData struct parameters
+		// Assign final remaining value of org.Members to members slice
 		org.Members = members
-		org.TotalMembers = len(members)
-
-		// append this completed org data to orgs
+		// Append full org data to orgs slice
 		orgs = append(orgs, org)
-
 	}
 
 	return orgs, nil
