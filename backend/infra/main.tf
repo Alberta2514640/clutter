@@ -79,7 +79,7 @@ module "organization-create-lambda" {
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
   }
 
 }
@@ -336,6 +336,7 @@ module "log-in-api-integration" {
   path_part            = module.log-in-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.log-in-api-path.path
+
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.log-in-model.model_name
 }
@@ -353,6 +354,7 @@ module "organization-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.organization-create-model.model_name
 }

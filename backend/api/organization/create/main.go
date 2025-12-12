@@ -3,54 +3,20 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
+	"github.com/Alberta2514640/clutter/backend/api/organization/create/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
 )
-
-var (
-	ddb       *dynamodb.Client
-	tableName string
-)
-
-func init() {
-
-	var err error
-	ddb, tableName, err = generic.GetDynamodbClient()
-	if err != nil {
-		panic("failed to initialize DynamoDB client: " + err.Error())
-	}
-
-}
 
 func main() {
 
 	lambda.Start(handler)
 
-}
-
-// Incoming request body structure
-type requestBody struct {
-	OrganizationName string `json:"organizationName"`
-	Description      string `json:"description"`
-}
-
-// DynamoDB item structure
-type organizationData struct {
-	Id            string   `json:"id"`
-	Name          string   `json:"name"`
-	CreatedBy     string   `json:"createdBy"`
-	CreatedAt     string   `json:"createdAt"`
-	Description   string   `json:"description"`
-	Members       []string `json:"members"`
-	TotalProjects int      `json:"totalProjects"`
-	TotalDiagrams int      `json:"totalDiagrams"`
 }
 
 func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxyResponse, err error) {
@@ -65,7 +31,7 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	}
 
 	// Process body from API Gateway request
-	var body requestBody
+	var body internal.RequestBody
 
 	err = json.Unmarshal([]byte(request.Body), &body)
 	if err != nil {
@@ -76,49 +42,84 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 
 	// Generate required fields for organization
 	organizationId := uuid.NewString()
-	timeNow := time.Now().UTC().Format(time.RFC3339)
-	members := []string{userData.Email}
+	// Initialize createdAt as a time.Time to be returned by table upon creation of organization
+	var createdAt time.Time
 
-	// Populate organization data struct
-	organizationData := organizationData{
-		Id:            organizationId,
-		Name:          organizationName,
-		CreatedBy:     userData.Email,
-		CreatedAt:     timeNow,
-		Description:   description,
-		Members:       members,
-		TotalProjects: 0,
-		TotalDiagrams: 0,
+	// Build organizationData struct
+	organizationData := internal.OrganizationData{
+		Id:          organizationId,
+		CreatedBy:   userData.Id,
+		Name:        organizationName,
+		Description: description,
 	}
 
-	// Convert organizationData struct to AttributeValue map for DynamoDB
-	organizationAttributeValueMap, err := generic.ConvertStructToAttributeValueMap(organizationData)
-	if err != nil {
-		return generic.Response(
-			http.StatusInternalServerError,
-			generic.Json{"message": "failed to convert 'organizationData' struct to an Attribute Value map", "error": err.Error()},
-		)
-	}
+	// SQL queries for insertion
+	// Insert new organization
+	queryInsertOrg := `
+		INSERT INTO organizations (id, created_by, name, description)
+		VALUES ($1, $2, $3, $4)
+		RETURNING created_at
+	`
+	// Insert member (by default the creator)
+	queryInsertMember := `
+		INSERT INTO organization_members (organization_id, member_id)
+		VALUES ($1, $2)
+	`
 
-	// Put organization item into DynamoDB
+	// Connect to PostgreSQL
 	ctx := context.Background()
-	pk := fmt.Sprintf("USER#%s", userData.Email)
-	sk := fmt.Sprintf("ORG#%s", organizationId)
-	itemType := "ORGANIZATION"
-	err = generic.PutItemInDynamoDB(
-		ctx,
-		ddb,
-		tableName,
-		pk,
-		sk,
-		itemType,
-		organizationAttributeValueMap,
-	)
+	conn, err := generic.PsqlConnect()
 	if err != nil {
-		return generic.Response(
-			http.StatusInternalServerError,
-			generic.Json{"message": fmt.Sprintf("failed to put organization into %s DynamoDB table", tableName), "error": err.Error()},
-		)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to connect to PostgreSQL database", "message": err.Error()})
+	}
+	defer conn.Close(ctx)
+
+	// Begin organization creation transaction since we will be making 2 seperate inserts
+	transaction, err := conn.Begin(ctx)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to start transaction",
+			"message": err.Error(),
+		})
+	}
+	defer transaction.Rollback(ctx) // If any of the queries fail, undo all changes
+
+	// Add organization insertion to transaction
+	insertedOrgRow := transaction.QueryRow(
+		ctx,
+		queryInsertOrg,
+		organizationData.Id,
+		organizationData.CreatedBy,
+		organizationData.Name,
+		organizationData.Description,
+	)
+
+	if err := insertedOrgRow.Scan(&createdAt); err != nil {
+
+		if generic.IsUniqueViolation(err) {
+			return generic.Response(http.StatusConflict, generic.Json{
+				"error":   "organization name already exists for this user",
+				"message": err.Error(),
+			})
+		}
+
+		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to add organization insertion to transaction", "message": err.Error()})
+	}
+
+	// Add member -> organization link insertion to transaction
+	if _, err := transaction.Exec(ctx, queryInsertMember, organizationData.Id, organizationData.CreatedBy); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to add member and organizatio link to transaction",
+			"message": err.Error(),
+		})
+	}
+
+	// Commit the transaction
+	if err := transaction.Commit(ctx); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to commit the organization creation transaction",
+			"message": err.Error(),
+		})
 	}
 
 	return generic.Response(
