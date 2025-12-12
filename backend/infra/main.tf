@@ -198,12 +198,8 @@ module "diagram-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
-  actions = [
-    "logs:CreateLogGroup",
-    "logs:CreateLogStream",
-    "logs:PutLogEvents"
-  ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-create:*"]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -214,12 +210,8 @@ module "diagram-get-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-get"
-  actions = [
-    "logs:CreateLogGroup",
-    "logs:CreateLogStream",
-    "logs:PutLogEvents"
-  ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-get:*"]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -230,12 +222,8 @@ module "diagram-update-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-update"
-  actions = [
-    "logs:CreateLogGroup",
-    "logs:CreateLogStream",
-    "logs:PutLogEvents"
-  ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-update:*"]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -246,12 +234,8 @@ module "diagram-delete-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-delete"
-  actions = [
-    "logs:CreateLogGroup",
-    "logs:CreateLogStream",
-    "logs:PutLogEvents"
-  ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-delete:*"]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
