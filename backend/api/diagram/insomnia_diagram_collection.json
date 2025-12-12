@@ -1,14 +1,14 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2025-12-11T00:00:00.000Z",
+  "__export_date": "2025-12-12T00:00:00.000Z",
   "__export_source": "insomnia.desktop.app:v2023.5.8",
   "resources": [
     {
       "_id": "wrk_diagram_api",
       "_type": "workspace",
       "name": "Diagram CRUD API",
-      "description": "Integration tests for Diagram endpoints",
+      "description": "Integration tests for Diagram endpoints with Authorization",
       "scope": "collection"
     },
     {
@@ -18,243 +18,27 @@
       "data": {
         "base_url": "https://your-api-gateway-url.amazonaws.com/prod",
         "user_id": "test-user-123",
+        "unauthorized_user_id": "unauthorized-user-999",
         "project_id": "test-project-456",
+        "organization_id": "test-org-789",
         "diagram_id": "",
         "auth_token": "your-jwt-token-here"
       },
       "dataPropertyOrder": {
-        "&": ["base_url", "user_id", "project_id", "diagram_id", "auth_token"]
+        "&": [
+          "base_url",
+          "user_id",
+          "unauthorized_user_id",
+          "project_id",
+          "organization_id",
+          "diagram_id",
+          "auth_token"
+        ]
       },
       "color": null,
       "isPrivate": false,
       "metaSortKey": 1,
       "parentId": "wrk_diagram_api"
-    },
-    {
-      "_id": "req_create_diagram",
-      "_type": "request",
-      "name": "1. Create Diagram",
-      "description": "Creates a new diagram in a project",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"name\": \"My Test Diagram\"\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 1,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_get_single_diagram",
-      "_type": "request",
-      "name": "2. Get Single Diagram",
-      "description": "Retrieves a specific diagram by ID",
-      "url": "{{ _.base_url }}/diagrams?projectId={{ _.project_id }}&diagramId={{ _.diagram_id }}",
-      "method": "GET",
-      "body": {},
-      "parameters": [
-        {
-          "name": "projectId",
-          "value": "{{ _.project_id }}"
-        },
-        {
-          "name": "diagramId",
-          "value": "{{ _.diagram_id }}"
-        }
-      ],
-      "headers": [
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 2,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_list_diagrams",
-      "_type": "request",
-      "name": "3. List All Diagrams",
-      "description": "Lists all diagrams in a project",
-      "url": "{{ _.base_url }}/diagrams?projectId={{ _.project_id }}",
-      "method": "GET",
-      "body": {},
-      "parameters": [
-        {
-          "name": "projectId",
-          "value": "{{ _.project_id }}"
-        }
-      ],
-      "headers": [
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 3,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_update_diagram_name",
-      "_type": "request",
-      "name": "4. Update Diagram Name",
-      "description": "Updates only the diagram name",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "PUT",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"name\": \"Updated Diagram Name\"\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 4,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_update_diagram_layout",
-      "_type": "request",
-      "name": "5. Update Diagram UI Layout",
-      "description": "Updates the diagram UI layout data",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "PUT",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"uiLayout\": {\n    \"nodes\": [\n      {\n        \"id\": \"node1\",\n        \"type\": \"rectangle\",\n        \"x\": 100,\n        \"y\": 100,\n        \"width\": 200,\n        \"height\": 100,\n        \"label\": \"Start\"\n      },\n      {\n        \"id\": \"node2\",\n        \"type\": \"rectangle\",\n        \"x\": 400,\n        \"y\": 100,\n        \"width\": 200,\n        \"height\": 100,\n        \"label\": \"End\"\n      }\n    ],\n    \"edges\": [\n      {\n        \"id\": \"edge1\",\n        \"from\": \"node1\",\n        \"to\": \"node2\",\n        \"label\": \"flow\"\n      }\n    ]\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 5,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_update_both",
-      "_type": "request",
-      "name": "6. Update Name and Layout",
-      "description": "Updates both name and UI layout in one request",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "PUT",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"name\": \"Fully Updated Diagram\",\n  \"uiLayout\": {\n    \"nodes\": [\n      {\n        \"id\": \"node1\",\n        \"x\": 50,\n        \"y\": 50\n      }\n    ],\n    \"edges\": []\n  }\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 6,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
-    },
-    {
-      "_id": "req_delete_diagram",
-      "_type": "request",
-      "name": "7. Delete Diagram",
-      "description": "Deletes a diagram",
-      "url": "{{ _.base_url }}/diagrams?projectId={{ _.project_id }}&diagramId={{ _.diagram_id }}",
-      "method": "DELETE",
-      "body": {},
-      "parameters": [
-        {
-          "name": "projectId",
-          "value": "{{ _.project_id }}"
-        },
-        {
-          "name": "diagramId",
-          "value": "{{ _.diagram_id }}"
-        }
-      ],
-      "headers": [
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        },
-        {
-          "name": "Authorization",
-          "value": "Bearer {{ _.auth_token }}",
-          "disabled": true
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 7,
-      "isPrivate": false,
-      "parentId": "fld_diagram_operations"
     },
     {
       "_id": "fld_diagram_operations",
@@ -267,11 +51,279 @@
       "parentId": "wrk_diagram_api"
     },
     {
+      "_id": "req_create_diagram",
+      "_type": "request",
+      "name": "1. Create Diagram",
+      "description": "Creates a new diagram in a project",
+      "url": "{{ _.base_url }}/diagram",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"name\": \"My Test Diagram\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 1,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_get_single_diagram",
+      "_type": "request",
+      "name": "2. Get Single Diagram (with resources)",
+      "description": "Retrieves a specific diagram by ID - returns data field containing resources/connections",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}&diagramId={{ _.diagram_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 2,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_list_diagrams",
+      "_type": "request",
+      "name": "3. List All Diagrams",
+      "description": "Lists all diagrams in a project",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 3,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_update_diagram_name",
+      "_type": "request",
+      "name": "4. Update Diagram Name",
+      "description": "Updates only the diagram name",
+      "url": "{{ _.base_url }}/diagram",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"name\": \"Updated Diagram Name\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 4,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_save_resources",
+      "_type": "request",
+      "name": "5. Save Resources (POST-like via PUT)",
+      "description": "Saves resources and connections to diagram via uiLayout field",
+      "url": "{{ _.base_url }}/diagram",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"uiLayout\": {\n    \"resources\": [\n      {\n        \"id\": \"res-1\",\n        \"type\": \"ec2\",\n        \"name\": \"Web Server\",\n        \"x\": 100,\n        \"y\": 100\n      },\n      {\n        \"id\": \"res-2\",\n        \"type\": \"rds\",\n        \"name\": \"Database\",\n        \"x\": 400,\n        \"y\": 100\n      }\n    ],\n    \"connections\": [\n      {\n        \"id\": \"conn-1\",\n        \"from\": \"res-1\",\n        \"to\": \"res-2\",\n        \"label\": \"connects to\"\n      }\n    ]\n  }\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 5,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_clear_resources",
+      "_type": "request",
+      "name": "6. Clear Resources (DELETE-like via PUT)",
+      "description": "Clears all resources by setting uiLayout to empty object",
+      "url": "{{ _.base_url }}/diagram",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\",\n  \"uiLayout\": {}\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 6,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "req_delete_diagram",
+      "_type": "request",
+      "name": "7. Delete Diagram",
+      "description": "Deletes a diagram",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}&diagramId={{ _.diagram_id }}",
+      "method": "DELETE",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 7,
+      "isPrivate": false,
+      "parentId": "fld_diagram_operations"
+    },
+    {
+      "_id": "fld_auth_tests",
+      "_type": "request_group",
+      "name": "Authorization Tests",
+      "description": "Test authorization layer - 401/403 scenarios",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 2,
+      "parentId": "wrk_diagram_api"
+    },
+    {
+      "_id": "req_auth_missing_token",
+      "_type": "request",
+      "name": "Auth - Missing Token (401)",
+      "description": "Request without Authorization header should return 401",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": 1,
+      "isPrivate": false,
+      "parentId": "fld_auth_tests"
+    },
+    {
+      "_id": "req_auth_invalid_token",
+      "_type": "request",
+      "name": "Auth - Invalid Token (401)",
+      "description": "Request with invalid JWT should return 401",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer invalid.jwt.token"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 2,
+      "isPrivate": false,
+      "parentId": "fld_auth_tests"
+    },
+    {
+      "_id": "req_auth_unauthorized_user",
+      "_type": "request",
+      "name": "Auth - Non-Member User (403)",
+      "description": "Request from user not in organization should return 403",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        },
+        {
+          "name": "x-user-id",
+          "value": "{{ _.unauthorized_user_id }}",
+          "description": "Override for testing"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 3,
+      "isPrivate": false,
+      "parentId": "fld_auth_tests"
+    },
+    {
+      "_id": "req_auth_nonexistent_project",
+      "_type": "request",
+      "name": "Auth - Non-existent Project (404)",
+      "description": "Request for project that doesn't exist should return 404",
+      "url": "{{ _.base_url }}/diagram?projectId=non-existent-project-id",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": 4,
+      "isPrivate": false,
+      "parentId": "fld_auth_tests"
+    },
+    {
+      "_id": "fld_error_cases",
+      "_type": "request_group",
+      "name": "Error Cases",
+      "description": "Test various error scenarios",
+      "environment": {},
+      "environmentPropertyOrder": null,
+      "metaSortKey": 3,
+      "parentId": "wrk_diagram_api"
+    },
+    {
       "_id": "req_create_missing_name",
       "_type": "request",
       "name": "Create - Missing Name (400)",
       "description": "Test validation: missing name field",
-      "url": "{{ _.base_url }}/diagrams",
+      "url": "{{ _.base_url }}/diagram",
       "method": "POST",
       "body": {
         "mimeType": "application/json",
@@ -284,8 +336,8 @@
           "value": "application/json"
         },
         {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
         }
       ],
       "authentication": {},
@@ -294,25 +346,18 @@
       "parentId": "fld_error_cases"
     },
     {
-      "_id": "req_create_invalid_json",
+      "_id": "req_get_not_found",
       "_type": "request",
-      "name": "Create - Invalid JSON (400)",
-      "description": "Test validation: malformed JSON",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "POST",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"name\": \"Test\",\n"
-      },
+      "name": "Get - Not Found (404)",
+      "description": "Test not found: non-existent diagram ID",
+      "url": "{{ _.base_url }}/diagram?projectId={{ _.project_id }}&diagramId=non-existent-id",
+      "method": "GET",
+      "body": {},
       "parameters": [],
       "headers": [
         {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
         }
       ],
       "authentication": {},
@@ -321,122 +366,31 @@
       "parentId": "fld_error_cases"
     },
     {
-      "_id": "req_create_no_auth",
+      "_id": "req_update_no_fields",
       "_type": "request",
-      "name": "Create - No Auth (401)",
-      "description": "Test authentication: missing user ID",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "POST",
+      "name": "Update - No Fields (400)",
+      "description": "Test validation: at least one field required",
+      "url": "{{ _.base_url }}/diagram",
+      "method": "PUT",
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"name\": \"Test Diagram\"\n}"
+        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"{{ _.diagram_id }}\"\n}"
       },
       "parameters": [],
       "headers": [
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.auth_token }}"
         }
       ],
       "authentication": {},
       "metaSortKey": 3,
       "isPrivate": false,
       "parentId": "fld_error_cases"
-    },
-    {
-      "_id": "req_get_not_found",
-      "_type": "request",
-      "name": "Get - Not Found (404)",
-      "description": "Test not found: non-existent diagram ID",
-      "url": "{{ _.base_url }}/diagrams?projectId={{ _.project_id }}&diagramId=non-existent-id-12345",
-      "method": "GET",
-      "body": {},
-      "parameters": [
-        {
-          "name": "projectId",
-          "value": "{{ _.project_id }}"
-        },
-        {
-          "name": "diagramId",
-          "value": "non-existent-id-12345"
-        }
-      ],
-      "headers": [
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 4,
-      "isPrivate": false,
-      "parentId": "fld_error_cases"
-    },
-    {
-      "_id": "req_update_not_found",
-      "_type": "request",
-      "name": "Update - Not Found (404)",
-      "description": "Test not found: update non-existent diagram",
-      "url": "{{ _.base_url }}/diagrams",
-      "method": "PUT",
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"projectId\": \"{{ _.project_id }}\",\n  \"diagramId\": \"non-existent-id-12345\",\n  \"name\": \"New Name\"\n}"
-      },
-      "parameters": [],
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 5,
-      "isPrivate": false,
-      "parentId": "fld_error_cases"
-    },
-    {
-      "_id": "req_delete_not_found",
-      "_type": "request",
-      "name": "Delete - Not Found (404)",
-      "description": "Test not found: delete non-existent diagram",
-      "url": "{{ _.base_url }}/diagrams?projectId={{ _.project_id }}&diagramId=non-existent-id-12345",
-      "method": "DELETE",
-      "body": {},
-      "parameters": [
-        {
-          "name": "projectId",
-          "value": "{{ _.project_id }}"
-        },
-        {
-          "name": "diagramId",
-          "value": "non-existent-id-12345"
-        }
-      ],
-      "headers": [
-        {
-          "name": "x-user-id",
-          "value": "{{ _.user_id }}"
-        }
-      ],
-      "authentication": {},
-      "metaSortKey": 6,
-      "isPrivate": false,
-      "parentId": "fld_error_cases"
-    },
-    {
-      "_id": "fld_error_cases",
-      "_type": "request_group",
-      "name": "Error Cases",
-      "description": "Test various error scenarios",
-      "environment": {},
-      "environmentPropertyOrder": null,
-      "metaSortKey": 2,
-      "parentId": "wrk_diagram_api"
     }
   ]
 }
