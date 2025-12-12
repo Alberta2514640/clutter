@@ -8,7 +8,7 @@ type OrgOverviewData struct {
 	CreatedBy     string    `json:"created_by"`
 	Name          string    `json:"name"`
 	Description   string    `json:"description"`
-	CreatedAt     time.Time `json:created_at"`
+	CreatedAt     time.Time `json:"created_at"`
 	TotalProjects int       `json:"total_projects"`
 	TotalDiagrams int       `json:"total_diagrams"`
 	TotalMembers  int       `json:"total_members"`
