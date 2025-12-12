@@ -82,16 +82,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate UILayout is not empty if provided
-	if req.UILayout != nil && len(req.UILayout) == 0 {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "uiLayout cannot be empty if provided",
-			},
-		})
-	}
+	// Note: Empty uiLayout {} is valid - allows clearing diagram data
 
 	// 3. Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
@@ -147,9 +138,66 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 6. Build Update Query
+	// 6. Fetch current diagram state for versioning
+	var oldName, oldData string
+	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2`
+	err = conn.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
+	if err != nil {
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "NOT_FOUND",
+				"message": "Diagram not found",
+			},
+		})
+	}
+
+	// 7. Start transaction for atomic history + update
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to start transaction",
+			},
+		})
+	}
+	defer tx.Rollback(ctx) // Rollback if not committed
+
+	// Get next version number
+	var nextVersion int
+	versionQuery := `SELECT COALESCE(MAX(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1`
+	err = tx.QueryRow(ctx, versionQuery, req.DiagramID).Scan(&nextVersion)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to get version number",
+			},
+		})
+	}
+
+	// Insert into history
+	historyQuery := `
+		INSERT INTO diagram_history (diagram_id, version, updated_by, updated_at, name, data, comment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+	_, err = tx.Exec(ctx, historyQuery, req.DiagramID, nextVersion, userID, timestamp, oldName, oldData, "Auto-saved before update")
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to save diagram history",
+			},
+		})
+	}
+
+	// 8. Build Update Query
 	// Always update latest_update_at and latest_update_by
 	setClauses := []string{"latest_update_at = $3", "latest_update_by = $4"}
 	args := []interface{}{req.DiagramID, req.ProjectID, timestamp, userID}
@@ -180,8 +228,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	query := "UPDATE diagrams SET " + strings.Join(setClauses, ", ") +
 		" WHERE id = $1 AND project_id = $2"
 
-	// 7. Execute Update
-	cmdTag, err := conn.Exec(ctx, query, args...)
+	// 9. Execute Update within transaction
+	_, err = tx.Exec(ctx, query, args...)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
 			return generic.Response(http.StatusConflict, generic.Json{
@@ -201,12 +249,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	if cmdTag.RowsAffected() == 0 {
-		return generic.Response(http.StatusNotFound, generic.Json{
+	// 10. Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"success": false,
 			"error": generic.Json{
-				"code":    "NOT_FOUND",
-				"message": "Diagram not found",
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to commit update",
 			},
 		})
 	}

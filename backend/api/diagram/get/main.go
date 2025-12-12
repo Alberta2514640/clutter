@@ -12,6 +12,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// DiagramData represents a diagram's data structure
+type DiagramData struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Data           string  `json:"data"`
+	CreatedBy      string  `json:"createdBy"`
+	CreatedAt      string  `json:"createdAt"`
+	LatestUpdateBy *string `json:"latestUpdateBy,omitempty"`
+	LatestUpdateAt *string `json:"latestUpdateAt,omitempty"`
+}
+
 func main() {
 	lambda.Start(handler)
 }
@@ -98,15 +109,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Case 1: Get Single Diagram
 	if diagramID != "" {
-		var diagram struct {
-			ID             string  `json:"id"`
-			Name           string  `json:"name"`
-			Data           string  `json:"data"`
-			CreatedBy      string  `json:"createdBy"`
-			CreatedAt      string  `json:"createdAt"`
-			LatestUpdateBy *string `json:"latestUpdateBy,omitempty"`
-			LatestUpdateAt *string `json:"latestUpdateAt,omitempty"`
-		}
+		var diagram DiagramData
 
 		query := `
 			SELECT id, name, data, created_by, created_at, latest_update_by, latest_update_at
@@ -166,17 +169,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 	defer rows.Close()
 
-	var diagrams []map[string]interface{}
+	var diagrams []DiagramData
 	for rows.Next() {
-		var diagram struct {
-			ID             string
-			Name           string
-			Data           string
-			CreatedBy      string
-			CreatedAt      string
-			LatestUpdateBy *string
-			LatestUpdateAt *string
-		}
+		var diagram DiagramData
 		err := rows.Scan(
 			&diagram.ID,
 			&diagram.Name,
@@ -196,24 +191,21 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			})
 		}
 
-		diagramMap := map[string]interface{}{
-			"id":        diagram.ID,
-			"name":      diagram.Name,
-			"data":      diagram.Data,
-			"createdBy": diagram.CreatedBy,
-			"createdAt": diagram.CreatedAt,
-		}
-		if diagram.LatestUpdateBy != nil {
-			diagramMap["latestUpdateBy"] = *diagram.LatestUpdateBy
-		}
-		if diagram.LatestUpdateAt != nil {
-			diagramMap["latestUpdateAt"] = *diagram.LatestUpdateAt
-		}
-		diagrams = append(diagrams, diagramMap)
+		diagrams = append(diagrams, diagram)
 	}
 
 	if diagrams == nil {
-		diagrams = []map[string]interface{}{}
+		diagrams = []DiagramData{}
+	}
+
+	if err := rows.Err(); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to read diagram data",
+			},
+		})
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
@@ -221,4 +213,3 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data":    diagrams,
 	})
 }
-

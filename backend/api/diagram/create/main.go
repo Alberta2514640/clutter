@@ -100,15 +100,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			},
 		})
 	}
-	if conn == nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Database connection is invalid",
-			},
-		})
-	}
 	defer conn.Close(ctx)
 
 	// 5. Authorization: Get project's organization and check membership
