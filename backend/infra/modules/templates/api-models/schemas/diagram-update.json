@@ -6,21 +6,13 @@
     ],
     "properties": {
         "projectId": {
-            "type": "string",
-            "pattern": "^proj-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-            "description": "Must be a valid project UUID with 'proj-' prefix"
+            "type": "string"
         },
         "diagramId": {
-            "type": "string",
-            "pattern": "^diag-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-            "description": "Must be a valid diagram UUID with 'diag-' prefix"
+            "type": "string"
         },
         "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32,
-            "pattern": "^(?! )(?!.*  )[A-Za-z0-9']+(?: [A-Za-z0-9']+)*$",
-            "description": "Diagram name: 1-32 characters, alphanumeric and apostrophe only, no leading/trailing/consecutive spaces"
+            "type": "string"
         },
         "uiLayout": {
             "type": "object"

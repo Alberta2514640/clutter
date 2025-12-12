@@ -139,7 +139,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// 6. Fetch current diagram state for versioning
-	var oldName, oldData string
+	var oldName string
+	var oldData []byte
 	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2`
 	err = conn.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
 	if err != nil {

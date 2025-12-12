@@ -21,14 +21,14 @@ type Request struct {
 
 // DiagramData defines the response data object
 type DiagramData struct {
-	ID             string  `json:"id"`
-	ProjectID      string  `json:"projectId"`
-	Name           string  `json:"name"`
-	Data           string  `json:"data"`
-	CreatedBy      string  `json:"createdBy"`
-	CreatedAt      string  `json:"createdAt"`
-	LatestUpdateBy *string `json:"latestUpdateBy,omitempty"`
-	LatestUpdateAt *string `json:"latestUpdateAt,omitempty"`
+	ID             string     `json:"id"`
+	ProjectID      string     `json:"projectId"`
+	Name           string     `json:"name"`
+	Data           string     `json:"data"`
+	CreatedBy      string     `json:"createdBy"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	LatestUpdateBy *string    `json:"latestUpdateBy,omitempty"`
+	LatestUpdateAt *time.Time `json:"latestUpdateAt,omitempty"`
 }
 
 func main() {
@@ -145,7 +145,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// 7. Create Diagram
 	diagramID := uuid.NewString()
-	timestamp := time.Now().UTC().Format(time.RFC3339)
+	timestamp := time.Now().UTC()
 
 	query := `
 		INSERT INTO diagrams (id, project_id, created_by, name, data, created_at)

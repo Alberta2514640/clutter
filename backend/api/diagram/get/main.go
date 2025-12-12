@@ -3,8 +3,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -14,13 +16,13 @@ import (
 
 // DiagramData represents a diagram's data structure
 type DiagramData struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	Data           string  `json:"data"`
-	CreatedBy      string  `json:"createdBy"`
-	CreatedAt      string  `json:"createdAt"`
-	LatestUpdateBy *string `json:"latestUpdateBy,omitempty"`
-	LatestUpdateAt *string `json:"latestUpdateAt,omitempty"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Data           json.RawMessage `json:"data"`
+	CreatedBy      string          `json:"createdBy"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	LatestUpdateBy *string         `json:"latestUpdateBy,omitempty"`
+	LatestUpdateAt *time.Time      `json:"latestUpdateAt,omitempty"`
 }
 
 func main() {

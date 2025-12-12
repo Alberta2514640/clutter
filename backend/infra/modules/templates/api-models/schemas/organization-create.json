@@ -1,5 +1,8 @@
 {
     "type": "object",
+    "required": [
+        "organizationName"
+    ],
     "properties": {
         "organizationName": {
             "type": "string",
@@ -14,6 +17,5 @@
             "pattern": "^(?! )(?!.*  )(?!.*\\s$).+$",
             "description": "Optional. Up to 300 characters. Allows all characters. Cannot start with whitespace. Cannot have repeating spaces."
         }
-    },
-    "required": ["organizationName"]
+    }
 }
