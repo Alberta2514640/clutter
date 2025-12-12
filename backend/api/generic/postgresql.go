@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func PsqlConnect() (*pgx.Conn, error) {
@@ -20,20 +21,30 @@ func PsqlConnect() (*pgx.Conn, error) {
 
 }
 
-// Table Violations
-
-// When a table enforces that some parameter can not be duplicate
-// within the table this function should be used to check the error
-//
-// Ex. The organization_members table enforces that no user may have
-// a duplicate organization name. In the scenario that there is a duplicate,
-// this Postgres error code is displayed
-//
-// (Eg. ERROR: duplicate key value violates unique constraint \"unique_org_name_per_user\" (SQLSTATE ***23505***))
-func IsUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
+func GetUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
+	if req.RequestContext.Authorizer != nil {
+		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
+		if v, ok := req.RequestContext.Authorizer["email"]; ok {
+			if s, ok2 := v.(string); ok2 && s != "" {
+				return s, nil
+			}
+		}
 	}
-	return false
+
+	for k, v := range req.Headers {
+		if strings.ToLower(k) == "x-user-id" && v != "" {
+			return v, nil
+		}
+	}
+
+	return "", errors.New("missing user identity in request context")
 }
