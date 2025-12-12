@@ -1,54 +1,52 @@
-export interface CanvasBundle {
-  canvas: Canvas;
-  nodes: Node[];
-  edges: Edge[];
-  etag?: string;
-  version?: number;
+import type { Connection, Edge, EdgeChange, Node, NodeChange, } from "@xyflow/react";
+
+//store types 
+
+//diagram types
+export type DiagramNode = Node<NodeData>;
+export type DiagramEdge = Edge;
+
+export interface DiagramDataState {
+  projectId: string | null;
+  diagramId: string | null;
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  isLoading: boolean;
+  isSaving: boolean;
+  dirty: boolean;
+  error: string | null;
 }
-export interface Canvas {
-  canvasId: string;
-  name: string;
-  uiLayout?: any;
+
+export interface DiagramActions {
+  setContext: (projectId: string, diagramId: string) => void;
+  setNodes: (nodes: DiagramNode[]) => void;
+  setEdges: (edges: DiagramEdge[]) => void;
+  updateNode: (nodeId: string, updates: Partial<DiagramNode>) => void;
+  applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
+  applyEdgeChanges: (changes: EdgeChange<DiagramEdge>[]) => void;
+  addEdgeFromConnection: (conn: Connection) => void;
+  addNode: (node: DiagramNode) => void;
+  reset: () => void;
+  loadDiagram: (projectId: string, diagramId: string) => Promise<void>;
+  saveDiagram: () => Promise<void>;
 }
-export interface Node {
-  nodeId: string;
-  canvasId: string;
-  resourceType: string;
-  spec: any;
-  iac?: { moduleAlias: string; moduleSource?: string; version?: string };
-  ui?: any;
-  etag?: string;
-  version?: number;
+
+export interface DiagramStore {
+  state: DiagramDataState;
+  actions: DiagramActions;
 }
-export interface Edge {
-  edgeId: string;
-  fromNodeId: string;
-  toNodeId: string;
-  relation: string;
-  props?: any;
-  etag?: string;
-  version?: number;
-}
-export interface Workspace {
-  workspaceId: string;
-  name: string;
-  accountRef: { tenantId: string; accountId: string; alias: string };
-  moduleSetId: string;
-  defaultVarSetIds: string[];
-}
-export interface ModuleSet {
-  moduleSetId: string;
-  entries: { alias: string; source: string; version: string }[];
-  artifactS3?: string;
-}
-export interface VarSet {
-  varSetId: string;
-  name: string;
-  env: string;
-  scope: "project" | "workspace";
-  vars: Record<string, unknown>;
-  secretRefs: { provider: "ssm" | "secretsmanager"; path?: string; arn?: string; envName: string }[];
-}
+
+export type PaletteItem = {
+  label: string;
+  img: string;
+};
+
+export type NodeData = {
+  label: string;
+  img: string;
+};
+
+
 export interface Run {
   runId: string;
   workspaceId: string;
