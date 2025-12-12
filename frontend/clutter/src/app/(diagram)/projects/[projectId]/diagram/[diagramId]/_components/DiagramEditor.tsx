@@ -32,8 +32,6 @@ export default function DiagramEditor({
     loadDiagram 
   } = useDiagramActions();
 
-  console.log(nodes, edges, dirty);
-
   useEffect(() => {
     setContext(projectId, diagramId);
     loadDiagram(projectId, diagramId);
