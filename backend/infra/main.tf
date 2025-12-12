@@ -309,13 +309,6 @@ module "diagram-api-cors-compliance" {
 }
 
 # Validation Models
-module "test-model" {
-  source          = "./modules/templates/api-models"
-  rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "test"
-  description     = "Test model"
-  schema_filename = "project-create.json"
-}
 module "log-in-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -413,7 +406,6 @@ module "organization-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE organization
@@ -443,7 +435,6 @@ module "project-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # GET project
@@ -471,7 +462,6 @@ module "project-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE project
@@ -501,7 +491,6 @@ module "diagram-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 } # GET diagram
 module "diagram-get-api-integration" {
@@ -528,7 +517,6 @@ module "diagram-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram
