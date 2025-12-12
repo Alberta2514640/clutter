@@ -4,6 +4,7 @@ import (
 	"testing"
 	"testing/quick"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 )
 
@@ -17,7 +18,7 @@ func TestGetAuthorization_Property(t *testing.T) {
 		req := events.APIGatewayProxyRequest{
 			Headers: map[string]string{"x-user-id": userID},
 		}
-		extracted, err := getUserIDFromRequest(req)
+		extracted, err := generic.GetUserIDFromRequest(req)
 		return err == nil && extracted == userID
 	}
 
@@ -33,7 +34,7 @@ func TestGetUserIDFromRequest_Authorizer(t *testing.T) {
 		},
 	}
 
-	userID, err := getUserIDFromRequest(req)
+	userID, err := generic.GetUserIDFromRequest(req)
 	if err != nil || userID != "user-123" {
 		t.Errorf("Expected user-123, got %s, err: %v", userID, err)
 	}
@@ -44,7 +45,7 @@ func TestGetUserIDFromRequest_Header(t *testing.T) {
 		Headers: map[string]string{"x-user-id": "user-456"},
 	}
 
-	userID, err := getUserIDFromRequest(req)
+	userID, err := generic.GetUserIDFromRequest(req)
 	if err != nil || userID != "user-456" {
 		t.Errorf("Expected user-456, got %s, err: %v", userID, err)
 	}
@@ -52,7 +53,7 @@ func TestGetUserIDFromRequest_Header(t *testing.T) {
 
 func TestGetUserIDFromRequest_Missing(t *testing.T) {
 	req := events.APIGatewayProxyRequest{}
-	_, err := getUserIDFromRequest(req)
+	_, err := generic.GetUserIDFromRequest(req)
 	if err == nil {
 		t.Error("Expected error for missing user ID")
 	}
