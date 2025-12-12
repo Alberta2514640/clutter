@@ -33,7 +33,7 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 	}
 
 	// Iterate through required claims
-	requiredClaims := []string{"sub", "email", "name", "pictureUrl", "accountCreatedOn"}
+	requiredClaims := []string{"sub", "email", "full_name", "picture_url", "created_at"}
 	claimValues := make(map[string]string)
 
 	for _, claim := range requiredClaims {
@@ -58,11 +58,11 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 
 	// Include user data in context
 	context := map[string]interface{}{
-		"uuid":             claimValues["sub"],
-		"email":            claimValues["email"],
-		"name":             claimValues["name"],
-		"pictureUrl":       claimValues["pictureUrl"],
-		"accountCreatedOn": claimValues["accountCreatedOn"],
+		"uuid":        claimValues["sub"],
+		"email":       claimValues["email"],
+		"name":        claimValues["full_name"],
+		"picture_url": claimValues["picture_url"],
+		"created_at":  claimValues["created_at"],
 	}
 
 	// Return Allow policy on user UUID (sub)
