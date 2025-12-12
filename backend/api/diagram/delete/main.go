@@ -122,4 +122,3 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"message": "Diagram deleted successfully",
 	})
 }
-
