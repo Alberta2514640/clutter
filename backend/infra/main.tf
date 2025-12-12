@@ -198,11 +198,11 @@ module "diagram-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
-  actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -210,15 +210,11 @@ module "diagram-get-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-get"
-  actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn, module.dynamodb.supported_resurces_metadata_table_arn]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/get"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -226,13 +222,11 @@ module "diagram-update-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-update"
-  actions = [
-    "dynamodb:UpdateItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/update"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -240,13 +234,11 @@ module "diagram-delete-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions       = []
+  resources     = []
   zip_dir_slice = "diagram/delete"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
