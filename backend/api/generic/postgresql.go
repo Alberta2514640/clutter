@@ -10,37 +10,28 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// PsqlConnect establishes a connection to the PostgreSQL database using the
 func PsqlConnect() (*pgx.Conn, error) {
-
 	conn, err := pgx.Connect(context.Background(), os.Getenv("PSQL_CONNECTION_STRING"))
 	if err != nil {
 		return nil, err
 	}
-
-	return conn, err
-
+	return conn, nil
 }
 
-func GetUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
-	if req.RequestContext.Authorizer != nil {
-		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-		if v, ok := req.RequestContext.Authorizer["email"]; ok {
+// GetUserIDFromRequest extracts the user's UUID from the API Gateway request.
+func GetUserIDFromRequest(request events.APIGatewayProxyRequest) (string, error) {
+	// Check uuid from authorizer context
+	if request.RequestContext.Authorizer != nil {
+		if v, ok := request.RequestContext.Authorizer["uuid"]; ok {
 			if s, ok2 := v.(string); ok2 && s != "" {
 				return s, nil
 			}
 		}
 	}
 
-	for k, v := range req.Headers {
+	// Local testing: case-insensitive x-user-id header
+	for k, v := range request.Headers {
 		if strings.ToLower(k) == "x-user-id" && v != "" {
 			return v, nil
 		}
