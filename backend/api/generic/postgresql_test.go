@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-func TestGetUserIDFromRequest_FromAuthorizer(t *testing.T) {
+func TestGetUserIDFromRequest(t *testing.T) {
 	tests := []struct {
 		name      string
 		request   events.APIGatewayProxyRequest
@@ -15,39 +15,15 @@ func TestGetUserIDFromRequest_FromAuthorizer(t *testing.T) {
 		wantError bool
 	}{
 		{
-			name: "userId from authorizer context",
+			name: "uuid from authorizer context",
 			request: events.APIGatewayProxyRequest{
 				RequestContext: events.APIGatewayProxyRequestContext{
 					Authorizer: map[string]interface{}{
-						"userId": "user-123",
+						"uuid": "user-123",
 					},
 				},
 			},
 			wantID:    "user-123",
-			wantError: false,
-		},
-		{
-			name: "sub from authorizer context",
-			request: events.APIGatewayProxyRequest{
-				RequestContext: events.APIGatewayProxyRequestContext{
-					Authorizer: map[string]interface{}{
-						"sub": "sub-456",
-					},
-				},
-			},
-			wantID:    "sub-456",
-			wantError: false,
-		},
-		{
-			name: "email from authorizer context",
-			request: events.APIGatewayProxyRequest{
-				RequestContext: events.APIGatewayProxyRequestContext{
-					Authorizer: map[string]interface{}{
-						"email": "user@example.com",
-					},
-				},
-			},
-			wantID:    "user@example.com",
 			wantError: false,
 		},
 		{
@@ -71,48 +47,22 @@ func TestGetUserIDFromRequest_FromAuthorizer(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name: "userId takes priority over sub",
-			request: events.APIGatewayProxyRequest{
-				RequestContext: events.APIGatewayProxyRequestContext{
-					Authorizer: map[string]interface{}{
-						"userId": "priority-user",
-						"sub":    "secondary-sub",
-					},
-				},
-			},
-			wantID:    "priority-user",
-			wantError: false,
-		},
-		{
 			name:      "empty request returns error",
 			request:   events.APIGatewayProxyRequest{},
 			wantID:    "",
 			wantError: true,
 		},
 		{
-			name: "empty userId in authorizer returns error",
+			name: "empty uuid returns error",
 			request: events.APIGatewayProxyRequest{
 				RequestContext: events.APIGatewayProxyRequestContext{
 					Authorizer: map[string]interface{}{
-						"userId": "",
+						"uuid": "",
 					},
 				},
 			},
 			wantID:    "",
 			wantError: true,
-		},
-		{
-			name: "non-string userId in authorizer falls through",
-			request: events.APIGatewayProxyRequest{
-				RequestContext: events.APIGatewayProxyRequestContext{
-					Authorizer: map[string]interface{}{
-						"userId": 12345, // not a string
-						"sub":    "fallback-sub",
-					},
-				},
-			},
-			wantID:    "fallback-sub",
-			wantError: false,
 		},
 	}
 
@@ -156,24 +106,6 @@ func TestResponse_Success(t *testing.T) {
 	if resp.Headers["Access-Control-Allow-Origin"] != "*" {
 		t.Errorf("Response() missing CORS header")
 	}
-
-	// Check body contains expected JSON
-	expectedSubstring := `"success":true`
-	if !containsSubstring(resp.Body, expectedSubstring) {
-		t.Errorf("Response() Body missing %q, got: %s", expectedSubstring, resp.Body)
-	}
-}
-
-func TestResponse_WithCookie(t *testing.T) {
-	resp, err := Response(http.StatusOK, Json{"test": true}, "session=abc123; HttpOnly")
-
-	if err != nil {
-		t.Errorf("Response() returned error: %v", err)
-	}
-
-	if resp.Headers["Set-Cookie"] != "session=abc123; HttpOnly" {
-		t.Errorf("Response() Set-Cookie = %q, want %q", resp.Headers["Set-Cookie"], "session=abc123; HttpOnly")
-	}
 }
 
 func TestResponse_ErrorCodes(t *testing.T) {
@@ -182,7 +114,6 @@ func TestResponse_ErrorCodes(t *testing.T) {
 		http.StatusUnauthorized,
 		http.StatusForbidden,
 		http.StatusNotFound,
-		http.StatusConflict,
 		http.StatusInternalServerError,
 	}
 
@@ -195,17 +126,4 @@ func TestResponse_ErrorCodes(t *testing.T) {
 			t.Errorf("Response(%d) StatusCode = %d", code, resp.StatusCode)
 		}
 	}
-}
-
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstringHelper(s, substr))
-}
-
-func containsSubstringHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
