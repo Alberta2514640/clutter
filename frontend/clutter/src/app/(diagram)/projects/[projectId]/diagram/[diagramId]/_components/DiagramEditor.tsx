@@ -2,7 +2,7 @@
 import { useDiagramActions, useDiagramState } from "@/lib/stores/diagramStore";
 import type { DiagramEdge, DiagramNode, PaletteItem } from "@/lib/types";
 import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
-import { Background, BackgroundVariant, Controls, ReactFlow, useReactFlow } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, Panel, ReactFlow, useReactFlow } from "@xyflow/react";
 import React, { useCallback, useEffect, useMemo } from "react";
 import Palette from "./Palette";
 import TopNav from "./TopNav";
@@ -96,19 +96,6 @@ export default function DiagramEditor({
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      {/* Top Nav - Fixed at top */}
-      <div className="absolute top-0 left-0 right-0 z-30">
-        <TopNav onSave={onSave} />
-      </div>
-
-      {/* Floating Palette - Fixed position on left */}
-      <div className="absolute top-20 left-4 z-20">
-        <Palette />
-      </div>
-
-      <div className="absolute top-20 right-4 z-20">
-        <ConfigPanel />
-      </div>
 
       {/* Fullscreen React Flow Canvas */}
       <div className="h-full w-full">
@@ -125,6 +112,15 @@ export default function DiagramEditor({
           snapToGrid
           snapGrid={[20, 20]}
         >
+          <Panel position="top-right">
+            <TopNav onSave={onSave} />
+          </Panel>
+          <Panel position="center-left">
+            <Palette />
+          </Panel>
+          <Panel position="center-right">
+            <ConfigPanel />
+          </Panel>
           <Background 
             variant={BackgroundVariant.Dots} 
             gap={20} 
