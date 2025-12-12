@@ -1,0 +1,22 @@
+{
+    "type": "object",
+    "required": [
+        "projectId",
+        "diagramId"
+    ],
+    "properties": {
+        "projectId": {
+            "type": "string"
+        },
+        "diagramId": {
+            "type": "string"
+        },
+        "name": {
+            "type": "string"
+        },
+        "uiLayout": {
+            "type": "object"
+        }
+    },
+    "additionalProperties": false
+}
