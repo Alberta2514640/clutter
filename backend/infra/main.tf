@@ -83,17 +83,6 @@ module "organization-create-lambda" {
   }
 
 }
-module "organization-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/delete"
-
-}
 module "organization-get-lambda" {
 
   source        = "./modules/templates/lambda"
@@ -105,6 +94,9 @@ module "organization-get-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/get"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-overview-lambda" {
@@ -131,6 +123,17 @@ module "organization-update-lambda" {
   zip_dir_slice = "organization/update"
 
 }
+module "organization-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "organization/delete"
+
+}
 
 # Project
 module "project-create-lambda" {
@@ -140,20 +143,6 @@ module "project-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/create"
-  environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
-  }
-
-}
-module "project-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "project-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "project/delete"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
   }
@@ -184,6 +173,20 @@ module "project-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/update"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
+
+}
+module "project-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "project-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "project/delete"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
   }

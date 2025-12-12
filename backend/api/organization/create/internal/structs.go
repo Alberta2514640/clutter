@@ -6,7 +6,7 @@ type RequestBody struct {
 	Description      string `json:"description"`
 }
 
-// DynamoDB item structure
+// Organization SQL insert structure
 type OrganizationData struct {
 	Id          string `json:"id"`
 	CreatedBy   string `json:"created_by"`
