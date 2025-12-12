@@ -1,5 +1,10 @@
 package internal
 
+// Incoming request body
+type GoogleLoginRequest struct {
+	Token string `json:"token"`
+}
+
 // Outgoing user structure
 type UserData struct {
 	Uuid       string `json:"uuid"`
