@@ -16,13 +16,13 @@ import (
 
 // DiagramData represents a diagram's data structure
 type DiagramData struct {
-	ID             string          `json:"id"`
-	Name           string          `json:"name"`
-	Data           json.RawMessage `json:"data"`
-	CreatedBy      string          `json:"createdBy"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	LatestUpdateBy *string         `json:"latestUpdateBy,omitempty"`
-	LatestUpdateAt *time.Time      `json:"latestUpdateAt,omitempty"`
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	Data           *generic.DiagramLayout `json:"data"`
+	CreatedBy      string                 `json:"createdBy"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	LatestUpdateBy *string                `json:"latestUpdateBy,omitempty"`
+	LatestUpdateAt *time.Time             `json:"latestUpdateAt,omitempty"`
 }
 
 func main() {
@@ -118,10 +118,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			FROM diagrams
 			WHERE id = $1 AND project_id = $2
 		`
+		var rawData []byte
 		err := conn.QueryRow(ctx, query, diagramID, projectID).Scan(
 			&diagram.ID,
 			&diagram.Name,
-			&diagram.Data,
+			&rawData,
 			&diagram.CreatedBy,
 			&diagram.CreatedAt,
 			&diagram.LatestUpdateBy,
@@ -142,6 +143,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"error": generic.Json{
 					"code":    "INTERNAL_ERROR",
 					"message": "Failed to fetch diagram",
+				},
+			})
+		}
+		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "Failed to parse diagram data",
 				},
 			})
 		}
@@ -174,10 +184,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	var diagrams []DiagramData
 	for rows.Next() {
 		var diagram DiagramData
+		var rawData []byte
 		err := rows.Scan(
 			&diagram.ID,
 			&diagram.Name,
-			&diagram.Data,
+			&rawData,
 			&diagram.CreatedBy,
 			&diagram.CreatedAt,
 			&diagram.LatestUpdateBy,
@@ -189,6 +200,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"error": generic.Json{
 					"code":    "INTERNAL_ERROR",
 					"message": "Failed to parse diagram data",
+				},
+			})
+		}
+		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "Failed to unmarshal diagram data",
 				},
 			})
 		}

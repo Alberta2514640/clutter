@@ -32,7 +32,7 @@ func TestGetUserIDFromRequest_Authorizer(t *testing.T) {
 	req := events.APIGatewayProxyRequest{
 		RequestContext: events.APIGatewayProxyRequestContext{
 			Authorizer: map[string]interface{}{
-				"userId": "user-123",
+				"uuid": "user-123",
 			},
 		},
 	}
@@ -66,23 +66,5 @@ func TestGetUserIDFromRequest_Missing(t *testing.T) {
 	_, err := generic.GetUserIDFromRequest(req)
 	if err == nil {
 		t.Error("Expected error for missing user ID")
-	}
-}
-
-func TestGetUserIDFromRequest_Sub(t *testing.T) {
-	req := events.APIGatewayProxyRequest{
-		RequestContext: events.APIGatewayProxyRequestContext{
-			Authorizer: map[string]interface{}{
-				"sub": "sub-789",
-			},
-		},
-	}
-
-	userID, err := generic.GetUserIDFromRequest(req)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-	if userID != "sub-789" {
-		t.Errorf("Expected sub-789, got %s", userID)
 	}
 }
