@@ -140,11 +140,26 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 6. Fetch current diagram state for versioning (with lock to prevent race conditions)
+	// 6. Start transaction for atomic fetch + history + update
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to start transaction",
+			},
+		})
+	}
+	defer tx.Rollback(ctx) // Rollback if not committed
+
+	// 7. Fetch current diagram state with lock (FOR UPDATE prevents race conditions)
 	var oldName string
 	var oldData []byte
 	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2 FOR UPDATE`
-	err = conn.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
+	err = tx.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return generic.Response(http.StatusNotFound, generic.Json{
@@ -164,22 +179,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 7. Start transaction for atomic history + update
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to start transaction",
-			},
-		})
-	}
-	defer tx.Rollback(ctx) // Rollback if not committed
-
-	// Get next version number
+	// 8. Get next version number (safe now due to FOR UPDATE lock above)
 	var nextVersion int
 	versionQuery := `SELECT COALESCE(MAX(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1`
 	err = tx.QueryRow(ctx, versionQuery, req.DiagramID).Scan(&nextVersion)
