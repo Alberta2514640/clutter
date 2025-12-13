@@ -11,6 +11,7 @@ import (
 )
 
 // PsqlConnect establishes a connection to the PostgreSQL database using the
+// connection string from the PSQL_CONNECTION_STRING environment variable.
 func PsqlConnect() (*pgx.Conn, error) {
 	conn, err := pgx.Connect(context.Background(), os.Getenv("PSQL_CONNECTION_STRING"))
 	if err != nil {
