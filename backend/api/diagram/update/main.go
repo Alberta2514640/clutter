@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/jackc/pgx/v5"
 )
 
 type UpdateRequest struct {
@@ -138,17 +140,26 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 6. Fetch current diagram state for versioning
+	// 6. Fetch current diagram state for versioning (with lock to prevent race conditions)
 	var oldName string
 	var oldData []byte
-	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2`
+	fetchQuery := `SELECT name, data FROM diagrams WHERE id = $1 AND project_id = $2 FOR UPDATE`
 	err = conn.QueryRow(ctx, fetchQuery, req.DiagramID, req.ProjectID).Scan(&oldName, &oldData)
 	if err != nil {
-		return generic.Response(http.StatusNotFound, generic.Json{
+		if errors.Is(err, pgx.ErrNoRows) {
+			return generic.Response(http.StatusNotFound, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "NOT_FOUND",
+					"message": "Diagram not found",
+				},
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"success": false,
 			"error": generic.Json{
-				"code":    "NOT_FOUND",
-				"message": "Diagram not found",
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to fetch diagram for update",
 			},
 		})
 	}
