@@ -21,14 +21,14 @@ type Request struct {
 
 // DiagramData defines the response data object
 type DiagramData struct {
-	ID             string     `json:"id"`
-	ProjectID      string     `json:"projectId"`
-	Name           string     `json:"name"`
-	Data           string     `json:"data"`
-	CreatedBy      string     `json:"createdBy"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	LatestUpdateBy *string    `json:"latestUpdateBy,omitempty"`
-	LatestUpdateAt *time.Time `json:"latestUpdateAt,omitempty"`
+	ID             string                 `json:"id"`
+	ProjectID      string                 `json:"projectId"`
+	Name           string                 `json:"name"`
+	Data           *generic.DiagramLayout `json:"data"`
+	CreatedBy      string                 `json:"createdBy"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	LatestUpdateBy *string                `json:"latestUpdateBy,omitempty"`
+	LatestUpdateAt *time.Time             `json:"latestUpdateAt,omitempty"`
 }
 
 func main() {
@@ -151,7 +151,23 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		INSERT INTO diagrams (id, project_id, created_by, name, data, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	emptyData := "{}"
+	// Initialize with valid empty layout
+	emptyLayout := generic.DiagramLayout{
+		Nodes: []generic.DiagramNode{},
+		Edges: []generic.DiagramEdge{},
+	}
+	emptyDataBytes, err := json.Marshal(emptyLayout)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "Failed to initialize diagram data",
+			},
+		})
+	}
+	emptyData := string(emptyDataBytes)
+
 	_, err = conn.Exec(ctx, query, diagramID, req.ProjectID, userID, req.Name, emptyData, timestamp)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
@@ -177,7 +193,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		ID:             diagramID,
 		ProjectID:      req.ProjectID,
 		Name:           req.Name,
-		Data:           emptyData,
+		Data:           &emptyLayout,
 		CreatedBy:      userID,
 		CreatedAt:      timestamp,
 		LatestUpdateBy: nil,
