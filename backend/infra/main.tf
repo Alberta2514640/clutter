@@ -203,7 +203,7 @@ module "diagram-create-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["*"]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-create:*"]
   zip_dir_slice = "diagram/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -219,7 +219,7 @@ module "diagram-get-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["*"]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-get:*"]
   zip_dir_slice = "diagram/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -235,7 +235,7 @@ module "diagram-update-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["*"]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-update:*"]
   zip_dir_slice = "diagram/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -251,7 +251,7 @@ module "diagram-delete-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["*"]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-delete:*"]
   zip_dir_slice = "diagram/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
@@ -344,7 +344,7 @@ module "diagram-update-model" {
 module "organization-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "organizationCreate"
+  model_name      = "organizationcreate"
   description     = "Model to validate organization creation requests"
   schema_filename = "organization-create.json"
 }
