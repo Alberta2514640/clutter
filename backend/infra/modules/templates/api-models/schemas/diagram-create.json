@@ -9,7 +9,9 @@
             "type": "string"
         },
         "name": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
         }
     },
     "additionalProperties": false
