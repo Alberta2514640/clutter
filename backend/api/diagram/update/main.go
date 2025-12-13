@@ -18,7 +18,7 @@ type UpdateRequest struct {
 	ProjectID string                 `json:"projectId"`
 	DiagramID string                 `json:"diagramId"`
 	Name      *string                `json:"name,omitempty"`
-	UILayout  map[string]interface{} `json:"uiLayout,omitempty"`
+	UILayout  *generic.DiagramLayout `json:"uiLayout,omitempty"`
 }
 
 func main() {

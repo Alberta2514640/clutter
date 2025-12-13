@@ -30,7 +30,7 @@ func TestUpdateAuthorization_Property(t *testing.T) {
 func TestGetUserIDFromRequest_Authorizer(t *testing.T) {
 	req := events.APIGatewayProxyRequest{
 		RequestContext: events.APIGatewayProxyRequestContext{
-			Authorizer: map[string]interface{}{"userId": "user-123"},
+			Authorizer: map[string]interface{}{"uuid": "user-123"},
 		},
 	}
 
