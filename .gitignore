@@ -9,15 +9,6 @@ backend/.env.local
 backend/infra/terraform.tfvars
 *.tfvars
 
-# Local test scripts and tools
-backend/api/diagram/insomnia_collection.json
-backend/api/diagram/setup_test_data.sh
-backend/api/diagram/setup_aws_test_data.sh
-backend/api/diagram/setup_postgres_test_data.sql
-backend/api/diagram/test_diagram_endpoints.js
-backend/api/diagram/test_diagram_endpoints.sh
-backend/api/diagram/test_local_README.md
-
 # Docker build artifacts
 *.tar
 docker-build/
@@ -27,9 +18,6 @@ docker-build/
 notes.md
 TODO.md
 
-# Kiro spec files
-.kiro/specs/authorization-checks/
-.kiro/specs/diagram-authorization/
 
 # Docker compose (local dev only)
 docker-compose.yml
