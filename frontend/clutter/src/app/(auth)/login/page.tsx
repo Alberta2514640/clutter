@@ -89,8 +89,33 @@ export default function LoginPage() {
         localStorage.setItem("clutter_auth_token", data.token);
         localStorage.setItem("clutter_user", JSON.stringify(data.userData));
 
-        // Go to dashboard
-        router.push("/dashboard");
+        //   Decide where to send them:
+        // - first-time user (no org/tenant yet) -> create org page
+        // - returning user -> dashboard
+        try {
+          const profileRes = await fetch("/api/me", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${data.token}`, // or remove if your /api/me reads cookie instead
+            },
+          });
+
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            const tenantId = profile?.tenantId ?? profile?.tenant?.tenantId ?? null;
+
+            if (!tenantId) {
+              router.replace("/onboarding/create-tenant"); // 👈 your CreateTenantPage route
+              return;
+            }
+          }
+        } catch {
+          // If profile check fails, fall back to home (or onboarding if you prefer)
+          router.replace("/");
+        }
+
+        // Returning user
+        router.replace("/dashboard");
       } catch (err) {
         console.error("Error during login flow:", err);
         setErrorMsg("Something went wrong. Please try again.");

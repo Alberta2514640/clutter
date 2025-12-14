@@ -1,4 +1,4 @@
-import Navbar from "@/components/common/Navbar";
+// import Navbar from "@/components/common/Navbar";
 import DashboardSidebar from "@/components/common/Sidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
