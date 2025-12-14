@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
@@ -28,13 +27,6 @@ func GetUserIDFromRequest(request events.APIGatewayProxyRequest) (string, error)
 			if s, ok2 := v.(string); ok2 && s != "" {
 				return s, nil
 			}
-		}
-	}
-
-	// Local testing: case-insensitive x-user-id header
-	for k, v := range request.Headers {
-		if strings.ToLower(k) == "x-user-id" && v != "" {
-			return v, nil
 		}
 	}
 
