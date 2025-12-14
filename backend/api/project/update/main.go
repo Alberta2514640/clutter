@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -39,11 +38,11 @@ var (
 )
 
 func init() {
-    var err error
-    ddb, tableName, err = generic.GetDynamodbClient()
-    if err != nil {
-        panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-    }
+	var err error
+	ddb, tableName, err = generic.GetDynamodbClient()
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
+	}
 }
 
 func main() {
@@ -53,7 +52,7 @@ func main() {
 func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	ctx := context.Background()
 
-	// 1. Require user identity (authorizer or x-user-id header)
+	// 1. Require user identity (authorizer)
 	userID, err := getUserIDFromRequest(req)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
@@ -115,15 +114,15 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 
 	updateExpr := "SET #d.#name = :name, #d.#description = :description, #d.#updatedAt = :updatedAt"
 	exprNames := map[string]string{
-		"#d":          "Data",
-		"#name":       "name",
+		"#d":           "Data",
+		"#name":        "name",
 		"#description": "description",
-		"#updatedAt":  "updatedAt",
+		"#updatedAt":   "updatedAt",
 	}
 	exprValues := map[string]types.AttributeValue{
-		":name":       &types.AttributeValueMemberS{Value: body.Name},
+		":name":        &types.AttributeValueMemberS{Value: body.Name},
 		":description": &types.AttributeValueMemberS{Value: body.Description},
-		":updatedAt":  &types.AttributeValueMemberS{Value: now},
+		":updatedAt":   &types.AttributeValueMemberS{Value: now},
 	}
 
 	out, err := ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
@@ -214,12 +213,6 @@ func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
 			if s, ok2 := v.(string); ok2 && s != "" {
 				return s, nil
 			}
-		}
-	}
-
-	for k, v := range req.Headers {
-		if strings.ToLower(k) == "x-user-id" && v != "" {
-			return v, nil
 		}
 	}
 

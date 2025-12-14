@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -35,7 +34,7 @@ func main() {
 func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	ctx := context.Background()
 
-	// 1. Require user identity (authorizer or x-user-id header)
+	// 1. Require user identity (authorizer)
 	_, err := getUserIDFromRequest(req)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
@@ -121,12 +120,6 @@ func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
 			if s, ok2 := v.(string); ok2 && s != "" {
 				return s, nil
 			}
-		}
-	}
-
-	for k, v := range req.Headers {
-		if strings.ToLower(k) == "x-user-id" && v != "" {
-			return v, nil
 		}
 	}
 

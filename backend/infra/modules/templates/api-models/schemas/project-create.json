@@ -1,15 +1,27 @@
 {
   "type": "object",
-  "required": ["organizationId", "name"],
+  "required": [
+    "organizationId",
+    "name"
+  ],
   "properties": {
     "organizationId": {
-      "type": "string"
+      "type": "string",
+      "pattern": "^org-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Must be a valid organization UUID with 'org-' prefix"
     },
     "name": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^(?! )(?!.*  )[A-Za-z0-9']+(?: [A-Za-z0-9']+)*$",
+      "description": "Project name: 1-100 characters, alphanumeric and apostrophe only, no leading/trailing/consecutive spaces"
     },
     "description": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 300,
+      "pattern": "^(?!\\s)(?!.*  ).*\\S$",
+      "description": "Optional. Up to 300 characters. Cannot start with whitespace, have consecutive spaces, or end with whitespace"
     }
   },
   "additionalProperties": false
