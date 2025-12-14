@@ -327,6 +327,20 @@ module "log-in-model" {
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
 }
+module "diagram-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramcreate"
+  description     = "Model to validate diagram create requests"
+  schema_filename = "diagram-create.json"
+}
+module "diagram-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramupdate"
+  description     = "Model to validate diagram update requests"
+  schema_filename = "diagram-update.json"
+}
 module "organization-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -504,8 +518,10 @@ module "diagram-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.diagram-create-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-} # GET diagram
+}
+# GET diagram
 module "diagram-get-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
@@ -530,6 +546,7 @@ module "diagram-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram

@@ -15,5 +15,7 @@
             "description": "Optional. Up to 300 characters. Allows all characters. Cannot start with whitespace. Cannot have repeating spaces."
         }
     },
-    "required": ["organizationName"]
+    "required": [
+        "organizationName"
+    ]
 }
