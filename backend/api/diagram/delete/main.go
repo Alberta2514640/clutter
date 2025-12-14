@@ -15,28 +15,22 @@ func main() {
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// 1. Extract userId from request
-	userID, err := generic.GetUserIDFromRequest(request)
+	// 1. Extract user data from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "UNAUTHORIZED",
-				"message": err.Error(),
-			},
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
 		})
 	}
+	userID := userData.Id
 
 	projectID := request.QueryStringParameters["projectId"]
 	diagramID := request.QueryStringParameters["diagramId"]
 
 	if projectID == "" || diagramID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "Missing required query parameters: projectId, diagramId",
-			},
+			"message": "Missing required query parameters: projectId, diagramId",
 		})
 	}
 
@@ -44,11 +38,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to connect to database",
-			},
+			"message": "Failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
@@ -58,19 +48,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch project",
-			},
+			"message": "Failed to fetch project",
 		})
 	}
 
@@ -78,19 +60,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to check authorization",
-			},
+			"message": "Failed to check authorization",
 		})
 	}
 
@@ -99,26 +73,17 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	cmdTag, err := conn.Exec(ctx, query, diagramID, projectID)
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to delete diagram",
-			},
+			"message": "Failed to delete diagram",
 		})
 	}
 
 	if cmdTag.RowsAffected() == 0 {
 		return generic.Response(http.StatusNotFound, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "NOT_FOUND",
-				"message": "Diagram not found",
-			},
+			"message": "Diagram not found",
 		})
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
-		"success": true,
 		"message": "Diagram deleted successfully",
 	})
 }

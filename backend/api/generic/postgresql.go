@@ -5,8 +5,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // PsqlConnect establishes a connection to the PostgreSQL database using the
@@ -19,16 +19,12 @@ func PsqlConnect() (*pgx.Conn, error) {
 	return conn, nil
 }
 
-// GetUserIDFromRequest extracts the user's UUID from the API Gateway request.
-func GetUserIDFromRequest(request events.APIGatewayProxyRequest) (string, error) {
-	// Check uuid from authorizer context
-	if request.RequestContext.Authorizer != nil {
-		if v, ok := request.RequestContext.Authorizer["uuid"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
+// IsUniqueViolation checks if the error is a PostgreSQL unique constraint violation
+// PostgreSQL error code 23505 indicates a unique_violation
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
 	}
-
-	return "", errors.New("missing user identity in request context")
+	return false
 }

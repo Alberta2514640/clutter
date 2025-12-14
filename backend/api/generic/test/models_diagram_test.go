@@ -1,17 +1,19 @@
-package generic
+package generic_test
 
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
 
 func TestDiagramLayout_Marshal(t *testing.T) {
 	// 1. Setup Mock Data (matching user provided example)
-	mockNodes := []DiagramNode{
+	mockNodes := []generic.DiagramNode{
 		{
 			ID:   "912e7d9c-62ca-4416-af4c-da5826671e7d",
 			Type: "awsService",
-			Position: Position{
+			Position: generic.Position{
 				X: 400,
 				Y: 280,
 			},
@@ -23,7 +25,7 @@ func TestDiagramLayout_Marshal(t *testing.T) {
 		{
 			ID:   "3f9f1679-d083-4bdc-83de-aa72e5c9b148",
 			Type: "awsService",
-			Position: Position{
+			Position: generic.Position{
 				X: 880,
 				Y: 280,
 			},
@@ -34,7 +36,7 @@ func TestDiagramLayout_Marshal(t *testing.T) {
 		},
 	}
 
-	mockEdges := []DiagramEdge{
+	mockEdges := []generic.DiagramEdge{
 		{
 			ID:     "xy-edge__912e7d9c-62ca-4416-af4c-da5826671e7d-3f9f1679-d083-4bdc-83de-aa72e5c9b148",
 			Source: "912e7d9c-62ca-4416-af4c-da5826671e7d",
@@ -42,7 +44,7 @@ func TestDiagramLayout_Marshal(t *testing.T) {
 		},
 	}
 
-	layout := DiagramLayout{
+	layout := generic.DiagramLayout{
 		Nodes: mockNodes,
 		Edges: mockEdges,
 	}
@@ -54,7 +56,7 @@ func TestDiagramLayout_Marshal(t *testing.T) {
 	}
 
 	// 3. Unmarshal back to check integrity
-	var result DiagramLayout
+	var result generic.DiagramLayout
 	if err := json.Unmarshal(bytes, &result); err != nil {
 		t.Fatalf("Failed to unmarshal layout: %v", err)
 	}

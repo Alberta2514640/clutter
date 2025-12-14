@@ -1,4 +1,4 @@
-package generic
+package generic_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/google/uuid"
 )
 
@@ -17,7 +18,7 @@ func TestDiagramAuthorizationFlow_Integration(t *testing.T) {
 	}
 
 	// Check if we can connect to PostgreSQL
-	conn, err := PsqlConnect()
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		t.Skipf("Skipping integration test - cannot connect to PostgreSQL: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestDiagramAuthorizationFlow_Integration(t *testing.T) {
 	})
 
 	t.Run("GetDiagramProjectPSQL returns correct project", func(t *testing.T) {
-		retrievedProjectID, err := GetDiagramProjectPSQL(ctx, conn, diagramID)
+		retrievedProjectID, err := generic.GetDiagramProjectPSQL(ctx, conn, diagramID)
 		if err != nil {
 			t.Fatalf("GetDiagramProjectPSQL failed: %v", err)
 		}
@@ -108,18 +109,18 @@ func TestDiagramAuthorizationFlow_Integration(t *testing.T) {
 	})
 
 	t.Run("GetDiagramProjectPSQL returns error for non-existent diagram", func(t *testing.T) {
-		_, err := GetDiagramProjectPSQL(ctx, conn, uuid.NewString())
+		_, err := generic.GetDiagramProjectPSQL(ctx, conn, uuid.NewString())
 		if err == nil {
 			t.Error("Expected error for non-existent diagram")
 		}
-		authErr, ok := err.(*AuthorizationError)
+		authErr, ok := err.(*generic.AuthorizationError)
 		if !ok || authErr.StatusCode != 404 {
 			t.Errorf("Expected 404 error, got: %v", err)
 		}
 	})
 
 	t.Run("GetProjectOrganizationPSQL returns correct organization", func(t *testing.T) {
-		retrievedOrgID, err := GetProjectOrganizationPSQL(ctx, conn, projectID)
+		retrievedOrgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, projectID)
 		if err != nil {
 			t.Fatalf("GetProjectOrganizationPSQL failed: %v", err)
 		}
@@ -129,18 +130,18 @@ func TestDiagramAuthorizationFlow_Integration(t *testing.T) {
 	})
 
 	t.Run("CheckOrganizationMembershipPSQL allows authorized user", func(t *testing.T) {
-		err := CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID)
+		err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID)
 		if err != nil {
 			t.Errorf("Authorized user should have access, got error: %v", err)
 		}
 	})
 
 	t.Run("CheckOrganizationMembershipPSQL blocks unauthorized user", func(t *testing.T) {
-		err := CheckOrganizationMembershipPSQL(ctx, conn, otherUserID, orgID)
+		err := generic.CheckOrganizationMembershipPSQL(ctx, conn, otherUserID, orgID)
 		if err == nil {
 			t.Error("Unauthorized user should not have access")
 		}
-		authErr, ok := err.(*AuthorizationError)
+		authErr, ok := err.(*generic.AuthorizationError)
 		if !ok || authErr.StatusCode != 403 {
 			t.Errorf("Expected 403 error, got: %v", err)
 		}
@@ -150,25 +151,25 @@ func TestDiagramAuthorizationFlow_Integration(t *testing.T) {
 		// Simulate the full authorization flow used in diagram endpoints
 
 		// Step 1: Get diagram's project
-		retrievedProjectID, err := GetDiagramProjectPSQL(ctx, conn, diagramID)
+		retrievedProjectID, err := generic.GetDiagramProjectPSQL(ctx, conn, diagramID)
 		if err != nil {
 			t.Fatalf("Step 1 failed: %v", err)
 		}
 
 		// Step 2: Get project's organization
-		retrievedOrgID, err := GetProjectOrganizationPSQL(ctx, conn, retrievedProjectID)
+		retrievedOrgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, retrievedProjectID)
 		if err != nil {
 			t.Fatalf("Step 2 failed: %v", err)
 		}
 
 		// Step 3: Check organization membership for authorized user
-		err = CheckOrganizationMembershipPSQL(ctx, conn, userID, retrievedOrgID)
+		err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, retrievedOrgID)
 		if err != nil {
 			t.Errorf("Authorized user should pass full chain, got error: %v", err)
 		}
 
 		// Step 4: Check organization membership for unauthorized user
-		err = CheckOrganizationMembershipPSQL(ctx, conn, otherUserID, retrievedOrgID)
+		err = generic.CheckOrganizationMembershipPSQL(ctx, conn, otherUserID, retrievedOrgID)
 		if err == nil {
 			t.Error("Unauthorized user should fail authorization chain")
 		}
@@ -268,7 +269,7 @@ func TestLoginColumnNames_Integration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	conn, err := PsqlConnect()
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		t.Skipf("Skipping integration test - cannot connect to PostgreSQL: %v", err)
 	}
