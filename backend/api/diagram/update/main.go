@@ -28,59 +28,41 @@ func main() {
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// 1. Extract userId from request
-	userID, err := generic.GetUserIDFromRequest(request)
+	// 1. Extract user data from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "UNAUTHORIZED",
-				"message": err.Error(),
-			},
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
 		})
 	}
+	userID := userData.Id
 
 	// 2. Parse request body
 	var req UpdateRequest
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INVALID_JSON",
-				"message": "Invalid request body",
-			},
+			"message": "Invalid request body",
 		})
 	}
 
 	if req.ProjectID == "" || req.DiagramID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "Missing required fields: projectId, diagramId",
-			},
+			"message": "Missing required fields: projectId, diagramId",
 		})
 	}
 
 	// Validate at least one field is being updated
 	if req.Name == nil && req.UILayout == nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "At least one field (name or uiLayout) must be provided for update",
-			},
+			"message": "At least one field (name or uiLayout) must be provided for update",
 		})
 	}
 
 	// Validate name length if provided
 	if req.Name != nil && len(*req.Name) > 32 {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "Diagram name must not exceed 32 characters",
-			},
+			"message": "Diagram name must not exceed 32 characters",
 		})
 	}
 
@@ -90,11 +72,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to connect to database",
-			},
+			"message": "Failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
@@ -104,19 +82,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch project",
-			},
+			"message": "Failed to fetch project",
 		})
 	}
 
@@ -124,19 +94,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to check authorization",
-			},
+			"message": "Failed to check authorization",
 		})
 	}
 
@@ -146,11 +108,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to start transaction",
-			},
+			"message": "Failed to start transaction",
 		})
 	}
 	defer tx.Rollback(ctx) // Rollback if not committed
@@ -163,19 +121,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return generic.Response(http.StatusNotFound, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "NOT_FOUND",
-					"message": "Diagram not found",
-				},
+				"message": "Diagram not found",
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch diagram for update",
-			},
+			"message": "Failed to fetch diagram for update",
 		})
 	}
 
@@ -185,11 +135,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	err = tx.QueryRow(ctx, versionQuery, req.DiagramID).Scan(&nextVersion)
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to get version number",
-			},
+			"message": "Failed to get version number",
 		})
 	}
 
@@ -201,11 +147,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	_, err = tx.Exec(ctx, historyQuery, req.DiagramID, nextVersion, userID, timestamp, oldName, oldData, "Auto-saved before update")
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to save diagram history",
-			},
+			"message": "Failed to save diagram history",
 		})
 	}
 
@@ -226,11 +168,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		uiLayoutJSON, err := json.Marshal(req.UILayout)
 		if err != nil {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Internal server error",
-				},
+				"message": "Internal server error",
 			})
 		}
 		setClauses = append(setClauses, "data = $"+fmt.Sprintf("%d", argCount))
@@ -245,35 +183,22 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
 			return generic.Response(http.StatusConflict, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "CONFLICT",
-					"message": "A diagram with this name already exists in the project",
-				},
+				"message": "A diagram with this name already exists in the project",
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to update diagram",
-			},
+			"message": "Failed to update diagram",
 		})
 	}
 
 	// 10. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to commit update",
-			},
+			"message": "Failed to commit update",
 		})
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
-		"success": true,
 		"message": "Diagram updated successfully",
 	})
 }

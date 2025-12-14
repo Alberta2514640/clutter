@@ -7,13 +7,13 @@
     "properties": {
         "projectId": {
             "type": "string",
-            "pattern": "^proj-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-            "description": "Must be a valid project UUID with 'proj-' prefix"
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "description": "Must be a valid UUID v4"
         },
         "diagramId": {
             "type": "string",
-            "pattern": "^diag-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-            "description": "Must be a valid diagram UUID with 'diag-' prefix"
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "description": "Must be a valid UUID v4"
         },
         "name": {
             "type": "string",

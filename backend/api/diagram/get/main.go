@@ -30,28 +30,22 @@ func main() {
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// 1. Extract userId from request
-	userID, err := generic.GetUserIDFromRequest(request)
+	// 1. Extract user data from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "UNAUTHORIZED",
-				"message": err.Error(),
-			},
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
 		})
 	}
+	userID := userData.Id
 
 	projectID := request.QueryStringParameters["projectId"]
 	diagramID := request.QueryStringParameters["diagramId"]
 
 	if projectID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "Missing required query parameter: projectId",
-			},
+			"message": "missing required query parameter: projectId",
 		})
 	}
 
@@ -59,11 +53,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to connect to database",
-			},
+			"message": "failed to connect to database",
+			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -73,19 +64,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch project",
-			},
+			"message": "failed to fetch project",
+			"error":   err.Error(),
 		})
 	}
 
@@ -93,19 +77,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
 		if authErr, ok := err.(*generic.AuthorizationError); ok {
 			return generic.Response(authErr.StatusCode, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    authErr.Code,
-					"message": authErr.Message,
-				},
+				"message": authErr.Message,
 			})
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to check authorization",
-			},
+			"message": "failed to check authorization",
+			"error":   err.Error(),
 		})
 	}
 
@@ -131,33 +108,23 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return generic.Response(http.StatusNotFound, generic.Json{
-					"success": false,
-					"error": generic.Json{
-						"code":    "NOT_FOUND",
-						"message": "Diagram not found",
-					},
+					"message": "diagram not found",
 				})
 			}
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Failed to fetch diagram",
-				},
+				"message": "failed to fetch diagram",
+				"error":   err.Error(),
 			})
 		}
 		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Failed to parse diagram data",
-				},
+				"message": "failed to parse diagram data",
+				"error":   err.Error(),
 			})
 		}
 
 		return generic.Response(http.StatusOK, generic.Json{
-			"success": true,
+			"message": "diagram retrieved successfully",
 			"data":    diagram,
 		})
 	}
@@ -172,11 +139,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	rows, err := conn.Query(ctx, query, projectID)
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to list diagrams",
-			},
+			"message": "failed to list diagrams",
+			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -196,20 +160,14 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		)
 		if err != nil {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Failed to parse diagram data",
-				},
+				"message": "failed to scan diagram row",
+				"error":   err.Error(),
 			})
 		}
 		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "INTERNAL_ERROR",
-					"message": "Failed to unmarshal diagram data",
-				},
+				"message": "failed to unmarshal diagram data",
+				"error":   err.Error(),
 			})
 		}
 
@@ -222,16 +180,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	if err := rows.Err(); err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to read diagram data",
-			},
+			"message": "failed to read diagram data",
+			"error":   err.Error(),
 		})
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
-		"success": true,
+		"message": "diagrams retrieved successfully",
 		"data":    diagrams,
 	})
 }

@@ -8,6 +8,4 @@
 # Deployment folder containing binary and zip
 **/deploy
 
-
-
 **/postman_*.json
