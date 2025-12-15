@@ -29,9 +29,29 @@ GOARCH=arm64
 
 echo "🏗️  Building Go Lambda functions..."
 
+# Helper function to get file modification time
+get_mod_time() {
+  local file="$1"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    stat -f %m "$file" 2>/dev/null || echo 0
+  else
+    stat -c %Y "$file" 2>/dev/null || echo 0
+  fi
+}
+
+# Helper function to get latest modification time in a directory
+get_latest_mod_time() {
+  local dir="$1"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    find "$dir" -type f -exec stat -f %m {} + | sort -n | tail -1 || echo 0
+  else
+    find "$dir" -type f -printf "%T@\n" | sort -n | tail -1 | awk '{print int($1)}' || echo 0
+  fi
+}
+
 # Compute latest modification time in generic folder
 GENERIC_DIR="${ROOT_DIR}/generic"
-GENERIC_MOD_TIME=$(find "$GENERIC_DIR" -type f -printf "%T@\n" | sort -n | tail -1 | awk '{print int($1)}' || echo 0)
+GENERIC_MOD_TIME=$(get_latest_mod_time "$GENERIC_DIR")
 
 for dir in "${LAMBDA_DIRS[@]}"; do
   SRC_DIR="${ROOT_DIR}/${dir}"
@@ -45,9 +65,8 @@ for dir in "${LAMBDA_DIRS[@]}"; do
   mkdir -p "${DEPLOY_DIR}"
 
   # Get modification time of Lambda's main.go
-  MAIN_MOD_TIME=$(stat -c %Y "$MAIN_GO" 2>/dev/null || echo 0)
-  BINARY_MOD_TIME=$(stat -c %Y "$BINARY" 2>/dev/null || echo 0)
-
+  MAIN_MOD_TIME=$(get_mod_time "$MAIN_GO")
+  BINARY_MOD_TIME=$(get_mod_time "$BINARY")
 
   # Rebuild if main.go is newer than binary, or binary missing, or generic changed
   if [[ ! -f "$BINARY" ]] || [[ "$MAIN_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then

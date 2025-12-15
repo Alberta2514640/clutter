@@ -344,7 +344,7 @@ module "diagram-update-model" {
 module "organization-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "organizationcreate"
+  model_name      = "organizationCreate"
   description     = "Model to validate organization creation requests"
   schema_filename = "organization-create.json"
 }
