@@ -344,7 +344,7 @@ module "diagram-update-model" {
 module "organization-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "organizationcreate"
+  model_name      = "organizationCreate"
   description     = "Model to validate organization creation requests"
   schema_filename = "organization-create.json"
 }
@@ -546,7 +546,7 @@ module "diagram-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  model_name           = module.diagram-update-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram
