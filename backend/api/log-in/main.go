@@ -15,11 +15,6 @@ import (
 	"google.golang.org/api/idtoken"
 )
 
-// Incoming request body
-type GoogleLoginRequest struct {
-	Token string `json:"token"`
-}
-
 func main() {
 
 	lambda.Start(handler)
@@ -31,7 +26,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	ctx := context.Background()
 
 	// Parse JSON body
-	var req GoogleLoginRequest
+	var req internal.GoogleLoginRequest
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{"error": "invalid request body", "message": err.Error()})
 	}

@@ -78,17 +78,9 @@ module "organization-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/create"
-
-}
-module "organization-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/delete"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-get-lambda" {
@@ -102,6 +94,9 @@ module "organization-get-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/get"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-overview-lambda" {
@@ -128,6 +123,17 @@ module "organization-update-lambda" {
   zip_dir_slice = "organization/update"
 
 }
+module "organization-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "organization/delete"
+
+}
 
 # Project
 module "project-create-lambda" {
@@ -137,20 +143,6 @@ module "project-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/create"
-  environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
-  }
-
-}
-module "project-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "project-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "project/delete"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
   }
@@ -186,17 +178,35 @@ module "project-update-lambda" {
   }
 
 }
+module "project-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "project-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "project/delete"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
+
+}
 
 # Diagram
 module "diagram-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
-  actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-create:*"]
   zip_dir_slice = "diagram/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -205,14 +215,14 @@ module "diagram-get-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-get"
   actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn, module.dynamodb.supported_resurces_metadata_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-get:*"]
   zip_dir_slice = "diagram/get"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -221,12 +231,14 @@ module "diagram-update-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-update"
   actions = [
-    "dynamodb:UpdateItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-update:*"]
   zip_dir_slice = "diagram/update"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -235,12 +247,14 @@ module "diagram-delete-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-delete"
   actions = [
-    "dynamodb:DeleteItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-delete:*"]
   zip_dir_slice = "diagram/delete"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -306,19 +320,33 @@ module "diagram-api-cors-compliance" {
 }
 
 # Validation Models
-module "test-model" {
-  source          = "./modules/templates/api-models"
-  rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "test"
-  description     = "Test model"
-  schema_filename = "project-create.json"
-}
 module "log-in-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
   model_name      = "login"
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
+}
+module "diagram-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramcreate"
+  description     = "Model to validate diagram create requests"
+  schema_filename = "diagram-create.json"
+}
+module "diagram-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramupdate"
+  description     = "Model to validate diagram update requests"
+  schema_filename = "diagram-update.json"
+}
+module "organization-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationCreate"
+  description     = "Model to validate organization creation requests"
+  schema_filename = "organization-create.json"
 }
 
 # Integrations
@@ -333,6 +361,7 @@ module "log-in-api-integration" {
   path_part            = module.log-in-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.log-in-api-path.path
+
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.log-in-model.model_name
 }
@@ -349,9 +378,10 @@ module "organization-create-api-integration" {
   path_part            = module.organization-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-create-model.model_name
 }
 # GET organization
 module "organization-get-api-integration" {
@@ -403,7 +433,6 @@ module "organization-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE organization
@@ -433,7 +462,6 @@ module "project-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # GET project
@@ -461,7 +489,6 @@ module "project-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE project
@@ -491,9 +518,10 @@ module "diagram-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  model_name           = module.diagram-create-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-} # GET diagram
+}
+# GET diagram
 module "diagram-get-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
@@ -518,7 +546,7 @@ module "diagram-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  model_name           = module.diagram-update-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram
