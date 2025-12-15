@@ -1,3 +1,4 @@
+// Package main implements the diagram CREATE Lambda function for creating diagrams in PostgreSQL
 package main
 
 import (
