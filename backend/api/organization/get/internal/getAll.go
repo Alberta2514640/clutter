@@ -29,19 +29,19 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 			o.created_at,
 			COUNT(DISTINCT p.id) AS total_projects,
 			COUNT(DISTINCT d.id) AS total_diagrams,
-			COUNT(DISTINCT m.member_id) AS total_members,
-			COALESCE(ARRAY_AGG(DISTINCT m.member_id), '{}') AS members
+			COUNT(DISTINCT om.member_id) AS total_members,
+			COALESCE(ARRAY_AGG(DISTINCT om.member_id), '{}') AS members
 		FROM organizations o
 		LEFT JOIN projects p ON p.organization_id = o.id
 		LEFT JOIN diagrams d ON d.project_id = p.id
-		LEFT JOIN organization_members m ON m.organization_id = o.id
+		LEFT JOIN organization_members om ON om.organization_id = o.id
 		WHERE o.id IN (
 			SELECT organization_id
 			FROM organization_members
 			WHERE member_id = $1
 		)
 		GROUP BY o.id, o.created_by, o.name, o.description
-		ORDER BY MIN(m.joined_at) ASC
+		ORDER BY MIN(om.joined_at) ASC
 	`
 
 	// Query all org data into rows
@@ -58,7 +58,6 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	for rows.Next() {
 		// Initialize variables for org struct and members slice
 		var org OrgOverviewData
-		var members []string
 
 		// Scan from row to org parameters and members slice
 		if err := rows.Scan(
@@ -70,13 +69,11 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 			&org.TotalProjects,
 			&org.TotalDiagrams,
 			&org.TotalMembers,
-			&members,
+			&org.Members,
 		); err != nil {
 			return nil, err
 		}
 
-		// Assign final remaining value of org.Members to members slice
-		org.Members = members
 		// Append full org data to orgs slice
 		orgs = append(orgs, org)
 	}
