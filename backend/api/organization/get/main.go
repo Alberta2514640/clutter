@@ -43,7 +43,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			})
 		}
 
-		return generic.Response(200, generic.Json{
+		return generic.Response(http.StatusOK, generic.Json{
 			"message": "successfully returned list of organizations (no 'organizationId' passed in query parameters)",
 			"data":    userOrganizationsData,
 		})
