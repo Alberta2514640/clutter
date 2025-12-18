@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
@@ -20,29 +22,14 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	// Get all organization's data
 	// Input:
 	// <$1> = member ID
-	queryAllOrgDataForUser := `
-		SELECT
-			o.id,
-			o.created_by,
-			o.name,
-			o.description,
-			o.created_at,
-			COUNT(DISTINCT p.id) AS total_projects,
-			COUNT(DISTINCT d.id) AS total_diagrams,
-			COUNT(DISTINCT om.member_id) AS total_members,
-			COALESCE(ARRAY_AGG(DISTINCT om.member_id), '{}') AS members
-		FROM organizations o
-		LEFT JOIN projects p ON p.organization_id = o.id
-		LEFT JOIN diagrams d ON d.project_id = p.id
-		LEFT JOIN organization_members om ON om.organization_id = o.id
-		WHERE o.id IN (
+	queryAllOrgDataForUser := fmt.Sprintf(
+		QueryOrgData,
+		`WHERE o.id IN (
 			SELECT organization_id
 			FROM organization_members
 			WHERE member_id = $1
-		)
-		GROUP BY o.id, o.created_by, o.name, o.description
-		ORDER BY MIN(om.joined_at) ASC
-	`
+		)`,
+	)
 
 	// Query all org data into rows
 	rows, err := conn.Query(ctx, queryAllOrgDataForUser, userId)
@@ -57,25 +44,33 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	// Iterate through each org
 	for rows.Next() {
 		// Initialize variables for org struct and members slice
-		var org OrgOverviewData
+		var orgData OrgOverviewData
+		// Initialize variable to hold projects json as bytes
+		var projectsJson []byte
 
 		// Scan from row to org parameters and members slice
 		if err := rows.Scan(
-			&org.Id,
-			&org.CreatedBy,
-			&org.Name,
-			&org.Description,
-			&org.CreatedAt,
-			&org.TotalProjects,
-			&org.TotalDiagrams,
-			&org.TotalMembers,
-			&org.Members,
+			&orgData.Id,
+			&orgData.CreatedBy,
+			&orgData.Name,
+			&orgData.Description,
+			&orgData.CreatedAt,
+			&orgData.TotalMembers,
+			&orgData.Members,
+			&orgData.TotalProjects,
+			&projectsJson,
+			&orgData.TotalDiagrams,
 		); err != nil {
 			return nil, err
 		}
 
+		// unmarshal projects json as bytes into Projects slice
+		if err := json.Unmarshal(projectsJson, &orgData.Projects); err != nil {
+			return nil, err
+		}
+
 		// Append full org data to orgs slice
-		orgs = append(orgs, org)
+		orgs = append(orgs, orgData)
 	}
 
 	return orgs, nil
