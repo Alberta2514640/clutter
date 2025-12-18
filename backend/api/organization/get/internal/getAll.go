@@ -8,7 +8,7 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
 
-func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
+func GetAllOrgsDataForUser(userId string) ([]generic.OrgOverviewData, error) {
 
 	// Connect to PostgreSQL
 	// Externally used for iterating through orgs by row
@@ -23,7 +23,7 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	// Input:
 	// <$1> = member ID
 	queryAllOrgDataForUser := fmt.Sprintf(
-		QueryOrgData,
+		generic.QueryOrgData,
 		`WHERE o.id IN (
 			SELECT organization_id
 			FROM organization_members
@@ -39,12 +39,12 @@ func GetAllOrgsDataForUser(userId string) ([]OrgOverviewData, error) {
 	defer rows.Close()
 
 	// Create empty Org OverviewData slice to append to in the iteration process
-	orgs := []OrgOverviewData{}
+	orgs := []generic.OrgOverviewData{}
 
 	// Iterate through each org
 	for rows.Next() {
 		// Initialize variables for org struct and members slice
-		var orgData OrgOverviewData
+		var orgData generic.OrgOverviewData
 		// Initialize variable to hold projects json as bytes
 		var projectsJson []byte
 

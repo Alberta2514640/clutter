@@ -1,4 +1,4 @@
-package internal
+package generic
 
 // Generic query to get all org data
 // Requires you to provide the logical "WHERE" clause to get org data for specific use case
