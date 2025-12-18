@@ -18,6 +18,7 @@ LAMBDA_DIRS=(
   "diagram/get"
   "diagram/update"
   "diagram/delete"
+  "terraform-template/get"
 )
 
 # Detect root directory of script

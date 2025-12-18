@@ -259,6 +259,22 @@ module "diagram-delete-lambda" {
 
 }
 
+
+module "terraform-template-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-template"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/terraform-template:*"]
+  zip_dir_slice = "terraform-template/get"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
 # ===========
 # API Gateway
 # ===========
@@ -317,6 +333,20 @@ module "diagram-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.diagram-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
+}
+
+}
+module "terraform-template-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "terraform-template-for"
+}
+module "terraform-template-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-template-api-path.resource_id
+  http_methods = ["GET"]
 }
 
 # Validation Models
@@ -561,4 +591,18 @@ module "diagram-delete-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.diagram-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# Terraform Template
+# GET terraform-template-for
+module "terraform-template-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-template-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-template-lambda.invoke_arn
+  function_name     = module.terraform-template-lambda.function_name
+  path_part         = module.terraform-template-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-template-api-path.path
 }

@@ -118,3 +118,26 @@ ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."diagram_history"
 AS PERMISSIVE TO anon USING (true);
+
+-- ============================
+-- RESOURCES (Terraform Templates)
+-- ============================
+CREATE TABLE public.resources (
+    resource_id VARCHAR NOT NULL,
+    platform VARCHAR(50) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    version NUMERIC(5, 2) NOT NULL,
+    variables JSONB NOT NULL,
+    snippet TEXT NOT NULL,
+    allowed_connections JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (resource_id)
+);
+
+ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_read_resources"
+ON "public"."resources"
+AS PERMISSIVE FOR SELECT
+TO anon
+USING (true);
