@@ -8,7 +8,6 @@ LAMBDA_DIRS=(
   "organization/create"
   "organization/delete"
   "organization/get"
-  "organization/overview"
   "organization/update"
   "project/create"
   "project/delete"

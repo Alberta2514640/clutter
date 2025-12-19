@@ -99,19 +99,6 @@ module "organization-get-lambda" {
   }
 
 }
-module "organization-overview-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-overview"
-  actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/overview"
-
-}
 module "organization-update-lambda" {
 
   source        = "./modules/templates/lambda"
@@ -394,31 +381,6 @@ module "organization-get-api-integration" {
   path_part         = module.organization-api-path.path_part
   execution_arn      = module.clutter-api-gateway.execution_arn
   path              = module.organization-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-}
-# GET organization/overview
-module "organization-overview-api-path" {
-  source      = "./modules/templates/api-path"
-  rest_api_id = module.clutter-api-gateway.rest_api_id
-  parent_id   = module.organization-api-path.resource_id
-  path_part   = "overview"
-}
-module "organization-overview-api-cors-compliance" {
-  source       = "./modules/templates/api-path-cors-compliance"
-  rest_api_id  = module.clutter-api-gateway.rest_api_id
-  resource_id  = module.organization-overview-api-path.resource_id
-  http_methods = ["GET"]
-}
-module "organization-overview-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-overview-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.organization-overview-lambda.invoke_arn
-  function_name     = module.organization-overview-lambda.function_name
-  path_part         = module.organization-overview-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-overview-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 # UPDATE organization
