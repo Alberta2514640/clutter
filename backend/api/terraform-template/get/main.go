@@ -19,7 +19,7 @@ type ResourceTemplate struct {
 	ResourceID         string                 `json:"resourceId"`
 	Platform           string                 `json:"platform"`
 	Type               string                 `json:"type"`
-	Version            string                 `json:"version"` // Changed to string to match VARCHAR(20)
+	Version            string                 `json:"version"`
 	Variables          map[string]interface{} `json:"variables"`
 	Snippet            string                 `json:"snippet"`
 	AllowedConnections []string               `json:"allowedConnections"`
@@ -83,7 +83,6 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	// 4. Query allowed connections from 'resource_connections' table
-	// We want target_resource_type where source is current resource
 	queryConnections := `
 		SELECT target_resource_type
 		FROM resource_connections
@@ -102,7 +101,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	for rows.Next() {
 		var connType string
 		if err := rows.Scan(&connType); err != nil {
-			continue // Skip bad rows but try to return what we have
+			continue
 		}
 		connections = append(connections, connType)
 	}
@@ -118,9 +117,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		}
 	}
 
-	// 6. Return template response
+	// 6. Return full template response
 	return generic.Response(http.StatusOK, generic.Json{
-		"message": "template retrieved successfully",
-		"data":    template,
+		"resourceId":         template.ResourceID,
+		"platform":           template.Platform,
+		"type":               template.Type,
+		"version":            template.Version,
+		"variables":          template.Variables,
+		"snippet":            template.Snippet,
+		"allowedConnections": template.AllowedConnections,
 	})
 }

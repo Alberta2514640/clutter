@@ -335,7 +335,6 @@ module "diagram-api-cors-compliance" {
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
 
-}
 module "terraform-template-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id

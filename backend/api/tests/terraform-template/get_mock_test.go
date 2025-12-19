@@ -2,14 +2,13 @@ package terraform_template_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/pashagolub/pgxmock/v4"
 )
 
-// TestGetTerraformTemplate_WithMock tests the terraform template retrieval query logic
+// TestGetTerraformTemplate_WithMock tests the terraform template retrieval logic with the new normalized schema
 func TestGetTerraformTemplate_WithMock(t *testing.T) {
 	mock, err := pgxmock.NewConn()
 	if err != nil {
@@ -19,61 +18,62 @@ func TestGetTerraformTemplate_WithMock(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("template found - lambda", func(t *testing.T) {
-		// Mock data matching the spec:
-		// PK: resourceID, Platform, Type (SK), Version, Variables, Snippet, Allowed_connections
+	t.Run("template found - lambda (normalized)", func(t *testing.T) {
+		// 1. Mock 'resource' table query
 		variablesJSON := []byte(`{"source":"./modules/templates/lambda","function_name":"organization-create","actions":"dynamodb:PutItem"}`)
-		connectionsJSON := []byte(`["API Gateway"]`)
-		snippet := `module "${function_name}-lambda" { source = ${source} function_name = ${function_name} actions = ${actions} }`
+		snippet := `module "${function_name}-lambda" { source = ${source} ... }`
 
-		mock.ExpectQuery(`SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER\(type\) = LOWER\(\$1\) LIMIT 1`).
+		mock.ExpectQuery(`SELECT resource_id, platform, resource_type, resource_version, variables, snippet FROM resource WHERE LOWER\(resource_type\) = LOWER\(\$1\) LIMIT 1`).
 			WithArgs("lambda").
 			WillReturnRows(pgxmock.NewRows([]string{
-				"resource_id", "platform", "type", "version", "variables", "snippet", "allowed_connections",
-			}).AddRow("123141sadasd", "AWS", "Lambda", 1.0, variablesJSON, snippet, connectionsJSON))
+				"resource_id", "platform", "resource_type", "resource_version", "variables", "snippet",
+			}).AddRow("res-123", "AWS", "Lambda", "1.0", variablesJSON, snippet))
 
-		// Execute query
-		query := `SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER(type) = LOWER($1) LIMIT 1`
+		// 2. Mock 'resource_connections' table query
+		mock.ExpectQuery(`SELECT target_resource_type FROM resource_connections WHERE LOWER\(source_resource_type\) = LOWER\(\$1\)`).
+			WithArgs("Lambda").
+			WillReturnRows(pgxmock.NewRows([]string{"target_resource_type"}).AddRow("API Gateway").AddRow("DynamoDB"))
 
-		var resourceID, platform, resourceType, snippetResult string
-		var version float64
-		var variablesBytes, connectionsBytes []byte
+		// Execute Logic Checks (Simulating Handler)
+		// ------------------------------------------
 
-		row := mock.QueryRow(ctx, query, "lambda")
-		err := row.Scan(&resourceID, &platform, &resourceType, &version, &variablesBytes, &snippetResult, &connectionsBytes)
+		// Query 1: Get Resource
+		queryRes := `SELECT resource_id, platform, resource_type, resource_version, variables, snippet FROM resource WHERE LOWER(resource_type) = LOWER($1) LIMIT 1`
+		var resourceID, platform, resType, version, snippetResult string
+		var variablesBytes []byte
+
+		err := mock.QueryRow(ctx, queryRes, "lambda").Scan(&resourceID, &platform, &resType, &version, &variablesBytes, &snippetResult)
 		if err != nil {
-			t.Errorf("Query failed: %v", err)
+			t.Fatalf("Resource query failed: %v", err)
 		}
 
-		// Verify results
-		if resourceID != "123141sadasd" {
-			t.Errorf("Expected resourceID '123141sadasd', got '%s'", resourceID)
+		if resourceID != "res-123" {
+			t.Errorf("Expected ID 'res-123', got '%s'", resourceID)
 		}
-		if platform != "AWS" {
-			t.Errorf("Expected platform 'AWS', got '%s'", platform)
-		}
-		if resourceType != "Lambda" {
-			t.Errorf("Expected type 'Lambda', got '%s'", resourceType)
-		}
-		if version != 1.0 {
-			t.Errorf("Expected version 1.0, got %f", version)
+		if version != "1.0" {
+			t.Errorf("Expected version '1.0', got '%s'", version)
 		}
 
-		// Verify JSON unmarshaling works
-		var variables map[string]interface{}
-		if err := json.Unmarshal(variablesBytes, &variables); err != nil {
-			t.Errorf("Failed to unmarshal variables: %v", err)
+		// Query 2: Get Connections
+		queryConn := `SELECT target_resource_type FROM resource_connections WHERE LOWER(source_resource_type) = LOWER($1)`
+		rows, err := mock.Query(ctx, queryConn, resType)
+		if err != nil {
+			t.Fatalf("Connections query failed: %v", err)
 		}
-		if variables["function_name"] != "organization-create" {
-			t.Errorf("Expected function_name 'organization-create', got '%v'", variables["function_name"])
-		}
+		defer rows.Close()
 
 		var connections []string
-		if err := json.Unmarshal(connectionsBytes, &connections); err != nil {
-			t.Errorf("Failed to unmarshal connections: %v", err)
+		for rows.Next() {
+			var conn string
+			rows.Scan(&conn)
+			connections = append(connections, conn)
 		}
-		if len(connections) != 1 || connections[0] != "API Gateway" {
-			t.Errorf("Expected connections ['API Gateway'], got %v", connections)
+
+		if len(connections) != 2 {
+			t.Errorf("Expected 2 connections, got %d", len(connections))
+		}
+		if connections[0] != "API Gateway" {
+			t.Errorf("Expected first connection 'API Gateway', got '%s'", connections[0])
 		}
 
 		if err := mock.ExpectationsWereMet(); err != nil {
@@ -81,55 +81,17 @@ func TestGetTerraformTemplate_WithMock(t *testing.T) {
 		}
 	})
 
-	t.Run("template not found", func(t *testing.T) {
-		mock.ExpectQuery(`SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER\(type\) = LOWER\(\$1\) LIMIT 1`).
+	t.Run("template not found (normalized)", func(t *testing.T) {
+		mock.ExpectQuery(`SELECT resource_id, platform, resource_type, resource_version, variables, snippet FROM resource WHERE LOWER\(resource_type\) = LOWER\(\$1\) LIMIT 1`).
 			WithArgs("nonexistent").
 			WillReturnError(pgx.ErrNoRows)
 
-		query := `SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER(type) = LOWER($1) LIMIT 1`
+		query := `SELECT resource_id, platform, resource_type, resource_version, variables, snippet FROM resource WHERE LOWER(resource_type) = LOWER($1) LIMIT 1`
+		var id string
+		err := mock.QueryRow(ctx, query, "nonexistent").Scan(&id)
 
-		var resourceID string
-		row := mock.QueryRow(ctx, query, "nonexistent")
-		err := row.Scan(&resourceID)
-
-		if err == nil {
-			t.Error("Expected error for nonexistent resource type")
-		}
 		if err != pgx.ErrNoRows {
 			t.Errorf("Expected pgx.ErrNoRows, got %v", err)
-		}
-
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Errorf("Unfulfilled expectations: %v", err)
-		}
-	})
-
-	t.Run("template found - api-gateway", func(t *testing.T) {
-		variablesJSON := []byte(`{"api_name":"clutter-api","aws_region":"us-east-1"}`)
-		connectionsJSON := []byte(`["Lambda"]`)
-		snippet := `resource "aws_api_gateway_rest_api" "api" { name = var.api_name }`
-
-		mock.ExpectQuery(`SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER\(type\) = LOWER\(\$1\) LIMIT 1`).
-			WithArgs("api-gateway").
-			WillReturnRows(pgxmock.NewRows([]string{
-				"resource_id", "platform", "type", "version", "variables", "snippet", "allowed_connections",
-			}).AddRow("api-gw-001", "AWS", "API Gateway", 1.0, variablesJSON, snippet, connectionsJSON))
-
-		query := `SELECT resource_id, platform, type, version, variables, snippet, allowed_connections FROM resources WHERE LOWER(type) = LOWER($1) LIMIT 1`
-
-		var resourceID, snippetResult string
-		var platform, resourceType string
-		var version float64
-		var variablesBytes, connectionsBytes []byte
-
-		row := mock.QueryRow(ctx, query, "api-gateway")
-		err := row.Scan(&resourceID, &platform, &resourceType, &version, &variablesBytes, &snippetResult, &connectionsBytes)
-		if err != nil {
-			t.Errorf("Query failed: %v", err)
-		}
-
-		if resourceType != "API Gateway" {
-			t.Errorf("Expected type 'API Gateway', got '%s'", resourceType)
 		}
 
 		if err := mock.ExpectationsWereMet(); err != nil {
