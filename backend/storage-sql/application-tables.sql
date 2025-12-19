@@ -4,6 +4,9 @@ DROP TABLE IF EXISTS public.projects;
 DROP TABLE IF EXISTS public.organization_members;
 DROP TABLE IF EXISTS public.organizations;
 DROP TABLE IF EXISTS public.users;
+DROP TABLE IF EXISTS public.resource_connections;
+DROP TABLE IF EXISTS public.resources;
+DROP TABLE IF EXISTS public.resource_types;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -81,6 +84,39 @@ CREATE TABLE public.diagram_history (
 );
 
 -- ============================
+-- Resources
+-- ============================
+
+CREATE TABLE public.resource_types (
+    resource_type VARCHAR(50) PRIMARY KEY,
+    description TEXT,
+    category VARCHAR(50)
+);
+
+-- This table stores individual resources with their configurations
+CREATE TABLE public.resources (
+    resource_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type),
+    platform VARCHAR(50) NOT NULL,
+    resource_version VARCHAR(20) NOT NULL,
+    variables JSONB NOT NULL,
+    snippet TEXT NOT NULL,
+    is_system BOOLEAN DEFAULT FALSE, -- Indicates if the resource is a system-defined resource or user-defined, this can help differentiate in our engine logic, lets us use one table for both users and system
+);
+
+-- This table defines possible connections between different resource types
+CREATE TABLE public.resource_connections (
+    connection_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    connection_version VARCHAR(20) NOT NULL,
+    source_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
+    target_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
+    connection_template TEXT, -- Used to store a template or pattern for the connection
+    is_bidirectional BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_resource_type, target_resource_type)
+);
+
+-- ============================
 -- ROW LEVEL SECURITY
 -- ============================
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -118,3 +154,19 @@ ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."diagram_history"
 AS PERMISSIVE TO anon USING (true);
+
+ALTER TABLE public.resource_types ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."resource_types"
+AS PERMISSIVE TO anon USING (true);
+
+ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."resources"
+AS PERMISSIVE TO anon USING (true);
+
+ALTER TABLE public.resource_connections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."resource_connections"
+AS PERMISSIVE TO anon USING (true);
+
