@@ -100,8 +100,7 @@ CREATE TABLE public.resources (
     platform VARCHAR(50) NOT NULL,
     resource_version VARCHAR(20) NOT NULL,
     variables JSONB NOT NULL,
-    snippet TEXT NOT NULL,
-    is_system BOOLEAN DEFAULT FALSE, -- Indicates if the resource is a system-defined resource or user-defined, this can help differentiate in our engine logic, lets us use one table for both users and system
+    snippet TEXT NOT NULL
 );
 
 -- This table defines possible connections between different resource types
