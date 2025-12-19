@@ -93,8 +93,8 @@ CREATE TABLE public.resource_types (
     category VARCHAR(50)
 );
 
--- This table stores individual resources with their configurations
-CREATE TABLE public.resources (
+-- This table stores individual resource with their configurations
+CREATE TABLE public.resource (
     resource_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type),
     platform VARCHAR(50) NOT NULL,
@@ -159,7 +159,7 @@ CREATE POLICY "anon_all_permissions"
 ON "public"."resource_types"
 AS PERMISSIVE TO anon USING (true);
 
-ALTER TABLE public.resources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resource ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."resources"
 AS PERMISSIVE TO anon USING (true);
