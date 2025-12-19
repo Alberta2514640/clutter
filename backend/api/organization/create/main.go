@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/organization/create/internal"
@@ -42,8 +42,6 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 
 	// Generate required fields for organization
 	organizationId := uuid.NewString()
-	// Initialize createdAt as a time.Time to be returned by table upon creation of organization
-	var createdAt time.Time
 
 	// Build organizationData struct
 	organizationData := internal.OrganizationData{
@@ -58,7 +56,6 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	queryInsertOrg := `
 		INSERT INTO organizations (id, created_by, name, description)
 		VALUES ($1, $2, $3, $4)
-		RETURNING created_at
 	`
 	// Insert member (by default the creator)
 	queryInsertMember := `
@@ -85,31 +82,70 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	defer transaction.Rollback(ctx) // If any of the queries fail, undo all changes
 
 	// Add organization insertion to transaction
-	insertedOrgRow := transaction.QueryRow(
+	if _, err := transaction.Exec(
 		ctx,
 		queryInsertOrg,
 		organizationData.Id,
 		organizationData.CreatedBy,
 		organizationData.Name,
 		organizationData.Description,
-	)
-
-	if err := insertedOrgRow.Scan(&createdAt); err != nil {
-
+	); err != nil {
+		// If err is of a unique violation it means user attempted to create a duplicate org so respond with conflict error
 		if generic.IsUniqueViolation(err) {
 			return generic.Response(http.StatusConflict, generic.Json{
 				"error":   "organization name already exists for this user",
 				"message": err.Error(),
 			})
 		}
-
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "failed to add organization insertion to transaction", "message": err.Error()})
+		// Otherwise it is an unexpected error and thus respond with internal server error
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to add organization insertion to transaction",
+			"message": err.Error(),
+		})
 	}
 
 	// Add member -> organization link insertion to transaction
 	if _, err := transaction.Exec(ctx, queryInsertMember, organizationData.Id, organizationData.CreatedBy); err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to add member and organizatio link to transaction",
+			"error":   "failed to add member and organization link to transaction",
+			"message": err.Error(),
+		})
+	}
+
+	// Create query for getting data of newly created org
+	queryOrgOverviewData := fmt.Sprintf(
+		generic.QueryOrgData,
+		"WHERE o.id = $1",
+	)
+
+	// Initialize required variables
+	var orgData generic.OrgOverviewData
+	var projectsJson []byte
+
+	// Query the organization which was just created for overview data to be used by frontend
+	row := transaction.QueryRow(ctx, queryOrgOverviewData, organizationData.Id)
+	if err := row.Scan(
+		&orgData.Id,
+		&orgData.CreatedBy,
+		&orgData.Name,
+		&orgData.Description,
+		&orgData.CreatedAt,
+		&orgData.TotalMembers,
+		&orgData.Members,
+		&orgData.TotalProjects,
+		&projectsJson,
+		&orgData.TotalDiagrams,
+	); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to fetch organization overview",
+			"message": err.Error(),
+		})
+	}
+
+	// unmarshal projects json as bytes into Projects slice
+	if err := json.Unmarshal(projectsJson, &orgData.Projects); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to parse projects data",
 			"message": err.Error(),
 		})
 	}
@@ -124,7 +160,7 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 
 	return generic.Response(
 		http.StatusOK,
-		generic.Json{"message": "new organization created successfully", "organizationData": organizationData},
+		generic.Json{"message": "new organization created successfully", "data": orgData},
 	)
 
 }

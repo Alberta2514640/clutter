@@ -42,6 +42,11 @@ get_mod_time() {
 # Helper function to get latest modification time in a directory
 get_latest_mod_time() {
   local dir="$1"
+  if [[ ! -d "$dir" ]]; then
+    echo 0
+    return
+  fi
+
   if [[ "$(uname)" == "Darwin" ]]; then
     find "$dir" -type f -exec stat -f %m {} + | sort -n | tail -1 || echo 0
   else
@@ -57,6 +62,7 @@ for dir in "${LAMBDA_DIRS[@]}"; do
   SRC_DIR="${ROOT_DIR}/${dir}"
   DEPLOY_DIR="${SRC_DIR}/deploy"
   MAIN_GO="${SRC_DIR}/main.go"
+  INTERNAL_DIR="${SRC_DIR}/internal"
   BINARY="${DEPLOY_DIR}/bootstrap"
   ZIP_FILE="${DEPLOY_DIR}/bootstrap.zip"
 
@@ -64,12 +70,19 @@ for dir in "${LAMBDA_DIRS[@]}"; do
 
   mkdir -p "${DEPLOY_DIR}"
 
-  # Get modification time of Lambda's main.go
+  # Get modification times
   MAIN_MOD_TIME=$(get_mod_time "$MAIN_GO")
   BINARY_MOD_TIME=$(get_mod_time "$BINARY")
+  INTERNAL_MOD_TIME=$(get_latest_mod_time "$INTERNAL_DIR")
 
-  # Rebuild if main.go is newer than binary, or binary missing, or generic changed
-  if [[ ! -f "$BINARY" ]] || [[ "$MAIN_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then
+  # Rebuild if:
+  # 1) binary missing
+  # 2) main.go changed
+  # 3) any file in generic/ changed
+  # 4) any file in internal/ changed
+  if [[ ! -f "$BINARY" ]] || [[ "$MAIN_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || \
+     [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$INTERNAL_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then
+     
     echo "   → Compiling Go source..."
     GOOS=$GOOS GOARCH=$GOARCH go build -o "$BINARY" "$MAIN_GO"
 
