@@ -524,3 +524,55 @@ module "diagram-delete-api-integration" {
   path              = module.diagram-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
+
+// API Gateway Staging
+resource "aws_api_gateway_deployment" "clutter" {
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+
+  triggers = {
+    redeploy = sha1(jsonencode([
+
+      module.clutter-api-gateway.rest_api_id,
+      module.clutter-api-gateway.jwt_authorizer_id,
+      module.clutter-api-gateway.body_validator_id,
+
+      module.log-in-api-integration.integration_id,
+
+      module.organization-create-api-integration.integration_id,
+      module.organization-get-api-integration.integration_id,
+      module.organization-update-api-integration.integration_id,
+      module.organization-delete-api-integration.integration_id,
+
+      module.project-create-api-integration.integration_id,
+      module.project-get-api-integration.integration_id,
+      module.project-update-api-integration.integration_id,
+      module.project-delete-api-integration.integration_id,
+
+      module.diagram-create-api-integration.integration_id,
+      module.diagram-get-api-integration.integration_id,
+      module.diagram-update-api-integration.integration_id,
+      module.diagram-delete-api-integration.integration_id
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+variable "stage_name" {
+  type        = string
+  description = "API Gateway stage name"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.stage_name)
+    error_message = "stage_name must be one of: dev, staging, prod."
+  }
+}
+
+
+resource "aws_api_gateway_stage" "clutter" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  deployment_id = aws_api_gateway_deployment.clutter.id
+  stage_name    = var.stage_name
+}
