@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS public.organization_members;
 DROP TABLE IF EXISTS public.organizations;
 DROP TABLE IF EXISTS public.users;
 DROP TABLE IF EXISTS public.resource_connections;
-DROP TABLE IF EXISTS public.resources;
+DROP TABLE IF EXISTS public.resource;
 DROP TABLE IF EXISTS public.resource_types;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -84,7 +84,7 @@ CREATE TABLE public.diagram_history (
 );
 
 -- ============================
--- Resources
+-- Resource
 -- ============================
 
 CREATE TABLE public.resource_types (
@@ -161,7 +161,7 @@ AS PERMISSIVE TO anon USING (true);
 
 ALTER TABLE public.resource ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
-ON "public"."resources"
+ON "public"."resource"
 AS PERMISSIVE TO anon USING (true);
 
 ALTER TABLE public.resource_connections ENABLE ROW LEVEL SECURITY;
