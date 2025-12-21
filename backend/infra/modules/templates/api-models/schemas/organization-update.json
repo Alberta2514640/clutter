@@ -1,7 +1,7 @@
 {
     "type": "object",
     "properties": {
-        "name": {
+        "organizationName": {
             "type": "string",
             "minLength": 4,
             "maxLength": 32,
@@ -16,7 +16,7 @@
         }
     },
     "anyOf": [
-        { "required": ["name"] },
+        { "required": ["organizationName"] },
         { "required": ["description"] }
     ]
 }
