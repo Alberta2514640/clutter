@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
+	"github.com/Alberta2514640/clutter/backend/api/organization/update/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
@@ -45,8 +48,146 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
 	}
 	// Get org name and/or description from request body
-	orgName := body.OrganizationName
-	description := body.Description
+	newOrgName := body.OrganizationName
+	newDescription := body.Description
 
-	return generic.Response(200, generic.Json{"orgId": orgId, "userId": userId, "orgName": orgName, "description": description})
+	// Connect to PostgreSQL
+	ctx := context.Background()
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to connect to PostgreSQL database",
+			"message": err.Error(),
+		})
+	}
+	defer conn.Close(ctx)
+
+	// Check membership of user to organization
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId); err != nil {
+		return generic.Response(http.StatusForbidden, generic.Json{
+			"error":   fmt.Sprintf("user with id '%s' does not have access to update organization with id '%s'", userId, orgId),
+			"message": err.Error(),
+		})
+	}
+
+	// Fetch current org data
+	var currentOrgName, currentDescription string
+
+	queryCurrentData := `
+		SELECT name, description
+		FROM organizations
+		WHERE id = $1
+	`
+
+	row := conn.QueryRow(ctx, queryCurrentData, orgId)
+	if err := row.Scan(&currentOrgName, &currentDescription); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to fetch current organization data",
+			"message": err.Error(),
+		})
+	}
+
+	// Check if anything changed
+	if newOrgName == currentOrgName && newDescription == currentDescription {
+		return generic.Response(http.StatusOK, generic.Json{
+			"message": "no changes detected, organization not updated",
+		})
+	}
+
+	// Begin transaction
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to start transaction",
+			"message": err.Error(),
+		})
+	}
+	defer tx.Rollback(ctx)
+
+	// Update organization name only if new and current name don't match
+	if newOrgName != "" && newOrgName != currentOrgName {
+
+		err = internal.UpdateOrgName(tx, ctx, newOrgName, orgId)
+
+		if generic.IsUniqueViolation(err) {
+			return generic.Response(http.StatusConflict, generic.Json{
+				"error":   "organization name already exists for this user",
+				"message": err.Error(),
+			})
+		} else if err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"error":   "failed to update organization name",
+				"message": err.Error(),
+			})
+		}
+
+	}
+
+	// Update organization description only if new and current description don't match
+	if newDescription != "" && newDescription != currentDescription {
+
+		err = internal.UpdateOrgDescription(tx, ctx, newDescription, orgId)
+
+		if err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"error":   "failed to update organization description",
+				"message": err.Error(),
+			})
+		}
+
+	}
+
+	// Query all data for updated org
+	querySingleOrg := fmt.Sprintf(
+		generic.QueryOrgData,
+		"WHERE o.id = $1 AND om.member_id = $2",
+	)
+
+	// Initialize empty orgData struct to populate in scan
+	var orgData generic.OrgOverviewData
+	// Initialize variable to hold projects json as bytes
+	var projectsJson []byte
+
+	// Get data of new updated organization for use by the frontend
+	row = tx.QueryRow(ctx, querySingleOrg, orgId, userId)
+	err = row.Scan(
+		&orgData.Id,
+		&orgData.CreatedBy,
+		&orgData.Name,
+		&orgData.Description,
+		&orgData.CreatedAt,
+		&orgData.TotalMembers,
+		&orgData.Members,
+		&orgData.TotalProjects,
+		&projectsJson,
+		&orgData.TotalDiagrams,
+	)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to fetch organization overview",
+			"message": err.Error(),
+		})
+	}
+
+	// Unmarshal projects json as bytes into Projects slice
+	if err := json.Unmarshal(projectsJson, &orgData.Projects); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to parse projects data",
+			"message": err.Error(),
+		})
+	}
+
+	// Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "failed to commit organization update transaction",
+			"message": err.Error(),
+		})
+	}
+
+	// Organization update process completed successfully and new data can be returned
+	return generic.Response(http.StatusOK, generic.Json{
+		"message": "organization updated successfully",
+		"data":    orgData,
+	})
 }

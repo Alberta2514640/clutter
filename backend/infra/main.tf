@@ -108,6 +108,9 @@ module "organization-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/update"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-delete-lambda" {
@@ -567,6 +570,8 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.clutter-api-gateway.rest_api_id,
       module.clutter-api-gateway.jwt_authorizer_id,
       module.clutter-api-gateway.body_validator_id,
+
+      module.organization-update-model.model_id,
 
       module.log-in-api-integration.integration_id,
 
