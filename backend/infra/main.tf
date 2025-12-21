@@ -331,6 +331,24 @@ module "log-in-model" {
   schema_filename = "log-in.json"
 }
 
+# Organization
+module "organization-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationCreate"
+  description     = "Model to validate organization creation requests"
+  schema_filename = "organization-create.json"
+}
+# Organization
+module "organization-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationUpdate"
+  description     = "Model to validate organization update requests"
+  schema_filename = "organization-update.json"
+}
+
+
 # Diagram
 module "diagram-create-model" {
   source          = "./modules/templates/api-models"
@@ -345,15 +363,6 @@ module "diagram-update-model" {
   model_name      = "diagramupdate"
   description     = "Model to validate diagram update requests"
   schema_filename = "diagram-update.json"
-}
-
-# Organization
-module "organization-create-model" {
-  source          = "./modules/templates/api-models"
-  rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "organizationCreate"
-  description     = "Model to validate organization creation requests"
-  schema_filename = "organization-create.json"
 }
 
 # Integrations
@@ -415,8 +424,10 @@ module "organization-update-api-integration" {
   path_part            = module.organization-update-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-update-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-update-model.model_name
 }
 # DELETE organization
 module "organization-delete-api-integration" {
