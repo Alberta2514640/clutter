@@ -257,6 +257,8 @@ module "clutter-api-gateway" {
 }
 
 # Paths
+
+# Log-in
 module "log-in-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -269,11 +271,19 @@ module "log-in-api-cors-compliance" {
   resource_id  = module.log-in-api-path.resource_id
   http_methods = ["POST"]
 }
+
+# Organization
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
   parent_id   = module.clutter-api-gateway.root_resource_id
   path_part   = "organization"
+}
+module "organization-update-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.organization-api-path.resource_id
+  path_part   = "{organizationId}"
 }
 module "organization-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
@@ -281,6 +291,8 @@ module "organization-api-cors-compliance" {
   resource_id  = module.organization-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Project
 module "project-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -293,6 +305,8 @@ module "project-api-cors-compliance" {
   resource_id  = module.project-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Diagram
 module "diagram-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -307,6 +321,8 @@ module "diagram-api-cors-compliance" {
 }
 
 # Validation Models
+
+# Log-in
 module "log-in-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -314,6 +330,8 @@ module "log-in-model" {
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
 }
+
+# Diagram
 module "diagram-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -328,6 +346,8 @@ module "diagram-update-model" {
   description     = "Model to validate diagram update requests"
   schema_filename = "diagram-update.json"
 }
+
+# Organization
 module "organization-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -337,6 +357,7 @@ module "organization-create-model" {
 }
 
 # Integrations
+
 # POST Log-in
 module "log-in-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
@@ -387,13 +408,13 @@ module "organization-get-api-integration" {
 module "organization-update-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
   rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-api-path.resource_id
+  resource_id          = module.organization-update-api-path.resource_id
   http_method          = "PUT"
   invoke_arn           = module.organization-update-lambda.invoke_arn
   function_name        = module.organization-update-lambda.function_name
-  path_part            = module.organization-api-path.path_part
+  path_part            = module.organization-update-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-api-path.path
+  path                 = module.organization-update-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
