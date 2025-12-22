@@ -95,43 +95,43 @@ export default function DiagramEditor({
   }, [saveDiagram]);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className=" h-screen w-screen overflow-hidden">
 
       {/* Fullscreen React Flow Canvas */}
-      <div className="h-full w-full">
-        <ReactFlow
-          colorMode="dark"
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          nodeTypes={nodeTypes}
-          snapToGrid
-          snapGrid={[20, 20]}
-        >
-          <Panel position="top-right">
-            <TopNav onSave={onSave} />
-          </Panel>
-          <Panel position="center-left">
-            <Palette />
-          </Panel>
-          <Panel position="center-right">
-            <ConfigPanel />
-          </Panel>
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={20} 
-            size={1.5}
-          />
-          <Controls 
-            orientation="horizontal"
-            className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
-            showInteractive={false}
-          />
-        </ReactFlow>
+      <div className="flex h-full w-full">
+        <Palette />
+        <div className="relative flex-1">
+          <ReactFlow
+            colorMode="dark"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            nodeTypes={nodeTypes}
+            snapToGrid
+            snapGrid={[20, 20]}
+          >
+            <Panel position="top-right">
+              <TopNav onSave={onSave} />
+            </Panel>
+            <Panel position="center-right">
+              <ConfigPanel />
+            </Panel>
+            <Background 
+              variant={BackgroundVariant.Dots} 
+              gap={20} 
+              size={1.5}
+            />
+            <Controls 
+              orientation="horizontal"
+              className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
+              showInteractive={false}
+            />
+          </ReactFlow>
+        </div>
       </div>
     </div>
   );
