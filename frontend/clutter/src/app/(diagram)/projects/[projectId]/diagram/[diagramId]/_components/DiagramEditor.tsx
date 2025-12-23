@@ -117,9 +117,6 @@ export default function DiagramEditor({
             <Panel position="top-right">
               <TopNav onSave={onSave} />
             </Panel>
-            <Panel position="center-right">
-              <ConfigPanel />
-            </Panel>
             <Background 
               variant={BackgroundVariant.Dots} 
               gap={20} 
@@ -132,6 +129,7 @@ export default function DiagramEditor({
             />
           </ReactFlow>
         </div>
+        <ConfigPanel />
       </div>
     </div>
   );

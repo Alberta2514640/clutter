@@ -34,7 +34,7 @@ export default function Palette() {
       className={[
         "relative h-full shrink-0 border-r border-slate-800 bg-slate-950/70 backdrop-blur",
         "transition-[width] duration-200",
-        isCollapsed ? "w-14" : "w-[300px]",
+        isCollapsed ? "w-14" : "w-[200px]",
       ].join(" ")}
     >
       {/* Mid-edge circular collapse/expand button (like before) */}
@@ -70,10 +70,7 @@ export default function Palette() {
           {!isCollapsed && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-slate-100">
-                Nodes & Edges
-              </div>
-              <div className="truncate text-[11px] text-slate-400">
-                Drag items onto the canvas
+                Resources
               </div>
             </div>
           )}
@@ -91,9 +88,6 @@ export default function Palette() {
         <>
           {/* Body */}
           <div className="h-[calc(100%-3.5rem)] overflow-y-auto px-3 py-3">
-            <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-300">
-              Tip: connect nodes by dragging from the handles.
-            </div>
 
             <div className="space-y-5">
               {sections.map((sec) => (
