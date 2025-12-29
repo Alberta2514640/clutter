@@ -18,7 +18,7 @@ CREATE TABLE public.users (
     email VARCHAR(255) NOT NULL UNIQUE,
     full_name VARCHAR(255) NOT NULL,
     picture_url TEXT NOT NULL,
-    account_created_on TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================
@@ -26,9 +26,9 @@ CREATE TABLE public.users (
 -- ============================
 CREATE TABLE public.organizations (
     id UUID PRIMARY KEY,
-    created_by UUID NOT NULL REFERENCES public.users(id),
     name VARCHAR(32) NOT NULL,
     description VARCHAR(300),
+    created_by UUID NOT NULL REFERENCES public.users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT unique_org_name_per_user UNIQUE (created_by, name)
@@ -74,7 +74,7 @@ CREATE TABLE public.diagrams (
 CREATE TABLE public.diagram_history (
     diagram_id UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
     version INT NOT NULL,
-    updated_by UUID REFERENCES public.users(id),
+    updated_by UUID NOT NULL REFERENCES public.users(id),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     name VARCHAR(32) NOT NULL,
     data JSONB NOT NULL,

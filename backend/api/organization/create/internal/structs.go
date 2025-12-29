@@ -1,11 +1,5 @@
 package internal
 
-// Incoming request body structure
-type RequestBody struct {
-	OrganizationName string `json:"organizationName"`
-	Description      string `json:"description"`
-}
-
 // Organization SQL insert structure
 type OrganizationData struct {
 	Id          string `json:"id"`

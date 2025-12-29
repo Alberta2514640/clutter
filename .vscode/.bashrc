@@ -16,15 +16,17 @@ alias golb="( cdapi && ./build_linux.sh )"
 alias tfi="( cdinfra && terraform init )"
 alias tfa="( cdinfra && terraform apply )"
 alias tfaa="( cdinfra && terraform apply -auto-approve)"
+alias tfia="tfi && tfa"
+alias tfiaa="tfi && tfaa"
 
 # Build go code and Terraform commands
-alias tfbia="gob && tfi && tfa"   # Build, init and apply
-alias tfbiaa="gob && tfi && tfaa" # Build, init and apply auto-approve
+alias tfbia="gob && tfia"   # Build, init and apply
+alias tfbiaa="gob && tfiaa" # Build, init and apply auto-approve
 alias tfba="gob && tfa"           # Build and apply
 alias tfbaa="gob && tfaa"         # Build and apply auto-approve
 
 # Build go code (linux) and Terraform commands
-alias tflbia="golb && tfi && tfa"   # Build, init and apply
-alias tflbiaa="golb && tfi && tfaa" # Build, init and apply auto-approve
+alias tflbia="golb && tfia"   # Build, init and apply
+alias tflbiaa="golb && tfiaa" # Build, init and apply auto-approve
 alias tflba="golb && tfa"           # Build and apply
 alias tflbaa="golb && tfaa"         # Build and apply auto-approve
