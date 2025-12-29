@@ -88,7 +88,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	// Check if anything changed
-	if newOrgName == currentOrgName && newDescription == currentDescription {
+	nameUnchanged := newOrgName == "" || newOrgName == currentOrgName
+	descriptionUnchanged := newDescription == "" || newDescription == currentDescription
+
+	if nameUnchanged && descriptionUnchanged {
 		return generic.Response(http.StatusOK, generic.Json{
 			"message": "no changes detected, organization not updated",
 		})

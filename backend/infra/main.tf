@@ -9,14 +9,6 @@ module "cognito" {
   frontend_url         = var.frontend_url
 }
 
-# ========
-# DynamoDB
-# ========
-
-module "dynamodb" {
-  source = "./modules/dynamodb"
-}
-
 # ===
 # S3
 # ===
@@ -36,21 +28,23 @@ module "s3" {
 
 # Log-in
 module "log-in-lambda" {
-
   source        = "./modules/templates/lambda"
   function_name = "log-in"
-  actions       = [
-    "dynamodb:PutItem",
-    "dynamodb:GetItem"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/log-in:*"
+  ]
   zip_dir_slice = "log-in"
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
-    JWT_SECRET              = var.jwt_secret
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    JWT_SECRET             = var.jwt_secret
   }
-
 }
+
 
 # Authorizer
 module "authorizer-lambda" {
@@ -75,11 +69,17 @@ module "organization-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "organization-create"
-  actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-create:*"
+  ]
   zip_dir_slice = "organization/create"
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -88,14 +88,16 @@ module "organization-get-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "organization-get"
   actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-get:*"
+  ]
   zip_dir_slice = "organization/get"
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -104,12 +106,16 @@ module "organization-update-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "organization-update"
   actions = [
-    "dynamodb:UpdateItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-update:*"
+  ]
   zip_dir_slice = "organization/update"
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -118,10 +124,17 @@ module "organization-delete-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "organization-delete"
   actions = [
-    "dynamodb:DeleteItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-delete:*"
+  ]
   zip_dir_slice = "organization/delete"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
 
 }
 
@@ -130,8 +143,14 @@ module "project-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "project-create"
-  actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/project-create:*"
+  ]
   zip_dir_slice = "project/create"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
@@ -143,11 +162,13 @@ module "project-get-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "project-get"
   actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/project-get:*"
+  ]
   zip_dir_slice = "project/get"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
@@ -159,9 +180,13 @@ module "project-update-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "project-update"
   actions = [
-    "dynamodb:UpdateItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/project-update:*"
+  ]
   zip_dir_slice = "project/update"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
@@ -173,9 +198,13 @@ module "project-delete-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "project-delete"
   actions = [
-    "dynamodb:DeleteItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/project-delete:*"
+  ]
   zip_dir_slice = "project/delete"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
