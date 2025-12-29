@@ -97,6 +97,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"message":          fmt.Sprintf("successfully deleted organization with ID %s", deletedOrgId),
+		"deleted_org_id":   deletedOrgId,
 		"deleted_org_name": deletedOrgName,
 	})
 
