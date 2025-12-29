@@ -63,10 +63,29 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId); err != nil {
-		return generic.Response(http.StatusForbidden, generic.Json{
-			"error":   fmt.Sprintf("user with id '%s' does not have access to update organization with id '%s'", userId, orgId),
-			"message": err.Error(),
+	// Source: ChatGPT
+	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			// Handle 404 Not Found
+			if authErr.StatusCode == 404 {
+				return generic.Response(http.StatusNotFound, generic.Json{
+					"error": authErr.Message,
+				})
+			}
+
+			// Handle 403 Forbidden
+			if authErr.StatusCode == 403 {
+				return generic.Response(http.StatusForbidden, generic.Json{
+					"error": authErr.Message,
+				})
+			}
+		}
+
+		// Fallback for unexpected errors
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "internal server error",
+			"error":   err.Error(),
 		})
 	}
 
