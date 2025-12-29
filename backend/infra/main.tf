@@ -311,7 +311,7 @@ module "organization-api-path" {
   parent_id   = module.clutter-api-gateway.root_resource_id
   path_part   = "organization"
 }
-module "organization-update-api-path" {
+module "organization-api-path-by-id" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
   parent_id   = module.organization-api-path.resource_id
@@ -449,13 +449,13 @@ module "organization-get-api-integration" {
 module "organization-update-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
   rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-update-api-path.resource_id
+  resource_id          = module.organization-api-path-by-id.resource_id
   http_method          = "PUT"
   invoke_arn           = module.organization-update-lambda.invoke_arn
   function_name        = module.organization-update-lambda.function_name
-  path_part            = module.organization-update-api-path.path_part
+  path_part            = module.organization-api-path-by-id.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-update-api-path.path
+  path                 = module.organization-api-path-by-id.path
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
@@ -465,13 +465,13 @@ module "organization-update-api-integration" {
 module "organization-delete-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-api-path.resource_id
+  resource_id       = module.organization-api-path-by-id.resource_id
   http_method       = "DELETE"
   invoke_arn        = module.organization-delete-lambda.invoke_arn
   function_name     = module.organization-delete-lambda.function_name
-  path_part         = module.organization-api-path.path_part
+  path_part         = module.organization-api-path-by-id.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-api-path.path
+  path              = module.organization-api-path-by-id.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
