@@ -1,10 +1,9 @@
 "use client";
 
-import { animate, motion, useMotionValue, useTransform } from "framer-motion";
+import { motion } from "framer-motion";
 import { Circle } from "lucide-react";
-import { useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
-
+import { Button } from "@/components/ui/button";
 //had to add const due to type errors
 function ElegantShape({ className, delay = 0, width = 400, height = 100, rotate = 0, gradient = "from-white/[0.08]" }: { className?: string; delay?: number; width?: number; height?: number; rotate?: number; gradient?: string }) {
   return (
@@ -103,7 +102,23 @@ function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Dig
           </motion.div>
 
           <motion.div custom={2} variants={fadeUpVariants} initial="hidden" animate="visible">
-            <p className="text-base sm:text-lg md:text-xl text-white/40 mb-8 leading-relaxed font-light tracking-wide max-w-xl mx-auto px-4">Crafting exceptional digital experiences through innovative design and cutting-edge technology.</p>
+            <p className="text-base sm:text-lg md:text-xl text-white/40 mb-8 leading-relaxed font-light tracking-wide max-w-xl mx-auto px-4">Design cloud architecture collaboratively, export Terraform instantly, and ship faster with confidence.</p>
+          </motion.div>
+
+          <motion.div custom={3} variants={fadeUpVariants} initial="hidden" animate="visible" className="flex flex-col items-center gap-3">
+            <span className="text-sm text-white/40 tracking-wide">New user?</span>
+
+            <Button
+              asChild
+              className="
+      px-6 py-5
+      bg-teal-500/90 hover:bg-teal-500
+      text-black font-medium
+      shadow-[0_0_0_1px_rgba(45,212,191,0.4),0_10px_30px_rgba(45,212,191,0.25)]
+      transition-all
+    ">
+              <a href="/register">Register here</a>
+            </Button>
           </motion.div>
         </div>
       </div>

@@ -10,14 +10,17 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+const CREATE_ORG_ENDPOINT = "https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod/organization/create";
+
 export default function CreateTenantPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+
+  const [organizationName, setOrganizationName] = useState("");
+  const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const canSubmit = name.trim().length >= 2 && !loading;
+  const canSubmit = organizationName.trim().length >= 2 && !loading;
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -27,17 +30,40 @@ export default function CreateTenantPage() {
     setErr(null);
 
     try {
-      const res = await fetch("/api/org", {
+      // Your login flow stores this
+      const token = localStorage.getItem("clutter_auth_token");
+      if (!token) {
+        setErr("You are not signed in. Please sign in again.");
+        router.replace("/login");
+        return;
+      }
+
+      // body generic.OrgRequestBody => organizationName + description
+      const res = await fetch(CREATE_ORG_ENDPOINT, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`, // needed so the authorizer context has userData
+        },
         body: JSON.stringify({
-          name: name.trim(),
-          slug: slug.trim() || undefined,
+          organizationName: organizationName.trim(),
+          description: description.trim() || undefined,
         }),
       });
 
-      if (!res.ok) throw new Error(await res.text());
+      if (res.status === 409) {
+        setErr("That organization name already exists. Try a different name.");
+        return;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to create organization");
+      }
+
+      // Go returns: { message: "...", data: orgData }
+      // You can read it if you want to store org info in local storage.
+      // const payload = await res.json();
 
       router.replace("/dashboard");
     } catch (e: unknown) {
@@ -59,15 +85,11 @@ export default function CreateTenantPage() {
 
               <div>
                 <CardTitle className="text-2xl text-white flex items-center gap-2">
-                  Lets Start by creating your organization <Sparkles className="w-5 h-5 text-teal-400" />
+                  Let’s start by creating your organization <Sparkles className="w-5 h-5 text-teal-400" />
                 </CardTitle>
-                <CardDescription className="text-gray-400 mt-1">This is where you will create projects, diagrams, workspaces, and runs. You can invite teammates later.</CardDescription>
+                <CardDescription className="text-gray-400 mt-1">This is where you’ll create projects, diagrams, workspaces, and runs. You can invite teammates later.</CardDescription>
               </div>
             </div>
-
-            {/* <Button variant="secondary" className="bg-slate-700/60 hover:bg-slate-700 text-white" onClick={() => router.push("/onboarding/join-tenant")} disabled={loading}>
-              I have an invite
-            </Button> */}
           </div>
         </CardHeader>
 
@@ -85,14 +107,25 @@ export default function CreateTenantPage() {
             <form onSubmit={onSubmit} className="space-y-5">
               <div className="space-y-2">
                 <Label className="text-gray-200">Organization name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Clutter Labs" className="bg-slate-900/40 border-slate-700 text-white placeholder:text-gray-500 focus-visible:ring-teal-500" autoFocus />
-                <p className="text-xs text-gray-500">Shown to members in the sidebar and invitations.</p>
+                <Input
+                  value={organizationName}
+                  onChange={(e) => setOrganizationName(e.target.value)}
+                  placeholder="e.g., Clutter Labs"
+                  className="bg-slate-900/40 border-slate-700 text-white placeholder:text-gray-500 focus-visible:ring-teal-500"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500">Stored in PostgreSQL and shown to members in the sidebar and invitations.</p>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-gray-200">Workspace URL (optional)</Label>
-                <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="e.g., clutter-labs" className="bg-slate-900/40 border-slate-700 text-white placeholder:text-gray-500 focus-visible:ring-teal-500" />
-                <p className="text-xs text-gray-500">Used for a cleaner link later (you can change this). Letters, numbers, and dashes recommended.</p>
+                <Label className="text-gray-200">Description (optional)</Label>
+                <Input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g., Infrastructure diagrams for my team"
+                  className="bg-slate-900/40 border-slate-700 text-white placeholder:text-gray-500 focus-visible:ring-teal-500"
+                />
+                <p className="text-xs text-gray-500">Helps teammates understand what this org is for.</p>
               </div>
 
               {/* Buttons */}
@@ -132,14 +165,12 @@ export default function CreateTenantPage() {
               <ol className="text-sm text-gray-400 space-y-2 list-decimal list-inside">
                 <li>Create your first project</li>
                 <li>Build a diagram (Lambda / EC2 / DynamoDB / API GW)</li>
-                <li>Export Terraform or run Plan/Apply </li>
+                <li>Export Terraform or run Plan/Apply</li>
               </ol>
             </div>
 
             <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
-              <p className="text-xs text-gray-500">
-                Tip: If you are joining a team, use <span className="text-gray-300">I have an invite</span> to enter your code instead.
-              </p>
+              <p className="text-xs text-gray-500">Tip: If you’re joining a team, you might already have an invite.</p>
             </div>
           </div>
         </CardContent>
