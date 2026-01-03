@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 export default function DashboardOnboarding() {
   const router = useRouter();
@@ -19,9 +19,7 @@ export default function DashboardOnboarding() {
             </div>
             <div>
               <CardTitle className="text-2xl text-white">Welcome to Clutter!</CardTitle>
-              <CardDescription className="text-gray-400">
-                Let's set up your organization
-              </CardDescription>
+              <CardDescription className="text-gray-400">Let&apos;s set up your organization</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -29,35 +27,22 @@ export default function DashboardOnboarding() {
           <Alert className="bg-slate-800/50 border-slate-700">
             <AlertCircle className="h-4 w-4 text-teal-400" />
             <AlertTitle className="text-white">No Organization Found</AlertTitle>
-            <AlertDescription className="text-gray-400">
-              You need to create or join an organization before you can start creating projects.
-            </AlertDescription>
+            <AlertDescription className="text-gray-400">You need to create or join an organization before you can start creating projects.</AlertDescription>
           </Alert>
 
           <div className="space-y-4">
             <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
               <h3 className="text-white font-semibold mb-2">Create a New Organization</h3>
-              <p className="text-sm text-gray-400 mb-4">
-                Start fresh with your own organization. You'll be the owner and can invite team members later.
-              </p>
-              <Button 
-                onClick={() => router.push('/onboarding/create-tenant')}
-                className="w-full bg-teal-500 hover:bg-teal-600"
-              >
+              <p className="text-sm text-gray-400 mb-4">Start fresh with your own organization. You will be the owner and can invite team members later.</p>
+              <Button onClick={() => router.push("/onboarding/create-tenant")} className="w-full bg-teal-500 hover:bg-teal-600">
                 Create Organization
               </Button>
             </div>
 
             <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
               <h3 className="text-white font-semibold mb-2">Join an Existing Organization</h3>
-              <p className="text-sm text-gray-400 mb-4">
-                Have an invitation code? Join your team's organization here.
-              </p>
-              <Button 
-                onClick={() => router.push('/onboarding/join-tenant')}
-                variant="secondary"
-                className="w-full bg-slate-600 hover:bg-slate-700   text-white transition-colors"
-              >
+              <p className="text-sm text-gray-400 mb-4">Have an invitation code? Join your team&apos;s organization here.</p>
+              <Button onClick={() => router.push("/onboarding/join-tenant")} variant="secondary" className="w-full bg-slate-600 hover:bg-slate-700   text-white transition-colors">
                 Join Organization
               </Button>
             </div>
