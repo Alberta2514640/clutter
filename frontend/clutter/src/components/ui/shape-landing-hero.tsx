@@ -22,6 +22,7 @@ function ElegantShape({ className, delay = 0, width = 400, height = 100, rotate 
         duration: 2.4,
         delay,
         ease: [0.23, 0.86, 0.39, 0.96] as const,
+        ease: [0.23, 0.86, 0.39, 0.96] as const,
         opacity: { duration: 1.2 },
       }}
       className={cn("absolute", className)}>
@@ -57,6 +58,7 @@ function ElegantShape({ className, delay = 0, width = 400, height = 100, rotate 
 
 function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Digital Vision", title2 = "Crafting Exceptional Websites" }: { badge?: string; title1?: string; title2?: string }) {
   //had to add const due to type errors
+  //had to add const due to type errors
   const fadeUpVariants = {
     hidden: { opacity: 0, y: 30 },
     visible: (i: number) => ({
@@ -65,6 +67,7 @@ function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Dig
       transition: {
         duration: 1,
         delay: 0.5 + i * 0.2,
+        ease: [0.25, 0.4, 0.25, 1] as const,
         ease: [0.25, 0.4, 0.25, 1] as const,
       },
     }),

@@ -58,14 +58,14 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 
 	// Include user data in context
 	context := map[string]interface{}{
-		"uuid":        claimValues["sub"],
+		"id":          claimValues["sub"],
 		"email":       claimValues["email"],
 		"name":        claimValues["full_name"],
 		"picture_url": claimValues["picture_url"],
 		"created_at":  claimValues["created_at"],
 	}
 
-	// Return Allow policy on user UUID (sub)
+	// Return Allow policy on user ID (sub)
 	policyResponse := internal.CreatePolicy(claimValues["sub"], "Allow", event.MethodArn, context)
 	return policyResponse, nil
 

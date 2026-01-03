@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -68,7 +67,7 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		})
 	}
 
-	// 3. Get userId from authorizer (or header for local testing)
+	// 3. Get userId from authorizer
 	userID, err := getUserIDFromRequest(req)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
@@ -147,13 +146,6 @@ func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
 			if s, ok2 := v.(string); ok2 && s != "" {
 				return s, nil
 			}
-		}
-	}
-
-	// 2. Local / simple testing: case-insensitive x-user-id header
-	for k, v := range req.Headers {
-		if strings.ToLower(k) == "x-user-id" && v != "" {
-			return v, nil
 		}
 	}
 

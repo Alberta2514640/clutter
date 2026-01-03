@@ -1,62 +1,89 @@
+// Package main implements the diagram DELETE Lambda function for deleting diagrams from PostgreSQL
 package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
-
-var (
-	ddb       *dynamodb.Client
-	tableName string
-)
-
-func init() {
-	var err error
-	ddb, tableName, err = generic.GetDynamodbClient()
-	if err != nil {
-		panic("failed to initialize DynamoDB client: " + err.Error())
-	}
-}
 
 func main() {
 	lambda.Start(handler)
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// 1. Extract user data from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
+	if err != nil {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
+		})
+	}
+	userID := userData.Id
+
 	projectID := request.QueryStringParameters["projectId"]
 	diagramID := request.QueryStringParameters["diagramId"]
 
 	if projectID == "" || diagramID == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{"error": "Missing required query parameters: projectId, diagramId"})
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "Missing required query parameters: projectId, diagramId",
+		})
 	}
 
-	_, err := ddb.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]types.AttributeValue{
-			"PK": &types.AttributeValueMemberS{Value: fmt.Sprintf("PROJECT#%s", projectID)},
-			"SK": &types.AttributeValueMemberS{Value: fmt.Sprintf("DIAGRAM#%s", diagramID)},
-		},
-		ConditionExpression: aws.String("attribute_exists(PK)"),
-	})
-
+	// 2. Connect to PostgreSQL
+	conn, err := generic.PsqlConnect()
 	if err != nil {
-		fmt.Printf("Error deleting item: %v\n", err)
-		// Check if the error is due to condition not being met (item doesn't exist)
-		var condErr *types.ConditionalCheckFailedException
-		if ok := errors.As(err, &condErr); ok {
-			return generic.Response(http.StatusNotFound, generic.Json{"error": "Diagram not found"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "Failed to connect to database",
+		})
+	}
+	defer conn.Close(ctx)
+
+	// 3. Authorization: Get project's organization and check membership
+	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, projectID)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
+			})
 		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{"error": "Failed to delete diagram"})
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "Failed to fetch project",
+		})
 	}
 
-	return generic.Response(http.StatusOK, generic.Json{"message": "Diagram deleted successfully"})
+	// 4. Check organization membership
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "Failed to check authorization",
+		})
+	}
+
+	// 5. Delete diagram
+	query := `DELETE FROM diagrams WHERE id = $1 AND project_id = $2`
+	cmdTag, err := conn.Exec(ctx, query, diagramID, projectID)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "Failed to delete diagram",
+		})
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"message": "Diagram not found",
+		})
+	}
+
+	return generic.Response(http.StatusOK, generic.Json{
+		"message": "Diagram deleted successfully",
+	})
 }

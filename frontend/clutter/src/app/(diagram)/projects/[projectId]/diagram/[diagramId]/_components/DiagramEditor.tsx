@@ -11,26 +11,12 @@ import ConfigPanel from "./nodes/ConfigPanel";
 
 const DND_MIME = "application/x-palette-item";
 
-export default function DiagramEditor({ 
-  projectId, 
-  diagramId, 
-}: { 
-  projectId: string; 
-  diagramId: string;
-}) {
+export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
   const { screenToFlowPosition } = useReactFlow();
-  
+
   // ----- Zustand state -----
   const { nodes, edges, dirty, isSaving, isLoading } = useDiagramState();
-  const { 
-    addNode, 
-    applyNodeChanges, 
-    applyEdgeChanges, 
-    addEdgeFromConnection, 
-    saveDiagram, 
-    setContext, 
-    loadDiagram 
-  } = useDiagramActions();
+  const { addNode, applyNodeChanges, applyEdgeChanges, addEdgeFromConnection, saveDiagram, setContext, loadDiagram } = useDiagramActions();
 
   console.log(nodes, edges, dirty);
 
@@ -114,29 +100,9 @@ export default function DiagramEditor({
 
       {/* Fullscreen React Flow Canvas */}
       <div className="h-full w-full">
-        <ReactFlow
-          colorMode="dark"
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          nodeTypes={nodeTypes}
-          snapToGrid
-          snapGrid={[20, 20]}
-        >
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={20} 
-            size={1.5}
-          />
-          <Controls 
-            orientation="horizontal"
-            className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
-            showInteractive={false}
-          />
+        <ReactFlow colorMode="dark" nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDragOver={onDragOver} onDrop={onDrop} nodeTypes={nodeTypes} snapToGrid snapGrid={[20, 20]}>
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+          <Controls orientation="horizontal" className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10" showInteractive={false} />
         </ReactFlow>
       </div>
     </div>

@@ -78,17 +78,9 @@ module "organization-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/create"
-
-}
-module "organization-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/delete"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-get-lambda" {
@@ -102,19 +94,9 @@ module "organization-get-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/get"
-
-}
-module "organization-overview-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-overview"
-  actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/overview"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-update-lambda" {
@@ -126,6 +108,20 @@ module "organization-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/update"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
+
+}
+module "organization-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "organization/delete"
 
 }
 
@@ -137,20 +133,6 @@ module "project-create-lambda" {
   actions       = ["dynamodb:PutItem"]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "project/create"
-  environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
-  }
-
-}
-module "project-delete-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "project-delete"
-  actions = [
-    "dynamodb:DeleteItem"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "project/delete"
   environment_variables = {
     DDB_TABLE_NAME = var.ddb_application_table_name
   }
@@ -186,17 +168,35 @@ module "project-update-lambda" {
   }
 
 }
+module "project-delete-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "project-delete"
+  actions = [
+    "dynamodb:DeleteItem"
+  ]
+  resources     = [module.dynamodb.application_data_table_arn]
+  zip_dir_slice = "project/delete"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
+
+}
 
 # Diagram
 module "diagram-create-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "diagram-create"
-  actions       = ["dynamodb:PutItem"]
-  resources     = [module.dynamodb.application_data_table_arn]
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-create:*"]
   zip_dir_slice = "diagram/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -205,14 +205,14 @@ module "diagram-get-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-get"
   actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn, module.dynamodb.supported_resurces_metadata_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-get:*"]
   zip_dir_slice = "diagram/get"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -221,12 +221,14 @@ module "diagram-update-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-update"
   actions = [
-    "dynamodb:UpdateItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-update:*"]
   zip_dir_slice = "diagram/update"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -235,12 +237,14 @@ module "diagram-delete-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "diagram-delete"
   actions = [
-    "dynamodb:DeleteItem"
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
   ]
-  resources     = [module.dynamodb.application_data_table_arn]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/diagram-delete:*"]
   zip_dir_slice = "diagram/delete"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -256,6 +260,8 @@ module "clutter-api-gateway" {
 }
 
 # Paths
+
+# Log-in
 module "log-in-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -268,11 +274,19 @@ module "log-in-api-cors-compliance" {
   resource_id  = module.log-in-api-path.resource_id
   http_methods = ["POST"]
 }
+
+# Organization
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
   parent_id   = module.clutter-api-gateway.root_resource_id
   path_part   = "organization"
+}
+module "organization-update-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.organization-api-path.resource_id
+  path_part   = "{organizationId}"
 }
 module "organization-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
@@ -280,6 +294,8 @@ module "organization-api-cors-compliance" {
   resource_id  = module.organization-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Project
 module "project-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -292,6 +308,8 @@ module "project-api-cors-compliance" {
   resource_id  = module.project-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Diagram
 module "diagram-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -306,13 +324,8 @@ module "diagram-api-cors-compliance" {
 }
 
 # Validation Models
-module "test-model" {
-  source          = "./modules/templates/api-models"
-  rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "test"
-  description     = "Test model"
-  schema_filename = "project-create.json"
-}
+
+# Log-in
 module "log-in-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -321,7 +334,42 @@ module "log-in-model" {
   schema_filename = "log-in.json"
 }
 
+# Organization
+module "organization-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationCreate"
+  description     = "Model to validate organization creation requests"
+  schema_filename = "organization-create.json"
+}
+# Organization
+module "organization-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationUpdate"
+  description     = "Model to validate organization update requests"
+  schema_filename = "organization-update.json"
+}
+
+
+# Diagram
+module "diagram-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramcreate"
+  description     = "Model to validate diagram create requests"
+  schema_filename = "diagram-create.json"
+}
+module "diagram-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "diagramupdate"
+  description     = "Model to validate diagram update requests"
+  schema_filename = "diagram-update.json"
+}
+
 # Integrations
+
 # POST Log-in
 module "log-in-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
@@ -333,6 +381,7 @@ module "log-in-api-integration" {
   path_part            = module.log-in-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.log-in-api-path.path
+
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.log-in-model.model_name
 }
@@ -349,9 +398,10 @@ module "organization-create-api-integration" {
   path_part            = module.organization-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.organization-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-create-model.model_name
 }
 # GET organization
 module "organization-get-api-integration" {
@@ -366,45 +416,21 @@ module "organization-get-api-integration" {
   path              = module.organization-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
-# GET organization/overview
-module "organization-overview-api-path" {
-  source      = "./modules/templates/api-path"
-  rest_api_id = module.clutter-api-gateway.rest_api_id
-  parent_id   = module.organization-api-path.resource_id
-  path_part   = "overview"
-}
-module "organization-overview-api-cors-compliance" {
-  source       = "./modules/templates/api-path-cors-compliance"
-  rest_api_id  = module.clutter-api-gateway.rest_api_id
-  resource_id  = module.organization-overview-api-path.resource_id
-  http_methods = ["GET"]
-}
-module "organization-overview-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-overview-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.organization-overview-lambda.invoke_arn
-  function_name     = module.organization-overview-lambda.function_name
-  path_part         = module.organization-overview-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-overview-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-}
 # UPDATE organization
 module "organization-update-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
   rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-api-path.resource_id
+  resource_id          = module.organization-update-api-path.resource_id
   http_method          = "PUT"
   invoke_arn           = module.organization-update-lambda.invoke_arn
   function_name        = module.organization-update-lambda.function_name
-  path_part            = module.organization-api-path.path_part
+  path_part            = module.organization-update-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  path                 = module.organization-update-api-path.path
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-update-model.model_name
 }
 # DELETE organization
 module "organization-delete-api-integration" {
@@ -433,7 +459,6 @@ module "project-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # GET project
@@ -461,7 +486,6 @@ module "project-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE project
@@ -491,9 +515,10 @@ module "diagram-create-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  model_name           = module.diagram-create-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
-} # GET diagram
+}
+# GET diagram
 module "diagram-get-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
@@ -518,7 +543,7 @@ module "diagram-update-api-integration" {
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.diagram-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.test-model.model_name
+  model_name           = module.diagram-update-model.model_name
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 # DELETE diagram
@@ -533,4 +558,58 @@ module "diagram-delete-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.diagram-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+// API Gateway Staging
+resource "aws_api_gateway_deployment" "clutter" {
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+
+  triggers = {
+    redeploy = sha1(jsonencode([
+
+      module.clutter-api-gateway.rest_api_id,
+      module.clutter-api-gateway.jwt_authorizer_id,
+      module.clutter-api-gateway.body_validator_id,
+
+      module.organization-update-model.model_id,
+
+      module.log-in-api-integration.integration_id,
+
+      module.organization-create-api-integration.integration_id,
+      module.organization-get-api-integration.integration_id,
+      module.organization-update-api-integration.integration_id,
+      module.organization-delete-api-integration.integration_id,
+
+      module.project-create-api-integration.integration_id,
+      module.project-get-api-integration.integration_id,
+      module.project-update-api-integration.integration_id,
+      module.project-delete-api-integration.integration_id,
+
+      module.diagram-create-api-integration.integration_id,
+      module.diagram-get-api-integration.integration_id,
+      module.diagram-update-api-integration.integration_id,
+      module.diagram-delete-api-integration.integration_id
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+variable "stage_name" {
+  type        = string
+  description = "API Gateway stage name"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.stage_name)
+    error_message = "stage_name must be one of: dev, staging, prod."
+  }
+}
+
+
+resource "aws_api_gateway_stage" "clutter" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  deployment_id = aws_api_gateway_deployment.clutter.id
+  stage_name    = var.stage_name
 }
