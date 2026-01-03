@@ -22,7 +22,6 @@ function ElegantShape({ className, delay = 0, width = 400, height = 100, rotate 
         duration: 2.4,
         delay,
         ease: [0.23, 0.86, 0.39, 0.96] as const,
-        ease: [0.23, 0.86, 0.39, 0.96] as const,
         opacity: { duration: 1.2 },
       }}
       className={cn("absolute", className)}>
@@ -67,7 +66,6 @@ function HeroGeometric({ badge = "Design Collective", title1 = "Elevate Your Dig
       transition: {
         duration: 1,
         delay: 0.5 + i * 0.2,
-        ease: [0.25, 0.4, 0.25, 1] as const,
         ease: [0.25, 0.4, 0.25, 1] as const,
       },
     }),
