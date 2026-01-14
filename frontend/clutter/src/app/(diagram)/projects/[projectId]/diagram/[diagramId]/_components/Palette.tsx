@@ -32,12 +32,16 @@ export default function Palette() {
   return (
     <aside
       className={[
-        "relative h-full shrink-0 border-r border-slate-800 bg-slate-950/70 backdrop-blur",
+        // Key fixes:
+        // - z-50: ensure palette (and chevron) sits above ReactFlow viewport
+        // - overflow-visible: allow the chevron to stick out past the edge
+        // - pointer-events-auto: ensure it can receive clicks
+        "relative z-50 overflow-visible pointer-events-auto h-full shrink-0 border-r border-slate-800 bg-slate-950/70 backdrop-blur",
         "transition-[width] duration-200",
         isCollapsed ? "w-14" : "w-[200px]",
       ].join(" ")}
     >
-      {/* Mid-edge circular collapse/expand button (like before) */}
+      {/* Mid-edge circular collapse/expand button */}
       <button
         type="button"
         onClick={(e) => {
@@ -45,7 +49,8 @@ export default function Palette() {
           setIsCollapsed((v) => !v);
         }}
         className={[
-          "absolute -right-3 top-1/2 -translate-y-1/2 z-20",
+          // Slightly higher z-index than the panel to guarantee it renders above
+          "absolute -right-3 top-1/2 -translate-y-1/2 z-[60] pointer-events-auto",
           "grid h-7 w-7 place-items-center rounded-full",
           "border border-slate-700 bg-slate-900 shadow-lg",
           "hover:bg-slate-800 transition",
@@ -88,7 +93,6 @@ export default function Palette() {
         <>
           {/* Body */}
           <div className="h-[calc(100%-3.5rem)] overflow-y-auto px-3 py-3">
-
             <div className="space-y-5">
               {sections.map((sec) => (
                 <section key={sec.title}>
