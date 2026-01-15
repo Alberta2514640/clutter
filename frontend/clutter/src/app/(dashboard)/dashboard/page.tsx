@@ -1,17 +1,13 @@
 "use client";
 
-
-
 import { apiClient } from "@/lib/api-client";
-import { getServerSession } from "next-auth";
+// import { getServerSession } from "next-auth";
 // import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
+// import { redirect } from "next/navigation";
 import { useEffect, useState } from "react";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 import DashboardOnboarding from "./_components/DashboardOnboarding";
-
-
 // const session = await getServerSession(authOptions);
 interface Project {
   projectId: string;

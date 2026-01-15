@@ -99,19 +99,6 @@ module "organization-get-lambda" {
   }
 
 }
-module "organization-overview-lambda" {
-
-  source        = "./modules/templates/lambda"
-  function_name = "organization-overview"
-  actions = [
-    "dynamodb:GetItem",
-    "dynamodb:Query",
-    "dynamodb:Scan"
-  ]
-  resources     = [module.dynamodb.application_data_table_arn]
-  zip_dir_slice = "organization/overview"
-
-}
 module "organization-update-lambda" {
 
   source        = "./modules/templates/lambda"
@@ -121,6 +108,9 @@ module "organization-update-lambda" {
   ]
   resources     = [module.dynamodb.application_data_table_arn]
   zip_dir_slice = "organization/update"
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+  }
 
 }
 module "organization-delete-lambda" {
@@ -286,6 +276,8 @@ module "clutter-api-gateway" {
 }
 
 # Paths
+
+# Log-in
 module "log-in-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -298,11 +290,19 @@ module "log-in-api-cors-compliance" {
   resource_id  = module.log-in-api-path.resource_id
   http_methods = ["POST"]
 }
+
+# Organization
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
   parent_id   = module.clutter-api-gateway.root_resource_id
   path_part   = "organization"
+}
+module "organization-update-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.organization-api-path.resource_id
+  path_part   = "{organizationId}"
 }
 module "organization-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
@@ -310,6 +310,8 @@ module "organization-api-cors-compliance" {
   resource_id  = module.organization-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Project
 module "project-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -322,6 +324,8 @@ module "project-api-cors-compliance" {
   resource_id  = module.project-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
 }
+
+# Diagram
 module "diagram-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -349,6 +353,8 @@ module "terraform-template-api-cors-compliance" {
 }
 
 # Validation Models
+
+# Log-in
 module "log-in-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -356,6 +362,26 @@ module "log-in-model" {
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
 }
+
+# Organization
+module "organization-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationCreate"
+  description     = "Model to validate organization creation requests"
+  schema_filename = "organization-create.json"
+}
+# Organization
+module "organization-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationUpdate"
+  description     = "Model to validate organization update requests"
+  schema_filename = "organization-update.json"
+}
+
+
+# Diagram
 module "diagram-create-model" {
   source          = "./modules/templates/api-models"
   rest_api_id     = module.clutter-api-gateway.rest_api_id
@@ -370,15 +396,9 @@ module "diagram-update-model" {
   description     = "Model to validate diagram update requests"
   schema_filename = "diagram-update.json"
 }
-module "organization-create-model" {
-  source          = "./modules/templates/api-models"
-  rest_api_id     = module.clutter-api-gateway.rest_api_id
-  model_name      = "organizationCreate"
-  description     = "Model to validate organization creation requests"
-  schema_filename = "organization-create.json"
-}
 
 # Integrations
+
 # POST Log-in
 module "log-in-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
@@ -425,44 +445,21 @@ module "organization-get-api-integration" {
   path              = module.organization-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
-# GET organization/overview
-module "organization-overview-api-path" {
-  source      = "./modules/templates/api-path"
-  rest_api_id = module.clutter-api-gateway.rest_api_id
-  parent_id   = module.organization-api-path.resource_id
-  path_part   = "overview"
-}
-module "organization-overview-api-cors-compliance" {
-  source       = "./modules/templates/api-path-cors-compliance"
-  rest_api_id  = module.clutter-api-gateway.rest_api_id
-  resource_id  = module.organization-overview-api-path.resource_id
-  http_methods = ["GET"]
-}
-module "organization-overview-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-overview-api-path.resource_id
-  http_method       = "GET"
-  invoke_arn        = module.organization-overview-lambda.invoke_arn
-  function_name     = module.organization-overview-lambda.function_name
-  path_part         = module.organization-overview-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-overview-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-}
 # UPDATE organization
 module "organization-update-api-integration" {
   source               = "./modules/templates/api-lambda-integration"
   rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-api-path.resource_id
+  resource_id          = module.organization-update-api-path.resource_id
   http_method          = "PUT"
   invoke_arn           = module.organization-update-lambda.invoke_arn
   function_name        = module.organization-update-lambda.function_name
-  path_part            = module.organization-api-path.path_part
+  path_part            = module.organization-update-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
+  path                 = module.organization-update-api-path.path
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-update-model.model_name
 }
 # DELETE organization
 module "organization-delete-api-integration" {
@@ -604,4 +601,60 @@ module "terraform-template-api-integration" {
   path_part         = module.terraform-template-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-template-api-path.path
+}
+
+// API Gateway Staging
+resource "aws_api_gateway_deployment" "clutter" {
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+
+  triggers = {
+    redeploy = sha1(jsonencode([
+
+      module.clutter-api-gateway.rest_api_id,
+      module.clutter-api-gateway.jwt_authorizer_id,
+      module.clutter-api-gateway.body_validator_id,
+
+      module.organization-update-model.model_id,
+
+      module.log-in-api-integration.integration_id,
+
+      module.organization-create-api-integration.integration_id,
+      module.organization-get-api-integration.integration_id,
+      module.organization-update-api-integration.integration_id,
+      module.organization-delete-api-integration.integration_id,
+
+      module.project-create-api-integration.integration_id,
+      module.project-get-api-integration.integration_id,
+      module.project-update-api-integration.integration_id,
+      module.project-delete-api-integration.integration_id,
+
+      module.diagram-create-api-integration.integration_id,
+      module.diagram-get-api-integration.integration_id,
+      module.diagram-update-api-integration.integration_id,
+      module.diagram-delete-api-integration.integration_id,
+
+      module.terraform-template-api-integration.integration_id
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+variable "stage_name" {
+  type        = string
+  description = "API Gateway stage name"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.stage_name)
+    error_message = "stage_name must be one of: dev, staging, prod."
+  }
+}
+
+
+resource "aws_api_gateway_stage" "clutter" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  deployment_id = aws_api_gateway_deployment.clutter.id
+  stage_name    = var.stage_name
 }

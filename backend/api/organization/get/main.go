@@ -8,6 +8,7 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/organization/get/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -42,9 +43,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			})
 		}
 
-		return generic.Response(200, generic.Json{
-			"message": "successfully returned list of organizations (no 'organizationId' passed in query parameters)",
-			"data":    userOrganizationsData,
+		return generic.Response(http.StatusOK, generic.Json{
+			"message":     "successfully returned list of organizations (no 'organizationId' passed in query parameters)",
+			"data_length": len(userOrganizationsData),
+			"data":        userOrganizationsData,
 		})
 	}
 
@@ -55,9 +57,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if isValidUuid {
 
 		organizationData, err := internal.GetSingleOrgDataWithId(userId, organizationId)
-		if err != nil {
+		if err != nil && err != pgx.ErrNoRows {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "something went wrong while getting data for single organization",
+				"error":   err.Error(),
+			})
+		} else if err == pgx.ErrNoRows {
+			return generic.Response(http.StatusForbidden, generic.Json{
+				"message": "user does not have access to requested organization data or organization with given ID does not exist",
 				"error":   err.Error(),
 			})
 		}

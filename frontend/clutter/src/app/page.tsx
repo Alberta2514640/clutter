@@ -11,7 +11,7 @@ export default function Home() {
 
       <main className="flex-1">
         {/* Hero */}
-        <HeroGeometric badge="Clutter · Infrastructure Diagramming Studio" title1="Infrastructure" title2="simplified" />
+        <HeroGeometric badge="Clutter ·  Diagramming Studio" title1="Infrastructure" title2="simplified" />
 
         {/* Section: What is Clutter */}
         <section className="border-t border-slate-800/60 bg-gradient-to-b from-black via-slate-950 to-black">
