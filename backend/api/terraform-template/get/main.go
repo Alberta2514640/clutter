@@ -97,11 +97,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	defer rows.Close()
 
-	var connections []string
+	connections := []string{}
 	for rows.Next() {
 		var connType string
 		if err := rows.Scan(&connType); err != nil {
-			continue
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"message": "failed to scan resource connection",
+				"error":   err.Error(),
+			})
 		}
 		connections = append(connections, connType)
 	}

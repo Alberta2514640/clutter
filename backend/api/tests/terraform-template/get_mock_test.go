@@ -62,10 +62,12 @@ func TestGetTerraformTemplate_WithMock(t *testing.T) {
 		}
 		defer rows.Close()
 
-		var connections []string
+		connections := []string{}
 		for rows.Next() {
 			var conn string
-			rows.Scan(&conn)
+			if err := rows.Scan(&conn); err != nil {
+				t.Fatalf("Failed to scan connection row: %v", err)
+			}
 			connections = append(connections, conn)
 		}
 
