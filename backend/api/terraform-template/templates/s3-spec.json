@@ -1,0 +1,206 @@
+{
+    "ResourceID": 1,
+    "Platform": "AWS",
+    "Resource": "aws_s3_bucket",
+    "Version": 1.0,
+    "Variables": {
+        "bucket_name": {
+            "type": "string",
+            "required": true,
+            "description": "Unique name for the S3 bucket (must be globally unique across AWS)"
+        },
+        "force_destroy": {
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "description": "If true, all objects are deleted when the bucket is destroyed"
+        },
+        "enable_versioning": {
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "description": "Enable versioning to keep multiple variants of objects"
+        },
+        "sse_algorithm": {
+            "type": "string",
+            "required": false,
+            "default": "AES256",
+            "description": "Server-side encryption algorithm (AES256 or aws:kms)"
+        },
+        "kms_key_arn": {
+            "type": "string",
+            "required": false,
+            "default": null,
+            "description": "ARN of the KMS key for encryption (required if sse_algorithm is aws:kms)"
+        },
+        "block_public_access": {
+            "type": "bool",
+            "required": false,
+            "default": true,
+            "description": "Block all public access to the bucket"
+        },
+        "object_ownership": {
+            "type": "string",
+            "required": false,
+            "default": "BucketOwnerEnforced",
+            "description": "Object ownership setting (BucketOwnerEnforced, BucketOwnerPreferred, ObjectWriter)"
+        },
+        "enable_cors": {
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "description": "Enable CORS configuration for cross-origin access"
+        },
+        "cors_allowed_origins": {
+            "type": "list(string)",
+            "required": false,
+            "default": [
+                "*"
+            ],
+            "description": "List of origins allowed to make cross-origin requests"
+        },
+        "cors_allowed_methods": {
+            "type": "list(string)",
+            "required": false,
+            "default": [
+                "GET",
+                "PUT",
+                "POST",
+                "DELETE",
+                "HEAD"
+            ],
+            "description": "HTTP methods allowed for CORS requests"
+        },
+        "cors_allowed_headers": {
+            "type": "list(string)",
+            "required": false,
+            "default": [
+                "*"
+            ],
+            "description": "Headers allowed in CORS preflight requests"
+        },
+        "cors_expose_headers": {
+            "type": "list(string)",
+            "required": false,
+            "default": [
+                "ETag"
+            ],
+            "description": "Headers exposed to the browser in CORS responses"
+        },
+        "cors_max_age_seconds": {
+            "type": "number",
+            "required": false,
+            "default": 3000,
+            "description": "Time in seconds that browser can cache the preflight response"
+        },
+        "enable_logging": {
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "description": "Enable server access logging"
+        },
+        "logging_target_bucket": {
+            "type": "string",
+            "required": false,
+            "default": null,
+            "description": "Target bucket for access logs (required if enable_logging is true)"
+        },
+        "logging_target_prefix": {
+            "type": "string",
+            "required": false,
+            "default": "logs/",
+            "description": "Prefix for log object keys"
+        },
+        "enable_lifecycle": {
+            "type": "bool",
+            "required": false,
+            "default": false,
+            "description": "Enable lifecycle rules for automatic object management"
+        },
+        "lifecycle_expiration_days": {
+            "type": "number",
+            "required": false,
+            "default": 90,
+            "description": "Number of days until objects expire"
+        },
+        "lifecycle_noncurrent_expiration_days": {
+            "type": "number",
+            "required": false,
+            "default": 30,
+            "description": "Number of days until noncurrent versions expire"
+        },
+        "lifecycle_abort_incomplete_days": {
+            "type": "number",
+            "required": false,
+            "default": 7,
+            "description": "Number of days to abort incomplete multipart uploads"
+        },
+        "tags": {
+            "type": "map(string)",
+            "required": false,
+            "default": {},
+            "description": "Tags to apply to the S3 bucket"
+        }
+    },
+    "Outputs": {
+        "bucket_id": {
+            "value": "aws_s3_bucket.{{bucket_name}}.id",
+            "description": "ID of the S3 bucket"
+        },
+        "bucket_arn": {
+            "value": "aws_s3_bucket.{{bucket_name}}.arn",
+            "description": "ARN of the S3 bucket"
+        },
+        "bucket_domain_name": {
+            "value": "aws_s3_bucket.{{bucket_name}}.bucket_domain_name",
+            "description": "Domain name of the S3 bucket"
+        },
+        "bucket_regional_domain_name": {
+            "value": "aws_s3_bucket.{{bucket_name}}.bucket_regional_domain_name",
+            "description": "Regional domain name of the S3 bucket"
+        }
+    },
+    "Snippet": "# Resource Documentation: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket\nresource \"aws_s3_bucket\" \"{{bucket_name}}\" {\n  bucket        = var.bucket_name\n  force_destroy = var.force_destroy\n  tags          = var.tags\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"{{bucket_name}}\" {\n  bucket                  = aws_s3_bucket.{{bucket_name}}.id\n  block_public_acls       = var.block_public_access\n  block_public_policy     = var.block_public_access\n  ignore_public_acls      = var.block_public_access\n  restrict_public_buckets = var.block_public_access\n}\n\nresource \"aws_s3_bucket_versioning\" \"{{bucket_name}}\" {\n  bucket = aws_s3_bucket.{{bucket_name}}.id\n  versioning_configuration {\n    status = var.enable_versioning ? \"Enabled\" : \"Suspended\"\n  }\n}\n\nresource \"aws_s3_bucket_server_side_encryption_configuration\" \"{{bucket_name}}\" {\n  bucket = aws_s3_bucket.{{bucket_name}}.id\n  rule {\n    apply_server_side_encryption_by_default {\n      sse_algorithm     = var.kms_key_arn != null ? \"aws:kms\" : var.sse_algorithm\n      kms_master_key_id = var.kms_key_arn\n    }\n    bucket_key_enabled = var.kms_key_arn != null\n  }\n}\n\nresource \"aws_s3_bucket_ownership_controls\" \"{{bucket_name}}\" {\n  bucket = aws_s3_bucket.{{bucket_name}}.id\n  rule {\n    object_ownership = var.object_ownership\n  }\n}\n\nresource \"aws_s3_bucket_cors_configuration\" \"{{bucket_name}}\" {\n  count  = var.enable_cors ? 1 : 0\n  bucket = aws_s3_bucket.{{bucket_name}}.id\n  cors_rule {\n    allowed_headers = var.cors_allowed_headers\n    allowed_methods = var.cors_allowed_methods\n    allowed_origins = var.cors_allowed_origins\n    expose_headers  = var.cors_expose_headers\n    max_age_seconds = var.cors_max_age_seconds\n  }\n}\n\nresource \"aws_s3_bucket_logging\" \"{{bucket_name}}\" {\n  count         = var.enable_logging ? 1 : 0\n  bucket        = aws_s3_bucket.{{bucket_name}}.id\n  target_bucket = var.logging_target_bucket\n  target_prefix = var.logging_target_prefix\n}\n\nresource \"aws_s3_bucket_lifecycle_configuration\" \"{{bucket_name}}\" {\n  count      = var.enable_lifecycle ? 1 : 0\n  bucket     = aws_s3_bucket.{{bucket_name}}.id\n  depends_on = [aws_s3_bucket_versioning.{{bucket_name}}]\n  rule {\n    id     = \"cleanup-rule\"\n    status = \"Enabled\"\n    expiration {\n      days = var.lifecycle_expiration_days\n    }\n    noncurrent_version_expiration {\n      noncurrent_days = var.lifecycle_noncurrent_expiration_days\n    }\n    abort_incomplete_multipart_upload {\n      days_after_initiation = var.lifecycle_abort_incomplete_days\n    }\n  }\n}",
+    "Permissions": {
+        "can_grant": [
+            {
+                "to": "aws_lambda_function",
+                "actions": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                ]
+            },
+            {
+                "to": "aws_iam_role",
+                "actions": [
+                    "s3:*"
+                ]
+            },
+            {
+                "to": "aws_cloudfront_distribution",
+                "actions": [
+                    "s3:GetObject"
+                ]
+            },
+            {
+                "to": "aws_ecs_task_definition",
+                "actions": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:ListBucket"
+                ]
+            },
+            {
+                "to": "aws_ec2_instance",
+                "actions": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:ListBucket"
+                ]
+            }
+        ],
+        "can_receive": []
+    }
+}

@@ -83,38 +83,6 @@ CREATE TABLE public.diagram_history (
     PRIMARY KEY (diagram_id, version)
 );
 
--- ============================
--- Resource
--- ============================
-
-CREATE TABLE public.resource_types (
-    resource_type VARCHAR(50) PRIMARY KEY,
-    description TEXT,
-    category VARCHAR(50)
-);
-
--- This table stores individual resource with their configurations
-CREATE TABLE public.resource (
-    resource_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type),
-    platform VARCHAR(50) NOT NULL,
-    resource_version VARCHAR(20) NOT NULL,
-    variables JSONB NOT NULL,
-    snippet TEXT NOT NULL
-);
-
--- This table defines possible connections between different resource types
-CREATE TABLE public.resource_connections (
-    connection_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    connection_version VARCHAR(20) NOT NULL,
-    source_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
-    target_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
-    connection_template TEXT, -- Used to store a template or pattern for the connection
-    is_bidirectional BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_resource_type, target_resource_type)
-);
-
 
 -- ============================
 -- Resource
