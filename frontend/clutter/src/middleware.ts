@@ -1,10 +1,13 @@
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 export async function middleware(req: NextRequest) {
   const { pathname, origin } = req.nextUrl;
 
-  const isPublic = pathname === "/login" || pathname.startsWith("/onboarding") || pathname.startsWith("/api");
+  const isPublic =
+    pathname === "/login" ||
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/api");
 
   // if you store a session cookie/JWT, check it here
   const hasAuth = req.cookies.get("session") || req.cookies.get("token");
@@ -26,7 +29,9 @@ export async function middleware(req: NextRequest) {
     if (meRes.ok) {
       const me = await meRes.json();
       if (!me.tenantId) {
-        return NextResponse.redirect(new URL("/onboarding/create-tenant", origin));
+        return NextResponse.redirect(
+          new URL("/onboarding/create-tenant", origin),
+        );
       }
     }
   }
