@@ -22,11 +22,11 @@ alias tfiaa="tfi && tfaa"
 # Build go code and Terraform commands
 alias tfbia="gob && tfia"   # Build, init and apply
 alias tfbiaa="gob && tfiaa" # Build, init and apply auto-approve
-alias tfba="gob && tfa"           # Build and apply
-alias tfbaa="gob && tfaa"         # Build and apply auto-approve
+alias tfba="gob && tfa"     # Build and apply
+alias tfbaa="gob && tfaa"   # Build and apply auto-approve
 
 # Build go code (linux) and Terraform commands
 alias tflbia="golb && tfia"   # Build, init and apply
 alias tflbiaa="golb && tfiaa" # Build, init and apply auto-approve
-alias tflba="golb && tfa"           # Build and apply
-alias tflbaa="golb && tfaa"         # Build and apply auto-approve
+alias tflba="golb && tfa"     # Build and apply
+alias tflbaa="golb && tfaa"   # Build and apply auto-approve
