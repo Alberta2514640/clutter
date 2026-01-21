@@ -83,6 +83,43 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   }, [saveDiagram]);
 
   return (
+<<<<<<< HEAD
+    <div className=" h-screen w-screen overflow-hidden">
+
+      {/* Fullscreen React Flow Canvas */}
+      <div className="flex h-full w-full">
+        <Palette />
+        <div className="relative flex-1">
+          <ReactFlow
+            colorMode="dark"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            nodeTypes={nodeTypes}
+            snapToGrid
+            snapGrid={[20, 20]}
+          >
+            <Panel position="top-right">
+              <TopNav onSave={onSave} />
+            </Panel>
+            <Background 
+              variant={BackgroundVariant.Dots} 
+              gap={20} 
+              size={1.5}
+            />
+            <Controls 
+              orientation="horizontal"
+              className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
+              showInteractive={false}
+            />
+          </ReactFlow>
+        </div>
+        <ConfigPanel />
+=======
     <div className="relative h-screen w-screen overflow-hidden">
       {/* Top Nav - Fixed at top */}
       <div className="absolute top-0 left-0 right-0 z-30">
@@ -104,6 +141,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
           <Controls orientation="horizontal" className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10" showInteractive={false} />
         </ReactFlow>
+>>>>>>> origin/main
       </div>
     </div>
   );
