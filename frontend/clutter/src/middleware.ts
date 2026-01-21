@@ -7,7 +7,12 @@ export async function middleware(req: NextRequest) {
   const isPublic =
     pathname === "/login" ||
     pathname.startsWith("/onboarding") ||
-    pathname.startsWith("/api");
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/logos") ||
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml";
 
   // if you store a session cookie/JWT, check it here
   const hasAuth = req.cookies.get("session") || req.cookies.get("token");
