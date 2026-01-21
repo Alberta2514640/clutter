@@ -1,9 +1,9 @@
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
-import DashboardHeader from './DashboardHeader';
-import StatsCards from './StatsCards';
-import ProjectsSection from './ProjectSection';
-import ActivitySection from './ActivitySection';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
+import DashboardHeader from "./DashboardHeader";
+import StatsCards from "./StatsCards";
+import ProjectsSection from "./ProjectSection";
+import ActivitySection from "./ActivitySection";
 
 interface Project {
   projectId: string;
@@ -19,8 +19,8 @@ interface Run {
   projectId: string;
   projectName: string;
   workspaceId: string;
-  action: 'plan' | 'apply';
-  status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  action: "plan" | "apply";
+  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
   startedAt: string;
   endedAt?: string;
 }
@@ -43,12 +43,7 @@ interface DashboardContentProps {
   error: string | null;
 }
 
-export default function DashboardContent({
-  userData,
-  projects,
-  recentRuns,
-  error
-}: DashboardContentProps) {
+export default function DashboardContent({ userData, projects, recentRuns, error }: DashboardContentProps) {
   return (
     <div className="px-6 py-12">
       <DashboardHeader tenantName={userData?.tenant?.name} />
@@ -61,11 +56,7 @@ export default function DashboardContent({
         </Alert>
       )}
 
-      <StatsCards 
-        projectCount={projects.length}
-        runCount={recentRuns.length}
-        memberCount={projects.reduce((acc, p) => acc + (p.memberCount || 0), 0)}
-      />
+      <StatsCards projectCount={projects.length} runCount={recentRuns.length} memberCount={projects.reduce((acc, p) => acc + (p.memberCount || 0), 0)} />
 
       <ProjectsSection projects={projects} />
 

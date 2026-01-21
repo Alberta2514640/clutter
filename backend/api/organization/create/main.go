@@ -31,7 +31,7 @@ func handler(request events.APIGatewayProxyRequest) (resp events.APIGatewayProxy
 	}
 
 	// Process body from API Gateway request
-	var body internal.RequestBody
+	var body generic.OrgRequestBody
 
 	err = json.Unmarshal([]byte(request.Body), &body)
 	if err != nil {

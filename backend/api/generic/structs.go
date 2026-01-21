@@ -21,3 +21,9 @@ type Project struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
 }
+
+// Incoming request body structure for Organization Create and update
+type OrgRequestBody struct {
+	OrganizationName string `json:"organizationName"`
+	Description      string `json:"description"`
+}

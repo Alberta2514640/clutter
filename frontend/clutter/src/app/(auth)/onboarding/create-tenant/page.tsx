@@ -1,9 +1,9 @@
-import React from 'react'
-
-const CreateTenantPage = () => {
+export default function CreateTenantPage() {
   return (
-    <div>CreateTenantPage</div>
-  )
+    //had to add it due to npm build
+    <main style={{ padding: 24 }}>
+      <h1>Create tenant</h1>
+      <p>TODO: implement create-tenant onboarding.</p>
+    </main>
+  );
 }
-
-export default CreateTenantPage
