@@ -153,7 +153,7 @@ module "project-create-lambda" {
   ]
   zip_dir_slice = "project/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -171,7 +171,7 @@ module "project-get-lambda" {
   ]
   zip_dir_slice = "project/get"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -189,7 +189,7 @@ module "project-update-lambda" {
   ]
   zip_dir_slice = "project/update"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -207,7 +207,7 @@ module "project-delete-lambda" {
   ]
   zip_dir_slice = "project/delete"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
