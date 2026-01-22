@@ -2,163 +2,169 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
-type Project struct {
-	ID             string `json:"id"`
-	OrganizationID string `json:"organizationId"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	CreatedBy      string `json:"createdBy"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt,omitempty"`
+type ProjectData struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organizationId"`
+	CreatedBy      string    `json:"createdBy"`
+	Name           string    `json:"name"`
+	Description    string    `json:"description"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
-var (
-	ddb       *dynamodb.Client
-	tableName string
-)
-
-func init() {
-	var err error
-	ddb, tableName, err = generic.GetDynamodbClient()
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-	}
-}
 func main() {
 	lambda.Start(handler)
 }
 
-func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	ctx := context.Background()
-
-	// 1. Require user identity (authorizer)
-	_, err := getUserIDFromRequest(req)
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// 1) Extract user data from authorizer context (no fallbacks)
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "UNAUTHORIZED",
-				"message": err.Error(),
-			},
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
 		})
 	}
+	userID := userData.Id
 
-	// 2. Read query params
-	orgID := req.QueryStringParameters["organizationId"]
-	projectID := req.QueryStringParameters["projectId"]
+	// 2) Read query params
+	orgID := request.QueryStringParameters["organizationId"]
+	projectID := request.QueryStringParameters["projectId"] // optional
 
-	if orgID == "" || projectID == "" {
+	if orgID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and projectId query parameters are required",
-			},
+			"message": "missing required fields",
 		})
 	}
 
-	// 3. Build key and GetItem from DynamoDB
-	key := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{
-			Value: fmt.Sprintf("ORG#%s", orgID),
-		},
-		"SK": &types.AttributeValueMemberS{
-			Value: fmt.Sprintf("PROJECT#%s", projectID),
-		},
+	// Validate UUID formats
+	if _, err := uuid.Parse(orgID); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "organizationId must be a valid UUID",
+		})
+	}
+	if _, err := uuid.Parse(userID); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "user id in token is not a valid UUID",
+		})
+	}
+	if projectID != "" {
+		if _, err := uuid.Parse(projectID); err != nil {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "projectId must be a valid UUID",
+			})
+		}
 	}
 
-	out, err := ddb.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(tableName),
-		Key:       key,
-	})
+	// 3) Connect to PostgreSQL
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "failed to fetch project",
-			},
+			"message": "failed to connect to database",
+			"error":   err.Error(),
 		})
 	}
+	defer conn.Close(ctx)
 
-	if len(out.Item) == 0 {
-		return generic.Response(http.StatusNotFound, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "NOT_FOUND",
-				"message": "project not found",
-			},
-		})
-	}
-
-	// 4. Decode Data attribute into Project struct
-	dataAttr, ok := out.Item["Data"].(*types.AttributeValueMemberM)
-	if !ok {
+	// 4) Authorization: user must be member of this organization
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
+			})
+		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "invalid project item format",
-			},
+			"message": "failed to check authorization",
+			"error":   err.Error(),
 		})
 	}
-	data := dataAttr.Value
 
-	project := Project{
-		ID:             getStringAttr(data, "id"),
-		OrganizationID: orgID,
-		Name:           getStringAttr(data, "name"),
-		Description:    getStringAttr(data, "description"),
-		CreatedBy:      getStringAttr(data, "createdBy"),
-		CreatedAt:      getStringAttr(data, "createdAt"),
-		UpdatedAt:      getStringAttr(data, "updatedAt"),
+	// 5) Branch: single project vs list
+	if projectID != "" {
+		// 5A) Fetch one project, and enforce it belongs to the given org
+		query := `
+			SELECT id, organization_id, created_by, name, description, created_at
+			FROM projects
+			WHERE id = $1 AND organization_id = $2
+		`
+		var p ProjectData
+		if err := conn.QueryRow(ctx, query, projectID, orgID).Scan(
+			&p.ID,
+			&p.OrganizationID,
+			&p.CreatedBy,
+			&p.Name,
+			&p.Description,
+			&p.CreatedAt,
+		); err != nil {
+			if err == pgx.ErrNoRows {
+				return generic.Response(http.StatusNotFound, generic.Json{
+					"message": "project not found",
+				})
+			}
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"message": "failed to fetch project",
+				"error":   err.Error(),
+			})
+		}
+
+		return generic.Response(http.StatusOK, generic.Json{
+			"message": "project fetched successfully",
+			"data":    p,
+		})
+	}
+
+	// 5B) List all projects in org
+	query := `
+		SELECT id, organization_id, created_by, name, description, created_at
+		FROM projects
+		WHERE organization_id = $1
+		ORDER BY created_at DESC
+	`
+	rows, err := conn.Query(ctx, query, orgID)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to fetch projects",
+			"error":   err.Error(),
+		})
+	}
+	defer rows.Close()
+
+	projects := []ProjectData{}
+	for rows.Next() {
+		var p ProjectData
+		if err := rows.Scan(
+			&p.ID,
+			&p.OrganizationID,
+			&p.CreatedBy,
+			&p.Name,
+			&p.Description,
+			&p.CreatedAt,
+		); err != nil {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"message": "failed to parse projects",
+				"error":   err.Error(),
+			})
+		}
+		projects = append(projects, p)
+	}
+	if err := rows.Err(); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to iterate projects",
+			"error":   err.Error(),
+		})
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
-		"success": true,
-		"data":    project,
+		"message": "projects fetched successfully",
+		"data":    projects,
 	})
-}
-
-func getStringAttr(m map[string]types.AttributeValue, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok2 := v.(*types.AttributeValueMemberS); ok2 {
-			return s.Value
-		}
-	}
-	return ""
-}
-
-func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
-	if req.RequestContext.Authorizer != nil {
-		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-		if v, ok := req.RequestContext.Authorizer["email"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-	}
-
-	return "", errors.New("missing user identity in request context")
 }
