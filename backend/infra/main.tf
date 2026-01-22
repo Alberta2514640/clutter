@@ -278,6 +278,22 @@ module "diagram-delete-lambda" {
 
 }
 
+# User Information
+module "user-information-get-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "user-information-get"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
+  zip_dir_slice = "user-information/get"
+  environment_variables = {}
+
+}
+
 # ===========
 # API Gateway
 # ===========
@@ -350,6 +366,20 @@ module "diagram-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.diagram-api-path.resource_id
   http_methods = ["POST", "GET", "PUT", "DELETE"]
+}
+
+# User Information
+module "user-information-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "user-information"
+}
+module "user-information-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.user-information-api-path.resource_id
+  http_methods = ["GET"]
 }
 
 # Validation Models
@@ -589,6 +619,21 @@ module "diagram-delete-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+# User Information
+# GET user-information
+module "user-information-get-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.user-information-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.user-information-get-lambda.invoke_arn
+  function_name     = module.user-information-get-lambda.function_name
+  path_part         = module.user-information-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.user-information-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
 // API Gateway Staging
 resource "aws_api_gateway_deployment" "clutter" {
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -617,7 +662,9 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.diagram-create-api-integration.integration_id,
       module.diagram-get-api-integration.integration_id,
       module.diagram-update-api-integration.integration_id,
-      module.diagram-delete-api-integration.integration_id
+      module.diagram-delete-api-integration.integration_id,
+
+      module.user-information-get-api-integration.integration_id
     ]))
   }
 

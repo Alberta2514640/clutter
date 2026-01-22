@@ -9,8 +9,8 @@ type AuthorizerContextUserData struct {
 	Id               string `json:"id"`
 	Email            string `json:"email"`
 	Name             string `json:"name"`
-	PictureUrl       string `json:"pictureUrl"`
-	AccountCreatedOn string `json:"accountCreatedOn"`
+	PictureUrl       string `json:"picture_url"`
+	AccountCreatedOn string `json:"created_at"`
 }
 
 func GetUserDataFromAuthorizerContext(context map[string]any) (AuthorizerContextUserData, error) {

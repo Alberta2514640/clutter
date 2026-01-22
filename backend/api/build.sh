@@ -17,6 +17,7 @@ LAMBDA_DIRS=(
   "diagram/get"
   "diagram/update"
   "diagram/delete"
+  "user-information/get"
 )
 
 # Detect root directory of script
