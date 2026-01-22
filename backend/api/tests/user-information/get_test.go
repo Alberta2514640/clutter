@@ -14,8 +14,8 @@ func mockHandler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyR
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(
-			http.StatusUnauthorized,
-			generic.Json{"message": "unauthorized: missing user identity", "error": err.Error()},
+			http.StatusInternalServerError,
+			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
 		)
 	}
 
@@ -105,8 +105,8 @@ func TestGetUserInformation_MissingContext(t *testing.T) {
 		t.Fatalf("Handler returned error: %v", err)
 	}
 
-	if response.StatusCode != http.StatusUnauthorized {
-		t.Errorf("Expected status 401, got %d", response.StatusCode)
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status 500, got %d", response.StatusCode)
 	}
 
 	// Parse response body
@@ -115,7 +115,7 @@ func TestGetUserInformation_MissingContext(t *testing.T) {
 		t.Fatalf("Failed to parse response body: %v", err)
 	}
 
-	if body["message"] != "unauthorized: missing user identity" {
+	if body["message"] != "failed to retrieve user data from autorizer context" {
 		t.Errorf("Unexpected message: %s", body["message"])
 	}
 }

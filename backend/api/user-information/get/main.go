@@ -20,8 +20,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(
-			http.StatusUnauthorized,
-			generic.Json{"message": "unauthorized: missing user identity", "error": err.Error()},
+			http.StatusInternalServerError,
+			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
 		)
 	}
 
