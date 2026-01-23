@@ -1,83 +1,58 @@
 "use client";
-
-import { apiClient } from "@/lib/api-client";
-// import { getServerSession } from "next-auth";
-// import { authOptions } from "@/lib/auth";
-// import { redirect } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useProjectActions, useProjectState } from "@/lib/stores/projectStore";
+import { useRunActions, useRunState } from "@/lib/stores/runStore";
+import { useUserActions, useUserState, useUserStore } from "@/lib/stores/userStore";
+import { useEffect } from "react";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
-import DashboardOnboarding from "./_components/DashboardOnboarding";
-// const session = await getServerSession(authOptions);
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
-
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
+// import DashboardOnboarding from "./_components/DashboardOnboarding";
 
 export default function DashboardPageClient() {
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [recentRuns, setRecentRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Access state from stores
+  const userState = useUserState();
+  const projectState = useProjectState();
+  const runState = useRunState();
 
-  // if (!session) {
-  //   redirect("/login");
-  // }
+  // Access actions from stores
+  const userActions = useUserActions();
+  const projectActions = useProjectActions();
+  const runActions = useRunActions();
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
+  // MOVED: Define function before useEffect
   const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+    // Load user first
+    await userActions.loadUser();
 
-      const user = await apiClient.getUserProfile();
-      setUserData(user);
-
-      if (user.tenantId) {
-        const [projectsData, runsData] = await Promise.all([apiClient.getProjects(), apiClient.getRecentRuns()]);
-
-        setProjects(projectsData.projects || []);
-        setRecentRuns(runsData.runs || []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
+    // If user has a tenant, load projects and runs
+    const currentUser = useUserStore.getState().state.user;
+    if (currentUser?.tenantId) {
+      await Promise.all([
+        projectActions.loadProjects(),
+        runActions.loadRecentRuns(),
+      ]);
     }
   };
 
-  if (loading) return <DashboardLoading />;
-  if (userData && !userData.tenantId) return <DashboardOnboarding />;
+  // Load data on mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
+  // Determine loading state (any store loading)
+  const isLoading = userState.isLoading || projectState.isLoading || runState.isLoading;
+
+  // Combine errors from all stores
+  const error = userState.error || projectState.error || runState.error;
+
+  if (isLoading && !userState.user) return <DashboardLoading />;
+  // if (userState.user && !userState.user.tenantId) return <DashboardOnboarding />;
+
+  return (
+    <DashboardContent
+      userData={userState.user}
+      projects={projectState.projects}
+      recentRuns={runState.runs}
+      error={error}
+    />
+  );
 }

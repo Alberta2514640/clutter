@@ -1,6 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { useProjectState } from '@/lib/stores/projectStore';
+import { useUserState } from '@/lib/stores/userStore';
 import { cn } from '@/lib/utils';
 import {
   BarChart3,
@@ -11,10 +13,8 @@ import {
   HelpCircle,
   LayoutDashboard,
   Plus,
-  Rocket,
   Settings,
   Sparkles,
-  Users
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -29,14 +29,12 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
+  // Get data from stores
+  const { projects } = useProjectState();
+  const { user } = useUserState();
+
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview', href: '/dashboard' }
-  ];
-
-  const projects = [
-    { id: '1', name: 'Web Application', icon: '🌐' },
-    { id: '2', name: 'Data Pipeline', icon: '📊' },
-    { id: '3', name: 'Monitoring Stack', icon: '📈' },
   ];
 
   const bottomItems = [
@@ -58,6 +56,31 @@ export default function DashboardSidebar({ className }: SidebarProps) {
     setCollapsed(!collapsed);
   };
 
+  // Helper to get project emoji/icon (you can enhance this)
+  const getProjectIcon = (name: string) => {
+    if (name.toLowerCase().includes('web')) return '🌐';
+    if (name.toLowerCase().includes('data')) return '📊';
+    if (name.toLowerCase().includes('monitor')) return '📈';
+    if (name.toLowerCase().includes('api')) return '🔌';
+    if (name.toLowerCase().includes('mobile')) return '📱';
+    return '📁'; // default
+  };
+
+  // Helper to get user initials
+  const getUserInitials = (displayName?: string, email?: string) => {
+    if (displayName) {
+      const names = displayName.split(' ');
+      if (names.length >= 2) {
+        return `${names[0][0]}${names[1][0]}`.toUpperCase();
+      }
+      return displayName.slice(0, 2).toUpperCase();
+    }
+    if (email) {
+      return email.slice(0, 2).toUpperCase();
+    }
+    return '??';
+  };
+
   return (
     <aside
       onClick={handleExpand}
@@ -75,7 +98,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
           <ChevronRight className="w-4 h-4 text-gray-400" />
         </button>
       )}
-      {/* Collapse/Expand Button - Centered on the right edge */}
+      {/* Collapse Button - when expanded */}
       {!collapsed && (
         <button
           onClick={handleToggle}
@@ -88,24 +111,21 @@ export default function DashboardSidebar({ className }: SidebarProps) {
       {/* Logo Section */}
       <div className="flex items-center justify-center p-4 border-b border-slate-800/50">
         {collapsed ? (
-
-            <Image
-              src="/logos/logo.png"
-              alt="Clutter"
-              width={80}
-              height={80}
-              className="object-contain"
-            />
-
-
+          <Image
+            src="/logos/logo.png"
+            alt="Clutter"
+            width={80}
+            height={80}
+            className="object-contain"
+          />
         ) : (
-            <Image
-              src="/logos/logo_text.png"
-              alt="Clutter"
-              width={80}
-              height={80}
-              className="object-contain"
-            />
+          <Image
+            src="/logos/logo_text.png"
+            alt="Clutter"
+            width={80}
+            height={80}
+            className="object-contain"
+          />
         )}
       </div>
 
@@ -134,7 +154,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
           );
         })}
 
-        {/* Projects Section */}
+        {/* Projects Section - EXPANDED */}
         {!collapsed && (
           <div className="pt-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-3 pb-2">
@@ -154,44 +174,52 @@ export default function DashboardSidebar({ className }: SidebarProps) {
             </div>
             
             <div className="space-y-1">
-              {projects.map((project) => (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.id}/diagrams`}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-lg transition-all',
-                    pathname.includes(`/projects/${project.id}`)
-                      ? 'bg-slate-800/50 text-white'
-                      : 'text-gray-400 hover:bg-slate-800/30 hover:text-white'
-                  )}
-                >
-                  <span className="text-lg flex-shrink-0">{project.icon}</span>
-                  <span className="text-sm truncate">{project.name}</span>
-                </Link>
-              ))}
+              {projects.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                  No projects yet
+                </div>
+              ) : (
+                projects.map((project) => (
+                  <Link
+                    key={project.projectId}
+                    href={`/projects/${project.projectId}/diagrams`}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-lg transition-all',
+                      pathname.includes(`/projects/${project.projectId}`)
+                        ? 'bg-slate-800/50 text-white'
+                        : 'text-gray-400 hover:bg-slate-800/30 hover:text-white'
+                    )}
+                  >
+                    <span className="text-lg flex-shrink-0">
+                      {getProjectIcon(project.name)}
+                    </span>
+                    <span className="text-sm truncate">{project.name}</span>
+                  </Link>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {/* Collapsed state icons for projects */}
+        {/* Projects Section - COLLAPSED */}
         {collapsed && (
           <div className="pt-6 space-y-1">
             <div className="flex items-center justify-center px-2 pb-2">
-              <FolderOpen className=" text-gray-500 px-0.5" />
+              <FolderOpen className="text-gray-500 px-0.5" />
             </div>
             {projects.slice(0, 3).map((project) => (
               <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
+                key={project.projectId}
+                href={`/projects/${project.projectId}/diagrams`}
                 onClick={(e) => e.stopPropagation()}
                 className={cn(
                   'flex items-center justify-center px-3 py-2 rounded-lg transition-all',
-                  pathname.includes(`/projects/${project.id}`)
+                  pathname.includes(`/projects/${project.projectId}`)
                     ? 'bg-slate-800/50 text-white'
                     : 'text-gray-400 hover:bg-slate-800/30 hover:text-white'
                 )}
               >
-                <span className="text-lg">{project.icon}</span>
+                <span className="text-lg">{getProjectIcon(project.name)}</span>
               </Link>
             ))}
           </div>
@@ -232,12 +260,16 @@ export default function DashboardSidebar({ className }: SidebarProps) {
           )}
         >
           <div className="w-8 h-8 rounded-full bg-teal-500 flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
-            HA
+            {getUserInitials(user?.displayName, user?.email)}
           </div>
-          {!collapsed && (
+          {!collapsed && user && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">Hamza Amar</p>
-              <p className="text-xs text-gray-500 truncate">hamza@example.com</p>
+              <p className="text-sm font-medium text-white truncate">
+                {user.displayName || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 truncate">
+                {user.email || ''}
+              </p>
             </div>
           )}
         </div>
