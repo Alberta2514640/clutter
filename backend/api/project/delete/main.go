@@ -2,126 +2,131 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
-
-var (
-	ddb       *dynamodb.Client
-	tableName string
-)
-
-func init() {
-	var err error
-	ddb, tableName, err = generic.GetDynamodbClient()
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
-	}
-}
 
 func main() {
 	lambda.Start(handler)
 }
 
-func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	ctx := context.Background()
-
-	// 1. Require user identity (authorizer)
-	_, err := getUserIDFromRequest(req)
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// 1) Extract user identity from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "UNAUTHORIZED",
-				"message": err.Error(),
-			},
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
 		})
 	}
+	userID := userData.Id
 
-	// 2. Query params: organizationId and projectId (both required)
-	orgID := req.QueryStringParameters["organizationId"]
-	projectID := req.QueryStringParameters["projectId"]
+	// 2) Read query params
+	orgID := request.QueryStringParameters["organizationId"]
+	projectID := request.QueryStringParameters["projectId"]
 
 	if orgID == "" || projectID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and projectId query parameters are required",
-			},
+			"message": "organizationId and projectId query parameters are required",
 		})
 	}
 
-	// 3. Build key
-	key := map[string]types.AttributeValue{
-		"PK": &types.AttributeValueMemberS{
-			Value: fmt.Sprintf("ORG#%s", orgID),
-		},
-		"SK": &types.AttributeValueMemberS{
-			Value: fmt.Sprintf("PROJECT#%s", projectID),
-		},
+	// 3) Validate UUID formats
+	if _, err := uuid.Parse(userID); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "user id in token is not a valid UUID",
+		})
+	}
+	if _, err := uuid.Parse(orgID); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "organizationId must be a valid UUID",
+		})
+	}
+	if _, err := uuid.Parse(projectID); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "projectId must be a valid UUID",
+		})
 	}
 
-	// 4. Delete with condition (only if item exists)
-	_, err = ddb.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName:           aws.String(tableName),
-		Key:                 key,
-		ConditionExpression: aws.String("attribute_exists(PK) AND attribute_exists(SK)"),
-	})
+	// 4) Connect to PostgreSQL
+	conn, err := generic.PsqlConnect()
 	if err != nil {
-		var cfe *types.ConditionalCheckFailedException
-		if errors.As(err, &cfe) {
-			// Item does not exist
-			return generic.Response(http.StatusNotFound, generic.Json{
-				"success": false,
-				"error": generic.Json{
-					"code":    "NOT_FOUND",
-					"message": "project not found",
-				},
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to connect to database",
+			"error":   err.Error(),
+		})
+	}
+	defer conn.Close(ctx)
+
+	// 5) Authorization: user must be member of the organization
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
 			})
 		}
-
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"success": false,
-			"error": generic.Json{
-				"code":    "INTERNAL_ERROR",
-				"message": "failed to delete project",
-			},
+			"message": "failed to check authorization",
+			"error":   err.Error(),
 		})
 	}
 
-	// 5. Return success (no body needed beyond this)
-	return generic.Response(http.StatusOK, generic.Json{
-		"success": true,
-	})
-}
-
-func getUserIDFromRequest(req events.APIGatewayProxyRequest) (string, error) {
-	if req.RequestContext.Authorizer != nil {
-		if v, ok := req.RequestContext.Authorizer["userId"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
+	// 6) Ensure project exists and belongs to org
+	queryProjectOrg := `
+		SELECT organization_id
+		FROM projects
+		WHERE id = $1
+	`
+	var actualOrgID string
+	if err := conn.QueryRow(ctx, queryProjectOrg, projectID).Scan(&actualOrgID); err != nil {
+		if err == pgx.ErrNoRows {
+			return generic.Response(http.StatusNotFound, generic.Json{
+				"message": "project not found",
+			})
 		}
-		if v, ok := req.RequestContext.Authorizer["sub"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
-		if v, ok := req.RequestContext.Authorizer["email"]; ok {
-			if s, ok2 := v.(string); ok2 && s != "" {
-				return s, nil
-			}
-		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to fetch project",
+			"error":   err.Error(),
+		})
 	}
 
-	return "", errors.New("missing user identity in request context")
+	if actualOrgID != orgID {
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"message": "project not found",
+		})
+	}
+
+	// 7) Delete project
+	queryDelete := `
+		DELETE FROM projects
+		WHERE id = $1 AND organization_id = $2
+	`
+	cmdTag, err := conn.Exec(ctx, queryDelete, projectID, orgID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "violates foreign key constraint") {
+			return generic.Response(http.StatusConflict, generic.Json{
+				"message": "cannot delete project because it has dependent resources (e.g., diagrams). delete dependent resources first.",
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to delete project",
+			"error":   err.Error(),
+		})
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"message": "project not found",
+		})
+	}
+
+	return generic.Response(http.StatusOK, generic.Json{
+		"message": "project deleted successfully",
+	})
 }
