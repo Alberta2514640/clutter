@@ -1,20 +1,8 @@
 "use client";
+import type { DiagramEdge, DiagramNode, PaletteItem } from "@/lib/stores/diagramStore";
 import { useDiagramActions, useDiagramState } from "@/lib/stores/diagramStore";
-import type { DiagramEdge, DiagramNode, PaletteItem } from "@/lib/types";
-import type {
-  Connection,
-  EdgeChange,
-  NodeChange,
-  NodeProps,
-  NodeTypes,
-} from "@xyflow/react";
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  ReactFlow,
-  useReactFlow,
-} from "@xyflow/react";
+import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes, } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, useReactFlow, } from "@xyflow/react";
 import React, { useCallback, useEffect, useMemo } from "react";
 import Palette from "./Palette";
 import TopNav from "./TopNav";
@@ -23,13 +11,7 @@ import ConfigPanel from "./nodes/ConfigPanel";
 
 const DND_MIME = "application/x-palette-item";
 
-export default function DiagramEditor({
-  projectId,
-  diagramId,
-}: {
-  projectId: string;
-  diagramId: string;
-}) {
+export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
   const { screenToFlowPosition } = useReactFlow();
 
   // ----- Zustand state -----
