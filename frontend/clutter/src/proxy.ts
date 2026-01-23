@@ -1,23 +1,23 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // const { pathname, origin } = req.nextUrl;
 
-//   const isPublic =
-//     pathname === "/login" ||
-//     pathname.startsWith("/onboarding") ||
-//     pathname.startsWith("/api") ||
-//     pathname.startsWith("/logos") ||
-//     pathname.startsWith("/_next") ||
-//     pathname === "/favicon.ico" ||
-//     pathname === "/robots.txt" ||
-//     pathname === "/sitemap.xml" ||
- //    pathname === "/terms" ||
- //    pathname === "/privacy";
+  //   const isPublic =
+  //     pathname === "/login" ||
+  //     pathname.startsWith("/onboarding") ||
+  //     pathname.startsWith("/api") ||
+  //     pathname.startsWith("/logos") ||
+  //     pathname.startsWith("/_next") ||
+  //     pathname === "/favicon.ico" ||
+  //     pathname === "/robots.txt" ||
+  //     pathname === "/sitemap.xml" ||
+  //    pathname === "/terms" ||
+  //    pathname === "/privacy";
 
-//   // if you store a session cookie/JWT, check it here
-//   const hasAuth = req.cookies.get("session") || req.cookies.get("token");
+  //   // if you store a session cookie/JWT, check it here
+  //   const hasAuth = req.cookies.get("session") || req.cookies.get("token");
 
   // if (!hasAuth) {
   //   // block protected routes
@@ -40,7 +40,6 @@ export async function middleware(req: NextRequest) {
   //     }
   //   }
   // }
-
 
   return NextResponse.next();
 }

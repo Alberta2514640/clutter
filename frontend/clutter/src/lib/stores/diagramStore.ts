@@ -2,7 +2,57 @@
 import { addEdge, applyEdgeChanges, applyNodeChanges } from "@xyflow/react";
 import { create } from "zustand";
 
-import type { DiagramEdge, DiagramNode, DiagramStore } from "@/lib/types";
+import type {
+  Connection,
+  Edge,
+  EdgeChange,
+  Node,
+  NodeChange,
+} from "@xyflow/react";
+
+//diagram types
+export type DiagramNode = Node<NodeData>;
+export type DiagramEdge = Edge;
+
+export interface DiagramDataState {
+  projectId: string | null;
+  diagramId: string | null;
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  isLoading: boolean;
+  isSaving: boolean;
+  dirty: boolean;
+  error: string | null;
+}
+
+export interface DiagramActions {
+  setContext: (projectId: string, diagramId: string) => void;
+  setNodes: (nodes: DiagramNode[]) => void;
+  setEdges: (edges: DiagramEdge[]) => void;
+  updateNode: (nodeId: string, updates: Partial<DiagramNode>) => void;
+  applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
+  applyEdgeChanges: (changes: EdgeChange<DiagramEdge>[]) => void;
+  addEdgeFromConnection: (conn: Connection) => void;
+  addNode: (node: DiagramNode) => void;
+  reset: () => void;
+  loadDiagram: (projectId: string, diagramId: string) => Promise<void>;
+  saveDiagram: () => Promise<void>;
+}
+
+export interface DiagramStore {
+  state: DiagramDataState;
+  actions: DiagramActions;
+}
+
+export type PaletteItem = {
+  label: string;
+  img: string;
+};
+
+export type NodeData = {
+  label: string;
+  img: string;
+};
 
 const MOCK_NODES: DiagramNode[] = [
   {
@@ -49,8 +99,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     setContext: (projectId, diagramId) =>
       set((s) => ({
         state: { ...s.state, projectId, diagramId },
-      })
-    ),
+      })),
 
     setNodes: (nodes) =>
       set((s) => {
@@ -58,30 +107,33 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         return {
           state: { ...s.state, nodes, dirty: true },
         };
-      }
-    ),
+      }),
 
     setEdges: (edges) =>
       set((s) => ({
         state: { ...s.state, edges, dirty: true },
-      }
-    )),
+      })),
 
     updateNode: (nodeId: string, updates: Partial<DiagramNode>) =>
-    set((s) => ({
-      state: {
-        ...s.state,
-        nodes: s.state.nodes.map((node) =>
-          node.id === nodeId ? { ...node, ...updates } : node
-        ),
-        dirty: true,
-      },
-    })),
+      set((s) => ({
+        state: {
+          ...s.state,
+          nodes: s.state.nodes.map((node) =>
+            node.id === nodeId ? { ...node, ...updates } : node,
+          ),
+          dirty: true,
+        },
+      })),
 
     applyNodeChanges: (changes) =>
       set((s) => {
         // only want dirty in changes that the user makes that is add, remove and position.
-        const shouldMarkDirty = changes.some((change) => change.type === 'position' || change.type === 'add' || change.type === 'remove' );      
+        const shouldMarkDirty = changes.some(
+          (change) =>
+            change.type === "position" ||
+            change.type === "add" ||
+            change.type === "remove",
+        );
         return {
           state: {
             ...s.state,
@@ -89,13 +141,14 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
             dirty: shouldMarkDirty ? true : s.state.dirty,
           },
         };
-      }
-    ),
+      }),
 
     applyEdgeChanges: (changes) =>
       set((s) => {
-        const shouldMarkDirty = changes.some((change) => change.type === 'add' || change.type === 'remove');
-        
+        const shouldMarkDirty = changes.some(
+          (change) => change.type === "add" || change.type === "remove",
+        );
+
         return {
           state: {
             ...s.state,
@@ -103,8 +156,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
             dirty: shouldMarkDirty ? true : s.state.dirty,
           },
         };
-      }
-    ),
+      }),
 
     addEdgeFromConnection: (conn) =>
       set((s) => ({
@@ -113,8 +165,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
           edges: addEdge({ ...conn }, s.state.edges),
           dirty: true,
         },
-      })
-    ),
+      })),
 
     addNode: (node) =>
       set((s) => ({
@@ -123,8 +174,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
           nodes: [...s.state.nodes, node],
           dirty: true,
         },
-      })
-    ),
+      })),
 
     reset: () =>
       set(() => ({
@@ -138,8 +188,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
           dirty: false,
           error: null,
         },
-      })
-    ),
+      })),
 
     loadDiagram: async (projectId, diagramId) => {
       set((s) => ({
