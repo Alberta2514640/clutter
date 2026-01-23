@@ -410,6 +410,22 @@ module "organization-update-model" {
   schema_filename = "organization-update.json"
 }
 
+# Project
+module "project-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "projectCreate"
+  description     = "Model to validate project creation requests"
+  schema_filename = "project-create.json"
+}
+# Project
+module "project-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "projectUpdate"
+  description     = "Model to validate project update requests"
+  schema_filename = "project-update.json"
+}
 
 # Diagram
 module "diagram-create-model" {
