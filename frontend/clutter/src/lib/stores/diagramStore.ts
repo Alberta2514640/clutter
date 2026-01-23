@@ -1,14 +1,7 @@
 // src/lib/stores/diagramStore.ts
+import type { Connection, Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import { addEdge, applyEdgeChanges, applyNodeChanges } from "@xyflow/react";
 import { create } from "zustand";
-
-import type {
-  Connection,
-  Edge,
-  EdgeChange,
-  Node,
-  NodeChange,
-} from "@xyflow/react";
 
 //diagram types
 export type DiagramNode = Node<NodeData>;
@@ -118,9 +111,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       set((s) => ({
         state: {
           ...s.state,
-          nodes: s.state.nodes.map((node) =>
-            node.id === nodeId ? { ...node, ...updates } : node,
-          ),
+          nodes: s.state.nodes.map((node) => (node.id === nodeId ? { ...node, ...updates } : node)),
           dirty: true,
         },
       })),
@@ -129,10 +120,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
       set((s) => {
         // only want dirty in changes that the user makes that is add, remove and position.
         const shouldMarkDirty = changes.some(
-          (change) =>
-            change.type === "position" ||
-            change.type === "add" ||
-            change.type === "remove",
+          (change) => change.type === "position" || change.type === "add" || change.type === "remove"
         );
         return {
           state: {
@@ -145,9 +133,7 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
 
     applyEdgeChanges: (changes) =>
       set((s) => {
-        const shouldMarkDirty = changes.some(
-          (change) => change.type === "add" || change.type === "remove",
-        );
+        const shouldMarkDirty = changes.some((change) => change.type === "add" || change.type === "remove");
 
         return {
           state: {

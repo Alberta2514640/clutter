@@ -24,10 +24,7 @@ export interface ProjectActions {
   loadProjects: () => Promise<void>;
   loadProject: (projectId: string) => Promise<void>;
   createProject: (data: { name: string; description: string }) => Promise<void>;
-  updateProject: (
-    projectId: string,
-    data: Partial<{ name: string; description: string }>,
-  ) => Promise<void>;
+  updateProject: (projectId: string, data: Partial<{ name: string; description: string }>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   reset: () => void;
 }
@@ -42,8 +39,7 @@ const MOCK_PROJECTS: Project[] = [
   {
     projectId: "1",
     name: "Web Application",
-    description:
-      "Production web application with Lambda, API Gateway, and DynamoDB",
+    description: "Production web application with Lambda, API Gateway, and DynamoDB",
     createdAt: "2025-01-15T10:00:00Z",
     updatedAt: "2025-01-20T14:30:00Z",
     memberCount: 3,
@@ -120,8 +116,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         // const response = await fetch(`/api/projects/${projectId}`);
         // const project = await response.json();
 
-        const project =
-          MOCK_PROJECTS.find((p) => p.projectId === projectId) || null;
+        const project = MOCK_PROJECTS.find((p) => p.projectId === projectId) || null;
 
         set((s) => ({
           state: {
@@ -183,10 +178,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }
     },
 
-    updateProject: async (
-      projectId: string,
-      data: Partial<{ name: string; description: string }>,
-    ) => {
+    updateProject: async (projectId: string, data: Partial<{ name: string; description: string }>) => {
       set((s) => ({
         state: { ...s.state, isSaving: true, error: null },
       }));
@@ -205,9 +197,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           state: {
             ...s.state,
             projects: s.state.projects.map((p) =>
-              p.projectId === projectId
-                ? { ...p, ...data, updatedAt: new Date().toISOString() }
-                : p,
+              p.projectId === projectId ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
             ),
             currentProject:
               s.state.currentProject?.projectId === projectId
@@ -247,10 +237,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           state: {
             ...s.state,
             projects: s.state.projects.filter((p) => p.projectId !== projectId),
-            currentProject:
-              s.state.currentProject?.projectId === projectId
-                ? null
-                : s.state.currentProject,
+            currentProject: s.state.currentProject?.projectId === projectId ? null : s.state.currentProject,
             isSaving: false,
           },
         }));

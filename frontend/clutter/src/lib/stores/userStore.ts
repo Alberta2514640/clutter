@@ -36,7 +36,7 @@ export interface UserStore {
 const MOCK_USER: UserData = {
   userId: "demo_user_001",
   tenantId: "t_demo_001",
-  email: "demo@example.com",
+  email: "hamza.amar@ucalgary.ca",
   displayName: "Hamza Amar",
   tenant: {
     tenantId: "t_demo_001",

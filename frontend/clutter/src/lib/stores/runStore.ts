@@ -127,10 +127,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
         // const response = await fetch(`/api/projects/${projectId}/runs/${runId}`);
         // const run = await response.json();
 
-        const run =
-          MOCK_RUNS.find(
-            (r) => r.runId === runId && r.projectId === projectId,
-          ) || null;
+        const run = MOCK_RUNS.find((r) => r.runId === runId && r.projectId === projectId) || null;
 
         set((s) => ({
           state: {
