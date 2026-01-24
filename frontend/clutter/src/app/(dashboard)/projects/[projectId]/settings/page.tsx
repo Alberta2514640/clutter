@@ -1,68 +1,80 @@
 "use client";
+
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectId } from "@/lib/hooks/useProjectId";
-import { useProjectActions, useProjectState } from "@/lib/stores/projectStore";
 import { Layers, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+
+import { useDeleteProject, useProject, useUpdateProject } from "@/lib/features/projects/hooks";
+import { useProjectSettingsDraft } from "@/lib/features/projects/uiStore";
 
 export default function ProjectSettingsPage() {
   const router = useRouter();
   const projectId = useProjectId();
-  
-  // Store state and actions
-  const { currentProject, isSaving, error } = useProjectState();
-  const { loadProject, updateProject, deleteProject } = useProjectActions();
 
-  // Local form state - initialize with empty strings
-  const [projectName, setProjectName] = useState("");
-  const [description, setDescription] = useState("");
+  const projectQ = useProject(projectId);
+  const updateM = useUpdateProject();
+  const deleteM = useDeleteProject();
 
-  // Load project data on mount
+  const currentProject = projectQ.data ?? null;
+
+  // ✅ draft store instead of local state
+  const draft = useProjectSettingsDraft((s) => s.draft);
+  const startDraft = useProjectSettingsDraft((s) => s.startDraft);
+  const setName = useProjectSettingsDraft((s) => s.setName);
+  const setDescription = useProjectSettingsDraft((s) => s.setDescription);
+
+  // ✅ initialize draft only when switching projects / first load
   useEffect(() => {
-    if (projectId && (!currentProject || currentProject.projectId !== projectId)) {
-      loadProject(projectId);
-    }
-  }, [projectId]); // Only depend on projectId
+    if (!currentProject) return;
+    if (draft.projectId === currentProject.projectId) return;
 
-  // Sync form with store data when currentProject changes
-  // This is acceptable because it only runs when external data (store) changes
-  useEffect(() => {
-    if (currentProject && currentProject.projectId === projectId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setProjectName(currentProject.name);
-      setDescription(currentProject.description || "");
-    }
-  }, [currentProject?.projectId, projectId]); // Only sync when project ID changes
+    startDraft(
+      currentProject.projectId,
+      currentProject.name,
+      currentProject.description || ""
+    );
+  }, [currentProject?.projectId]); // ok: external store sync when project changes
 
-  // Calculate hasChanges using useMemo instead of useEffect
+  const isSaving = updateM.isPending || deleteM.isPending;
+
+  const error =
+    (projectQ.isError ? projectQ.error : null) ||
+    (updateM.isError ? updateM.error : null) ||
+    (deleteM.isError ? deleteM.error : null);
+
   const hasChanges = useMemo(() => {
     if (!currentProject) return false;
-    
     return (
-      projectName !== currentProject.name ||
-      description !== (currentProject.description || "")
+      draft.name !== currentProject.name ||
+      draft.description !== (currentProject.description || "")
     );
-  }, [projectName, description, currentProject]);
+  }, [draft.name, draft.description, currentProject]);
 
   const handleSave = async () => {
     if (!projectId || !hasChanges) return;
 
-    await updateProject(projectId, {
-      name: projectName.trim(),
-      description: description.trim(),
+    await updateM.mutateAsync({
+      projectId,
+      data: {
+        name: draft.name.trim(),
+        description: draft.description.trim(),
+      },
     });
   };
 
   const handleCancel = () => {
-    if (currentProject) {
-      setProjectName(currentProject.name);
-      setDescription(currentProject.description || "");
-    }
+    if (!currentProject) return;
+    startDraft(
+      currentProject.projectId,
+      currentProject.name,
+      currentProject.description || ""
+    );
   };
 
   const handleDelete = async () => {
@@ -73,12 +85,12 @@ export default function ProjectSettingsPage() {
     );
 
     if (confirmed) {
-      await deleteProject(projectId);
+      await deleteM.mutateAsync({ projectId });
       router.push("/dashboard");
     }
   };
 
-  if (!currentProject) {
+  if (projectQ.isLoading && !currentProject) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-teal-400" />
@@ -86,54 +98,57 @@ export default function ProjectSettingsPage() {
     );
   }
 
+  if (!currentProject) {
+    return (
+      <div className="flex items-center justify-center py-12 text-gray-400">
+        Project not found
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto py-12 space-y-12 text-white">
-      {/* Error Alert */}
       {error && (
         <Alert className="bg-red-900/20 border-red-800">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{String(error)}</AlertDescription>
         </Alert>
       )}
 
-      {/* ICON + NAME FIELDSET */}
       <div className="space-y-3">
         <Label className="text-gray-300">Icon and name</Label>
         <div className="flex items-center gap-4">
-          {/* Icon button */}
           <Button
             variant="outline"
             className="w-12 h-12 rounded-xl bg-slate-800 border-slate-700 text-gray-300 hover:border-teal-400"
           >
             <Layers className="w-5 h-5" />
           </Button>
-          {/* Project name input */}
+
           <Input
             className="bg-slate-800 border-slate-700 text-white"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
+            value={draft.projectId === currentProject.projectId ? draft.name : ""}
+            onChange={(e) => setName(e.target.value)}
             disabled={isSaving}
           />
         </div>
       </div>
 
-      {/* DESCRIPTION FIELDSET */}
       <div className="space-y-3">
         <Label className="text-gray-300">Description</Label>
         <Textarea
           className="bg-slate-800 border-slate-700 text-white"
           rows={3}
-          value={description}
+          value={draft.projectId === currentProject.projectId ? draft.description : ""}
           onChange={(e) => setDescription(e.target.value)}
           disabled={isSaving}
         />
       </div>
 
-      {/* Save Button */}
       {hasChanges && (
         <div className="flex gap-3">
           <Button
             onClick={handleSave}
-            disabled={isSaving || !projectName.trim()}
+            disabled={isSaving || !draft.name.trim()}
             className="bg-teal-500 hover:bg-teal-600 text-white"
           >
             {isSaving ? (
@@ -145,6 +160,7 @@ export default function ProjectSettingsPage() {
               "Save Changes"
             )}
           </Button>
+
           <Button
             onClick={handleCancel}
             variant="outline"
@@ -156,7 +172,6 @@ export default function ProjectSettingsPage() {
         </div>
       )}
 
-      {/* DANGER ZONE */}
       <div className="space-y-4 pt-8 border-t border-slate-800">
         <h3 className="text-lg font-semibold text-red-400">Danger zone</h3>
         <p className="text-gray-400 text-sm">

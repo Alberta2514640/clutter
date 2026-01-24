@@ -1,4 +1,5 @@
 export const projectKeys = {
-  base: ["projects"] as const,
-  list: (tenantId: string) => [...projectKeys.base, "list", tenantId] as const,
+  all: ["projects"] as const,
+  list: (tenantId: string) => [...projectKeys.all, "list", tenantId] as const,
+  byId: (projectId: string) => [...projectKeys.all, "byId", projectId] as const,
 };

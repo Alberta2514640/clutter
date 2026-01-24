@@ -1,10 +1,9 @@
-// src/lib/features/projects/api.ts
 import type { Project } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
-const MOCK_PROJECTS: Project[] = [
+let MOCK_PROJECTS: Project[] = [
   {
     projectId: "1",
     name: "Web Application",
@@ -32,9 +31,36 @@ const MOCK_PROJECTS: Project[] = [
 ];
 
 export const projectsApi = {
-  // keep tenantId parameter for future backend integration
+  // keep signature same as your current hook
   listByTenant: async (_tenantId: string): Promise<Project[]> => {
-    await sleep(300);
+    await sleep(250);
     return clone(MOCK_PROJECTS);
+  },
+
+  getById: async (projectId: string): Promise<Project> => {
+    await sleep(200);
+    const p = MOCK_PROJECTS.find((x) => x.projectId === projectId);
+    if (!p) throw new Error("Project not found");
+    return clone(p);
+  },
+
+  update: async (projectId: string, data: Partial<Project>): Promise<Project> => {
+    await sleep(250);
+    const idx = MOCK_PROJECTS.findIndex((x) => x.projectId === projectId);
+    if (idx === -1) throw new Error("Project not found");
+
+    const updated: Project = {
+      ...MOCK_PROJECTS[idx],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+
+    MOCK_PROJECTS[idx] = updated;
+    return clone(updated);
+  },
+
+  delete: async (projectId: string): Promise<void> => {
+    await sleep(250);
+    MOCK_PROJECTS = MOCK_PROJECTS.filter((x) => x.projectId !== projectId);
   },
 };

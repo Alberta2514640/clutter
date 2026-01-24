@@ -1,13 +1,14 @@
 "use client";
+
 import { Card, CardContent } from "@/components/ui/card";
-import { useUserState } from "@/lib/stores/userStore";
+import { useMe } from "@/lib/features/user/hooks";
 import { FileText, LayoutTemplate } from "lucide-react";
 
 export default function ProjectOverview() {
-  const { user } = useUserState();
-  
+  const meQ = useMe();
+
   // Get first name or fallback to "there"
-  const firstName = user?.displayName?.split(' ')[0] || "there";
+  const firstName = meQ.data?.displayName?.split(" ")[0] || meQ.data?.email?.split("@")[0] || "there";
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
@@ -15,11 +16,16 @@ export default function ProjectOverview() {
         <div className="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-teal-500 to-blue-600">
           <span className="text-3xl">👋</span>
         </div>
+
         <h2 className="text-3xl font-bold text-white mb-2">
           Welcome {firstName}!
         </h2>
-        <p className="text-gray-400 text-lg">Create your first workflow</p>
+
+        <p className="text-gray-400 text-lg">
+          {meQ.isLoading ? "Loading your workspace..." : "Create your first workflow"}
+        </p>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="bg-slate-800/50 border-slate-700/50 hover:border-teal-500/50 transition-all cursor-pointer group">
           <CardContent className="p-8 text-center">
@@ -31,6 +37,7 @@ export default function ProjectOverview() {
             </h3>
           </CardContent>
         </Card>
+
         <Card className="bg-slate-800/50 border-slate-700/50 hover:border-teal-500/50 transition-all cursor-pointer group">
           <CardContent className="p-8 text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-xl bg-slate-700/50 group-hover:bg-teal-500/20 transition-colors">
@@ -42,6 +49,13 @@ export default function ProjectOverview() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Optional: show error */}
+      {meQ.isError && (
+        <p className="mt-6 text-sm text-red-400 text-center">
+          Failed to load user: {String(meQ.error)}
+        </p>
+      )}
     </div>
   );
 }

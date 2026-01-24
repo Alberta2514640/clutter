@@ -33,7 +33,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nowIso = () => new Date().toISOString();
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
-// ✅ MOCK API: later replace internals with fetch('/api/...') calls
 export const organizationApi = {
   get: async (): Promise<Organization> => {
     await sleep(250);

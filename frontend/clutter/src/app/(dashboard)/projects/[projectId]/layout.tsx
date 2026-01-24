@@ -1,12 +1,12 @@
 "use client";
+
 import Sidebar from "@/components/common/Sidebar";
 import { Button } from "@/components/ui/button";
+import { useProject } from "@/lib/features/projects/hooks";
 import { useProjectId } from "@/lib/hooks/useProjectId";
-import { useProjectActions, useProjectState } from "@/lib/stores/projectStore";
 import { ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
 
 interface ProjectLayoutProps {
   children: React.ReactNode;
@@ -22,41 +22,27 @@ const navigationItems = [
 export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const pathname = usePathname();
   const projectId = useProjectId();
-  
-  // Get project data from store
-  const { currentProject, isLoading } = useProjectState();
-  const { loadProject } = useProjectActions();
 
-  // Load project data when component mounts
-  useEffect(() => {
-    if (projectId && (!currentProject || currentProject.projectId !== projectId)) {
-      loadProject(projectId);
-    }
-  }, [projectId, currentProject, loadProject]);
+  const projectQ = useProject(projectId);
+  const currentProject = projectQ.data ?? null;
 
   const isActive = (href: string) => pathname.endsWith(href);
-
-  // Get project name or show loading/fallback
-  const projectName = currentProject?.name || "Loading...";
+  const projectName = currentProject?.name || (projectQ.isLoading ? "Loading..." : "Project");
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-black via-slate-900 to-teal-900 text-white">
       <Sidebar />
       <div className="flex flex-col flex-1">
-        {/* HEADER */}
         <header className="border-b border-slate-800 px-12 py-8 flex items-center justify-between">
-          {/* Left Section */}
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-blue-600 p-[2px]">
               <div className="w-full h-full flex items-center justify-center rounded-2xl bg-slate-900">
                 <Layers className="w-6 h-6 text-teal-300" />
               </div>
             </div>
-            <h1 className="text-2xl font-semibold">
-              {isLoading ? "Loading..." : projectName}
-            </h1>
+            <h1 className="text-2xl font-semibold">{projectName}</h1>
           </div>
-          {/* Right Section (Buttons) */}
+
           <div className="flex items-center gap-2">
             <Button className="bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90 text-white px-4">
               Create workflow
@@ -66,7 +52,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
             </Button>
           </div>
         </header>
-        {/* TABS */}
+
         <nav className="px-12 border-b border-slate-800">
           <div className="flex gap-8">
             {navigationItems.map((item) => {
@@ -76,9 +62,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
                   key={item.href}
                   href={`/projects/${projectId}/${item.href}`}
                   className={`py-4 text-sm font-medium relative transition ${
-                    active
-                      ? "text-teal-400"
-                      : "text-gray-400 hover:text-gray-200"
+                    active ? "text-teal-400" : "text-gray-400 hover:text-gray-200"
                   }`}
                 >
                   {item.label}
@@ -90,7 +74,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
             })}
           </div>
         </nav>
-        {/* CONTENT AREA */}
+
         <main className="flex-1 px-12 py-8">{children}</main>
       </div>
     </div>

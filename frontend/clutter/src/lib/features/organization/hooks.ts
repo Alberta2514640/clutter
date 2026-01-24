@@ -7,24 +7,27 @@ import type { Organization, OrgMember } from "./types";
 
 // -------- Queries --------
 
-export const useOrganization = () =>
-  useQuery({
+export const useOrganization = () => {
+  return useQuery({
     queryKey: orgKeys.organization(),
     queryFn: organizationApi.get,
     staleTime: 5 * 60 * 1000,
   });
+};
 
-export const useMembers = () =>
-  useQuery({
+export const useMembers = () => {
+  return useQuery({
     queryKey: orgKeys.members(),
     queryFn: membersApi.list,
   });
+};
 
-export const useAvailableUsers = () =>
-  useQuery({
+export const useAvailableUsers = () => {
+  return useQuery({
     queryKey: orgKeys.availableUsers(),
     queryFn: availableUsersApi.list,
   });
+};
 
 // -------- Mutations --------
 
