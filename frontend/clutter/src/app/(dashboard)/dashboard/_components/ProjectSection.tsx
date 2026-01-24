@@ -1,19 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FolderOpen, Clock, Users, Plus } from "lucide-react";
-
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
+import type { Project } from "@/lib/features/projects/types";
+import { Clock, FolderOpen, Plus, Users } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface ProjectsSectionProps {
   projects: Project[];

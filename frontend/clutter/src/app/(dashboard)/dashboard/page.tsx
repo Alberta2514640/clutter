@@ -1,58 +1,41 @@
 "use client";
-import { useProjectActions, useProjectState } from "@/lib/stores/projectStore";
-import { useRunActions, useRunState } from "@/lib/stores/runStore";
-import { useUserActions, useUserState, useUserStore } from "@/lib/stores/userStore";
-import { useEffect } from "react";
+
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 // import DashboardOnboarding from "./_components/DashboardOnboarding";
 
+import { useProjects } from "@/lib/features/projects/hooks";
+import { useRecentRuns } from "@/lib/features/runs/hooks";
+import { useMe } from "@/lib/features/user/hooks";
+
 export default function DashboardPageClient() {
-  // Access state from stores
-  const userState = useUserState();
-  const projectState = useProjectState();
-  const runState = useRunState();
+  const meQ = useMe();
+  const tenantId = meQ.data?.tenantId ?? null;
 
-  // Access actions from stores
-  const userActions = useUserActions();
-  const projectActions = useProjectActions();
-  const runActions = useRunActions();
+  // ✅ these only run after tenantId exists because enabled: !!tenantId
+  const projectsQ = useProjects(tenantId);
+  const runsQ = useRecentRuns(tenantId);
 
-  // MOVED: Define function before useEffect
-  const fetchDashboardData = async () => {
-    // Load user first
-    await userActions.loadUser();
+  const isLoading =
+    meQ.isLoading ||
+    (tenantId ? projectsQ.isLoading || runsQ.isLoading : false);
 
-    // If user has a tenant, load projects and runs
-    const currentUser = useUserStore.getState().state.user;
-    if (currentUser?.tenantId) {
-      await Promise.all([
-        projectActions.loadProjects(),
-        runActions.loadRecentRuns(),
-      ]);
-    }
-  };
+  const error =
+    (meQ.isError ? meQ.error : null) ||
+    (projectsQ.isError ? projectsQ.error : null) ||
+    (runsQ.isError ? runsQ.error : null);
 
-  // Load data on mount
-  useEffect(() => {
-    fetchDashboardData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (isLoading && !meQ.data) return <DashboardLoading />;
 
-  // Determine loading state (any store loading)
-  const isLoading = userState.isLoading || projectState.isLoading || runState.isLoading;
-
-  // Combine errors from all stores
-  const error = userState.error || projectState.error || runState.error;
-
-  if (isLoading && !userState.user) return <DashboardLoading />;
-  // if (userState.user && !userState.user.tenantId) return <DashboardOnboarding />;
+  // If you want onboarding logic:
+  // if (meQ.data && !meQ.data.tenantId) return <DashboardOnboarding />;
 
   return (
     <DashboardContent
-      userData={userState.user}
-      projects={projectState.projects}
-      recentRuns={runState.runs}
-      error={error}
+      userData={meQ.data ?? null}
+      projects={projectsQ.data ?? []}
+      recentRuns={runsQ.data ?? []}
+      error={error ? String(error) : null}
     />
   );
 }

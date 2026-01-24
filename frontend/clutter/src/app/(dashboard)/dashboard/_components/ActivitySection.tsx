@@ -1,17 +1,7 @@
-import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
+import type { Run } from "@/lib/features/runs/types";
 import { Activity } from "lucide-react";
-
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
+import Link from "next/link";
 
 interface ActivitySectionProps {
   runs: Run[];
