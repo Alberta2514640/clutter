@@ -2,8 +2,7 @@
 
 import Sidebar from "@/components/common/Sidebar";
 import { Button } from "@/components/ui/button";
-import { useProject } from "@/lib/features/projects/hooks";
-import { useProjectId } from "@/lib/hooks/useProjectId";
+import { useProject, useProjectId } from "@/lib/features/projects/hooks";
 import { ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";

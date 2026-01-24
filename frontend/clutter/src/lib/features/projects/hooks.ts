@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useParams } from "next/navigation";
+
 import { projectsApi } from "./api";
 import { projectKeys } from "./keys";
 import type { Project } from "./types";
@@ -11,6 +13,11 @@ export const useProjects = (tenantId?: string | null) => {
     staleTime: 60 * 1000,
   });
 };
+
+export function useProjectId() {
+  const params = useParams();
+  return (params.projectId as string) ?? null;
+}
 
 export const useProject = (projectId?: string | null) => {
   return useQuery({
