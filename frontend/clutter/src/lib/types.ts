@@ -1,6 +1,6 @@
-import type { Connection, Edge, EdgeChange, Node, NodeChange, } from "@xyflow/react";
+import type { Connection, Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 
-//store types 
+//store types
 
 //diagram types
 export type DiagramNode = Node<NodeData>;
@@ -46,16 +46,16 @@ export type NodeData = {
   img: string;
 };
 
-
 //this was here before idk
-export type RunStatus = "QUEUED" | "INIT" | "PLAN" | "APPLY" | "FAILED" | "SUCCEEDED" | "CANCELED";
-export interface Run {
-  runId: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: RunStatus;
-  startedAt?: string;
-  endedAt?: string;
-  planS3?: string;
-  applyLogS3?: string;
-}
+// that was to commuinicate the state of the terreaform to the frontend
+// export type RunStatus = "QUEUED" | "INIT" | "PLAN" | "APPLY" | "FAILED" | "SUCCEEDED" | "CANCELED";
+// export interface Run {
+//   runId: string;
+//   workspaceId: string;
+//   action: "plan" | "apply";
+//   status: RunStatus;
+//   startedAt?: string;
+//   endedAt?: string;
+//   planS3?: string;
+//   applyLogS3?: string;
+// }

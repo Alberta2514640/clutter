@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-export async function middleware(req: NextRequest) {
-  // const { pathname, origin } = req.nextUrl;
+export function middleware(req: NextRequest) {
+  // const { pathname } = req.nextUrl;
 
+<<<<<<< Updated upstream
 //   const isPublic =
 //     pathname === "/login" ||
 //     pathname.startsWith("/onboarding") ||
@@ -18,27 +19,25 @@ export async function middleware(req: NextRequest) {
 
 //   // if you store a session cookie/JWT, check it here
 //   const hasAuth = req.cookies.get("session") || req.cookies.get("token");
+=======
+  // const publicRoutes = [
+  //   "/login",
+  //   "/",
+  // ];
 
-  // if (!hasAuth) {
-  //   // block protected routes
-  //   if (!isPublic && pathname !== "/") {
-  //     return NextResponse.redirect(new URL("/login", origin));
-  //   }
-  //   return NextResponse.next();
-  // }
+  // const isPublic =
+  //   publicRoutes.includes(pathname) ||
+  //   pathname.startsWith("/onboarding") ||
+  //   pathname.startsWith("/api/public");
+>>>>>>> Stashed changes
 
-  // // user is logged in: if trying to access protected routes, enforce tenant check
-  // if (!isPublic && pathname !== "/") {
-  //   const meRes = await fetch(new URL("/api/me", origin), {
-  //     headers: { cookie: req.headers.get("cookie") ?? "" },
-  //   });
+  // const hasSession =
+  //   req.cookies.has("session") || req.cookies.has("token");
 
-  //   if (meRes.ok) {
-  //     const me = await meRes.json();
-  //     if (!me.tenantId) {
-  //       return NextResponse.redirect(new URL("/onboarding/create-tenant", origin));
-  //     }
-  //   }
+  // if (!hasSession && !isPublic) {
+  //   const loginUrl = req.nextUrl.clone();
+  //   loginUrl.pathname = "/login";
+  //   return NextResponse.redirect(loginUrl);
   // }
 
 
