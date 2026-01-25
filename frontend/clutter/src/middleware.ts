@@ -5,6 +5,7 @@ export function middleware(req: NextRequest) {
   // const { pathname } = req.nextUrl;
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 //   const isPublic =
 //     pathname === "/login" ||
 //     pathname.startsWith("/onboarding") ||
@@ -40,6 +41,26 @@ export function middleware(req: NextRequest) {
   //   return NextResponse.redirect(loginUrl);
   // }
 
+=======
+  // const publicRoutes = [
+  //   "/login",
+  //   "/",
+  // ];
+
+  // const isPublic =
+  //   publicRoutes.includes(pathname) ||
+  //   pathname.startsWith("/onboarding") ||
+  //   pathname.startsWith("/api/public");
+
+  // const hasSession =
+  //   req.cookies.has("session") || req.cookies.has("token");
+
+  // if (!hasSession && !isPublic) {
+  //   const loginUrl = req.nextUrl.clone();
+  //   loginUrl.pathname = "/login";
+  //   return NextResponse.redirect(loginUrl);
+  // }
+>>>>>>> Stashed changes
 
   return NextResponse.next();
 }
