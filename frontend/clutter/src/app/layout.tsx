@@ -20,8 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body>
-        {/* <GoogleAuthProvider>{children}</GoogleAuthProvider> */}
-        <Providers>{children}</Providers>
+        {/*  */}
+        <Providers>
+          <GoogleAuthProvider>{children}</GoogleAuthProvider>
+        </Providers>
       </body>
     </html>
   );

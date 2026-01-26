@@ -69,12 +69,12 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
-  // ✅ React Query: user + tenant
+  //  React Query: user + tenant
   const meQ = useMe();
   const user = meQ.data ?? null;
   const tenantId = user?.tenantId ?? null;
 
-  // ✅ React Query: projects (only loads when tenantId exists)
+  // React Query: projects (only loads when tenantId exists)
   const projectsQ = useProjects(tenantId);
   const projects = projectsQ.data ?? [];
 
