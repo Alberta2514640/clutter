@@ -1,40 +1,12 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { Project } from "@/lib/features/projects/types";
+import type { Run } from "@/lib/features/runs/types";
+import type { UserData } from "@/lib/features/user/types";
 import { AlertCircle } from "lucide-react";
-import DashboardHeader from "./DashboardHeader";
-import StatsCards from "./StatsCards";
-import ProjectsSection from "./ProjectSection";
 import ActivitySection from "./ActivitySection";
-
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
-
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
+import DashboardHeader from "./DashboardHeader";
+import ProjectsSection from "./ProjectSection";
+import StatsCards from "./StatsCards";
 
 interface DashboardContentProps {
   userData: UserData | null;

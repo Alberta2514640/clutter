@@ -1,8 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useMe } from "@/lib/features/user/hooks";
 
 export default function VariablesPage() {
+  const meQ = useMe();
+  const user = meQ.data ?? null;
+
+  const firstName = user?.displayName?.split(" ")[0] || "there";
+
   return (
     <div className="w-full flex justify-center">
       <div
@@ -16,20 +22,16 @@ export default function VariablesPage() {
           bg-slate-900/20
         "
       >
-        {/* Emoji */}
         <div className="text-5xl mb-6">📦</div>
 
-        {/* Title */}
         <h2 className="text-2xl font-semibold text-white mb-3">
-          Hamza, let's add your first variable
+          {firstName}, let&apos;s add your first variable
         </h2>
 
-        {/* Description */}
         <p className="text-gray-400 mb-8">
           Variables store reusable values that your workflows depend on.
         </p>
 
-        {/* Button */}
         <Button className="bg-slate-800 border border-slate-700 hover:border-teal-500/50 text-gray-300 px-5 py-4 rounded-lg">
           Add variable
         </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import type { PaletteItem } from "@/lib/types";
+import type { PaletteItem } from "@/lib/stores/diagramStore";
 import { ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import React, { useMemo, useState } from "react";
 

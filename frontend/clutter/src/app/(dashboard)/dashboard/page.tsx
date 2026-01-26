@@ -1,83 +1,41 @@
 "use client";
 
-import { apiClient } from "@/lib/api-client";
-// import { getServerSession } from "next-auth";
-// import { authOptions } from "@/lib/auth";
-// import { redirect } from "next/navigation";
-import { useEffect, useState } from "react";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
-import DashboardOnboarding from "./_components/DashboardOnboarding";
-// const session = await getServerSession(authOptions);
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
+// import DashboardOnboarding from "./_components/DashboardOnboarding";
 
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
+import { useProjects } from "@/lib/features/projects/hooks";
+import { useRecentRuns } from "@/lib/features/runs/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 
 export default function DashboardPageClient() {
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [recentRuns, setRecentRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const meQ = useMe();
+  const tenantId = meQ.data?.tenantId ?? null;
 
-  // if (!session) {
-  //   redirect("/login");
-  // }
+  // ✅ these only run after tenantId exists because enabled: !!tenantId
+  const projectsQ = useProjects(tenantId);
+  const runsQ = useRecentRuns(tenantId);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  const isLoading =
+    meQ.isLoading ||
+    (tenantId ? projectsQ.isLoading || runsQ.isLoading : false);
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const error =
+    (meQ.isError ? meQ.error : null) ||
+    (projectsQ.isError ? projectsQ.error : null) ||
+    (runsQ.isError ? runsQ.error : null);
 
-      const user = await apiClient.getUserProfile();
-      setUserData(user);
+  if (isLoading && !meQ.data) return <DashboardLoading />;
 
-      if (user.tenantId) {
-        const [projectsData, runsData] = await Promise.all([apiClient.getProjects(), apiClient.getRecentRuns()]);
+  // If you want onboarding logic:
+  // if (meQ.data && !meQ.data.tenantId) return <DashboardOnboarding />;
 
-        setProjects(projectsData.projects || []);
-        setRecentRuns(runsData.runs || []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <DashboardLoading />;
-  if (userData && !userData.tenantId) return <DashboardOnboarding />;
-
-  return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
+  return (
+    <DashboardContent
+      userData={meQ.data ?? null}
+      projects={projectsQ.data ?? []}
+      recentRuns={runsQ.data ?? []}
+      error={error ? String(error) : null}
+    />
+  );
 }

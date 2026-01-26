@@ -1,8 +1,9 @@
 // app/layout.tsx
 
-import "./globals.css";
 import Script from "next/script";
 import GoogleAuthProvider from "../providers/GoogleAuthProvider";
+import "./globals.css";
+import { Providers } from "./providers";
 
 // You can add metadata here if you want
 export const metadata = {
@@ -19,7 +20,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body>
-        <GoogleAuthProvider>{children}</GoogleAuthProvider>
+        {/* <GoogleAuthProvider>{children}</GoogleAuthProvider> */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

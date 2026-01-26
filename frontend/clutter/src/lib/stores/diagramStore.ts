@@ -1,8 +1,51 @@
 // src/lib/stores/diagramStore.ts
+import type { Connection, Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import { addEdge, applyEdgeChanges, applyNodeChanges } from "@xyflow/react";
 import { create } from "zustand";
 
-import type { DiagramEdge, DiagramNode, DiagramStore } from "@/lib/types";
+//diagram types
+export type DiagramNode = Node<NodeData>;
+export type DiagramEdge = Edge;
+
+export interface DiagramDataState {
+  projectId: string | null;
+  diagramId: string | null;
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  isLoading: boolean;
+  isSaving: boolean;
+  dirty: boolean;
+  error: string | null;
+}
+
+export interface DiagramActions {
+  setContext: (projectId: string, diagramId: string) => void;
+  setNodes: (nodes: DiagramNode[]) => void;
+  setEdges: (edges: DiagramEdge[]) => void;
+  updateNode: (nodeId: string, updates: Partial<DiagramNode>) => void;
+  applyNodeChanges: (changes: NodeChange<DiagramNode>[]) => void;
+  applyEdgeChanges: (changes: EdgeChange<DiagramEdge>[]) => void;
+  addEdgeFromConnection: (conn: Connection) => void;
+  addNode: (node: DiagramNode) => void;
+  reset: () => void;
+  loadDiagram: (projectId: string, diagramId: string) => Promise<void>;
+  saveDiagram: () => Promise<void>;
+}
+
+export interface DiagramStore {
+  state: DiagramDataState;
+  actions: DiagramActions;
+}
+
+export type PaletteItem = {
+  label: string;
+  img: string;
+};
+
+export type NodeData = {
+  label: string;
+  img: string;
+};
 
 const MOCK_NODES: DiagramNode[] = [
   {
@@ -76,7 +119,9 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     applyNodeChanges: (changes) =>
       set((s) => {
         // only want dirty in changes that the user makes that is add, remove and position.
+
         const shouldMarkDirty = changes.some((change) => change.type === "position" || change.type === "add" || change.type === "remove");
+
         return {
           state: {
             ...s.state,
