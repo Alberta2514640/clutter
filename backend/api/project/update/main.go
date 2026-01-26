@@ -58,11 +58,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "projectId must be a valid UUID",
 		})
 	}
-	if _, err := uuid.Parse(userID); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "user id in token is not a valid UUID",
-		})
-	}
 
 	// 3) Parse request body
 	var body UpdateProjectRequest
@@ -70,18 +65,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid request body",
 			"error":   err.Error(),
-		})
-	}
-
-	// 4) Validate required body fields
-	if body.OrganizationID == "" || body.Name == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "organizationId and name are required",
-		})
-	}
-	if _, err := uuid.Parse(body.OrganizationID); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "organizationId must be a valid UUID",
 		})
 	}
 

@@ -535,6 +535,7 @@ module "project-create-api-integration" {
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  model_name           = module.project-create-model.model_name
 }
 # GET project
 module "project-get-api-integration" {
@@ -562,6 +563,8 @@ module "project-update-api-integration" {
   path                 = module.project-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  model_name           = module.project-update-model.model_name
+
 }
 # DELETE project
 module "project-delete-api-integration" {

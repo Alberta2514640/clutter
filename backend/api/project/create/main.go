@@ -54,32 +54,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 3) Validate required fields
-	var missingFields []string
-	if req.OrganizationID == "" {
-		missingFields = append(missingFields, "organizationId")
-	}
-	if req.Name == "" {
-		missingFields = append(missingFields, "name")
-	}
-	if len(missingFields) > 0 {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "missing required fields",
-		})
-	}
-
-	// 4) Validate UUID formats
-	if _, err := uuid.Parse(req.OrganizationID); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "organizationId in token is not valid",
-		})
-	}
-	if _, err := uuid.Parse(userID); err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "user id in token is not valid",
-		})
-	}
-
 	// 5) Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {
