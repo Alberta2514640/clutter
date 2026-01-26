@@ -7,8 +7,8 @@ export interface UserTenant {
 
 export interface UserData {
   userId: string;
-  tenantId: string | null;
+  token: string;
+  picture_url: string;
   email: string;
   displayName: string;
-  tenant?: UserTenant;
 }

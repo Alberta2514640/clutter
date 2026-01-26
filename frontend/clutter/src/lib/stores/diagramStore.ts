@@ -119,9 +119,9 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
     applyNodeChanges: (changes) =>
       set((s) => {
         // only want dirty in changes that the user makes that is add, remove and position.
-        const shouldMarkDirty = changes.some(
-          (change) => change.type === "position" || change.type === "add" || change.type === "remove"
-        );
+
+        const shouldMarkDirty = changes.some((change) => change.type === "position" || change.type === "add" || change.type === "remove");
+
         return {
           state: {
             ...s.state,
@@ -220,10 +220,11 @@ export const useDiagramStore = create<DiagramStore>((set, get) => ({
         set((s) => ({
           state: { ...s.state, isSaving: false, dirty: false },
         }));
-      } catch (e) {
+      } catch (error) {
         set((s) => ({
           state: { ...s.state, isSaving: false },
         }));
+        console.error("Failed to save diagram:", error);
       }
     },
   },

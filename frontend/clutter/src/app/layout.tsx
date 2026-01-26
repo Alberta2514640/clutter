@@ -1,6 +1,7 @@
 // app/layout.tsx
 
 import Script from "next/script";
+import GoogleAuthProvider from "../providers/GoogleAuthProvider";
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -19,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
 
       <body>
-        <Providers>{children}</Providers>
+        {/*  */}
+        <Providers>
+          <GoogleAuthProvider>{children}</GoogleAuthProvider>
+        </Providers>
       </body>
     </html>
   );
