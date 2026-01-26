@@ -1,10 +1,13 @@
 "use client";
 
 import Navbar from "@/components/common/Navbar";
-
+import { userApi } from "@/lib/features/user/api";
 import { GoogleLogin } from "@react-oauth/google";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col pt-20 relative overflow-hidden">
       <Navbar showLogin={false} />
@@ -28,33 +31,16 @@ export default function LoginPage() {
               <GoogleLogin
                 onSuccess={async (credentialResponse) => {
                   const token = credentialResponse.credential;
-
                   if (!token) {
                     console.error("No Google ID token returned");
                     return;
                   }
 
                   try {
-                    const res = await fetch("https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod/log-in", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ token }),
-                    });
-
-                    if (!res.ok) {
-                      const text = await res.text();
-                      console.error("Login failed:", text);
-                      return;
-                    }
-
-                    const data = await res.json();
-                    // console.log("Backend response:", data.token);
-                    localStorage.setItem("google_data", JSON.stringify(data));
-                    window.location.href = "/dashboard";
+                    await userApi.loginWithGoogle(token);
+                    router.push("/dashboard");
                   } catch (err) {
-                    console.error("Network error calling /log-in:", err);
+                    console.error(err);
                   }
                 }}
                 onError={() => console.log("Login Failed")}

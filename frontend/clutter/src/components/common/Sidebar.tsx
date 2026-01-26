@@ -72,9 +72,9 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   //  React Query: user + tenant
   const meQ = useMe();
   const user = meQ.data ?? null;
-  const tenantId = user?.tenantId ?? null;
+  const tenantId = user?.token ?? null;
 
-  // React Query: projects (only loads when tenantId exists)
+  // ✅ React Query: projects (only loads when tenantId exists)
   const projectsQ = useProjects(tenantId);
   const projects = projectsQ.data ?? [];
 
