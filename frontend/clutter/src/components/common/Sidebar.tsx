@@ -65,20 +65,18 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-
-  useEffect(() => {
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    if (typeof window === "undefined") return null; // safety for Next
     const raw = localStorage.getItem("google_data");
-    if (!raw) return;
+    if (!raw) return null;
 
     try {
-      const parsed = JSON.parse(raw) as unknown;
-      const p = pickProfile(parsed);
-      if (p) setProfile(p);
+      return pickProfile(JSON.parse(raw));
     } catch (e) {
       console.error("Failed to parse google_data:", e);
+      return null;
     }
-  }, []);
+  });
 
   const initials = useMemo(() => {
     const name = profile?.full_name?.trim() || "";
