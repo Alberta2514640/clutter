@@ -107,7 +107,7 @@ resource "aws_s3_bucket_ownership_controls" "clutter_bucket" {
 # ================================================================================================================================
 # Bucket - Templates
 # Public
-# Description: Will house generic Terraformr esource templates for use by the generator and other public templates
+# Description: Will house generic Terraform resource templates for use by the generator and other public templates
 # ================================================================================================================================
 resource "aws_s3_bucket" "templates" {
   bucket = "clutter-templates-${var.aws_region}-${random_id.suffix.hex}"
