@@ -1,17 +1,7 @@
 // src/lib/features/user/api.ts
-import type { UserData } from "./types";
+import type { GoogleDataShape, UserData } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-type GoogleDataShape = {
-  token?: string;
-  user_data?: {
-    uuid?: string;
-    email?: string;
-    full_name?: string;
-    picture_url?: string;
-  };
-};
 
 const readGoogleData = (): GoogleDataShape | null => {
   if (typeof window === "undefined") return null;
