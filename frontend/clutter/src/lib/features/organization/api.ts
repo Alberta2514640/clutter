@@ -1,8 +1,9 @@
 // lib/features/organization/api.ts
+// lib/features/organization/api.ts
 import type { AvailableUser, Organization, OrgMember } from "./types";
 
-// --- Mock data (same idea as your store) ---
-let MOCK_ORGANIZATION: Organization = {
+// --- Mock data ---
+let MOCK_ORGANIZATION: Organization | null = {
   tenantId: "t_demo_001",
   name: "Demo Organization",
   slug: "demo-org",
@@ -28,19 +29,78 @@ const MOCK_AVAILABLE_USERS: AvailableUser[] = [
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// Helpers
 const nowIso = () => new Date().toISOString();
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+const makeTenantId = () => `t_${crypto.randomUUID()}`;
+
+// If you don’t want crypto.randomUUID() for older envs:
+// const makeTenantId = () => `t_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+export type CreateOrganizationInput = {
+  name: string;
+  slug: string;
+  timeZone?: string;
+  // optional: who becomes the initial admin
+  ownerUser?: { userId: string; name: string; email: string };
+};
+
 export const organizationApi = {
-  get: async (): Promise<Organization> => {
+  get: async (): Promise<Organization | null> => {
     await sleep(250);
+    return clone(MOCK_ORGANIZATION);
+  },
+
+  create: async (input: CreateOrganizationInput): Promise<Organization> => {
+    await sleep(450);
+
+    const name = input.name.trim();
+    const slug = input.slug.trim();
+    const timeZone = input.timeZone?.trim() || "America/Edmonton";
+
+    if (!name) throw new Error("Organization name is required");
+    if (!slug) throw new Error("Organization slug is required");
+
+    // Optional rule: block creating if one already exists
+    if (MOCK_ORGANIZATION && MOCK_ORGANIZATION.tenantId !== "t_deleted") {
+      throw new Error("Organization already exists");
+    }
+
+    const createdAt = nowIso();
+    const tenantId = makeTenantId();
+
+    MOCK_ORGANIZATION = {
+      tenantId,
+      name,
+      slug,
+      timeZone,
+      createdAt,
+      updatedAt: createdAt,
+    };
+
+    // Optional: create initial member (owner/admin)
+    if (input.ownerUser) {
+      MOCK_MEMBERS = [
+        {
+          id: `m_${crypto.randomUUID()}`,
+          userId: input.ownerUser.userId,
+          name: input.ownerUser.name,
+          email: input.ownerUser.email,
+          role: "Project Admin",
+        },
+      ];
+    } else {
+      // Or keep existing / empty depending on your flow
+      MOCK_MEMBERS = [];
+    }
+
     return clone(MOCK_ORGANIZATION);
   },
 
   update: async (data: Partial<Organization>): Promise<Organization> => {
     await sleep(450);
+    if (!MOCK_ORGANIZATION) throw new Error("No organization to update");
+
     MOCK_ORGANIZATION = {
       ...MOCK_ORGANIZATION,
       ...data,
@@ -51,15 +111,7 @@ export const organizationApi = {
 
   delete: async (): Promise<void> => {
     await sleep(450);
-    // "Deleting" org clears org + members in this mock world
-    MOCK_ORGANIZATION = {
-      tenantId: "t_deleted",
-      name: "",
-      slug: "",
-      timeZone: "America/Edmonton",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    };
+    MOCK_ORGANIZATION = null;
     MOCK_MEMBERS = [];
   },
 };
