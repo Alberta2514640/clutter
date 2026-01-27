@@ -10,15 +10,15 @@ import { useMe } from "@/lib/features/user/hooks";
 
 export default function DashboardPageClient() {
   const meQ = useMe();
-  const tenantId = meQ.data?.tenantId ?? null;
+  const token = meQ.data?.token ?? null;
 
   // ✅ these only run after tenantId exists because enabled: !!tenantId
-  const projectsQ = useProjects(tenantId);
-  const runsQ = useRecentRuns(tenantId);
+  const projectsQ = useProjects(token);
+  const runsQ = useRecentRuns(token);
 
   const isLoading =
     meQ.isLoading ||
-    (tenantId ? projectsQ.isLoading || runsQ.isLoading : false);
+    (token ? projectsQ.isLoading || runsQ.isLoading : false);
 
   const error =
     (meQ.isError ? meQ.error : null) ||
