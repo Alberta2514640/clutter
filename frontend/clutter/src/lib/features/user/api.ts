@@ -43,24 +43,8 @@ const toUserData = (g: GoogleDataShape): UserData => {
   };
 };
 
-const writeGoogleData = (obj: GoogleDataShape) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem("google_data", JSON.stringify(obj));
-};
-
-const toUserData = (g: GoogleDataShape): UserData => {
-  const u = g.user_data ?? {};
-  return {
-    userId: u.uuid ?? "u_unknown",
-    displayName: u.full_name ?? "Unknown User",
-    email: u.email ?? "unknown@example.com",
-    token: g.token ?? "",
-    picture_url: u.picture_url ?? "",
-  };
-};
-
 // optional: centralize your API base
-const API_BASE = "https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod";
+// const API_BASE = "https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod";
 
 export const userApi = {
   loginWithGoogle: async (google_id_token: string): Promise<UserData> => {
