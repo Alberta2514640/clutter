@@ -36,6 +36,7 @@ func init() {
 		panic(fmt.Sprintf("failed to initialize DynamoDB client: %v", err))
 	}
 }
+
 func main() {
 	lambda.Start(handler)
 }
@@ -59,17 +60,26 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 	orgID := req.QueryStringParameters["organizationId"]
 	projectID := req.QueryStringParameters["projectId"]
 
-	if orgID == "" || projectID == "" {
+	if orgID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"success": false,
 			"error": generic.Json{
 				"code":    "VALIDATION_ERROR",
-				"message": "organizationId and projectId query parameters are required",
+				"message": "organizationId query parameter is required",
 			},
 		})
 	}
 
-	// 3. Build key and GetItem from DynamoDB
+	if projectID != "" {
+		return getSingleProject(ctx, orgID, projectID)
+	}
+
+	// If projectId is NOT provided -> list all projects for this org
+	return listProjectsForOrganization(ctx, orgID)
+}
+
+// getSingleProject fetches a specific project by org + projectId
+func getSingleProject(ctx context.Context, orgID, projectID string) (events.APIGatewayProxyResponse, error) {
 	key := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{
 			Value: fmt.Sprintf("ORG#%s", orgID),
@@ -103,7 +113,7 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 		})
 	}
 
-	// 4. Decode Data attribute into Project struct
+	// Decode Data attribute into Project struct
 	dataAttr, ok := out.Item["Data"].(*types.AttributeValueMemberM)
 	if !ok {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
@@ -129,6 +139,64 @@ func handler(req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse,
 	return generic.Response(http.StatusOK, generic.Json{
 		"success": true,
 		"data":    project,
+	})
+}
+
+// listProjectsForOrganization queries all PROJECT items for the given org
+func listProjectsForOrganization(ctx context.Context, orgID string) (events.APIGatewayProxyResponse, error) {
+	pk := fmt.Sprintf("ORG#%s", orgID)
+	out, err := ddb.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(tableName),
+		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :projectPrefix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{
+				Value: pk,
+			},
+			":projectPrefix": &types.AttributeValueMemberS{
+				Value: "PROJECT#",
+			},
+		},
+	})
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"success": false,
+			"error": generic.Json{
+				"code":    "INTERNAL_ERROR",
+				"message": "failed to fetch projects",
+			},
+		})
+	}
+
+	projects := make([]Project, 0, len(out.Items))
+
+	for _, item := range out.Items {
+		dataAttr, ok := item["Data"].(*types.AttributeValueMemberM)
+		if !ok {
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"success": false,
+				"error": generic.Json{
+					"code":    "INTERNAL_ERROR",
+					"message": "invalid project item format",
+				},
+			})
+		}
+		data := dataAttr.Value
+
+		project := Project{
+			ID:             getStringAttr(data, "id"),
+			OrganizationID: orgID,
+			Name:           getStringAttr(data, "name"),
+			Description:    getStringAttr(data, "description"),
+			CreatedBy:      getStringAttr(data, "createdBy"),
+			CreatedAt:      getStringAttr(data, "createdAt"),
+			UpdatedAt:      getStringAttr(data, "updatedAt"),
+		}
+		projects = append(projects, project)
+	}
+
+	return generic.Response(http.StatusOK, generic.Json{
+		"success": true,
+		"data":    projects,
 	})
 }
 
