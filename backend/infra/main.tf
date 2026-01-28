@@ -337,7 +337,13 @@ module "organization-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.organization-api-path.resource_id
-  http_methods = ["POST", "GET", "PUT", "DELETE"]
+  http_methods = ["POST", "GET"]
+}
+module "organization-api-by-id-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.organization-api-path-by-id.resource_id
+  http_methods = ["PUT", "DELETE"]
 }
 
 # Project
@@ -664,7 +670,13 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.clutter-api-gateway.jwt_authorizer_id,
       module.clutter-api-gateway.body_validator_id,
 
+      module.log-in-model.model_id,
+      module.organization-create-model.model_id,
       module.organization-update-model.model_id,
+      module.project-create-model.model_id,
+      module.project-update-model.model_id,
+      module.diagram-create-model.model_id,
+      module.diagram-update-model.model_id,
 
       module.log-in-api-integration.integration_id,
 
