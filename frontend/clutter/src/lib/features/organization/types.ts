@@ -1,24 +1,30 @@
 // lib/features/organization/types.ts
 
-export interface OrgMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  userId?: string;
-}
-
 export interface Organization {
-  tenantId: string;
+  id: string;
+  created_by: string;
   name: string;
-  slug: string;
-  timeZone: string;
-  createdAt?: string;
-  updatedAt?: string;
+  description: string | null;
+  created_at: string;
+  total_members: number;
+  members: string[];
+  total_projects: number;
+  projects: unknown[];
+  total_diagrams: number;
 }
 
-export interface AvailableUser {
-  id: string;
-  name: string;
-  email: string;
-}
+export type CreateOrganizationInput = {
+  organizationName: string;
+  description: string;
+};
+
+export type UpdateOrganizationInput = {
+  organizationName?: string;
+  description?: string;
+};
+
+// common envelope your API seems to use
+export type ApiEnvelope<T> = {
+  data: T;
+  message?: string;
+};

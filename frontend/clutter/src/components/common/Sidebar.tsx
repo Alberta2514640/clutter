@@ -1,16 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useProjects } from "@/lib/features/projects/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
-
 import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, Plus, Settings, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-
-import { useProjects } from "@/lib/features/projects/hooks";
-import { useMe } from "@/lib/features/user/hooks";
 
 interface SidebarProps {
   className?: string;
@@ -72,10 +70,10 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   //  React Query: user + tenant
   const meQ = useMe();
   const user = meQ.data ?? null;
-  const tenantId = user?.token ?? null;
+  const token = user?.token ?? null;
 
   // ✅ React Query: projects (only loads when tenantId exists)
-  const projectsQ = useProjects(tenantId);
+  const projectsQ = useProjects(token);
   const projects = projectsQ.data ?? [];
 
   const navItems = [{ icon: LayoutDashboard, label: "Overview", href: "/dashboard" }];
@@ -170,7 +168,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
               {/* loading states */}
               {projectsQ.isLoading && projects.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">Loading projects…</div>
-              ) : tenantId === null && user ? (
+              ) : token === null && user ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">No workspace yet</div>
               ) : projects.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">No projects yet</div>

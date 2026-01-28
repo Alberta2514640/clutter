@@ -1,85 +1,48 @@
 // lib/features/organization/hooks.ts
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { availableUsersApi, membersApi, organizationApi } from "./api";
+import { organizationApi } from "./api";
 import { orgKeys } from "./keys";
-import type { Organization, OrgMember } from "./types";
+import type { CreateOrganizationInput, Organization, UpdateOrganizationInput } from "./types";
 
-// -------- Queries --------
-
-export const useOrganization = () => {
+export const useOrganizations = (token?: string | null) => {
   return useQuery({
-    queryKey: orgKeys.organization(),
-    queryFn: organizationApi.get,
+    queryKey: orgKeys.list(),
+    queryFn: () => organizationApi.list(token as string),
+    enabled: !!token,
     staleTime: 5 * 60 * 1000,
   });
 };
 
-export const useMembers = () => {
-  return useQuery({
-    queryKey: orgKeys.members(),
-    queryFn: membersApi.list,
-  });
-};
-
-export const useAvailableUsers = () => {
-  return useQuery({
-    queryKey: orgKeys.availableUsers(),
-    queryFn: availableUsersApi.list,
-  });
-};
-
-// -------- Mutations --------
-
-export const useUpdateOrganization = () => {
+export const useCreateOrganization = (token?: string | null) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<Organization>) => organizationApi.update(data),
+    mutationFn: (input: CreateOrganizationInput) => organizationApi.create(token as string, input),
+    onSuccess: (created) => {
+      qc.setQueryData<Organization[]>(orgKeys.list(), (prev) => [created, ...(prev ?? [])]);
+    },
+  });
+};
+
+export const useUpdateOrganization = (token?: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { organizationId: string; data: UpdateOrganizationInput }) =>
+      organizationApi.update(token as string, input.organizationId, input.data),
     onSuccess: (updated) => {
-      qc.setQueryData(orgKeys.organization(), updated);
-    },
-  });
-};
-
-export const useDeleteOrganization = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => organizationApi.delete(),
-    onSuccess: () => {
-      // Clear all organization-related cached data
-      qc.removeQueries({ queryKey: orgKeys.base });
-    },
-  });
-};
-
-export const useAddMember = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { userId: string; role: string }) => membersApi.add(input.userId, input.role),
-    onSuccess: (created: OrgMember) => {
-      qc.setQueryData<OrgMember[]>(orgKeys.members(), (prev) => [...(prev ?? []), created]);
-    },
-  });
-};
-
-export const useRemoveMember = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (memberId: string) => membersApi.remove(memberId),
-    onSuccess: (_void, memberId) => {
-      qc.setQueryData<OrgMember[]>(orgKeys.members(), (prev) => (prev ?? []).filter((m) => m.id !== memberId));
-    },
-  });
-};
-
-export const useUpdateMemberRole = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { memberId: string; role: string }) => membersApi.updateRole(input.memberId, input.role),
-    onSuccess: (updatedMember, input) => {
-      qc.setQueryData<OrgMember[]>(orgKeys.members(), (prev) =>
-        (prev ?? []).map((m) => (m.id === input.memberId ? updatedMember : m))
+      qc.setQueryData<Organization[]>(orgKeys.list(), (prev) =>
+        (prev ?? []).map((o) => (o.id === updated.id ? updated : o))
       );
+    },
+  });
+};
+
+export const useDeleteOrganization = (token?: string | null) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (organizationId: string) => organizationApi.delete(token as string, organizationId),
+    onSuccess: (_void, organizationId) => {
+      qc.setQueryData<Organization[]>(orgKeys.list(), (prev) => (prev ?? []).filter((o) => o.id !== organizationId));
+      qc.removeQueries({ queryKey: ["members"] });
     },
   });
 };

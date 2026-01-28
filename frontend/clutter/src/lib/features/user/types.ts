@@ -1,14 +1,17 @@
-//to do this need to properly reflect the changes from google auth
-
-export interface UserTenant {
-  tenantId: string;
-  name: string;
-}
-
 export interface UserData {
   userId: string;
   token: string;
-  picture_url: string;
+  pictureUrl: string;
   email: string;
   displayName: string;
+}
+
+export interface GoogleDataShape {
+  token?: string;
+  user_data?: {
+    uuid?: string;
+    email?: string;
+    full_name?: string;
+    picture_url?: string;
+  };
 }
