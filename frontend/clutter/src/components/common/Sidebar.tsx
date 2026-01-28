@@ -1,68 +1,17 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useProjects } from "@/lib/features/projects/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
-
 import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, Plus, Settings, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { useProjects } from "@/lib/features/projects/hooks";
-import { useMe } from "@/lib/features/user/hooks";
-
 interface SidebarProps {
   className?: string;
-}
-
-type StoredGoogleDataShapeA = {
-  user_data: {
-    full_name: string;
-    email: string;
-    picture_url: string;
-    uuid: string;
-    created_at: string;
-  };
-};
-
-type StoredGoogleDataShapeB = {
-  data: {
-    full_name: string;
-    email: string;
-    picture_url: string;
-    uuid: string;
-    created_at: string;
-  };
-};
-
-type UserProfile = {
-  full_name: string;
-  email: string;
-  picture_url: string;
-  uuid: string;
-  created_at: string;
-};
-
-function pickProfile(obj: unknown): UserProfile | null {
-  if (!obj || typeof obj !== "object") return null;
-
-  const o = obj as Partial<StoredGoogleDataShapeA & StoredGoogleDataShapeB>;
-
-  const rawProfile = o.user_data ?? o.data;
-  if (!rawProfile) return null;
-
-  const { full_name, email, picture_url, uuid, created_at } = rawProfile;
-
-  if (typeof full_name !== "string" || typeof email !== "string") return null;
-
-  return {
-    full_name,
-    email,
-    picture_url: typeof picture_url === "string" ? picture_url : "",
-    uuid: typeof uuid === "string" ? uuid : "",
-    created_at: typeof created_at === "string" ? created_at : "",
-  };
 }
 
 export default function DashboardSidebar({ className }: SidebarProps) {
@@ -72,10 +21,10 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   //  React Query: user + tenant
   const meQ = useMe();
   const user = meQ.data ?? null;
-  const tenantId = user?.token ?? null;
+  const token = user?.token ?? null;
 
   // ✅ React Query: projects (only loads when tenantId exists)
-  const projectsQ = useProjects(tenantId);
+  const projectsQ = useProjects(token);
   const projects = projectsQ.data ?? [];
 
   const navItems = [{ icon: LayoutDashboard, label: "Overview", href: "/dashboard" }];
@@ -170,7 +119,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
               {/* loading states */}
               {projectsQ.isLoading && projects.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">Loading projects…</div>
-              ) : tenantId === null && user ? (
+              ) : token === null && user ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">No workspace yet</div>
               ) : projects.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-gray-500 text-center">No projects yet</div>

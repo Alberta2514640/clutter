@@ -11,8 +11,7 @@ import { useMe } from "@/lib/features/user/hooks";
 export default function DashboardPageClient() {
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
-
-  // ✅ these only run after tenantId exists because enabled: !!tenantId
+  
   const projectsQ = useProjects(token);
   const runsQ = useRecentRuns(token);
 

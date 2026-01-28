@@ -1,77 +1,61 @@
 // lib/features/organization/api.ts
-import type { Organization } from "./types";
+import type { ApiEnvelope, CreateOrganizationInput, Organization, UpdateOrganizationInput } from "./types";
 
-let MOCK_ORGANIZATION: Organization | null = {
-  tenantId: "t_demo_001",
-  name: "Demo Organization",
-  slug: "demo-org",
-  timeZone: "America/Edmonton",
-  createdAt: "2025-01-01T00:00:00Z",
-  updatedAt: "2025-01-20T10:00:00Z",
-};
+const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const nowIso = () => new Date().toISOString();
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+async function apiFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  if (!API_BASE) throw new Error("API_ENDPOINT is not set");
 
-const makeTenantId = () => `t_${crypto.randomUUID()}`;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
 
-export type CreateOrganizationInput = {
-  name: string;
-  slug: string;
-  timeZone?: string;
-  ownerUser?: { userId: string; name: string; email: string };
-};
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed: ${res.status}`);
+  }
+
+  return (await res.json()) as T;
+}
 
 export const organizationApi = {
-  get: async (): Promise<Organization | null> => {
-    await sleep(250);
-    return clone(MOCK_ORGANIZATION);
+  // GET /organization
+  // supports either {data: {...}} or {data: [{...}, ...]}
+  list: async (token: string): Promise<Organization[]> => {
+    const json = await apiFetch<ApiEnvelope<Organization | Organization[]>>("/organization", token, { method: "GET" });
+
+    return Array.isArray(json.data) ? json.data : [json.data];
   },
 
-  create: async (input: CreateOrganizationInput): Promise<Organization> => {
-    await sleep(450);
+  // POST /organization
+  create: async (token: string, input: CreateOrganizationInput): Promise<Organization> => {
+    const json = await apiFetch<ApiEnvelope<Organization>>("/organization", token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
 
-    const name = input.name.trim();
-    const slug = input.slug.trim();
-    const timeZone = input.timeZone?.trim() || "America/Edmonton";
-
-    if (!name) throw new Error("Organization name is required");
-    if (!slug) throw new Error("Organization slug is required");
-
-    if (MOCK_ORGANIZATION && MOCK_ORGANIZATION.tenantId !== "t_deleted") {
-      throw new Error("Organization already exists");
-    }
-
-    const createdAt = nowIso();
-    const tenantId = makeTenantId();
-
-    MOCK_ORGANIZATION = {
-      tenantId,
-      name,
-      slug,
-      timeZone,
-      createdAt,
-      updatedAt: createdAt,
-    };
-
-    return clone(MOCK_ORGANIZATION);
+    return json.data;
   },
 
-  update: async (data: Partial<Organization>): Promise<Organization> => {
-    await sleep(450);
-    if (!MOCK_ORGANIZATION) throw new Error("No organization to update");
+  // PUT /organization/:organizationId
+  update: async (token: string, organizationId: string, input: UpdateOrganizationInput): Promise<Organization> => {
+    const json = await apiFetch<ApiEnvelope<Organization>>(`/organization/${organizationId}`, token, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
 
-    MOCK_ORGANIZATION = {
-      ...MOCK_ORGANIZATION,
-      ...data,
-      updatedAt: nowIso(),
-    };
-    return clone(MOCK_ORGANIZATION);
+    return json.data;
   },
 
-  delete: async (): Promise<void> => {
-    await sleep(450);
-    MOCK_ORGANIZATION = null;
+  // DELETE /organization/:organizationId
+  delete: async (token: string, organizationId: string): Promise<void> => {
+    await apiFetch<ApiEnvelope<unknown>>(`/organization/${organizationId}`, token, {
+      method: "DELETE",
+    });
   },
 };

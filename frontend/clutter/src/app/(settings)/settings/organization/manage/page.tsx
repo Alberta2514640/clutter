@@ -2,26 +2,40 @@
 
 import { useMemo } from "react";
 import AddUsersDropdown, { type MemberOption } from "./_components/AddUsersDropdown";
-import ManageForm from "./_components/ManageForm";
+import ManageForm, { type ManageFormValues } from "./_components/ManageForm";
 import Members from "./_components/Members";
 
 import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
-import { useDeleteOrganization, useOrganization, useUpdateOrganization, } from "@/lib/features/organization/hooks";
+import {
+  useDeleteOrganization,
+  useOrganizations,
+  useUpdateOrganization,
+} from "@/lib/features/organization/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 
 export default function OrganizationManagePage() {
-  const orgQ = useOrganization();
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
+
+  const orgQ = useOrganizations(token);
+
+  // members still fake
   const membersQ = useMembers();
   const usersQ = useAvailableUsers();
 
-  const updateOrg = useUpdateOrganization();
-  const deleteOrg = useDeleteOrganization();
+  const updateOrg = useUpdateOrganization(token);
+  const deleteOrg = useDeleteOrganization(token);
   const addMember = useAddMember();
 
-  const organization = orgQ.data;
+  const organizations = orgQ.data ?? [];
+  const organization = organizations[0] ?? null;
+
   const members = membersQ.data ?? [];
   const availableUsers = usersQ.data ?? [];
 
-  const isLoading = orgQ.isLoading || membersQ.isLoading || usersQ.isLoading;
+  const isLoading =
+    meQ.isLoading || orgQ.isLoading || membersQ.isLoading || usersQ.isLoading;
+
   const isSaving = updateOrg.isPending || deleteOrg.isPending || addMember.isPending;
 
   const userOptions: MemberOption[] = useMemo(
@@ -33,6 +47,14 @@ export default function OrganizationManagePage() {
       })),
     [availableUsers]
   );
+
+  if (!isLoading && !token) {
+    return (
+      <main className="flex items-center justify-center py-12">
+        <div className="text-gray-400">Please sign in to manage your organization.</div>
+      </main>
+    );
+  }
 
   if (isLoading && !organization) {
     return (
@@ -56,28 +78,36 @@ export default function OrganizationManagePage() {
           <div className="grid items-start gap-6 lg:grid-cols-2">
             <ManageForm
               initialValues={{
-                orgName: organization?.name || "",
-                slug: organization?.slug || "",
-                timeZone: organization?.timeZone || "America/Edmonton",
+                orgName: organization?.name ?? "",
+                orgId: organization?.id ?? "", // ✅ required now
+                description: organization?.description ?? "",
               }}
-              onSubmit={async (values) => {
+              onSubmit={async (values: ManageFormValues) => {
+                if (!token || !organization?.id) return;
+
                 await updateOrg.mutateAsync({
-                  name: values.orgName,
-                  slug: values.slug,
-                  timeZone: values.timeZone,
+                  organizationId: organization.id,
+                  data: {
+                    // backend expects these keys
+                    organizationName: values.orgName,
+                    description: values.description,
+                  },
                 });
               }}
               onDelete={async () => {
+                if (!token || !organization?.id) return;
+
                 const confirmed = window.confirm(
                   "Are you sure you want to delete this organization? This action cannot be undone."
                 );
 
                 if (confirmed) {
-                  await deleteOrg.mutateAsync();
+                  await deleteOrg.mutateAsync(organization.id);
                   window.location.href = "/";
                 }
               }}
               isSaving={isSaving}
+              isDeleting={deleteOrg.isPending}
             />
 
             <div className="lg:border-l border-t lg:border-t-0 border-slate-800 lg:pl-6">
@@ -92,14 +122,6 @@ export default function OrganizationManagePage() {
               <Members members={members} />
             </div>
           </div>
-
-          {(orgQ.isError || membersQ.isError || usersQ.isError) && (
-            <div className="mt-4 text-sm text-red-400">
-              {orgQ.isError && <div>Organization error: {String(orgQ.error)}</div>}
-              {membersQ.isError && <div>Members error: {String(membersQ.error)}</div>}
-              {usersQ.isError && <div>Users error: {String(usersQ.error)}</div>}
-            </div>
-          )}
         </div>
       </section>
     </main>
