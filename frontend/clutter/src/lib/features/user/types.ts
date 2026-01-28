@@ -1,7 +1,7 @@
 export interface UserData {
   userId: string;
   token: string;
-  picture_url: string;
+  pictureUrl: string;
   email: string;
   displayName: string;
 }

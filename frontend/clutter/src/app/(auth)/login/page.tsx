@@ -1,12 +1,13 @@
 "use client";
 
 import Navbar from "@/components/common/Navbar";
-import { userApi } from "@/lib/features/user/api";
+import { useLoginWithGoogle } from "@/lib/features/user/hooks";
 import { GoogleLogin } from "@react-oauth/google";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
+  const login = useLoginWithGoogle();
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col pt-20 relative overflow-hidden">
@@ -36,12 +37,11 @@ export default function LoginPage() {
                     return;
                   }
 
-                  try {
-                    await userApi.loginWithGoogle(token);
-                    router.push("/dashboard");
-                  } catch (err) {
-                    console.error(err);
-                  }
+                  //using use mutation from query, better ui states
+                  login.mutate(token, {
+                    onSuccess: () => router.push("/dashboard"),
+                    onError: (err) => console.error(err),
+                  });
                 }}
                 onError={() => console.log("Login Failed")}
               />
