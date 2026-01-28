@@ -5,7 +5,8 @@ import AddUsersDropdown, { type MemberOption } from "./_components/AddUsersDropd
 import ManageForm from "./_components/ManageForm";
 import Members from "./_components/Members";
 
-import { useAddMember, useAvailableUsers, useDeleteOrganization, useMembers, useOrganization, useUpdateOrganization, } from "@/lib/features/organization/hooks";
+import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
+import { useDeleteOrganization, useOrganization, useUpdateOrganization, } from "@/lib/features/organization/hooks";
 
 export default function OrganizationManagePage() {
   const orgQ = useOrganization();
