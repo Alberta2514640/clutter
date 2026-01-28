@@ -31,6 +31,6 @@ export function useLogout() {
   return () => {
     localStorage.removeItem("google_data");
     qc.setQueryData(userKeys.me(), null);
-    qc.removeQueries({ queryKey: userKeys.me() });
+    qc.clear();
   };
 }

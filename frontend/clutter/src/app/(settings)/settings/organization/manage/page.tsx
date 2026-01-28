@@ -1,20 +1,23 @@
 "use client";
 
 import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
-import { useDeleteOrganization, useOrganizations, useUpdateOrganization, } from "@/lib/features/organization/hooks";
-import { useMe } from "@/lib/features/user/hooks";
+import { useDeleteOrganization, useOrganizations, useUpdateOrganization } from "@/lib/features/organization/hooks";
+import { useLogout, useMe } from "@/lib/features/user/hooks";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import AddUsersDropdown, { type MemberOption } from "./_components/AddUsersDropdown";
 import ManageForm, { type ManageFormValues } from "./_components/ManageForm";
 import Members from "./_components/Members";
 
 export default function OrganizationManagePage() {
+  const router = useRouter();
+  const logout = useLogout();
+
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
 
   const orgQ = useOrganizations(token);
 
-  // members still fake
   const membersQ = useMembers();
   const usersQ = useAvailableUsers();
 
@@ -74,7 +77,7 @@ export default function OrganizationManagePage() {
             <ManageForm
               initialValues={{
                 orgName: organization?.name ?? "",
-                orgId: organization?.id ?? "", // ✅ required now
+                orgId: organization?.id ?? "",
                 description: organization?.description ?? "",
               }}
               onSubmit={async (values: ManageFormValues) => {
@@ -82,9 +85,7 @@ export default function OrganizationManagePage() {
 
                 await updateOrg.mutateAsync({
                   organizationId: organization.id,
-                  data: {
-                    description: values.description,
-                  },
+                  data: { description: values.description },
                 });
               }}
               onDelete={async () => {
@@ -93,11 +94,14 @@ export default function OrganizationManagePage() {
                 const confirmed = window.confirm(
                   "Are you sure you want to delete this organization? This action cannot be undone."
                 );
+                if (!confirmed) return;
 
-                if (confirmed) {
-                  await deleteOrg.mutateAsync(organization.id);
-                  window.location.href = "/";
-                }
+                await deleteOrg.mutateAsync(organization.id);
+
+                // ✅ log out + go home with Next router
+                logout();
+                router.replace("/"); // replace avoids back button going to deleted org page
+                router.refresh();    // optional: revalidate server components if any
               }}
               isSaving={isSaving}
               isDeleting={deleteOrg.isPending}

@@ -1,7 +1,6 @@
-// ManageForm.tsx
 "use client";
 
-import { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 export interface ManageFormValues {
   orgName: string;
@@ -18,25 +17,28 @@ export interface ManageFormProps {
   isDeleting?: boolean;
 }
 
-export default function ManageForm({
-  initialValues,
-  onSubmit,
-  onDelete,
-  isSaving,
-  isDeleting,
-}: ManageFormProps) {
+export default function ManageForm({ initialValues, onSubmit, onDelete, isSaving, isDeleting, }: ManageFormProps) {
   const [values, setValues] = useState<ManageFormValues>(initialValues);
+
+  useEffect(() => {
+    setValues(initialValues);
+  }, [initialValues]);
+
+  const isDirty = useMemo(() => {
+    const a = (initialValues.description ?? "").trim();
+    const b = (values.description ?? "").trim();
+    return a !== b;
+  }, [initialValues.description, values.description]);
 
   const handleChange =
     (field: keyof ManageFormValues) =>
-    (
-      e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-    ) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       setValues((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isDirty) return; // extra safety
     await onSubmit(values);
   };
 
@@ -44,6 +46,8 @@ export default function ManageForm({
     if (!onDelete) return;
     await onDelete();
   };
+
+  const saveDisabled = !!isSaving || !isDirty;
 
   return (
     <div>
@@ -75,9 +79,7 @@ export default function ManageForm({
               disabled
               className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
             />
-            <p className="text-xs text-slate-500">
-              Used in APIs. This ID is fixed.
-            </p>
+            <p className="text-xs text-slate-500">Used in APIs. This ID is fixed.</p>
           </div>
         </div>
 
@@ -104,11 +106,16 @@ export default function ManageForm({
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={!!isSaving}
+            disabled={saveDisabled}
             className="px-4 py-2 rounded-lg bg-teal-600 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-60 transition"
           >
             {isSaving ? "Saving…" : "Save changes"}
           </button>
+
+          {/* optional: tiny hint */}
+          {!isDirty && (
+            <span className="text-xs text-slate-500">No changes to save</span>
+          )}
         </div>
       </form>
 

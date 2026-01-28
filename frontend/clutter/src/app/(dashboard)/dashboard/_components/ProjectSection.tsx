@@ -6,7 +6,6 @@ import type { Project } from "@/lib/features/projects/types";
 import { Clock, FolderOpen, Plus, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
 interface ProjectsSectionProps {
   projects: Project[];
 }

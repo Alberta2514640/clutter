@@ -1,13 +1,38 @@
 "use client";
 
 import Navbar from "@/components/common/Navbar";
-import { useLoginWithGoogle } from "@/lib/features/user/hooks";
+import { useOrganizations } from "@/lib/features/organization/hooks";
+import { useLoginWithGoogle, useMe } from "@/lib/features/user/hooks";
 import { GoogleLogin } from "@react-oauth/google";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
+
   const login = useLoginWithGoogle();
+  const meQ = useMe();
+
+  const token = meQ.data?.token ?? null;
+
+  // Only runs once token exists
+  const orgsQ = useOrganizations(token);
+
+  const hasOrg = useMemo(() => {
+    const orgs = orgsQ.data ?? [];
+    return orgs.length > 0;
+  }, [orgsQ.data]);
+
+  // If user is already logged in, route them immediately
+  useEffect(() => {
+    if (!token) return;
+    if (orgsQ.isLoading) return;
+    if (orgsQ.isError) return; // keep on login page, show error below
+
+    router.replace(hasOrg ? "/dashboard" : "/onboarding/create-org");
+  }, [token, orgsQ.isLoading, orgsQ.isError, hasOrg, router]);
+
+  const isChecking = !!token && orgsQ.isLoading;
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col pt-20 relative overflow-hidden">
@@ -31,21 +56,34 @@ export default function LoginPage() {
             <div className="flex justify-center">
               <GoogleLogin
                 onSuccess={async (credentialResponse) => {
-                  const token = credentialResponse.credential;
-                  if (!token) {
+                  const googleIdToken = credentialResponse.credential;
+                  if (!googleIdToken) {
                     console.error("No Google ID token returned");
                     return;
                   }
 
-                  //using use mutation from query, better ui states
-                  login.mutate(token, {
-                    onSuccess: () => router.push("/dashboard"),
+                  login.mutate(googleIdToken, {
+                    // After login succeeds, useEffect will redirect based on org existence
                     onError: (err) => console.error(err),
                   });
                 }}
                 onError={() => console.log("Login Failed")}
               />
             </div>
+
+            {isChecking && (
+              <div className="mt-6 text-center text-sm text-slate-400">
+                Checking your organizations…
+              </div>
+            )}
+
+            {(login.isError || meQ.isError || orgsQ.isError) && (
+              <div className="mt-6 text-sm text-red-400">
+                {login.isError && <div>Login error: {String(login.error)}</div>}
+                {meQ.isError && <div>Auth error: {String(meQ.error)}</div>}
+                {orgsQ.isError && <div>Organization lookup error: {String(orgsQ.error)}</div>}
+              </div>
+            )}
 
             <div className="relative my-8">
               <div className="absolute inset-0 flex items-center">
