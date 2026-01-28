@@ -19,8 +19,7 @@ export type CreateOrganizationInput = {
 };
 
 export type UpdateOrganizationInput = {
-  organizationName?: string;
-  description?: string;
+  description: string;
 };
 
 // common envelope your API seems to use

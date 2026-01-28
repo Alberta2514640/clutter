@@ -1,17 +1,12 @@
 "use client";
 
+import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
+import { useDeleteOrganization, useOrganizations, useUpdateOrganization, } from "@/lib/features/organization/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 import { useMemo } from "react";
 import AddUsersDropdown, { type MemberOption } from "./_components/AddUsersDropdown";
 import ManageForm, { type ManageFormValues } from "./_components/ManageForm";
 import Members from "./_components/Members";
-
-import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
-import {
-  useDeleteOrganization,
-  useOrganizations,
-  useUpdateOrganization,
-} from "@/lib/features/organization/hooks";
-import { useMe } from "@/lib/features/user/hooks";
 
 export default function OrganizationManagePage() {
   const meQ = useMe();
@@ -88,8 +83,6 @@ export default function OrganizationManagePage() {
                 await updateOrg.mutateAsync({
                   organizationId: organization.id,
                   data: {
-                    // backend expects these keys
-                    organizationName: values.orgName,
                     description: values.description,
                   },
                 });

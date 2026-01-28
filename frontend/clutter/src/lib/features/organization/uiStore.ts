@@ -4,13 +4,13 @@ import type { Organization } from "./types";
 
 type OrgUiState = {
   isEditOpen: boolean;
-  draft: Partial<Organization>;
+  draft: { description?: string };
 };
 
 type OrgUiActions = {
   open: (org?: Organization | null) => void;
   close: () => void;
-  patch: (p: Partial<Organization>) => void;
+  patch: (p: { description?: string }) => void;
   reset: () => void;
 };
 
@@ -22,7 +22,7 @@ export const useOrganizationUiStore = create<{ state: OrgUiState; actions: OrgUi
         state: {
           ...s.state,
           isEditOpen: true,
-          draft: org ? { name: org.name, slug: org.slug, timeZone: org.timeZone } : {},
+          draft: org ? { description: org.description ?? "" } : {},
         },
       })),
     close: () => set((s) => ({ state: { ...s.state, isEditOpen: false, draft: {} } })),

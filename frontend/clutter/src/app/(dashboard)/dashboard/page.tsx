@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrganizations } from "@/lib/features/organization/hooks";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 // import DashboardOnboarding from "./_components/DashboardOnboarding";
@@ -11,17 +12,19 @@ import { useMe } from "@/lib/features/user/hooks";
 export default function DashboardPageClient() {
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
-  
   const projectsQ = useProjects(token);
+
+  const orgQ = useOrganizations(token);
+  const organization = orgQ.data?.[0] ?? null;
+
   const runsQ = useRecentRuns(token);
 
   const isLoading =
     meQ.isLoading ||
-    (token ? projectsQ.isLoading || runsQ.isLoading : false);
+    (token ? runsQ.isLoading : false);
 
   const error =
     (meQ.isError ? meQ.error : null) ||
-    (projectsQ.isError ? projectsQ.error : null) ||
     (runsQ.isError ? runsQ.error : null);
 
   if (isLoading && !meQ.data) return <DashboardLoading />;
@@ -32,7 +35,7 @@ export default function DashboardPageClient() {
   return (
     <DashboardContent
       userData={meQ.data ?? null}
-      projects={projectsQ.data ?? []}
+      organization={organization ?? null}
       recentRuns={runsQ.data ?? []}
       error={error ? String(error) : null}
     />
