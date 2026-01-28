@@ -153,7 +153,7 @@ module "project-create-lambda" {
   ]
   zip_dir_slice = "project/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -171,7 +171,7 @@ module "project-get-lambda" {
   ]
   zip_dir_slice = "project/get"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -189,7 +189,7 @@ module "project-update-lambda" {
   ]
   zip_dir_slice = "project/update"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -207,7 +207,7 @@ module "project-delete-lambda" {
   ]
   zip_dir_slice = "project/delete"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
@@ -337,7 +337,13 @@ module "organization-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.organization-api-path.resource_id
-  http_methods = ["POST", "GET", "PUT", "DELETE"]
+  http_methods = ["POST", "GET"]
+}
+module "organization-api-by-id-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.organization-api-path-by-id.resource_id
+  http_methods = ["PUT", "DELETE"]
 }
 
 # Project
@@ -410,6 +416,22 @@ module "organization-update-model" {
   schema_filename = "organization-update.json"
 }
 
+# Project
+module "project-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "projectCreate"
+  description     = "Model to validate project creation requests"
+  schema_filename = "project-create.json"
+}
+# Project
+module "project-update-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "projectUpdate"
+  description     = "Model to validate project update requests"
+  schema_filename = "project-update.json"
+}
 
 # Diagram
 module "diagram-create-model" {
@@ -517,8 +539,10 @@ module "project-create-api-integration" {
   path_part            = module.project-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.project-create-model.model_name
 }
 # GET project
 module "project-get-api-integration" {
@@ -544,8 +568,11 @@ module "project-update-api-integration" {
   path_part            = module.project-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.project-update-model.model_name
+
 }
 # DELETE project
 module "project-delete-api-integration" {
@@ -645,7 +672,13 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.clutter-api-gateway.jwt_authorizer_id,
       module.clutter-api-gateway.body_validator_id,
 
+      module.log-in-model.model_id,
+      module.organization-create-model.model_id,
       module.organization-update-model.model_id,
+      module.project-create-model.model_id,
+      module.project-update-model.model_id,
+      module.diagram-create-model.model_id,
+      module.diagram-update-model.model_id,
 
       module.log-in-api-integration.integration_id,
 
