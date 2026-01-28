@@ -539,8 +539,9 @@ module "project-create-api-integration" {
   path_part            = module.project-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.project-create-model.model_name
 }
 # GET project
@@ -567,8 +568,9 @@ module "project-update-api-integration" {
   path_part            = module.project-api-path.path_part
   execution_arn        = module.clutter-api-gateway.execution_arn
   path                 = module.project-api-path.path
-  request_validator_id = module.clutter-api-gateway.body_validator_id
   jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.project-update-model.model_name
 
 }
