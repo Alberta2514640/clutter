@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM Role for YourApp Terraform deployments
+
+Parameters:
+  AccountId:
+    Type: String
+    Description: AWS Account ID of Clutter
+
+  ExternalId:
+    Type: String
+    Description: External ID used by Clutter as a unique ID per client
+    NoEcho: true
+
+Resources:
+  TerraformDeployerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AllowClutterToDeployTerraformRole-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AccountId}:role/TerraformDeployerFargateTaskRole"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+
+      Policies:
+      - PolicyName: TerraformDeployerRequiredPermissions
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+
+            # ---------- EC2 / Networking ----------
+            - Effect: Allow
+              Action:
+                - ec2:*
+              Resource: "*"
+
+            # ---------- Lambda ----------
+            - Effect: Allow
+              Action:
+                - lambda:*
+              Resource: "*"
+
+            # ---------- API Gateway ----------
+            - Effect: Allow
+              Action:
+                - apigateway:*
+              Resource: "*"
+
+            # ---------- DynamoDB ----------
+            - Effect: Allow
+              Action:
+                - dynamodb:*
+              Resource: "*"
+
+            # ---------- S3 ----------
+            - Effect: Allow
+              Action:
+                - s3:*
+              Resource: "*"
+
+            # ---------- IAM PassRole (required for Lambda / EC2) ----------
+            - Effect: Allow
+              Action:
+                - iam:PassRole
+              Resource: "arn:aws:iam::*:role/*"
+              Condition:
+                StringEquals:
+                  iam:PassedToService:
+                    - ec2.amazonaws.com
+                    - lambda.amazonaws.com
+
+            # ---------- CloudWatch Logs (Lambda + API GW) ----------
+            - Effect: Allow
+              Action:
+                - logs:*
+              Resource: "*"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt TerraformDeployerRole.Arn

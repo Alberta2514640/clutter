@@ -5,6 +5,10 @@
 */.terraform.lock.hcl
 */.terraform
 
+# tfstate and application infra for developer account
+/infra-dev
+/tfstate-infra-dev
+
 # Deployment folder containing binary and zip
 **/deploy
 
