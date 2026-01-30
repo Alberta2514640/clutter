@@ -1,14 +1,3 @@
-# ================================
-# Cognito User-Pools and Providers
-# ================================
-
-module "cognito" {
-  source               = "./modules/templates/cognito"
-  google_client_id     = var.google_client_id
-  google_client_secret = var.google_client_secret
-  frontend_url         = var.frontend_url
-}
-
 # ===
 # S3
 # ===
@@ -709,13 +698,13 @@ resource "aws_api_gateway_deployment" "clutter" {
 variable "stage_name" {
   type        = string
   description = "API Gateway stage name"
+  default     = "prod"
 
   validation {
     condition     = contains(["dev", "staging", "prod"], var.stage_name)
     error_message = "stage_name must be one of: dev, staging, prod."
   }
 }
-
 
 resource "aws_api_gateway_stage" "clutter" {
   rest_api_id   = module.clutter-api-gateway.rest_api_id
