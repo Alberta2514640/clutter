@@ -12,6 +12,14 @@ module "s3" {
 }
 
 # ================
+# ECS Fargate Task
+# ================
+
+module "s3" {
+  source = "./modules/fargate"
+}
+
+# ================
 # Lambda Functions
 # ================
 
