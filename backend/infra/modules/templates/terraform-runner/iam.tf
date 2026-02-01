@@ -33,35 +33,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Additional policy for ECR access
-resource "aws_iam_role_policy" "ecs_task_execution_ecr" {
-  name = "terraform-runner-execution-ecr"
-  role = aws_iam_role.ecs_task_execution.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "${aws_cloudwatch_log_group.terraform_runner.arn}:*"
-      }
-    ]
-  })
-}
+# Note: ECR and CloudWatch Logs permissions are included in the managed
+# AmazonECSTaskExecutionRolePolicy attached above
 
 # -----------------------------------------------------------------------------
 # ECS Task Role (used by the container to access AWS resources)
@@ -302,7 +275,7 @@ resource "aws_iam_role_policy" "ecs_task_terraform" {
           "logs:PutRetentionPolicy",
           "logs:DescribeLogGroups"
         ]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:${var.log_group_prefix}*"
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/clutter-*"
         Condition = {
           StringEquals = {
             "aws:RequestedRegion" = var.aws_region
@@ -318,7 +291,7 @@ resource "aws_iam_role_policy" "ecs_task_terraform" {
           "logs:PutLogEvents",
           "logs:DescribeLogStreams"
         ]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:${var.log_group_prefix}*:*"
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/clutter-*:*"
         Condition = {
           StringEquals = {
             "aws:RequestedRegion" = var.aws_region

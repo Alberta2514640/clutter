@@ -1,35 +1,27 @@
+# Core AWS settings
 variable "aws_region" {
   type        = string
   description = "AWS region for deployment"
-  default     = "us-east-1"
 }
 
-variable "ecs_cluster_name" {
-  type        = string
-  description = "Name of the ECS cluster"
-  default     = "clutter-ecs-cluster"
+variable "availability_zones" {
+  type        = list(string)
+  description = "Availability zones for subnets (must match aws_region)"
+  default     = null
 }
 
-variable "s3_bucket_name" {
-  type        = string
-  description = "S3 bucket name for terraform workspaces and logs"
-}
-
-variable "s3_bucket_arn" {
-  type        = string
-  description = "S3 bucket ARN for IAM policies"
-}
-
+# Networking
 variable "vpc_cidr" {
   type        = string
   description = "CIDR block for the VPC"
   default     = "10.0.0.0/16"
 }
 
-variable "availability_zones" {
-  type        = list(string)
-  description = "List of availability zones for subnets."
-  default     = ["us-east-1a", "us-east-1b"]
+# ECS configuration
+variable "ecs_cluster_name" {
+  type        = string
+  description = "Name of the ECS cluster"
+  default     = "clutter-ecs-cluster"
 }
 
 variable "environment" {
@@ -39,35 +31,51 @@ variable "environment" {
 
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "environment must be one of: dev, staging, prod."
+    error_message = "Must be: dev, staging, or prod."
   }
 }
 
 variable "image_tag" {
   type        = string
-  description = "Docker image tag for the terraform-runner container. Use explicit tags for reproducible deployments."
+  description = "Docker image tag for terraform-runner container"
 }
 
 variable "cpu" {
   type        = number
-  description = "Fargate task CPU units (256, 512, 1024, 2048, 4096)"
+  description = "Fargate task CPU units"
   default     = 512
+
+  validation {
+    condition     = contains([256, 512, 1024, 2048, 4096], var.cpu)
+    error_message = "Must be: 256, 512, 1024, 2048, or 4096."
+  }
 }
 
 variable "memory" {
   type        = number
   description = "Fargate task memory in MB"
   default     = 1024
+
+  validation {
+    condition     = contains([512, 1024, 2048, 4096, 8192, 16384, 30720], var.memory)
+    error_message = "Must be a valid Fargate memory value."
+  }
 }
 
+# S3 configuration
+variable "s3_bucket_name" {
+  type        = string
+  description = "S3 bucket for terraform workspaces and logs"
+}
+
+variable "s3_bucket_arn" {
+  type        = string
+  description = "S3 bucket ARN for IAM policies"
+}
+
+# Logging
 variable "log_retention_days" {
   type        = number
   description = "CloudWatch log retention in days"
   default     = 30
-}
-
-variable "log_group_prefix" {
-  type        = string
-  description = "Prefix for CloudWatch log groups that the Terraform runner can manage"
-  default     = "/aws/lambda/clutter-"
 }

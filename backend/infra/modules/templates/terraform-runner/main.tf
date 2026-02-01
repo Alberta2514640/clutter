@@ -1,14 +1,4 @@
-# =============================================================================
-# Terraform Runner Module
-# =============================================================================
-# This module creates the infrastructure for running Terraform deployments
-# on AWS Fargate. It includes:
-# - VPC with public/private subnets and NAT Gateway
-# - ECR repository for the Terraform runner Docker image
-# - ECS cluster and task definition
-# - IAM roles and policies
-# - CloudWatch log group
-# =============================================================================
+# Terraform Runner Module - ECS Fargate for Terraform deployments
 
 terraform {
   required_providers {
@@ -19,8 +9,16 @@ terraform {
   }
 }
 
-# Data source to get current AWS account ID
 data "aws_caller_identity" "current" {}
-
-# Data source to get current region
 data "aws_region" "current" {}
+
+# Fetch available AZs if not provided
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+locals {
+  # Use provided AZs or default to first 2 available in region
+  availability_zones = coalesce(var.availability_zones, slice(data.aws_availability_zones.available.names, 0, 2))
+}
+

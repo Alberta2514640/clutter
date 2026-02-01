@@ -1,6 +1,4 @@
-# =============================================================================
-# ECR Repository for Terraform Runner Image
-# =============================================================================
+# ECR Repository - protected from destroy to avoid re-upload costs
 
 resource "aws_ecr_repository" "terraform_runner" {
   name                 = "clutter-terraform-runner"
@@ -18,6 +16,10 @@ resource "aws_ecr_repository" "terraform_runner" {
     Name        = "clutter-terraform-runner"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Lifecycle policy to clean up old images
@@ -30,9 +32,9 @@ resource "aws_ecr_lifecycle_policy" "terraform_runner" {
         rulePriority = 1
         description  = "Keep last 10 images"
         selection = {
-          tagStatus     = "any"
-          countType     = "imageCountMoreThan"
-          countNumber   = 10
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
         }
         action = {
           type = "expire"

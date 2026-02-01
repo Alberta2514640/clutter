@@ -40,14 +40,9 @@ output "vpc_id" {
   value       = aws_vpc.terraform_runner.id
 }
 
-# Note: Using public subnets for Fargate tasks (no NAT Gateway )
-output "fargate_subnet_ids" {
+# Note: Using public subnets for Fargate tasks (no NAT Gateway)
+output "subnet_ids" {
   description = "Subnet IDs for Fargate tasks (public subnets)"
-  value       = aws_subnet.public[*].id
-}
-
-output "public_subnet_ids" {
-  description = "Public subnet IDs"
   value       = aws_subnet.public[*].id
 }
 
