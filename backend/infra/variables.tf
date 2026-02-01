@@ -28,3 +28,14 @@ variable "psql_connection_string" {
     type        = string
     description = "PostgreSQL connection string to enable querying"
 }
+
+variable "terraform_runner_image_tag" {
+    type        = string
+    description = "Docker image tag for the terraform-runner container"
+    default     = "latest"
+
+    validation {
+        condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$", var.terraform_runner_image_tag))
+        error_message = "Image tag must be 1-128 characters, start with alphanumeric, and contain only alphanumerics, dots, underscores, or hyphens."
+    }
+}

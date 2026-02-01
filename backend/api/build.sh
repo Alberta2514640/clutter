@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Enable strict error handling:
+# -E: ERR traps are inherited by shell functions
+# -e: Exit immediately if a command exits with non-zero status
+# -u: Treat unset variables as an error
+# -o pipefail: Return value of a pipeline is the status of the last command to exit with non-zero
+set -Eeuo pipefail
+
+# Trap errors and provide context
+trap 'echo "Error on line $LINENO. Exit code: $?" >&2' ERR
 
 # Define a list of directories that contain main.go files
 LAMBDA_DIRS=(
@@ -18,6 +26,9 @@ LAMBDA_DIRS=(
   "diagram/update"
   "diagram/delete"
   "user-information/get"
+  "terraform-deploy/create"
+  "terraform-deploy/get"
+  "terraform-deploy/log-writer"
 )
 
 # Detect root directory of script
