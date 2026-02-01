@@ -313,6 +313,24 @@ module "user-information-get-lambda" {
 
 }
 
+# Terraform Engine
+module "terraform-engine-create-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-create"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-create:*"]
+  zip_dir_slice = "terraform-engine/create"
+  environment_variables = {
+    DDB_TABLE_NAME = var.ddb_application_table_name
+  }
+
+}
+
 # ===========
 # API Gateway
 # ===========
@@ -428,6 +446,21 @@ module "user-information-api-cors-compliance" {
   resource_id  = module.user-information-api-path.resource_id
   http_methods = ["GET"]
 }
+
+# Terraform Engine
+module "terraform-engine-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "terraform-engine"
+}
+module "terraform-engine-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-api-path.resource_id
+  http_methods = ["POST", "GET"]
+}
+
 
 # Validation Models
 
@@ -716,6 +749,20 @@ module "user-information-get-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+# Terraform Engine
+# POST terraform-engine
+module "terraform-engine-create-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.terraform-engine-create-lambda.invoke_arn
+  function_name     = module.terraform-engine-create-lambda.function_name
+  path_part         = module.terraform-engine-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-api-path.path
+}
+
 // API Gateway Staging
 resource "aws_api_gateway_deployment" "clutter" {
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -754,7 +801,9 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.diagram-update-api-integration.integration_id,
       module.diagram-delete-api-integration.integration_id,
 
-      module.user-information-get-api-integration.integration_id
+      module.user-information-get-api-integration.integration_id,
+
+      module.terraform-engine-create-api-integration.integration_id
     ]))
   }
 
@@ -777,5 +826,5 @@ variable "stage_name" {
 resource "aws_api_gateway_stage" "clutter" {
   rest_api_id   = module.clutter-api-gateway.rest_api_id
   deployment_id = aws_api_gateway_deployment.clutter.id
-  stage_name    = var.stage_name
+  stage_name    = "dev"
 }
