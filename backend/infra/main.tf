@@ -826,5 +826,5 @@ variable "stage_name" {
 resource "aws_api_gateway_stage" "clutter" {
   rest_api_id   = module.clutter-api-gateway.rest_api_id
   deployment_id = aws_api_gateway_deployment.clutter.id
-  stage_name    = "dev"
+  stage_name    = var.stage_name
 }
