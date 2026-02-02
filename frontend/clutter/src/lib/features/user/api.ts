@@ -5,6 +5,25 @@ const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const COOKIE_NAME = "clutter_token";
+
+const setTokenCookie = (token: string) => {
+  if (typeof document === "undefined") return;
+  if (!token) return;
+
+  // 7 days
+  const maxAge = 60 * 60 * 24 * 7;
+
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
+};
+
+export const clearTokenCookie = () => {
+  if (typeof document === "undefined") return;
+
+  // expire immediately
+  document.cookie = `${COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
+};
+
 /* ---------------------------------------------
  * Local storage helpers (snake_case persistence)
  * -------------------------------------------- */
@@ -52,6 +71,10 @@ export const userApi = {
       throw new Error("Missing Google ID token");
     }
 
+    if (!API_BASE) {
+      throw new Error("NEXT_PUBLIC_API_ENDPOINT is not set");
+    }
+
     const res = await fetch(`${API_BASE}/log-in`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,6 +89,10 @@ export const userApi = {
     const data = (await res.json()) as GoogleDataShape;
 
     writeGoogleData(data);
+
+    // ✅ keep proxy/edge in sync (proxy can read cookies, not localStorage)
+    if (data.token) setTokenCookie(data.token);
+
     return toUserData(data);
   },
 
@@ -88,7 +115,14 @@ export const userApi = {
     if (user.email) uData.email = user.email;
     if (user.displayName) uData.full_name = user.displayName;
     if (user.pictureUrl) uData.picture_url = user.pictureUrl;
-    if (user.token) gData.token = user.token;
+
+    if (user.token !== undefined) {
+      gData.token = user.token;
+
+      // ✅ sync cookie too
+      if (user.token) setTokenCookie(user.token);
+      else clearTokenCookie();
+    }
 
     gData.user_data = uData;
     writeGoogleData(gData);

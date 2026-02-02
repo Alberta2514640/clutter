@@ -1,7 +1,7 @@
 // src/lib/features/user/hooks.ts
 //to do this need to properly reflect the changes from google auth
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { userApi } from "./api";
+import { clearTokenCookie, userApi } from "./api";
 import { userKeys } from "./keys";
 
 export const useMe = () => {
@@ -29,7 +29,7 @@ export function useLogout() {
   const qc = useQueryClient();
 
   return () => {
-    localStorage.removeItem("google_data");
+    clearTokenCookie();
     qc.setQueryData(userKeys.me(), null);
     qc.clear();
   };
