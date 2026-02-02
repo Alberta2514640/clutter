@@ -25,7 +25,8 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const projectQ = useProject(projectId);
   const currentProject = projectQ.data ?? null;
 
-  const isActive = (href: string) => pathname.endsWith(href);
+  const isActive = (href: string) => pathname.includes(`/${href}`);
+
   const projectName = currentProject?.name || (projectQ.isLoading ? "Loading..." : "Project");
 
   return (
@@ -43,12 +44,10 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button className="bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90 text-white px-4">
-              Create workflow
-            </Button>
-            <Button className="bg-slate-800 border border-slate-700 hover:border-teal-500/50 text-gray-300 px-2">
+            <Button className="bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90 text-white px-4">Create New Diagram</Button>
+            {/* <Button className="bg-slate-800 border border-slate-700 hover:border-teal-500/50 text-gray-300 px-2">
               <ChevronDown className="w-4 h-4" />
-            </Button>
+            </Button> */}
           </div>
         </header>
 
@@ -57,17 +56,9 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
             {navigationItems.map((item) => {
               const active = isActive(item.href);
               return (
-                <Link
-                  key={item.href}
-                  href={`/projects/${projectId}/${item.href}`}
-                  className={`py-4 text-sm font-medium relative transition ${
-                    active ? "text-teal-400" : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
+                <Link key={item.href} href={`/projects/${projectId}/${item.href}`} className={`py-4 text-sm font-medium relative transition ${active ? "text-teal-400" : "text-gray-400 hover:text-gray-200"}`}>
                   {item.label}
-                  {active && (
-                    <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-gradient-to-r from-teal-400 to-blue-500 rounded-full" />
-                  )}
+                  {active && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-gradient-to-r from-teal-400 to-blue-500 rounded-full" />}
                 </Link>
               );
             })}

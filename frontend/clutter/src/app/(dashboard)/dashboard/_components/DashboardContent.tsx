@@ -6,6 +6,8 @@ import { AlertCircle } from "lucide-react";
 import ActivitySection from "./ActivitySection";
 import DashboardHeader from "./DashboardHeader";
 import StatsCards from "./StatsCards";
+import { useProjects } from "@/lib/features/projects/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 
 //projects disabled for now due to not ready api feature
 
@@ -18,6 +20,14 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ userData, organization, recentRuns, error }: DashboardContentProps) {
+  const meQ = useMe();
+
+  const token = meQ.data?.token ?? null;
+
+  const projectsQ = useProjects(token);
+  // console.log("ProjectsQ Data:", projectsQ.data);
+  // console.log("all of projectsQ:", projectsQ);
+
   return (
     <div className="px-6 py-12">
       <DashboardHeader userName={userData?.displayName} />
@@ -30,7 +40,12 @@ export default function DashboardContent({ userData, organization, recentRuns, e
         </Alert>
       )}
 
-      <StatsCards projectCount={organization?.total_projects ?? 0} diagramCount={organization?.total_diagrams ?? 0} memberCount={organization?.total_members ?? 0} />
+      <StatsCards
+        projectCount={projectsQ.data?.length ?? 0}
+        // diagramCount={organization?.total_diagrams ?? 0}
+        // need to firgue out the team memebr situation dont quite know how to handle that yet
+        memberCount={organization?.total_members ?? 0}
+      />
 
       {/* <ProjectsSection projects={projects} /> */}
 

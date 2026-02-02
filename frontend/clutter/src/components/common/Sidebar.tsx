@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjects } from "@/lib/features/projects/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
@@ -18,14 +19,19 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
-  //  React Query: user + tenant
+  //  React Query: user + token
   const meQ = useMe();
   const user = meQ.data ?? null;
   const token = user?.token ?? null;
+  const orgsQ = useOrganizations(token);
+  const orgId = orgsQ.data?.[0]?.id ?? null;
 
-  // ✅ React Query: projects (only loads when tenantId exists)
-  const projectsQ = useProjects(token);
+  // React Query: projects (only loads when token exists)
+  const projectsQ = useProjects(token, orgId);
   const projects = projectsQ.data ?? [];
+  // console.log("User Token:", token);
+  // console.log("Organization ID:", orgId);
+  // console.log("Sidebar Projects:", projects);
 
   const navItems = [{ icon: LayoutDashboard, label: "Overview", href: "/dashboard" }];
 
@@ -46,15 +52,15 @@ export default function DashboardSidebar({ className }: SidebarProps) {
     setCollapsed((v) => !v);
   };
 
-  const getProjectIcon = (name: string) => {
-    const n = name.toLowerCase();
-    if (n.includes("web")) return "🌐";
-    if (n.includes("data")) return "📊";
-    if (n.includes("monitor")) return "📈";
-    if (n.includes("api")) return "🔌";
-    if (n.includes("mobile")) return "📱";
-    return "📁";
-  };
+  // const getProjectIcon = (name: string) => {
+  //   const n = name.toLowerCase();
+  //   if (n.includes("web")) return "🌐";
+  //   if (n.includes("data")) return "📊";
+  //   if (n.includes("monitor")) return "📈";
+  //   if (n.includes("api")) return "🔌";
+  //   if (n.includes("mobile")) return "📱";
+  //   return "📁";
+  // };
 
   const getUserInitials = (displayName?: string, email?: string) => {
     if (displayName) {
@@ -129,7 +135,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
                     key={project.projectId}
                     href={`/projects/${project.projectId}/diagrams`}
                     className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-all", pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white")}>
-                    <span className="text-lg flex-shrink-0">{getProjectIcon(project.name)}</span>
+                    {/* <span className="text-lg flex-shrink-0">{getProjectIcon(project.name)}</span> */}
                     <span className="text-sm truncate">{project.name}</span>
                   </Link>
                 ))
@@ -151,7 +157,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
                 href={`/projects/${project.projectId}/diagrams`}
                 onClick={(e) => e.stopPropagation()}
                 className={cn("flex items-center justify-center px-3 py-2 rounded-lg transition-all", pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white")}>
-                <span className="text-lg">{getProjectIcon(project.name)}</span>
+                <span className="text-lg">{project.name}</span>
               </Link>
             ))}
           </div>

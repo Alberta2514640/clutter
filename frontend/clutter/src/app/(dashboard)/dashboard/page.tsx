@@ -22,8 +22,7 @@ export default function DashboardPageClient() {
 
   const projectsQ = useProjects(token);
   const runsQ = useRecentRuns(token);
-
-  // ✅ redirect logic after render
+  //  redirect logic after render
   useEffect(() => {
     if (meQ.isLoading) return;
 
@@ -37,27 +36,14 @@ export default function DashboardPageClient() {
     }
   }, [meQ.isLoading, token, orgQ.isLoading, orgQ.isError, organization, router]);
 
-  const isLoading =
-    meQ.isLoading ||
-    (token ? orgQ.isLoading : false) ||
-    (token ? runsQ.isLoading : false);
+  const isLoading = meQ.isLoading || (token ? orgQ.isLoading : false) || (token ? runsQ.isLoading : false);
 
-  const error =
-    (meQ.isError ? meQ.error : null) ||
-    (orgQ.isError ? orgQ.error : null) ||
-    (runsQ.isError ? runsQ.error : null);
+  const error = (meQ.isError ? meQ.error : null) || (orgQ.isError ? orgQ.error : null) || (runsQ.isError ? runsQ.error : null);
 
   if (isLoading && !meQ.data) return <DashboardLoading />;
 
   // While redirecting (no org), avoid flashing dashboard
   if (token && !orgQ.isLoading && !organization) return <DashboardLoading />;
 
-  return (
-    <DashboardContent
-      userData={meQ.data ?? null}
-      organization={organization}
-      recentRuns={runsQ.data ?? []}
-      error={error ? String(error) : null}
-    />
-  );
+  return <DashboardContent userData={meQ.data ?? null} organization={organization} recentRuns={runsQ.data ?? []} error={error ? String(error) : null} />;
 }

@@ -1,66 +1,98 @@
 import type { Project } from "./types";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-
-let MOCK_PROJECTS: Project[] = [
-  {
-    projectId: "1",
-    name: "Web Application",
-    description: "Production web application with Lambda, API Gateway, and DynamoDB",
-    createdAt: "2025-01-15T10:00:00Z",
-    updatedAt: "2025-01-20T14:30:00Z",
-    memberCount: 3,
-  },
-  {
-    projectId: "2",
-    name: "Data Pipeline",
-    description: "ETL pipeline with S3, Lambda, and Glue",
-    createdAt: "2025-01-10T08:00:00Z",
-    updatedAt: "2025-01-18T16:45:00Z",
-    memberCount: 2,
-  },
-  {
-    projectId: "3",
-    name: "Monitoring Stack",
-    description: "CloudWatch dashboards and alarms",
-    createdAt: "2025-01-05T12:00:00Z",
-    updatedAt: "2025-01-12T09:15:00Z",
-    memberCount: 1,
-  },
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
 export const projectsApi = {
-  // keep signature same as your current hook
-  listByTenant: async (_tenantId: string): Promise<Project[]> => {
-    await sleep(250);
-    return clone(MOCK_PROJECTS);
+  listByToken: async (token: string, organizationId: string): Promise<Project[]> => {
+    if (!token) {
+      throw new Error("Missing auth token");
+    }
+
+    const res = await fetch(`${API_BASE}/project?organizationId=${organizationId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      throw new Error(`Error fetching projects: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return data.projects as Project[];
   },
 
-  getById: async (projectId: string): Promise<Project> => {
-    await sleep(200);
-    const p = MOCK_PROJECTS.find((x) => x.projectId === projectId);
-    if (!p) throw new Error("Project not found");
-    return clone(p);
+  create: async (token: string, payload: { organizationId: string; name: string; description?: string }): Promise<Project> => {
+    if (!token) throw new Error("Missing auth token");
+    if (!payload.organizationId) throw new Error("Missing organizationId");
+    if (!payload.name?.trim()) throw new Error("Missing project name");
+
+    const res = await fetch(`${API_BASE}/project`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId: payload.organizationId,
+        name: payload.name.trim(),
+        description: payload.description?.trim() ?? "",
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Error creating project: ${res.status} ${res.statusText} ${text}`);
+    }
+
+    const data = await res.json();
+
+    const created = (data?.project ?? data) as Project;
+
+    if (!created?.projectId) {
+      console.warn("Create project response missing projectId:", data);
+    }
+
+    return created;
   },
 
-  update: async (projectId: string, data: Partial<Project>): Promise<Project> => {
-    await sleep(250);
-    const idx = MOCK_PROJECTS.findIndex((x) => x.projectId === projectId);
-    if (idx === -1) throw new Error("Project not found");
+  getById: async (token: string, projectId: string): Promise<Project> => {
+    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
 
-    const updated: Project = {
-      ...MOCK_PROJECTS[idx],
-      ...data,
-      updatedAt: new Date().toISOString(),
-    };
+    if (!res.ok) {
+      throw new Error(`Error fetching project: ${res.status} ${res.statusText}`);
+    }
 
-    MOCK_PROJECTS[idx] = updated;
-    return clone(updated);
+    const data = await res.json();
+
+    return data as Project;
   },
 
-  delete: async (projectId: string): Promise<void> => {
-    await sleep(250);
-    MOCK_PROJECTS = MOCK_PROJECTS.filter((x) => x.projectId !== projectId);
+  update: async (projectId: string, data: Partial<Project>, token: string): Promise<Project> => {
+    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Error updating project: ${res.status} ${res.statusText}`);
+    }
+
+    const updatedProject = await res.json();
+    return updatedProject as Project;
+  },
+
+  delete: async (projectId: string, token: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Error deleting project: ${res.status} ${res.statusText}`);
+    }
   },
 };
