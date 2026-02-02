@@ -15,8 +15,10 @@ module "s3" {
 # ECS Fargate Task
 # ================
 
-module "s3" {
+module "fargate" {
   source = "./modules/fargate"
+
+  s3_clutter = module.s3.clutter_bucket_arn
 }
 
 # ================
