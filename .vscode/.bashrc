@@ -7,6 +7,7 @@ source ./.vscode/.aws_credentials
 # Directory aliases
 alias cdapi="cd backend/api"
 alias cdinfra="cd backend/infra"
+alias cdtfdeployer="cd backend/infra/modules/fargate/ecr-scripts/terraform-deployer"
 alias cdinfradev="cd backend/infra-dev"
 
 # Build Go binaries
@@ -28,6 +29,9 @@ alias tfbiaa="gob && tfiaa" # Build, init and apply auto-approve
 alias tfba="gob && tfa"     # Build and apply
 alias tfbaa="gob && tfaa"   # Build and apply auto-approve
 
+# Run Docker build and push to ECR
+alias pushtfdeployerdocker="( cdtfdeployer && ./build-and-push.sh)"
+
 # PRODUCTION
 
 # Terraform commands
@@ -48,3 +52,6 @@ alias tflbia="golb && tfia"   # Build, init and apply
 alias tflbiaa="golb && tfiaa" # Build, init and apply auto-approve
 alias tflba="golb && tfa"     # Build and apply
 alias tflbaa="golb && tfaa"   # Build and apply auto-approve
+
+# Run Docker build and push to ECR
+alias ppushtfdeployerdocker="( cdtfdeployer && ./build-and-push.sh)"
