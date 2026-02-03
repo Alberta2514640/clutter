@@ -12,6 +12,16 @@ module "s3" {
 }
 
 # ================
+# ECS Fargate Task
+# ================
+
+module "fargate" {
+  source = "./modules/fargate"
+
+  s3_clutter = module.s3.clutter_bucket_arn
+}
+
+# ================
 # Lambda Functions
 # ================
 

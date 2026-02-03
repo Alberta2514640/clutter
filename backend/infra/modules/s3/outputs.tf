@@ -1,3 +1,3 @@
-output "bucket_arn" {
+output "clutter_bucket_arn" {
   value = aws_s3_bucket.clutter_bucket.arn
 }
