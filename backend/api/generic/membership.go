@@ -43,7 +43,7 @@ func CheckOrganizationMembershipPSQL(
 	}
 
 	if !userIsMemberOfOrg {
-		return NewForbiddenError(fmt.Sprintf("user with id '%s' does not have access to delete organization with id '%s'", userID, orgID))
+		return NewForbiddenError(fmt.Sprintf("user with id '%s' does not have access to organization with id '%s'", userID, orgID))
 	}
 
 	return nil
