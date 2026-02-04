@@ -22,6 +22,7 @@ export default function DashboardPageClient() {
 
   const projectsQ = useProjects(token);
   const runsQ = useRecentRuns(token);
+  console.log("projectsQ", projectsQ.data?.length);
   //  redirect logic after render
   useEffect(() => {
     if (meQ.isLoading) return;

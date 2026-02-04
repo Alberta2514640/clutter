@@ -1,6 +1,5 @@
 "use client";
 
-import Sidebar from "@/components/common/Sidebar";
 import { Button } from "@/components/ui/button";
 import { useProject, useProjectId } from "@/lib/features/projects/hooks";
 import { ChevronDown, Layers } from "lucide-react";
@@ -31,7 +30,7 @@ export default function ProjectLayout({ children }: ProjectLayoutProps) {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-black via-slate-900 to-teal-900 text-white">
-      <Sidebar />
+      {/* <Sidebar /> */}
       <div className="flex flex-col flex-1">
         <header className="border-b border-slate-800 px-12 py-8 flex items-center justify-between">
           <div className="flex items-center gap-4">

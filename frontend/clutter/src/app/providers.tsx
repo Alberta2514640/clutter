@@ -6,7 +6,7 @@ import * as React from "react";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // ✅ create once per browser session
+  //  create once per browser session
   const [queryClient] = React.useState(
     () =>
       new QueryClient({
@@ -18,7 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             retry: 1,
           },
         },
-      })
+      }),
   );
 
   return (

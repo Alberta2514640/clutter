@@ -19,19 +19,14 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
-  //  React Query: user + token
   const meQ = useMe();
   const user = meQ.data ?? null;
   const token = user?.token ?? null;
   const orgsQ = useOrganizations(token);
   const orgId = orgsQ.data?.[0]?.id ?? null;
 
-  // React Query: projects (only loads when token exists)
   const projectsQ = useProjects(token, orgId);
   const projects = projectsQ.data ?? [];
-  // console.log("User Token:", token);
-  // console.log("Organization ID:", orgId);
-  // console.log("Sidebar Projects:", projects);
 
   const navItems = [{ icon: LayoutDashboard, label: "Overview", href: "/dashboard" }];
 
@@ -51,16 +46,6 @@ export default function DashboardSidebar({ className }: SidebarProps) {
     e.stopPropagation();
     setCollapsed((v) => !v);
   };
-
-  // const getProjectIcon = (name: string) => {
-  //   const n = name.toLowerCase();
-  //   if (n.includes("web")) return "🌐";
-  //   if (n.includes("data")) return "📊";
-  //   if (n.includes("monitor")) return "📈";
-  //   if (n.includes("api")) return "🔌";
-  //   if (n.includes("mobile")) return "📱";
-  //   return "📁";
-  // };
 
   const getUserInitials = (displayName?: string, email?: string) => {
     if (displayName) {
@@ -148,7 +133,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
         {collapsed && (
           <div className="pt-6 space-y-1">
             <div className="flex items-center justify-center px-2 pb-2">
-              <FolderOpen className="text-gray-500 px-0.5" />
+              <FolderOpen className="h-5 w-5 text-gray-500" />
             </div>
 
             {(projectsQ.isLoading ? [] : projects).slice(0, 3).map((project) => (
@@ -156,8 +141,13 @@ export default function DashboardSidebar({ className }: SidebarProps) {
                 key={project.projectId}
                 href={`/projects/${project.projectId}/diagrams`}
                 onClick={(e) => e.stopPropagation()}
-                className={cn("flex items-center justify-center px-3 py-2 rounded-lg transition-all", pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white")}>
-                <span className="text-lg">{project.name}</span>
+                title={project.name} // native tooltip
+                className={cn(
+                  "group flex items-center justify-center rounded-lg transition-all",
+                  "h-10 w-10 mx-auto",
+                  pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white",
+                )}>
+                <span className="text-xs font-semibold">{project.name?.trim().split(/\s+/)[0] ?? "?"}</span>
               </Link>
             ))}
           </div>

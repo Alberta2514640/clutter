@@ -53,7 +53,8 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span className="flex items-center gap-1">
+                    {/* we dont have this data  */}
+                    {/* <span className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
                       {formatDate(project.updatedAt)}
                     </span>
@@ -62,7 +63,7 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
                         <Users className="w-4 h-4" />
                         {project.memberCount}
                       </span>
-                    )}
+                    )} */}
                   </div>
                 </CardContent>
               </Card>

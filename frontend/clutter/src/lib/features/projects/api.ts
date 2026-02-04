@@ -1,98 +1,87 @@
+// lib/features/projects/api.ts
 import type { Project } from "./types";
+
+import type { ApiEnvelope } from "@/lib/features/organization/types"; // or move ApiEnvelope to a shared /lib/api/types
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
-export const projectsApi = {
-  listByToken: async (token: string, organizationId: string): Promise<Project[]> => {
-    if (!token) {
-      throw new Error("Missing auth token");
-    }
+async function apiFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  if (!API_BASE) throw new Error("API_ENDPOINT is not set");
+  if (!token) throw new Error("Missing auth token");
 
-    const res = await fetch(`${API_BASE}/project?organizationId=${organizationId}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-    if (!res.ok) {
-      throw new Error(`Error fetching projects: ${res.statusText}`);
-    }
-    const data = await res.json();
-    return data.projects as Project[];
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed: ${res.status}`);
+  }
+
+  return (await res.json()) as T;
+}
+
+export const projectsApi = {
+  // GET /project?organizationId=...
+
+  listByOrganization: async (token: string, organizationId: string): Promise<Project[]> => {
+    if (!organizationId) throw new Error("Missing organizationId");
+
+    const json = await apiFetch<ApiEnvelope<Project | Project[]> | { projects: Project[] }>(`/project?organizationId=${encodeURIComponent(organizationId)}`, token, { method: "GET" });
+
+    // handle both envelope + legacy shape
+    if ("projects" in json) return json.projects;
+
+    return Array.isArray(json.data) ? json.data : [json.data];
   },
 
-  create: async (token: string, payload: { organizationId: string; name: string; description?: string }): Promise<Project> => {
-    if (!token) throw new Error("Missing auth token");
-    if (!payload.organizationId) throw new Error("Missing organizationId");
-    if (!payload.name?.trim()) throw new Error("Missing project name");
+  // POST /project
+  create: async (token: string, input: { organizationId: string; name: string; description?: string }): Promise<Project> => {
+    if (!input.organizationId) throw new Error("Missing organizationId");
+    if (!input.name?.trim()) throw new Error("Missing project name");
 
-    const res = await fetch(`${API_BASE}/project`, {
+    const json = await apiFetch<ApiEnvelope<Project>>(`/project`, token, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        organizationId: payload.organizationId,
-        name: payload.name.trim(),
-        description: payload.description?.trim() ?? "",
+        organizationId: input.organizationId,
+        name: input.name,
+        description: input.description?.trim() ?? "",
       }),
     });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Error creating project: ${res.status} ${res.statusText} ${text}`);
-    }
-
-    const data = await res.json();
-
-    const created = (data?.project ?? data) as Project;
-
-    if (!created?.projectId) {
-      console.warn("Create project response missing projectId:", data);
-    }
-
-    return created;
+    return json.data;
   },
 
+  // GET /project/:projectId  (adjust path if your backend is /projects/:id)
   getById: async (token: string, projectId: string): Promise<Project> => {
-    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
+    if (!projectId) throw new Error("Missing projectId");
 
-    if (!res.ok) {
-      throw new Error(`Error fetching project: ${res.status} ${res.statusText}`);
-    }
+    const json = await apiFetch<ApiEnvelope<Project>>(`/project/${projectId}`, token, { method: "GET" });
 
-    const data = await res.json();
-
-    return data as Project;
+    return json.data;
   },
 
-  update: async (projectId: string, data: Partial<Project>, token: string): Promise<Project> => {
-    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+  // PUT /project/:projectId
+  update: async (token: string, projectId: string, input: Partial<Project>): Promise<Project> => {
+    if (!projectId) throw new Error("Missing projectId");
+
+    const json = await apiFetch<ApiEnvelope<Project>>(`/project/${projectId}`, token, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
+      body: JSON.stringify(input),
     });
 
-    if (!res.ok) {
-      throw new Error(`Error updating project: ${res.status} ${res.statusText}`);
-    }
-
-    const updatedProject = await res.json();
-    return updatedProject as Project;
+    return json.data;
   },
 
-  delete: async (projectId: string, token: string): Promise<void> => {
-    const res = await fetch(`${API_BASE}/projects/${projectId}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+  // DELETE /project/:projectId
+  delete: async (token: string, projectId: string): Promise<void> => {
+    if (!projectId) throw new Error("Missing projectId");
 
-    if (!res.ok) {
-      throw new Error(`Error deleting project: ${res.status} ${res.statusText}`);
-    }
+    await apiFetch<ApiEnvelope<unknown>>(`/project/${projectId}`, token, { method: "DELETE" });
   },
 };

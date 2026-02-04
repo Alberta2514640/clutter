@@ -101,8 +101,8 @@ export default function NewProjectPage() {
             {submitting ? "Creating..." : "Create Project"}
           </Button>
 
-          <button type="button" onClick={() => router.push("/projects")} className="w-full text-sm text-gray-400 hover:text-gray-200">
-            Back to projects
+          <button type="button" onClick={() => router.push("/dashboard")} className="w-full text-sm text-gray-400 hover:text-gray-200">
+            Back to Dashboard
           </button>
 
           {/* Debug helpers */}
