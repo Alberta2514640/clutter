@@ -1,27 +1,39 @@
 "use client";
 
-import { useDiagramActions, useDiagramState } from "@/lib/stores/diagramStore";
 import { Settings, X } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
-export default function ConfigPanel() {
-  const { nodes } = useDiagramState();
-  const { updateNode } = useDiagramActions();
+import type { DiagramNode } from "@/lib/features/diagram/types";
+import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore"; // <-- you moved it here
+
+export default function ConfigPanel({ diagramId }: { diagramId: string }) {
+  const editor = useDiagramEditor(diagramId);
+  const { setNodes } = useDiagramEditorActions();
+
+  const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
 
   const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
   const showContent = !!selectedNode;
 
+  const patchSelectedNode = useCallback(
+    (patch: (node: DiagramNode) => DiagramNode) => {
+      if (!selectedNode) return;
+
+      const next = nodes.map((n) => (n.id === selectedNode.id ? patch(n) : n));
+      setNodes(diagramId, next);
+    },
+    [diagramId, nodes, selectedNode, setNodes]
+  );
+
   const handleLabelChange = (newLabel: string) => {
-    if (!selectedNode) return;
-    updateNode(selectedNode.id, {
-      ...selectedNode,
-      data: { ...selectedNode.data, label: newLabel },
-    });
+    patchSelectedNode((n) => ({
+      ...n,
+      data: { ...n.data, label: newLabel },
+    }));
   };
 
   const handleClose = () => {
-    if (!selectedNode) return;
-    updateNode(selectedNode.id, { ...selectedNode, selected: false });
+    patchSelectedNode((n) => ({ ...n, selected: false }));
   };
 
   return (
@@ -29,25 +41,20 @@ export default function ConfigPanel() {
       className={[
         "relative h-full shrink-0 border-l border-slate-800 bg-slate-950/70 backdrop-blur",
         "transition-[width] duration-200",
-        showContent ? "w-[200px]" : "w-[5px]",
+        showContent ? "w-[250px]" : "w-[5px]",
       ].join(" ")}
     >
-      {/* collapsed = tiny rail only */}
       {!showContent ? null : (
         <>
-          {/* Header like Palette */}
+          {/* Header */}
           <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-800 px-3">
             <div className="flex items-center gap-2 min-w-0">
               <div className="grid h-8 w-8 place-items-center rounded-lg border border-slate-800 bg-slate-900">
                 <Settings className="h-4 w-4 text-slate-300" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-100">
-                  Config
-                </div>
-                <div className="truncate text-[11px] text-slate-400">
-                  Node Inspector
-                </div>
+                <div className="truncate text-sm font-semibold text-slate-100">Config</div>
+                <div className="truncate text-[11px] text-slate-400">Node Inspector</div>
               </div>
             </div>
 
@@ -55,6 +62,7 @@ export default function ConfigPanel() {
               onClick={handleClose}
               className="grid h-8 w-8 place-items-center rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 transition"
               title="Deselect node"
+              type="button"
             >
               <X className="h-4 w-4 text-slate-300" />
             </button>
@@ -78,9 +86,7 @@ export default function ConfigPanel() {
 
               {/* Label Input */}
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Label
-                </label>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Label</label>
                 <input
                   type="text"
                   value={selectedNode!.data.label}
@@ -91,34 +97,24 @@ export default function ConfigPanel() {
 
               {/* Position Info */}
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Position
-                </label>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Position</label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
                     <div className="text-xs text-gray-400">X</div>
-                    <div className="text-sm font-medium text-white">
-                      {Math.round(selectedNode!.position.x)}
-                    </div>
+                    <div className="text-sm font-medium text-white">{Math.round(selectedNode!.position.x)}</div>
                   </div>
                   <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
                     <div className="text-xs text-gray-400">Y</div>
-                    <div className="text-sm font-medium text-white">
-                      {Math.round(selectedNode!.position.y)}
-                    </div>
+                    <div className="text-sm font-medium text-white">{Math.round(selectedNode!.position.y)}</div>
                   </div>
                 </div>
               </div>
 
               {/* Node ID */}
               <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Node ID
-                </label>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Node ID</label>
                 <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                  <div className="truncate text-xs text-gray-400">
-                    {selectedNode!.id}
-                  </div>
+                  <div className="truncate text-xs text-gray-400">{selectedNode!.id}</div>
                 </div>
               </div>
             </div>

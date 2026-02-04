@@ -5,23 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useProjectId } from "@/lib/features/projects/hooks";
 import { Layers, Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
 import { useDeleteProject, useProject, useUpdateProject } from "@/lib/features/projects/hooks";
 import { useProjectSettingsDraft } from "@/lib/features/projects/uiStore";
+import { useMe } from "@/lib/features/user/hooks";
 
 export default function ProjectSettingsPage() {
   const router = useRouter();
-  const projectId = useProjectId();
+  const { projectId } = useParams<{ projectId: string }>();
 
-  const projectQ = useProject(projectId);
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
+
+
+  //there is an error in this api call is giving CORS bad
+  const projectQ = useProject(token, projectId);
   const updateM = useUpdateProject();
   const deleteM = useDeleteProject();
 
   const currentProject = projectQ.data ?? null;
+
+  console.log(projectQ.data)
 
   // draft store instead of local state
   const draft = useProjectSettingsDraft((s) => s.draft);
@@ -29,13 +36,12 @@ export default function ProjectSettingsPage() {
   const setName = useProjectSettingsDraft((s) => s.setName);
   const setDescription = useProjectSettingsDraft((s) => s.setDescription);
 
-  // ✅ initialize draft only when switching projects / first load
   useEffect(() => {
     if (!currentProject) return;
-    if (draft.projectId === currentProject.projectId) return;
+    if (draft.projectId === currentProject.id) return;
 
-    startDraft(currentProject.projectId, currentProject.name, currentProject.description || "");
-  }, [currentProject?.projectId]); // ok: external store sync when project changes
+    startDraft(currentProject.id, currentProject.name, currentProject.description || "");
+  }, [currentProject?.id]); // ok: external store sync when project changes
 
   const isSaving = updateM.isPending || deleteM.isPending;
 
@@ -60,16 +66,16 @@ export default function ProjectSettingsPage() {
 
   const handleCancel = () => {
     if (!currentProject) return;
-    startDraft(currentProject.projectId, currentProject.name, currentProject.description || "");
+    startDraft(currentProject.id, currentProject.name, currentProject.description || "");
   };
 
   const handleDelete = async () => {
-    if (!projectId) return;
+    if (!projectId || !currentProject) return;
 
     const confirmed = window.confirm(`Are you sure you want to delete "${currentProject?.name}"? This action cannot be undone.`);
 
     if (confirmed) {
-      await deleteM.mutateAsync({ projectId });
+      await deleteM.mutateAsync({ projectId, organizationId: currentProject.organizationId });
       router.push("/dashboard");
     }
   };
@@ -101,13 +107,13 @@ export default function ProjectSettingsPage() {
             <Layers className="w-5 h-5" />
           </Button>
 
-          <Input className="bg-slate-800 border-slate-700 text-white" value={draft.projectId === currentProject.projectId ? draft.name : ""} onChange={(e) => setName(e.target.value)} disabled={isSaving} />
+          <Input className="bg-slate-800 border-slate-700 text-white" value={draft.projectId === currentProject.id ? draft.name : ""} onChange={(e) => setName(e.target.value)} disabled={isSaving} />
         </div>
       </div>
 
       <div className="space-y-3">
         <Label className="text-gray-300">Description</Label>
-        <Textarea className="bg-slate-800 border-slate-700 text-white" rows={3} value={draft.projectId === currentProject.projectId ? draft.description : ""} onChange={(e) => setDescription(e.target.value)} disabled={isSaving} />
+        <Textarea className="bg-slate-800 border-slate-700 text-white" rows={3} value={draft.projectId === currentProject.id ? draft.description : ""} onChange={(e) => setDescription(e.target.value)} disabled={isSaving} />
       </div>
 
       {hasChanges && (

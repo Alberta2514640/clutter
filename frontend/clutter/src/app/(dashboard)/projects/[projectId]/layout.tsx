@@ -1,10 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useProject, useProjectId } from "@/lib/features/projects/hooks";
+import { useProject } from "@/lib/features/projects/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 import { ChevronDown, Layers } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 
 interface ProjectLayoutProps {
   children: React.ReactNode;
@@ -19,14 +20,17 @@ const navigationItems = [
 
 export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const pathname = usePathname();
-  const projectId = useProjectId();
+  const { projectId } = useParams<{ projectId: string }>();
 
-  const projectQ = useProject(projectId);
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
+  //there is an error in this api call is giving CORS bad
+  const projectQ = useProject(token, projectId);
   const currentProject = projectQ.data ?? null;
 
   const isActive = (href: string) => pathname.includes(`/${href}`);
 
-  const projectName = currentProject?.name || (projectQ.isLoading ? "Loading..." : "Project");
+  const projectName = currentProject?.name || (projectQ.isLoading ? "Loading..." : " Not found");
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-black via-slate-900 to-teal-900 text-white">

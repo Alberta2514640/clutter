@@ -1,81 +1,63 @@
+// lib/features/projects/hooks.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-
 import { projectsApi } from "./api";
 import { projectKeys } from "./keys";
 import type { CreateProjectInput, Project, UpdateProjectInput } from "./types";
 
 export const useProjects = (token?: string | null, organizationId?: string | null) => {
   return useQuery({
-    // key should represent the resource: projects for org
-    queryKey: organizationId ? projectKeys.list(organizationId) : ["projects", "list", "no-org"],
+    queryKey: organizationId ? projectKeys.list(organizationId) : projectKeys.lists(),
     queryFn: () => projectsApi.listByOrganization(token as string, organizationId as string),
     enabled: !!token && !!organizationId,
     staleTime: 60 * 1000,
   });
 };
 
-export function useProjectId() {
-  const params = useParams();
-  const raw = params?.projectId;
-  return (Array.isArray(raw) ? raw[0] : raw) ?? null;
-}
-
 export const useProject = (token?: string | null, projectId?: string | null) => {
   return useQuery({
-    queryKey: projectId ? projectKeys.byId(projectId) : ["projects", "byId", "none"],
+    queryKey: projectId ? projectKeys.detail(projectId) : projectKeys.details(),
     queryFn: () => projectsApi.getById(token as string, projectId as string),
     enabled: !!token && !!projectId,
     staleTime: 60 * 1000,
   });
 };
 
-export const useCreateProject = () => {
+export const useCreateProject = (token?: string | null) => {
   const qc = useQueryClient();
-
   return useMutation({
-    mutationFn: async (input: { token?: string | null } & CreateProjectInput) => {
-      return projectsApi.create(input.token as string, {
-        organizationId: input.organizationId,
-        name: input.name,
-        description: input.description,
-      });
-    },
-
+    mutationFn: (input: CreateProjectInput) => projectsApi.create(token as string, input),
     onSuccess: (created) => {
-      qc.setQueryData(projectKeys.byId(created.id), created);
-      qc.invalidateQueries({ queryKey: projectKeys.list(created.organizationId) });
+      qc.setQueryData<Project[]>(projectKeys.list(created.organizationId), (prev) => [created, ...(prev ?? [])]);
+      qc.setQueryData(projectKeys.detail(created.id), created);
     },
   });
 };
 
-export const useUpdateProject = () => {
+export const useUpdateProject = (token?: string | null) => {
   const qc = useQueryClient();
-
   return useMutation({
-    mutationFn: async (input: { token?: string | null; projectId: string; data: UpdateProjectInput }) => {
-      return projectsApi.update(input.token as string, input.projectId, input.data);
-    },
-
+    mutationFn: (input: { projectId: string; data: UpdateProjectInput }) =>
+      projectsApi.update(token as string, input.projectId, input.data),
     onSuccess: (updated) => {
-      qc.setQueryData(projectKeys.byId(updated.id), updated);
-      qc.invalidateQueries({ queryKey: projectKeys.list(updated.organizationId) });
+      qc.setQueryData(projectKeys.detail(updated.id), updated);
+      qc.setQueryData<Project[]>(projectKeys.list(updated.organizationId), (prev) =>
+        (prev ?? []).map((p) => (p.id === updated.id ? updated : p))
+      );
     },
   });
 };
 
-export const useDeleteProject = () => {
+export const useDeleteProject = (token?: string | null) => {
   const qc = useQueryClient();
-
   return useMutation({
-    mutationFn: async (input: { token?: string | null; projectId: string }) => {
-      return projectsApi.delete(input.token as string, input.projectId);
-    },
-
-    onSuccess: (_data, vars) => {
-      qc.removeQueries({ queryKey: projectKeys.byId(vars.projectId) });
-      // we don’t know orgId here unless you pass it in; so invalidate all project lists
-      qc.invalidateQueries({ queryKey: ["projects", "list"] });
+    mutationFn: (input: { projectId: string; organizationId: string }) =>
+      projectsApi.delete(token as string, input.projectId),
+    onSuccess: (_void, vars) => {
+      qc.removeQueries({ queryKey: projectKeys.detail(vars.projectId) });
+      qc.setQueryData<Project[]>(projectKeys.list(vars.organizationId), (prev) =>
+        (prev ?? []).filter((p) => p.id !== vars.projectId)
+      );
     },
   });
 };

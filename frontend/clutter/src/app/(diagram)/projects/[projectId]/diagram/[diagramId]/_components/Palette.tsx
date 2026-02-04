@@ -1,10 +1,14 @@
 "use client";
 
-import type { PaletteItem } from "@/lib/stores/diagramStore";
 import { ChevronLeft, ChevronRight, Layers } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const DND_MIME = "application/x-palette-item";
+
+export type PaletteItem = {
+  label: string;
+  img: string;
+};
 
 type Section = { title: string; items: PaletteItem[] };
 
