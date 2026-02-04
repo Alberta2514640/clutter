@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/cloudformation/stack-url-generator/internal"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -157,12 +158,16 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
+	// Remove spaces and single quotes for use in stack name
+	safeOrgName := strings.ReplaceAll(organizationName, " ", "")
+	safeOrgName = strings.ReplaceAll(safeOrgName, "'", "")
+
 	// Define stack variables
 	templateUrl := os.Getenv("CLOUDFORMATION_TEMPLATE_URL")
 	clutterAccountId := os.Getenv("CLUTTER_ACCOUNT_ID")
 	uniqueId := internal.RandomID(8)
 	// Stack name has format of: Clutter-<organizationName>-<accountName>-TerraformDeployerRoleStack-<uniqueId>
-	stackName := fmt.Sprintf("Clutter-%s-%s-TerraformDeployerRoleStack-%s", organizationName, accountName, uniqueId)
+	stackName := fmt.Sprintf("Clutter-%s-%s-TerraformDeployerRoleStack-%s", safeOrgName, accountName, uniqueId)
 	externalId := uuid.NewString()
 
 	cloudformationStackQueryParams := map[string]string{
@@ -178,8 +183,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Insert AWS IAM Role details into DB
 	insertQuery := `
 	INSERT INTO public.aws_account_access_roles
-	(id, organization_id, account_name, external_id, created_by)
-	VALUES ($1, $2, $3, $4, $5)
+	(id, organization_id, unique_id, account_name, external_id, created_by)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
 	recordId := uuid.New()
@@ -187,6 +192,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	_, err = conn.Exec(ctx, insertQuery,
 		recordId,
 		organizationId,
+		uniqueId,
 		accountName,
 		externalId,
 		userId,
