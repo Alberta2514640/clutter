@@ -192,7 +192,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	if envVarMissing {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "the following required environment variables are missing",
+			"message": "the following required environment variables are missing on the Lambda function",
 			"missing": missingEnvVars,
 		})
 	}
