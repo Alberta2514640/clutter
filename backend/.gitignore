@@ -9,6 +9,9 @@
 /infra-dev
 /tfstate-infra-dev
 
+# backend needs to be modified for dev and prod so will gitignore for now
+*/backend.tf
+
 # Deployment folder containing binary and zip
 **/deploy
 
