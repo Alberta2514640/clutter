@@ -1,76 +1,86 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { useProject } from "@/lib/features/projects/hooks";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useMe } from "@/lib/features/user/hooks";
-import { ChevronDown, Layers } from "lucide-react";
-import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { useParams } from "next/navigation";
+import { ProjectHeader } from "./_components/ProjectHeader";
+import { ProjectNav } from "./_components/ProjectNav";
+import { ProjectProvider, useProjectContext } from "./_contexts/ProjectContext";
 
 interface ProjectLayoutProps {
   children: React.ReactNode;
 }
 
-const navigationItems = [
-  { label: "Diagrams", href: "diagrams" },
-  { label: "Credentials", href: "credentials" },
-  { label: "Variables", href: "variables" },
-  { label: "Settings", href: "settings" },
-];
+/**
+ * Inner layout component that uses the project context
+ */
+function ProjectLayoutContent({ children }: ProjectLayoutProps) {
+  const { isLoading, hasError, error, project } = useProjectContext();
+  
+  return (
+    <div className="flex flex-col flex-1">
+      <ProjectHeader />
+      <ProjectNav />
+      
+      <main className="flex-1 px-12 py-8">
+        {/* Loading state */}
+        {isLoading && !project && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-teal-400" />
+          </div>
+        )}
+        
+        {/* Error state */}
+        {hasError && !project && (
+          <Alert className="bg-red-900/20 border-red-800">
+            <AlertDescription>
+              Failed to load project: {String(error)}
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {/* Content */}
+        {!isLoading && project && children}
+        
+        {/* Not found state */}
+        {!isLoading && !project && !hasError && (
+          <div className="flex items-center justify-center py-12 text-gray-400">
+            Project not found
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
 
-///this whole page component is a whole mess we need to change it / organized it 
+/**
+ * Main layout component that provides the project context
+ */
 export default function ProjectLayout({ children }: ProjectLayoutProps) {
-  const pathname = usePathname();
-  const { projectId } = useParams<{ projectId: string }>();
+  const params = useParams<{ projectId: string }>();
+  const projectId = params.projectId;
 
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
-  //there is an error in this api call is giving CORS bad
-  const projectQ = useProject(token, projectId);
-  const currentProject = projectQ.data ?? null;
 
-  const isActive = (href: string) => pathname.includes(`/${href}`);
-
-  const projectName = currentProject?.name || (projectQ.isLoading ? "Loading..." : " Not found");
-
+  const orgQ = useOrganizations(token);
+  const organizationId = orgQ.data?.[0].id ?? null;
+  
+  if (!organizationId || !projectId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-gray-400">No project ID provided</p>
+      </div>
+    );
+  }
+  
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-black via-slate-900 to-teal-900 text-white">
-      {/* <Sidebar /> */}
-      <div className="flex flex-col flex-1">
-        <header className="border-b border-slate-800 px-12 py-8 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-blue-600 p-[2px]">
-              <div className="w-full h-full flex items-center justify-center rounded-2xl bg-slate-900">
-                <Layers className="w-6 h-6 text-teal-300" />
-              </div>
-            </div>
-            <h1 className="text-2xl font-semibold">{projectName}</h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button className="bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90 text-white px-4">Create New Diagram</Button>
-            {/* <Button className="bg-slate-800 border border-slate-700 hover:border-teal-500/50 text-gray-300 px-2">
-              <ChevronDown className="w-4 h-4" />
-            </Button> */}
-          </div>
-        </header>
-
-        <nav className="px-12 border-b border-slate-800">
-          <div className="flex gap-8">
-            {navigationItems.map((item) => {
-              const active = isActive(item.href);
-              return (
-                <Link key={item.href} href={`/projects/${projectId}/${item.href}`} className={`py-4 text-sm font-medium relative transition ${active ? "text-teal-400" : "text-gray-400 hover:text-gray-200"}`}>
-                  {item.label}
-                  {active && <span className="absolute left-0 right-0 -bottom-px h-[2px] bg-gradient-to-r from-teal-400 to-blue-500 rounded-full" />}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-
-        <main className="flex-1 px-12 py-8">{children}</main>
-      </div>
+      <ProjectProvider organizationId={organizationId} projectId={projectId}>
+        <ProjectLayoutContent>{children}</ProjectLayoutContent>
+      </ProjectProvider>
     </div>
   );
 }

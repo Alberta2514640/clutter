@@ -3,33 +3,21 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-
-///this whole page component is a whole mess we need to change it / organized it 
-export default function ProjectIndexRedirect() {
-  const { projectId } = useParams<{ projectId: string }>();
+/**
+ * Redirects /projects/[projectId] to /projects/[projectId]/diagrams
+ * This is the default landing page for a project
+ */
+export default function ProjectIndexPage() {
+  const params = useParams<{ projectId: string }>();
   const router = useRouter();
-
+  const projectId = params.projectId;
+  
   useEffect(() => {
-    if (!projectId) return;
-    router.replace(`/projects/${projectId}/diagrams`);
+    if (projectId) {
+      router.replace(`/projects/${projectId}/diagrams`);
+    }
   }, [projectId, router]);
-
+  
+  // No UI needed - immediate redirect
   return null;
 }
-
-// "use client";
-
-// import { useParams, useRouter } from "next/navigation";
-// import { useEffect } from "react";
-
-// export default function ProjectRedirect() {
-//   const params = useParams();
-//   const router = useRouter();
-//   const projectId = params.projectId as string;
-
-//   useEffect(() => {
-//     router.replace(`/projects/${projectId}/diagrams`);
-//   }, [projectId, router]);
-
-//   return null; // Or a loading spinner
-// }

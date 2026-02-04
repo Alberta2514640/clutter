@@ -3,12 +3,12 @@
 import { Button } from "@/components/ui/button";
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjects } from "@/lib/features/projects/hooks";
-import { useMe } from "@/lib/features/user/hooks";
+import { useLogout, useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
-import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, Plus, Settings, Sparkles } from "lucide-react";
+import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, LogOut, Plus, Settings, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface SidebarProps {
@@ -16,8 +16,11 @@ interface SidebarProps {
 }
 
 export default function DashboardSidebar({ className }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const logout = useLogout();
+
 
   const meQ = useMe();
   const user = meQ.data ?? null;
@@ -55,6 +58,13 @@ export default function DashboardSidebar({ className }: SidebarProps) {
     }
     if (email) return email.slice(0, 2).toUpperCase();
     return "??";
+  };
+
+  const handleLogout = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    logout();
+    router.push("/login");
+    router.refresh();
   };
 
   return (
@@ -171,6 +181,26 @@ export default function DashboardSidebar({ className }: SidebarProps) {
             </Link>
           );
         })}
+
+        {(() => {
+          const Icon = LogOut;
+          const isActive = false;
+
+          return (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all",
+                isActive ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/50 hover:text-white",
+                collapsed && "justify-center"
+              )}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && <span className="text-sm">Logout</span>}
+            </button>
+          );
+        })()}
 
         {/* User Profile */}
 

@@ -42,23 +42,33 @@ export const projectsApi = {
     return json.data;
   },
 
-  // GET /project/:projectId
-  getById: async (token: string, projectId: string): Promise<Project> => {
-    const json = await apiFetch<ApiEnvelope<Project>>(`/project/${projectId}`, token, { method: "GET" });
+  // GET /project?organizationId=...&projectId=...
+  getById: async (token: string, organizationId: string, projectId: string): Promise<Project> => {
+    const json = await apiFetch<ApiEnvelope<Project>>(
+      `/project?organizationId=${encodeURIComponent(organizationId)}&projectId=${encodeURIComponent(projectId)}`,
+      token,
+      { method: "GET" }
+    );
+
     return json.data;
   },
 
-  // PUT /project/:projectId
+  // PUT /project?projectId=...
   update: async (token: string, projectId: string, input: UpdateProjectInput): Promise<Project> => {
-    const json = await apiFetch<ApiEnvelope<Project>>(`/project/${projectId}`, token, {
+    const json = await apiFetch<ApiEnvelope<Project>>(`/project?projectId=${encodeURIComponent(projectId)}`, token, {
       method: "PUT",
       body: JSON.stringify(input),
     });
+
     return json.data;
   },
 
-  // DELETE /project/:projectId
-  delete: async (token: string, projectId: string): Promise<void> => {
-    await apiFetch<ApiEnvelope<unknown>>(`/project/${projectId}`, token, { method: "DELETE" });
+  // DELETE /project?organizationId=...&projectId=...
+  delete: async (token: string, organizationId: string, projectId: string): Promise<void> => {
+    await apiFetch<ApiEnvelope<unknown>>(
+      `/project?organizationId=${encodeURIComponent(organizationId)}&projectId=${encodeURIComponent(projectId)}`,
+      token,
+      { method: "DELETE" }
+    );
   },
 };

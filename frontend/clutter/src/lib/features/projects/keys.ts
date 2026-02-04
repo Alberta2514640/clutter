@@ -6,5 +6,5 @@ export const projectKeys = {
   list: (organizationId: string) => [...projectKeys.lists(), organizationId] as const,
   // single project
   details: () => [...projectKeys.all, "detail"] as const,
-  detail: (projectId: string) => [...projectKeys.details(), projectId] as const,
+  detail: (organizationId: string, projectId: string) => [...projectKeys.details(), organizationId, projectId] as const,
 };
