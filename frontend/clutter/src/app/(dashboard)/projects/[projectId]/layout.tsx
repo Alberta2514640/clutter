@@ -18,6 +18,7 @@ const navigationItems = [
   { label: "Settings", href: "settings" },
 ];
 
+///this whole page component is a whole mess we need to change it / organized it 
 export default function ProjectLayout({ children }: ProjectLayoutProps) {
   const pathname = usePathname();
   const { projectId } = useParams<{ projectId: string }>();

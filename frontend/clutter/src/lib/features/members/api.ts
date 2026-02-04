@@ -1,19 +1,10 @@
 // lib/features/members/api.ts
+import type { UserData } from "@/lib/features/user/types"; // adjust path
 import type { AvailableUser, OrgMember } from "./types";
 
-// --- Mock data (members-only for now) ---
-let MOCK_MEMBERS: OrgMember[] = [
-  {
-    id: "m1",
-    userId: "demo_user_001",
-    name: "Hamza Amar",
-    email: "hamza.amar@ucalgary.ca",
-    role: "Project Admin",
-  },
-];
+let MOCK_MEMBERS: OrgMember[] = [];
 
 const MOCK_AVAILABLE_USERS: AvailableUser[] = [
-  { id: "2", name: "Santiago Fuentes", email: "santiago@ucalgary.ca" },
   { id: "3", name: "Alice Johnson", email: "alice@ucalgary.ca" },
   { id: "4", name: "Bob Smith", email: "bob@ucalgary.ca" },
 ];
@@ -21,7 +12,42 @@ const MOCK_AVAILABLE_USERS: AvailableUser[] = [
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+function ensureAvailableUser(user: AvailableUser) {
+  const exists = MOCK_AVAILABLE_USERS.some((u) => u.id === user.id);
+  if (!exists) MOCK_AVAILABLE_USERS.unshift(user);
+}
+
 export const membersApi = {
+  bootstrapWithMe: async (me: UserData | null | undefined): Promise<void> => {
+    if (!me?.userId) return;
+
+    // Ensure "me" is selectable in the "available users" list too
+    ensureAvailableUser({
+      id: me.userId,
+      name: me.displayName || me.email,
+      email: me.email,
+    });
+
+    // Ensure "me" exists as a member
+    const already = MOCK_MEMBERS.some((m) => m.userId === me.userId);
+    if (already) return;
+
+    MOCK_MEMBERS = [
+      {
+        id: `m_${me.userId}`, // stable, prevents dupes
+        userId: me.userId,
+        name: me.displayName || me.email,
+        email: me.email,
+        role: "Project Admin",
+      },
+      ...MOCK_MEMBERS,
+    ];
+  },
+
+  reset: async (): Promise<void> => {
+    MOCK_MEMBERS = [];
+  },
+
   list: async (): Promise<OrgMember[]> => {
     await sleep(250);
     return clone(MOCK_MEMBERS);

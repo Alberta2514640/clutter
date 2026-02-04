@@ -3,6 +3,8 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+
+///this whole page component is a whole mess we need to change it / organized it 
 export default function ProjectIndexRedirect() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
