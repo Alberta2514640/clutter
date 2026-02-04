@@ -1,15 +1,15 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Organization } from "@/lib/features/organization/types";
+import { useProjects } from "@/lib/features/projects/hooks";
 import type { Run } from "@/lib/features/runs/types";
+import { useMe } from "@/lib/features/user/hooks";
 import type { UserData } from "@/lib/features/user/types";
 import { AlertCircle } from "lucide-react";
 import ActivitySection from "./ActivitySection";
 import DashboardHeader from "./DashboardHeader";
+import ProjectsSection from "./ProjectSection";
 import StatsCards from "./StatsCards";
-import { useProjects } from "@/lib/features/projects/hooks";
-import { useMe } from "@/lib/features/user/hooks";
 
-//projects disabled for now due to not ready api feature
 
 //runs is a placeholder for now it should be changed in the near future
 interface DashboardContentProps {
@@ -24,9 +24,8 @@ export default function DashboardContent({ userData, organization, recentRuns, e
 
   const token = meQ.data?.token ?? null;
 
-  const projectsQ = useProjects(token);
-  // console.log("ProjectsQ Data:", projectsQ.data);
-  // console.log("all of projectsQ:", projectsQ);
+  const projectsQ = useProjects(token, organization?.id);
+  const projects = projectsQ.data ?? [];
 
   return (
     <div className="px-6 py-12">
@@ -42,13 +41,12 @@ export default function DashboardContent({ userData, organization, recentRuns, e
 
       <StatsCards
         projectCount={projectsQ.data?.length ?? 0}
-        // diagramCount={organization?.total_diagrams ?? 0}
+        diagramCount={organization?.total_diagrams ?? 0}
         // need to firgue out the team memebr situation dont quite know how to handle that yet
         memberCount={organization?.total_members ?? 0}
       />
 
-      {/* <ProjectsSection projects={projects} /> */}
-
+      <ProjectsSection projects={projects} />
       <ActivitySection runs={recentRuns} />
     </div>
   );

@@ -117,9 +117,9 @@ export default function DashboardSidebar({ className }: SidebarProps) {
               ) : (
                 projects.map((project) => (
                   <Link
-                    key={project.projectId}
-                    href={`/projects/${project.projectId}/diagrams`}
-                    className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-all", pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white")}>
+                    key={project.id}
+                    href={`/projects/${project.id}/diagrams`}
+                    className={cn("flex items-center gap-3 px-3 py-2 rounded-lg transition-all", pathname.includes(`/projects/${project.id}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white")}>
                     {/* <span className="text-lg flex-shrink-0">{getProjectIcon(project.name)}</span> */}
                     <span className="text-sm truncate">{project.name}</span>
                   </Link>
@@ -138,14 +138,14 @@ export default function DashboardSidebar({ className }: SidebarProps) {
 
             {(projectsQ.isLoading ? [] : projects).slice(0, 3).map((project) => (
               <Link
-                key={project.projectId}
-                href={`/projects/${project.projectId}/diagrams`}
+                key={project.id}
+                href={`/projects/${project.id}/diagrams`}
                 onClick={(e) => e.stopPropagation()}
                 title={project.name} // native tooltip
                 className={cn(
                   "group flex items-center justify-center rounded-lg transition-all",
                   "h-10 w-10 mx-auto",
-                  pathname.includes(`/projects/${project.projectId}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white",
+                  pathname.includes(`/projects/${project.id}`) ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/30 hover:text-white",
                 )}>
                 <span className="text-xs font-semibold">{project.name?.trim().split(/\s+/)[0] ?? "?"}</span>
               </Link>

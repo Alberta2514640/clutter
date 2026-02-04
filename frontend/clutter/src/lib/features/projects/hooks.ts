@@ -43,7 +43,7 @@ export const useCreateProject = () => {
     },
 
     onSuccess: (created) => {
-      qc.setQueryData(projectKeys.byId(created.projectId), created);
+      qc.setQueryData(projectKeys.byId(created.id), created);
       qc.invalidateQueries({ queryKey: projectKeys.list(created.organizationId) });
     },
   });
@@ -58,7 +58,7 @@ export const useUpdateProject = () => {
     },
 
     onSuccess: (updated) => {
-      qc.setQueryData(projectKeys.byId(updated.projectId), updated);
+      qc.setQueryData(projectKeys.byId(updated.id), updated);
       qc.invalidateQueries({ queryKey: projectKeys.list(updated.organizationId) });
     },
   });

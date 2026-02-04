@@ -1,10 +1,11 @@
 export interface Project {
-  projectId: string;
+  id: string;
   organizationId: string;
   creatorId: string;
   name: string;
   description: string;
   createdAt: string;
+  createdBy: string;
   // memberCount?: number;
 }
 

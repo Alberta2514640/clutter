@@ -98,7 +98,6 @@ export default function OrganizationManagePage() {
 
                 await deleteOrg.mutateAsync(organization.id);
 
-                // ✅ log out + go home with Next router
                 logout();
                 router.replace("/"); // replace avoids back button going to deleted org page
                 router.refresh();    // optional: revalidate server components if any

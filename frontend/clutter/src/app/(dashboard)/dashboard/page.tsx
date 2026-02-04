@@ -7,7 +7,6 @@ import { useOrganizations } from "@/lib/features/organization/hooks";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
 
-import { useProjects } from "@/lib/features/projects/hooks";
 import { useRecentRuns } from "@/lib/features/runs/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 
@@ -20,9 +19,7 @@ export default function DashboardPageClient() {
   const orgQ = useOrganizations(token);
   const organization = orgQ.data?.[0] ?? null;
 
-  const projectsQ = useProjects(token);
   const runsQ = useRecentRuns(token);
-  console.log("projectsQ", projectsQ.data?.length);
   //  redirect logic after render
   useEffect(() => {
     if (meQ.isLoading) return;
