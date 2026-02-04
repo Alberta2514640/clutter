@@ -14,3 +14,7 @@ variable "cloudformation_template_url" {
   description = "Full URL to the CloudFormation template stored in Clutter Templates S3"
   type        = string
 }
+variable "clutter_account_id" {
+  description = "AWS Account ID for Clutter Fargate deployment role"
+  type        = string
+}

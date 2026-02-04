@@ -79,6 +79,7 @@ module "cloudformation-stack-url-generator-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
+    CLUTTER_ACCOUNT_ID = var.clutter_account_id
   }
 }
 
