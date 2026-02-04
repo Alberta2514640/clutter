@@ -101,9 +101,16 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	// Ensure region is supported and valid
 	if _, ok := supportedRegions[region]; !ok {
+
+		var supportedRegionsSlice []string
+
+		for key := range supportedRegions {
+			supportedRegionsSlice = append(supportedRegionsSlice, key)
+		}
+
 		return generic.Response(
 			http.StatusBadRequest,
-			generic.Json{"message": fmt.Sprintf("invalid AWS region passed in: %s", region)},
+			generic.Json{"message": fmt.Sprintf("invalid AWS region passed in: %s", region), "options": supportedRegionsSlice},
 		)
 	}
 
