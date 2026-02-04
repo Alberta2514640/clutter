@@ -26,7 +26,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
 		)
 	}
 	userId := userData.Id
@@ -170,8 +170,33 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	safeOrgName = strings.ReplaceAll(safeOrgName, "'", "")
 
 	// Define stack variables
-	templateUrl := os.Getenv("CLOUDFORMATION_TEMPLATE_URL")
-	clutterAccountId := os.Getenv("CLUTTER_ACCOUNT_ID")
+	templateUrlEnvVarKey := "CLOUDFORMATION_TEMPLATE_URL"
+	clutterAccountIdEnvVarKey := "CLUTTER_ACCOUNT_ID"
+
+	templateUrl := os.Getenv(templateUrlEnvVarKey)
+	clutterAccountId := os.Getenv(clutterAccountIdEnvVarKey)
+
+	// Check to see if required env vars are provided
+	var missingEnvVars []string
+	var envVarMissing bool = false
+
+	if templateUrl == "" {
+		envVarMissing = true
+		missingEnvVars = append(missingEnvVars, templateUrlEnvVarKey)
+	}
+
+	if clutterAccountId == "" {
+		envVarMissing = true
+		missingEnvVars = append(missingEnvVars, clutterAccountIdEnvVarKey)
+	}
+
+	if envVarMissing {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "the following required environment variables are missing",
+			"missing": missingEnvVars,
+		})
+	}
+
 	uniqueId := internal.RandomID(8)
 	// Stack name has format of: Clutter-<organizationName>-<accountName>-TerraformDeployerRoleStack-<uniqueId>
 	stackName := fmt.Sprintf("Clutter-%s-%s-TerraformDeployerRoleStack-%s", safeOrgName, accountName, uniqueId)
