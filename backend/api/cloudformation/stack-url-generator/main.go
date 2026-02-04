@@ -216,7 +216,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	return generic.Response(
 		http.StatusOK,
 		generic.Json{
-			"message": "URL generated successfully and partially completed client AWS Account Role record inserted into aws_account_access_roles table. Need user to enter Role ARN upon successful stack creation to complete client account access role creation.",
+			"message": "The URL was generated successfully and a partial client AWS Account Role record has been created in the DB. Client must now provide the Role ARN once the CloudFormation stack is successfully created to complete the account access setup.",
 			"url":     fullUrl,
 		},
 	)
