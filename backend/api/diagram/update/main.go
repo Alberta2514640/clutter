@@ -20,7 +20,7 @@ type UpdateRequest struct {
 	ProjectID string                 `json:"projectId"`
 	DiagramID string                 `json:"diagramId"`
 	Name      *string                `json:"name,omitempty"`
-	UILayout  *generic.DiagramLayout `json:"uiLayout,omitempty"`
+	Data      *generic.DiagramLayout `json:"data,omitempty"`
 }
 
 func main() {
@@ -43,6 +43,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "Invalid request body",
+			"error":   err.Error(),
 		})
 	}
 
@@ -53,9 +54,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Validate at least one field is being updated
-	if req.Name == nil && req.UILayout == nil {
+	if req.Name == nil && req.Data == nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "At least one field (name or uiLayout) must be provided for update",
+			"message": "At least one field (name or data) must be provided for update",
 		})
 	}
 
@@ -66,7 +67,36 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Note: Empty uiLayout {} is valid - allows clearing diagram data
+	// Validate data structure if provided
+	if req.Data != nil {
+		// Ensure nodes and edges arrays are initialized (not nil)
+		if req.Data.Nodes == nil {
+			req.Data.Nodes = []generic.DiagramNode{}
+		}
+		if req.Data.Edges == nil {
+			req.Data.Edges = []generic.DiagramEdge{}
+		}
+
+		// Validate each node has required fields
+		for i, node := range req.Data.Nodes {
+			if node.ID == "" || node.Type == "" {
+				return generic.Response(http.StatusBadRequest, generic.Json{
+					"message": fmt.Sprintf("Node at index %d missing required fields (id, type)", i),
+				})
+			}
+		}
+
+		// Validate each edge has required fields
+		for i, edge := range req.Data.Edges {
+			if edge.ID == "" || edge.Source == "" || edge.Target == "" {
+				return generic.Response(http.StatusBadRequest, generic.Json{
+					"message": fmt.Sprintf("Edge at index %d missing required fields (id, source, target)", i),
+				})
+			}
+		}
+	}
+
+	// Note: Empty data {} is valid - allows clearing diagram data
 
 	// 3. Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
@@ -151,7 +181,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// 8. Build Update Query
+	// 9. Build Update Query with RETURNING clause
 	// Always update latest_update_at and latest_update_by
 	setClauses := []string{"latest_update_at = $3", "latest_update_by = $4"}
 	args := []interface{}{req.DiagramID, req.ProjectID, timestamp, userID}
@@ -163,23 +193,43 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		args = append(args, *req.Name)
 	}
 
-	if req.UILayout != nil {
+	if req.Data != nil {
 		argCount++
-		uiLayoutJSON, err := json.Marshal(req.UILayout)
+		dataJSON, err := json.Marshal(req.Data)
 		if err != nil {
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "Internal server error",
 			})
 		}
 		setClauses = append(setClauses, "data = $"+fmt.Sprintf("%d", argCount))
-		args = append(args, string(uiLayoutJSON))
+		args = append(args, string(dataJSON))
 	}
 
 	query := "UPDATE diagrams SET " + strings.Join(setClauses, ", ") +
-		" WHERE id = $1 AND project_id = $2"
+		" WHERE id = $1 AND project_id = $2" +
+		" RETURNING id, name, data, created_by, created_at, latest_update_by, latest_update_at"
 
-	// 9. Execute Update within transaction
-	_, err = tx.Exec(ctx, query, args...)
+	// 10. Execute Update and get returned data within transaction
+	var diagram struct {
+		ID             string                 `json:"id"`
+		Name           string                 `json:"name"`
+		Data           *generic.DiagramLayout `json:"data"`
+		CreatedBy      string                 `json:"createdBy"`
+		CreatedAt      time.Time              `json:"createdAt"`
+		LatestUpdateBy *string                `json:"latestUpdateBy,omitempty"`
+		LatestUpdateAt *time.Time             `json:"latestUpdateAt,omitempty"`
+	}
+
+	var rawData []byte
+	err = tx.QueryRow(ctx, query, args...).Scan(
+		&diagram.ID,
+		&diagram.Name,
+		&rawData,
+		&diagram.CreatedBy,
+		&diagram.CreatedAt,
+		&diagram.LatestUpdateBy,
+		&diagram.LatestUpdateAt,
+	)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
 			return generic.Response(http.StatusConflict, generic.Json{
@@ -188,10 +238,19 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to update diagram",
+			"error":   err.Error(),
 		})
 	}
 
-	// 10. Commit transaction
+	// Unmarshal the JSONB data
+	if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "Failed to parse diagram data",
+			"error":   err.Error(),
+		})
+	}
+
+	// 11. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to commit update",
@@ -200,5 +259,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"message": "Diagram updated successfully",
+		"data":    diagram,
 	})
 }

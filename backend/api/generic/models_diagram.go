@@ -8,11 +8,12 @@ type DiagramLayout struct {
 
 // DiagramNode represents a node in the flow diagram
 type DiagramNode struct {
-	ID       string                 `json:"id"`
-	Type     string                 `json:"type"`
-	Position Position               `json:"position"`
-	Data     map[string]interface{} `json:"data"`
-	Measured *Measure               `json:"measured,omitempty"`
+	ID        string                 `json:"id"`
+	Type      string                 `json:"type"`
+	Position  Position               `json:"position"`
+	Data      map[string]interface{} `json:"data"`
+	Variables map[string]interface{} `json:"variables,omitempty"`
+	Measured  *Measure               `json:"measured,omitempty"`
 }
 
 // Position represents the x,y coordinates of a node
