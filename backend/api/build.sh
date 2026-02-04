@@ -5,6 +5,7 @@ set -euo pipefail
 LAMBDA_DIRS=(
   "log-in"
   "authorizer"
+  "cloudformation/stack-url-generator"
   "organization/create"
   "organization/delete"
   "organization/get"

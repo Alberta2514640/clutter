@@ -1,12 +1,10 @@
 DROP TABLE IF EXISTS public.diagram_history;
 DROP TABLE IF EXISTS public.diagrams;
 DROP TABLE IF EXISTS public.projects;
+DROP TABLE IF EXISTS public.aws_account_access_roles;
 DROP TABLE IF EXISTS public.organization_members;
 DROP TABLE IF EXISTS public.organizations;
 DROP TABLE IF EXISTS public.users;
-DROP TABLE IF EXISTS public.resource_connections;
-DROP TABLE IF EXISTS public.resource;
-DROP TABLE IF EXISTS public.resource_types;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -39,6 +37,26 @@ CREATE TABLE public.organization_members (
     member_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (organization_id, member_id)
+);
+
+-- ============================
+-- AWS ACCOUNT ACCESS ROLES
+-- ============================
+CREATE TABLE public.aws_account_access_roles (
+
+    id UUID PRIMARY KEY,
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    unique_id VARCHAR(8) NOT NULL,
+    account_name VARCHAR(32) NOT NULL,
+    role_arn TEXT,
+    external_id VARCHAR(36) NOT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'incomplete',
+    created_by UUID NOT NULL REFERENCES public.users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT unique_role_name_per_org UNIQUE (organization_id, account_name),
+    CONSTRAINT unique_unique_id_per_org UNIQUE (organization_id, unique_id),
+    CONSTRAINT valid_status CHECK (status IN ('incomplete', 'complete', 'revoked'))
 );
 
 -- ============================
@@ -84,38 +102,6 @@ CREATE TABLE public.diagram_history (
 );
 
 -- ============================
--- Resource
--- ============================
-
-CREATE TABLE public.resource_types (
-    resource_type VARCHAR(50) PRIMARY KEY,
-    description TEXT,
-    category VARCHAR(50)
-);
-
--- This table stores individual resource with their configurations
-CREATE TABLE public.resource (
-    resource_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type),
-    platform VARCHAR(50) NOT NULL,
-    resource_version VARCHAR(20) NOT NULL,
-    variables JSONB NOT NULL,
-    snippet TEXT NOT NULL
-);
-
--- This table defines possible connections between different resource types
-CREATE TABLE public.resource_connections (
-    connection_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    connection_version VARCHAR(20) NOT NULL,
-    source_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
-    target_resource_type VARCHAR(50) NOT NULL REFERENCES public.resource_types(resource_type) ON DELETE CASCADE,
-    connection_template TEXT, -- Used to store a template or pattern for the connection
-    is_bidirectional BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_resource_type, target_resource_type)
-);
-
--- ============================
 -- ROW LEVEL SECURITY
 -- ============================
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -128,6 +114,13 @@ USING (true);
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."organizations"
+AS PERMISSIVE
+TO anon
+USING (true);
+
+ALTER TABLE public.aws_account_access_roles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."aws_account_access_roles"
 AS PERMISSIVE
 TO anon
 USING (true);
@@ -153,19 +146,3 @@ ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."diagram_history"
 AS PERMISSIVE TO anon USING (true);
-
-ALTER TABLE public.resource_types ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."resource_types"
-AS PERMISSIVE TO anon USING (true);
-
-ALTER TABLE public.resource ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."resource"
-AS PERMISSIVE TO anon USING (true);
-
-ALTER TABLE public.resource_connections ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."resource_connections"
-AS PERMISSIVE TO anon USING (true);
-

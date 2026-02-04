@@ -63,6 +63,26 @@ module "authorizer-lambda" {
 
 }
 
+# Cloudformation URL Generator
+module "cloudformation-stack-url-generator-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "cloudformation-stack-url-generator"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/cloudformation-stack-url-generator:*"
+  ]
+  zip_dir_slice = "cloudformation/stack-url-generator"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
+    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+  }
+}
+
 # Organization
 module "organization-create-lambda" {
 
@@ -319,6 +339,28 @@ module "log-in-api-cors-compliance" {
   http_methods = ["POST"]
 }
 
+# CloudFormation Stack URL Generator
+module "cloudformation-stack-url-generator-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "cloudformation-stack-url"
+}
+
+module "cloudformation-stack-url-generator-api-path-by-id" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.cloudformation-stack-url-generator-api-path.resource_id
+  path_part   = "{organizationId}"
+}
+
+module "cloudformation-stack-url-generator-api-by-id-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.cloudformation-stack-url-generator-api-path-by-id.resource_id
+  http_methods = ["GET"]
+}
+
 # Organization
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
@@ -464,6 +506,20 @@ module "log-in-api-integration" {
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.log-in-model.model_name
+}
+
+# GET CloudFormation Stack URL (by organizationId)
+module "cloudformation-stack-url-generator-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.cloudformation-stack-url-generator-api-path-by-id.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.cloudformation-stack-url-generator-lambda.invoke_arn
+  function_name     = module.cloudformation-stack-url-generator-lambda.function_name
+  path_part         = module.cloudformation-stack-url-generator-api-path-by-id.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.cloudformation-stack-url-generator-api-path-by-id.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
 # Organization
@@ -680,6 +736,8 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.diagram-update-model.model_id,
 
       module.log-in-api-integration.integration_id,
+
+      module.cloudformation-stack-url-generator-api-integration.integration_id,
 
       module.organization-create-api-integration.integration_id,
       module.organization-get-api-integration.integration_id,
