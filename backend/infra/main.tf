@@ -321,12 +321,17 @@ module "terraform-engine-create-lambda" {
   actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
-    "logs:PutLogEvents"
+    "logs:PutLogEvents",
+    "s3:PutObject",
+    "s3:GetObject"
   ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-create:*"]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-create:*",
+    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+  ]
   zip_dir_slice = "terraform-engine/create"
   environment_variables = {
-    DDB_TABLE_NAME = var.ddb_application_table_name
+    S3_BUCKET_NAME = var.terraform_output_bucket
   }
 
 }
