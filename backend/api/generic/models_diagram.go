@@ -21,7 +21,7 @@ type DiagramLayout struct {
 type DiagramNode struct {
 	ID       string                 `json:"id"`
 	Type     string                 `json:"type"`
-	Position *Position               `json:"position"`
+	Position Position               `json:"position"`
 	Data     map[string]interface{} `json:"data"`
 	Variables map[string]interface{} `json:"variables,omitempty"`
 	Measured *Measure               `json:"measured,omitempty"`
