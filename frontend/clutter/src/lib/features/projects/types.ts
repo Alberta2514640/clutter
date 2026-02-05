@@ -1,12 +1,16 @@
+export interface DiagramSummary {
+  id: string;
+  name: string;
+}
 export interface Project {
   id: string;
   organizationId: string;
   creatorId: string;
   name: string;
+  diagrams: DiagramSummary[];
   description: string;
   createdAt: string;
   createdBy: string;
-  // memberCount?: number;
 }
 
 export type CreateProjectInput = {

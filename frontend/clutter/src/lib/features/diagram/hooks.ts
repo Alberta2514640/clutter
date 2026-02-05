@@ -1,6 +1,9 @@
 // lib/features/diagram/hooks.ts
 
+import { projectKeys } from "@/lib/features/projects/keys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { VALID_LOADERS } from "next/dist/shared/lib/image-config";
+import { DiagramSummary, Project } from "../projects/types";
 import { diagramApi } from "./api";
 import { diagramKeys } from "./keys";
 import type { CreateDiagramInput, Diagram, DiagramEdge, DiagramNode } from "./types";
@@ -25,11 +28,23 @@ export const useDiagram = (token?: string | null, projectId?: string | null, dia
 
 export const useCreateDiagram = (token?: string | null) => {
   const qc = useQueryClient();
+
   return useMutation({
-    mutationFn: (input: CreateDiagramInput) => diagramApi.create(token as string, input),
-    onSuccess: (created) => {
-      // update the list cache for that project
-      qc.setQueryData<Diagram[]>(diagramKeys.list(created.id), (prev) => [created, ...(prev ?? [])]);
+    mutationFn: async (input: CreateDiagramInput & { organizationId: string }) => {
+      const { organizationId: _orgId, ...payload } = input;
+      return diagramApi.create(token as string, payload);
+    },
+    onSuccess: (created, vars) => {
+      qc.setQueryData<Diagram[]>(diagramKeys.list(created.projectId), (prev) => [created, ...(prev ?? [])]);
+      qc.setQueryData<Project>(projectKeys.detail(vars.organizationId, created.projectId), (prev) => {
+        if (!prev) return prev;
+        const nextSummary: DiagramSummary = { id: created.id, name: created.name };
+        const filtered = (prev.diagrams ?? []).filter((d) => d.id !== created.id);
+        return {
+          ...prev,
+          diagrams: [nextSummary, ...filtered],
+        };
+      });
     },
   });
 };
@@ -69,17 +84,20 @@ export const useDeleteDiagram = (token?: string | null) => {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { projectId: string; diagramId: string }) =>
+    mutationFn: (input: { organizationId: string; projectId: string; diagramId: string }) =>
       diagramApi.delete(token as string, input.projectId, input.diagramId),
-
     onSuccess: (_void, vars) => {
-      // remove detail cache for that diagram
       qc.removeQueries({ queryKey: diagramKeys.detail(vars.projectId, vars.diagramId) });
-
-      // remove it from the project list cache
       qc.setQueryData<Diagram[]>(diagramKeys.list(vars.projectId), (prev) => {
         if (!prev) return prev;
         return prev.filter((d) => d.id !== vars.diagramId);
+      });
+      qc.setQueryData<Project>(projectKeys.detail(vars.organizationId, vars.projectId), (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          diagrams: (prev.diagrams ?? []).filter((d) => d.id !== vars.diagramId),
+        };
       });
     },
   });

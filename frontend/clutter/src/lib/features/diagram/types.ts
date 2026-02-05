@@ -12,6 +12,7 @@ export type DiagramUiLayout = {
 export type DiagramApiItem = {
   id: string;
   name: string;
+  projectId: string;
 
   // backend GET uses "data"
   data: DiagramUiLayout;
@@ -26,6 +27,7 @@ export type DiagramApiItem = {
 export type Diagram = {
   id: string;
   name: string;
+  projectId: string;
 
   // frontend uses one consistent key
   uiLayout: DiagramUiLayout;
@@ -39,8 +41,6 @@ export type Diagram = {
 export type CreateDiagramInput = {
   projectId: string;
   name: string;
-  uiLayout?: DiagramUiLayout;
-  diagramId?: string;
 };
 
 export type UpdateDiagramInput = {

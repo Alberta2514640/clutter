@@ -41,6 +41,7 @@ function normalizeDiagram(item: DiagramApiItem): Diagram {
   return {
     id: item.id,
     name: item.name,
+    projectId: item.projectId,
     uiLayout: {
       nodes: item.data?.nodes ?? [],
       edges: item.data?.edges ?? [],

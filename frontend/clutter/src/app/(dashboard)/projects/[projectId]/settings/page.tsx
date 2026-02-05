@@ -55,15 +55,19 @@ export default function ProjectSettingsPage() {
   const handleSave = async () => {
     if (!currentProject || !projectId || !hasChanges) return;
 
+    const name = draft.name.trim();
+    const desc = draft.description.trim();
+
     await updateM.mutateAsync({
       projectId,
       data: {
         organizationId: currentProject.organizationId,
-        name: draft.name.trim(),
-        description: draft.description.trim(),
+        name,
+        ...(desc ? { description: desc } : {}), // ✅ omit when empty
       },
     });
   };
+
 
   const handleCancel = () => {
     if (!currentProject) return;
