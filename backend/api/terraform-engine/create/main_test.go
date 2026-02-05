@@ -13,10 +13,18 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
+// getEnvOrDefault returns the environment variable value or the default if not set
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func TestHandler(t *testing.T) {
-	// Set required env vars
-	os.Setenv("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c")
-	os.Setenv("S3_BUCKET_NAME", "clutter-us-west-2-b35a3c5c")
+	// Set required env vars (use existing env vars or defaults)
+	os.Setenv("TEMPLATE_BUCKET_NAME", getEnvOrDefault("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c"))
+	os.Setenv("S3_BUCKET_NAME", getEnvOrDefault("S3_BUCKET_NAME", "clutter-us-west-2-b35a3c5c"))
 
 	// Skip if PSQL_CONNECTION_STRING is not set (required for org lookup)
 	if os.Getenv("PSQL_CONNECTION_STRING") == "" {
@@ -97,7 +105,7 @@ func TestHandler(t *testing.T) {
 
 // TestGenerateOnly tests just the terraform generation (no S3 upload)
 func TestGenerateOnly(t *testing.T) {
-	os.Setenv("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c")
+	os.Setenv("TEMPLATE_BUCKET_NAME", getEnvOrDefault("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c"))
 
 	ctx := context.Background()
 
