@@ -23,6 +23,7 @@ import { useDiagram, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
 import { useMe } from "@/lib/features/user/hooks";
+import { useRouter } from "next/navigation";
 
 export type PaletteItem = {
   label: string;
@@ -32,24 +33,19 @@ export type PaletteItem = {
 const DND_MIME = "application/x-palette-item";
 
 export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
+  const router = useRouter();
+  
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
 
   const { screenToFlowPosition } = useReactFlow();
 
-  // ---------------------------
-  // Server state (React Query)
-  // ---------------------------
   const diagramQ = useDiagram(token, projectId, diagramId);
+  console.log(diagramQ.data)
   const saveM = useUpdateDiagramData(token);
 
-  // ---------------------------
-  // Editor draft state (Zustand)
-  // ---------------------------
   const editor = useDiagramEditor(diagramId);
-  const { ensure, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, markClean } = useDiagramEditorActions();
-
-  console.log(editor)
+  const { ensure, reset,  hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
 
   useEffect(() => {
     ensure(diagramId);
@@ -61,17 +57,28 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
     hydrateFromServer(
       diagramId,
+      diagramQ.data.name ?? "",
       diagramQ.data.uiLayout?.nodes ?? [],
       diagramQ.data.uiLayout?.edges ?? []
     );
   }, [diagramId, diagramQ.data, hydrateFromServer]);
 
+
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
   const edges = useMemo(() => editor?.edges ?? [], [editor?.edges]);
+  const name = editor?.name ?? "";
   const dirty = !!editor?.dirty;
 
   const isLoading = diagramQ.isLoading;
   const isSaving = saveM.isPending;
+
+  const onBack = React.useCallback(() => {
+    // Optional: guard if you don't want accidental loss
+    if (dirty && !confirm("You have unsaved changes. Leave without saving?")) return;
+
+    reset(diagramId);
+    router.back();
+  }, [dirty, reset, diagramId, router]);
 
   // React Flow registry
   const nodeTypes = useMemo<NodeTypes>(
@@ -166,19 +173,16 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const onSave = useCallback(async () => {
     if (!token) return;
 
-    // backend requires name; take it from the diagram detail
-    const name = diagramQ.data?.name ?? "UpdatedWithNodes";
-
     await saveM.mutateAsync({
       projectId,
       diagramId,
-      name,
+      name: editor?.name?.trim() || "Untitled diagram",
       nodes,
       edges,
     });
 
     markClean(diagramId);
-  }, [token, saveM, projectId, diagramId, diagramQ.data?.name, nodes, edges, markClean]);
+  }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -199,8 +203,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
             snapToGrid
             snapGrid={[20, 20]}
           >
-            <Panel position="top-right">
-              <TopNav onSave={onSave} dirty={dirty} isSaving={isSaving} />
+            <Panel position="top-left" className="w-full pr-5" >
+              <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} dirty={dirty} isSaving={isSaving} />
             </Panel>
 
             <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />

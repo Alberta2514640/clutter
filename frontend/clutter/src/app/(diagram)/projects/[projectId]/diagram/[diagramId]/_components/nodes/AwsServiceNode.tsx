@@ -1,6 +1,6 @@
 "use client";
 
-import type { NodeData } from "@/lib/stores/diagramStore";
+import { NodeData } from "@/lib/features/diagram/types";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 
 export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeData>>) {
