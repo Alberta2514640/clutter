@@ -48,7 +48,7 @@ s3://clutter-templates-us-west-2-b35a3c5c/
 ```
 
 ### 4. Template Rendering
-Go's `text/template` package renders templates with node variables:
+Go's `text/template` package renders templates the variables passed into for each Node in the Diagram Layout:
 ```
 {{.ResourceName}} → my_test_function
 {{.FunctionName}} → my-test-function
@@ -58,12 +58,11 @@ Go's `text/template` package renders templates with node variables:
 ### 5. IAM Generation
 Edges between nodes generate IAM policies automatically:
 - Lambda → S3 edge creates S3 read/write permissions
-- Lambda → DynamoDB edge creates DynamoDB permissions
 
 ### 6. S3 Output
 Generated Terraform is uploaded to:
 ```
-s3://clutter-us-west-2-b35a3c5c/
+s3://clutter-us-west-2-..../
 └── {org-id}/
     └── {project-id}/
         └── {diagram-id}/
@@ -77,8 +76,8 @@ s3://clutter-us-west-2-b35a3c5c/
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `TEMPLATE_BUCKET_NAME` | S3 bucket for templates | `clutter-templates-us-west-2-b35a3c5c` |
-| `S3_BUCKET_NAME` | S3 bucket for output | `clutter-us-west-2-b35a3c5c` |
+| `TEMPLATE_BUCKET_NAME` | S3 bucket for templates | `clutter-templates-us-west-2-...` |
+| `S3_BUCKET_NAME` | S3 bucket for output | `clutter-us-west-2-...` |
 | `PSQL_CONNECTION_STRING` | Postgres connection string for org lookup | `postgres://...` |
 
 ---
@@ -114,8 +113,6 @@ aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-dia
 ---
 
 ## Template Files
-
-Templates use Go's `text/template` syntax with `{{.VariableName}}` placeholders.
 
 ### Lambda Template (`templates/aws/lambda/main.tf.tmpl`)
 ```hcl
@@ -214,4 +211,5 @@ terraform-engine/create/
 Template file doesn't exist in S3. Upload templates:
 ```bash
 aws s3 cp templates/aws/ s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
+
 ```
