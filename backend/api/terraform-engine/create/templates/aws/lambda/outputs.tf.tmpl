@@ -1,0 +1,11 @@
+output "{{.ResourceName}}_function_name" {
+  value = aws_lambda_function.{{.ResourceName}}.function_name
+}
+
+output "{{.ResourceName}}_arn" {
+  value = aws_lambda_function.{{.ResourceName}}.arn
+}
+
+output "{{.ResourceName}}_invoke_arn" {
+  value = aws_lambda_function.{{.ResourceName}}.invoke_arn
+}

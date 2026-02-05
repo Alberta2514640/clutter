@@ -1,0 +1,11 @@
+output "{{.ResourceName}}_bucket_name" {
+  value = aws_s3_bucket.{{.ResourceName}}.bucket
+}
+
+output "{{.ResourceName}}_bucket_arn" {
+  value = aws_s3_bucket.{{.ResourceName}}.arn
+}
+
+output "{{.ResourceName}}_bucket_domain_name" {
+  value = aws_s3_bucket.{{.ResourceName}}.bucket_domain_name
+}
