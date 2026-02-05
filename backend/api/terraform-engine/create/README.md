@@ -85,11 +85,6 @@ s3://clutter-us-west-2-b35a3c5c/
 
 ## Local Testing
 
-### Prerequisites
-- Go 1.21+
-- AWS CLI configured with `hamza-amar` profile
-- Access to S3 buckets
-
 ### Run Tests
 
 **Full end-to-end test (generates + uploads to S3):**
@@ -114,12 +109,6 @@ aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-dia
 
 # View outputs.tf content
 aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-diagram-123/outputs.tf -
-```
-
-### Build
-```bash
-cd backend/api/terraform-engine/create
-go build ./...
 ```
 
 ---
