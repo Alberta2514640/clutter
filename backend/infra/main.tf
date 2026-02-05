@@ -327,11 +327,13 @@ module "terraform-engine-create-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-create:*",
-    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+    "arn:aws:s3:::${var.terraform_output_bucket}/*",
+    "arn:aws:s3:::${var.terraform_template_bucket}/*"
   ]
   zip_dir_slice = "terraform-engine/create"
   environment_variables = {
     S3_BUCKET_NAME = var.terraform_output_bucket
+    TEMPLATE_BUCKET_NAME = var.terraform_template_bucket 
   }
 
 }
@@ -831,5 +833,5 @@ variable "stage_name" {
 resource "aws_api_gateway_stage" "clutter" {
   rest_api_id   = module.clutter-api-gateway.rest_api_id
   deployment_id = aws_api_gateway_deployment.clutter.id
-  stage_name    = "dev"
+  stage_name    = var.stage_name
 }

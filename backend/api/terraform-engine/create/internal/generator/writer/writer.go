@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
 )
@@ -18,7 +19,7 @@ type TerraformWriter struct {
 }
 
 func NewTerraformWriter(ctx context.Context, bucketName string) (*TerraformWriter, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 	if err != nil {
 		return nil, err
 	}
@@ -31,12 +32,18 @@ func NewTerraformWriter(ctx context.Context, bucketName string) (*TerraformWrite
 
 // WriteToS3 uploads generated terraform files to S3
 func (w *TerraformWriter) WriteToS3(ctx context.Context, tf *internal.GeneratedTerraform) error {
+	// Combine all into main.tf: provider + resources + IAM
+	mainContent := tf.MainTF
+	if tf.ResourcesTF != "" {
+		mainContent += "\n" + tf.ResourcesTF
+	}
+	if tf.IAMTF != "" {
+		mainContent += "\n" + tf.IAMTF
+	}
+
 	files := map[string]string{
-		"main.tf":      tf.MainTF,
-		"resources.tf": tf.ResourcesTF,
-		"iam.tf":       tf.IAMTF,
-		"variables.tf": tf.VariablesTF,
-		"outputs.tf":   tf.OutputsTF,
+		"main.tf":    mainContent,
+		"outputs.tf": tf.OutputsTF,
 	}
 
 	for filename, content := range files {
@@ -46,10 +53,11 @@ func (w *TerraformWriter) WriteToS3(ctx context.Context, tf *internal.GeneratedT
 
 		key := fmt.Sprintf("%s/%s", tf.DiagramID, filename)
 		_, err := w.s3Client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:      aws.String(w.bucketName),
-			Key:         aws.String(key),
-			Body:        bytes.NewReader([]byte(content)),
-			ContentType: aws.String("text/plain"),
+			Bucket:               aws.String(w.bucketName),
+			Key:                  aws.String(key),
+			Body:                 bytes.NewReader([]byte(content)),
+			ContentType:          aws.String("text/plain"),
+			ServerSideEncryption: types.ServerSideEncryptionAes256,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to upload %s: %w", filename, err)

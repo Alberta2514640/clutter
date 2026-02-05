@@ -25,20 +25,3 @@ func Render(tmpl *Template, vars map[string]interface{}) (string, error) {
 
 	return buf.String(), nil
 }
-
-// RenderWithDefaults renders a template, filling missing variables with defaults
-func RenderWithDefaults(tmpl *Template, vars map[string]interface{}, defaults map[string]interface{}) (string, error) {
-	merged := make(map[string]interface{})
-
-	// Apply defaults first
-	for k, v := range defaults {
-		merged[k] = v
-	}
-
-	// Override with provided variables
-	for k, v := range vars {
-		merged[k] = v
-	}
-
-	return Render(tmpl, merged)
-}

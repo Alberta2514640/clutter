@@ -10,17 +10,25 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/iam"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/resources"
+	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/writer"
 )
 
 type TerraformGenerator struct {
-	iamGenerator *iam.IAMPolicyGenerator
+	iamGenerator   *iam.IAMPolicyGenerator
+	templateLoader *template.TemplateLoader
 }
 
-func NewTerraformGenerator() *TerraformGenerator {
-	return &TerraformGenerator{
-		iamGenerator: iam.NewIAMPolicyGenerator(),
+func NewTerraformGenerator(ctx context.Context, templateBucket string) (*TerraformGenerator, error) {
+	loader, err := template.NewTemplateLoader(ctx, templateBucket)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
 	}
+
+	return &TerraformGenerator{
+		iamGenerator:   iam.NewIAMPolicyGenerator(),
+		templateLoader: loader,
+	}, nil
 }
 
 // Generate processes a diagram and returns generated terraform
@@ -41,7 +49,7 @@ func (g *TerraformGenerator) Generate(ctx context.Context, diagramID string, lay
 
 	// Generate terraform for each resource
 	for _, res := range tfResources {
-		gen, err := resources.GetGenerator(res.Type)
+		gen, err := resources.GetGenerator(ctx, res.Type, g.templateLoader)
 		if err != nil {
 			errors = append(errors, internal.GenerationError{
 				NodeID:    res.SourceNodeID,
@@ -120,9 +128,15 @@ func (g *TerraformGenerator) parseNodes(nodes []generic.DiagramNode) ([]*interna
 			continue
 		}
 
+		// Get resource_name for naming (fallback to resource type)
+		resourceName, _ := node.Variables["resource_name"].(string)
+		if resourceName == "" {
+			resourceName = string(resourceType)
+		}
+
 		tfResources = append(tfResources, &internal.TerraformResource{
 			ID:           node.ID,
-			Name:         sanitizeResourceName(label, node.ID),
+			Name:         sanitizeResourceName(resourceName),
 			Type:         resourceType,
 			Variables:    node.Variables,
 			SourceNodeID: node.ID,
@@ -155,18 +169,13 @@ func (g *TerraformGenerator) parseEdges(edges []generic.DiagramEdge, resourceMap
 	return relationships
 }
 
-// sanitizeResourceName converts node labels to valid TF resource names
-func sanitizeResourceName(label string, nodeID string) string {
+// sanitizeResourceName converts a name to a valid TF resource name
+func sanitizeResourceName(name string) string {
 	// Convert to lowercase and replace spaces/special chars with underscores
-	name := strings.ToLower(label)
+	name = strings.ToLower(name)
 	reg := regexp.MustCompile(`[^a-z0-9]+`)
 	name = reg.ReplaceAllString(name, "_")
 	name = strings.Trim(name, "_")
-
-	// Append short ID suffix for uniqueness
-	if len(nodeID) >= 8 {
-		name = name + "_" + nodeID[:8]
-	}
 
 	return name
 }

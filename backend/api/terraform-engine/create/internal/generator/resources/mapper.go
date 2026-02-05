@@ -1,10 +1,12 @@
 package resources
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
+	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
 )
 
 // ParseResourceType extracts ResourceType from node label
@@ -24,16 +26,16 @@ func ParseResourceType(label string) (internal.ResourceType, error) {
 }
 
 // GetGenerator returns the appropriate generator for a resource type
-func GetGenerator(resourceType internal.ResourceType) (internal.ResourceGenerator, error) {
+func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loader *template.TemplateLoader) (internal.ResourceGenerator, error) {
 	switch resourceType {
 	case internal.ResourceTypeLambda:
-		return NewLambdaGenerator(), nil
+		return NewLambdaGenerator(ctx, loader), nil
 	// case internal.ResourceTypeDynamoDB:
-	// 	return NewDynamoDBGenerator(), nil
+	// 	return NewDynamoDBGenerator(ctx, loader), nil
 	case internal.ResourceTypeS3:
-		return NewS3Generator(), nil
+		return NewS3Generator(ctx, loader), nil
 	// case internal.ResourceTypeAPIGateway:
-	// 	return NewAPIGatewayGenerator(), nil
+	// 	return NewAPIGatewayGenerator(ctx, loader), nil
 	default:
 		return nil, fmt.Errorf("no generator for resource type: %s", resourceType)
 	}

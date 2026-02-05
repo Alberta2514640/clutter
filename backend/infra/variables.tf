@@ -22,3 +22,7 @@ variable "terraform_output_bucket" {
     type        = string
     description = "S3 bucket name for terraform output files"
 }
+variable "terraform_template_bucket" {
+    type        = string
+    description = "S3 bucket name for terraform template files"
+}

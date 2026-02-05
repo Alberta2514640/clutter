@@ -24,7 +24,7 @@ type TemplateLoader struct {
 }
 
 func NewTemplateLoader(ctx context.Context, bucketName string) (*TemplateLoader, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}

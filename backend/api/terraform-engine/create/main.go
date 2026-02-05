@@ -31,18 +31,27 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	if !internal.HasDataChanged(payload.OldRecord, payload.Record) {
-		// No relevant changes, ignore
-		return generic.Response(http.StatusOK, generic.Json{
-			"message": "No relevant changes in diagram data, ignoring webhook",
-		})
-	}
+	// if !internal.HasDataChanged(payload.OldRecord, payload.Record) {
+	// 	// No relevant changes, ignore
+	// 	return generic.Response(http.StatusOK, generic.Json{
+	// 		"message": "No relevant changes in diagram data, ignoring webhook",
+	// 	})
+	// }
 
 	// Clean the nodes in the record (Remove irrelevant fields)
 	payload.Record.Data.Nodes = internal.SanitizeNodes(payload.Record.Data.Nodes)
 
+	// Initialize terraform generator with template bucket
+	templateBucket := os.Getenv("TEMPLATE_BUCKET_NAME")
+	gen, err := generator.NewTerraformGenerator(ctx, templateBucket)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"error":   "Failed to initialize terraform generator",
+			"details": err.Error(),
+		})
+	}
+
 	// Generate terraform from diagram
-	gen := generator.NewTerraformGenerator()
 	terraform, errors := gen.Generate(ctx, payload.Record.ID, payload.Record.Data)
 
 	if len(errors) > 0 {
