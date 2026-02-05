@@ -22,8 +22,16 @@
             "pattern": "^(?! )(?!.*  )[A-Za-z0-9']+(?: [A-Za-z0-9']+)*$",
             "description": "Diagram name: 1-32 characters, alphanumeric and apostrophe only, no leading/trailing/consecutive spaces"
         },
-        "uiLayout": {
-            "type": "object"
+        "data": {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array"
+                },
+                "edges": {
+                    "type": "array"
+                }
+            }
         }
     },
     "additionalProperties": false
