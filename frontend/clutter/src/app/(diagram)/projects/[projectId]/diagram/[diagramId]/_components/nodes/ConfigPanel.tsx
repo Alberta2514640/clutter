@@ -109,14 +109,6 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
                   </div>
                 </div>
               </div>
-
-              {/* Node ID */}
-              <div>
-                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Node ID</label>
-                <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-                  <div className="truncate text-xs text-gray-400">{selectedNode!.id}</div>
-                </div>
-              </div>
             </div>
           </div>
         </>

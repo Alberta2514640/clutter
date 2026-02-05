@@ -213,9 +213,6 @@ export default function ProjectDiagramsPage() {
                   <div className="truncate text-white font-semibold mb-1">
                     {diagram.name}
                   </div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {diagram.id}
-                  </div>
                 </div>
 
                 {/* Deleting overlay */}
