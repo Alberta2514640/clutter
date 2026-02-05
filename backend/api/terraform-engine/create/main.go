@@ -61,6 +61,38 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
+	projectID := payload.Record.ProjectID
+	if projectID == "" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "Missing project_id in webhook record",
+		})
+	}
+
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to connect to database",
+			"error":   err.Error(),
+		})
+	}
+	defer conn.Close(ctx)
+
+	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, projectID)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to fetch project organization",
+			"error":   err.Error(),
+		})
+	}
+
+	terraform.ProjectID = projectID
+	terraform.OrgID = orgID
+
 	// Upload to S3
 	s3BucketName := os.Getenv("S3_BUCKET_NAME")
 	tfWriter, err := writer.NewTerraformWriter(ctx, s3BucketName)
@@ -82,6 +114,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	return generic.Response(http.StatusOK, generic.Json{
 		"message":    "Terraform files generated successfully",
 		"diagram_id": payload.Record.ID,
-		"s3_path":    fmt.Sprintf("s3://%s/%s/", s3BucketName, payload.Record.ID),
+		"s3_path":    fmt.Sprintf("s3://%s/%s/%s/%s/", s3BucketName, orgID, projectID, payload.Record.ID),
 	})
 }

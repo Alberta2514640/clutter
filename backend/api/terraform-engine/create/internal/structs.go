@@ -41,6 +41,8 @@ type IAMRelationship struct {
 
 // GeneratedTerraform holds all generated TF content
 type GeneratedTerraform struct {
+	OrgID       string
+	ProjectID   string
 	DiagramID   string
 	MainTF      string
 	ResourcesTF string

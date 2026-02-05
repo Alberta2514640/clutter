@@ -18,6 +18,11 @@ func TestHandler(t *testing.T) {
 	os.Setenv("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c")
 	os.Setenv("S3_BUCKET_NAME", "clutter-us-west-2-b35a3c5c")
 
+	// Skip if PSQL_CONNECTION_STRING is not set (required for org lookup)
+	if os.Getenv("PSQL_CONNECTION_STRING") == "" {
+		t.Skip("Skipping TestHandler: PSQL_CONNECTION_STRING not set")
+	}
+
 	// Mock Supabase webhook payload
 	payload := map[string]interface{}{
 		"type":   "UPDATE",
@@ -30,6 +35,7 @@ func TestHandler(t *testing.T) {
 		"record": map[string]interface{}{
 			"id":   "test-diagram-123",
 			"name": "Test Architecture",
+			"project_id": "13b9254f-9728-4f37-ab0e-e89a5ada3a18",
 			"data": map[string]interface{}{
 				"nodes": []map[string]interface{}{
 					{
@@ -82,6 +88,11 @@ func TestHandler(t *testing.T) {
 
 	fmt.Printf("Status: %d\n", response.StatusCode)
 	fmt.Printf("Body: %s\n", response.Body)
+
+	// Validate the response status code
+	if response.StatusCode != 200 {
+		t.Fatalf("Expected status 200, got %d: %s", response.StatusCode, response.Body)
+	}
 }
 
 // TestGenerateOnly tests just the terraform generation (no S3 upload)

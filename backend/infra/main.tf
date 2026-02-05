@@ -334,6 +334,7 @@ module "terraform-engine-create-lambda" {
   environment_variables = {
     S3_BUCKET_NAME = var.terraform_output_bucket
     TEMPLATE_BUCKET_NAME = var.terraform_template_bucket 
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
 }
