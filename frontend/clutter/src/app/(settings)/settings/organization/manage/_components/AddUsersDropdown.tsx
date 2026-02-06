@@ -35,7 +35,7 @@ export default function AddUsersDropdown({ options, onPick, disabled, placeholde
   return (
     <div className="space-y-1.5">
       <div>
-        <h2 className="text-sm font-medium text-slate-200">Project Members</h2>
+        <h2 className="text-sm font-medium text-slate-200">Organization Members</h2>
       </div>
       <div className="relative">
         <Search

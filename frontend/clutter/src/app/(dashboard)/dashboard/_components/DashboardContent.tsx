@@ -1,52 +1,35 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Organization } from "@/lib/features/organization/types";
+import { useProjects } from "@/lib/features/projects/hooks";
+import type { Run } from "@/lib/features/runs/types";
+import { useMe } from "@/lib/features/user/hooks";
+import type { UserData } from "@/lib/features/user/types";
 import { AlertCircle } from "lucide-react";
-import DashboardHeader from "./DashboardHeader";
-import StatsCards from "./StatsCards";
-import ProjectsSection from "./ProjectSection";
 import ActivitySection from "./ActivitySection";
+import DashboardHeader from "./DashboardHeader";
+import ProjectsSection from "./ProjectSection";
+import StatsCards from "./StatsCards";
 
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
 
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
-
+//runs is a placeholder for now it should be changed in the near future
 interface DashboardContentProps {
   userData: UserData | null;
-  projects: Project[];
+  organization: Organization | null;
   recentRuns: Run[];
   error: string | null;
 }
 
-export default function DashboardContent({ userData, projects, recentRuns, error }: DashboardContentProps) {
+export default function DashboardContent({ userData, organization, recentRuns, error }: DashboardContentProps) {
+  const meQ = useMe();
+
+  const token = meQ.data?.token ?? null;
+
+  const projectsQ = useProjects(token, organization?.id);
+  const projects = projectsQ.data ?? [];
+
   return (
     <div className="px-6 py-12">
-      <DashboardHeader tenantName={userData?.tenant?.name} />
+      <DashboardHeader userName={userData?.displayName} />
 
       {error && (
         <Alert className="mb-6 bg-red-900/20 border-red-800">
@@ -56,10 +39,14 @@ export default function DashboardContent({ userData, projects, recentRuns, error
         </Alert>
       )}
 
-      <StatsCards projectCount={projects.length} runCount={recentRuns.length} memberCount={projects.reduce((acc, p) => acc + (p.memberCount || 0), 0)} />
+      <StatsCards
+        projectCount={projectsQ.data?.length ?? 0}
+        diagramCount={organization?.total_diagrams ?? 0}
+        // need to firgue out the team memebr situation dont quite know how to handle that yet
+        memberCount={organization?.total_members ?? 0}
+      />
 
       <ProjectsSection projects={projects} />
-
       <ActivitySection runs={recentRuns} />
     </div>
   );

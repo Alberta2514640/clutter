@@ -1,83 +1,47 @@
 "use client";
 
-import { apiClient } from "@/lib/api-client";
-// import { getServerSession } from "next-auth";
-// import { authOptions } from "@/lib/auth";
-// import { redirect } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { useOrganizations } from "@/lib/features/organization/hooks";
 import DashboardContent from "./_components/DashboardContent";
 import DashboardLoading from "./_components/DashboardLoading";
-import DashboardOnboarding from "./_components/DashboardOnboarding";
-// const session = await getServerSession(authOptions);
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
 
-interface Run {
-  runId: string;
-  projectId: string;
-  projectName: string;
-  workspaceId: string;
-  action: "plan" | "apply";
-  status: "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-  startedAt: string;
-  endedAt?: string;
-}
-
-interface UserData {
-  userId: string;
-  tenantId: string | null;
-  email: string;
-  displayName: string;
-  tenant?: {
-    tenantId: string;
-    name: string;
-  };
-}
+import { useRecentRuns } from "@/lib/features/runs/hooks";
+import { useMe } from "@/lib/features/user/hooks";
 
 export default function DashboardPageClient() {
-  const [userData, setUserData] = useState<UserData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [recentRuns, setRecentRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
-  // if (!session) {
-  //   redirect("/login");
-  // }
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
 
+  const orgQ = useOrganizations(token);
+  const organization = orgQ.data?.[0] ?? null;
+
+  const runsQ = useRecentRuns(token);
+  //  redirect logic after render
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    if (meQ.isLoading) return;
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const user = await apiClient.getUserProfile();
-      setUserData(user);
-
-      if (user.tenantId) {
-        const [projectsData, runsData] = await Promise.all([apiClient.getProjects(), apiClient.getRecentRuns()]);
-
-        setProjects(projectsData.projects || []);
-        setRecentRuns(runsData.runs || []);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setLoading(false);
+    if (!token) {
+      router.replace("/login");
+      return;
     }
-  };
 
-  if (loading) return <DashboardLoading />;
-  if (userData && !userData.tenantId) return <DashboardOnboarding />;
+    if (!orgQ.isLoading && !orgQ.isError && !organization) {
+      router.replace("/onboarding/create-org");
+    }
+  }, [meQ.isLoading, token, orgQ.isLoading, orgQ.isError, organization, router]);
 
-  return <DashboardContent userData={userData} projects={projects} recentRuns={recentRuns} error={error} />;
+  const isLoading = meQ.isLoading || (token ? orgQ.isLoading : false) || (token ? runsQ.isLoading : false);
+
+  const error = (meQ.isError ? meQ.error : null) || (orgQ.isError ? orgQ.error : null) || (runsQ.isError ? runsQ.error : null);
+
+  if (isLoading && !meQ.data) return <DashboardLoading />;
+
+  // While redirecting (no org), avoid flashing dashboard
+  if (token && !orgQ.isLoading && !organization) return <DashboardLoading />;
+
+  return <DashboardContent userData={meQ.data ?? null} organization={organization} recentRuns={runsQ.data ?? []} error={error ? String(error) : null} />;
 }

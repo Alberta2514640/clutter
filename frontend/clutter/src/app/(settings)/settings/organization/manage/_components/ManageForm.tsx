@@ -1,12 +1,11 @@
-// ManageForm.tsx
 "use client";
 
-import { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 export interface ManageFormValues {
   orgName: string;
-  slug: string;
-  timeZone: string;
+  orgId: string;
+  description: string;
 }
 
 export interface ManageFormProps {
@@ -18,21 +17,28 @@ export interface ManageFormProps {
   isDeleting?: boolean;
 }
 
-export default function ManageForm({ initialValues, onSubmit, onDelete, isDeleting, }: ManageFormProps) {
+export default function ManageForm({ initialValues, onSubmit, onDelete, isSaving, isDeleting, }: ManageFormProps) {
   const [values, setValues] = useState<ManageFormValues>(initialValues);
+
+  useEffect(() => {
+    setValues(initialValues);
+  }, [initialValues]);
+
+  const isDirty = useMemo(() => {
+    const a = (initialValues.description ?? "").trim();
+    const b = (values.description ?? "").trim();
+    return a !== b;
+  }, [initialValues.description, values.description]);
 
   const handleChange =
     (field: keyof ManageFormValues) =>
-    (
-      e: React.ChangeEvent<
-        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-      >
-    ) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       setValues((prev) => ({ ...prev, [field]: e.target.value }));
     };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isDirty) return; // extra safety
     await onSubmit(values);
   };
 
@@ -40,6 +46,8 @@ export default function ManageForm({ initialValues, onSubmit, onDelete, isDeleti
     if (!onDelete) return;
     await onDelete();
   };
+
+  const saveDisabled = !!isSaving || !isDirty;
 
   return (
     <div>
@@ -67,43 +75,53 @@ export default function ManageForm({ initialValues, onSubmit, onDelete, isDeleti
             </label>
             <input
               type="text"
-              value={values.slug}
+              value={values.orgId}
               disabled
               className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
             />
+            <p className="text-xs text-slate-500">Used in APIs. This ID is fixed.</p>
+          </div>
+        </div>
+
+        {/* Description (editable) */}
+        <div className="grid gap-4">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-slate-200">
+              Description
+            </label>
+            <textarea
+              value={values.description}
+              onChange={handleChange("description")}
+              rows={4}
+              className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              placeholder="Describe this organization…"
+            />
             <p className="text-xs text-slate-500">
-              Used in URLs and APIs. This ID is fixed.
+              Optional. Helps members understand what this workspace is for.
             </p>
           </div>
         </div>
-        <div className="grid gap-4">
 
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-slate-200">
-              Time zone
-            </label>
-            <select
-              value={values.timeZone}
-              onChange={handleChange("timeZone")}
-              className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-            >
-              <option value="America/Edmonton">(UTC-07:00) Edmonton</option>
-              <option value="America/Denver">(UTC-07:00) Denver</option>
-              <option value="America/New_York">(UTC-05:00) New York</option>
-              <option value="UTC">(UTC) Coordinated Universal Time</option>
-            </select>
-            <p className="text-xs text-slate-500">
-              Used for run timestamps and schedules.
-            </p>
-          </div>
+        {/* Save button */}
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saveDisabled}
+            className="px-4 py-2 rounded-lg bg-teal-600 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-60 transition"
+          >
+            {isSaving ? "Saving…" : "Save changes"}
+          </button>
+
+          {/* optional: tiny hint */}
+          {!isDirty && (
+            <span className="text-xs text-slate-500">No changes to save</span>
+          )}
         </div>
       </form>
 
       {/* Danger zone */}
       <div className="mt-8 border-t border-slate-800 pt-4">
-        <h3 className="text-sm font-semibold text-red-400 mb-2">
-          Danger zone
-        </h3>
+        <h3 className="text-sm font-semibold text-red-400 mb-2">Danger zone</h3>
         <p className="text-xs text-slate-400 mb-3 max-w-md">
           Deleting this organization will remove access to all projects,
           workspaces, and runs. This action cannot be undone.
@@ -111,7 +129,7 @@ export default function ManageForm({ initialValues, onSubmit, onDelete, isDeleti
         <button
           type="button"
           onClick={handleDelete}
-          disabled={isDeleting}
+          disabled={!!isDeleting}
           className="px-4 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-60 transition"
         >
           {isDeleting ? "Deleting…" : "Delete organization"}

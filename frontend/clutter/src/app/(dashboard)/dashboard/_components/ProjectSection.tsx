@@ -1,20 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FolderOpen, Clock, Users, Plus } from "lucide-react";
-
-interface Project {
-  projectId: string;
-  name: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  memberCount?: number;
-}
-
+import type { Project } from "@/lib/features/projects/types";
+import { Clock, FolderOpen, Plus, Users } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 interface ProjectsSectionProps {
   projects: Project[];
 }
@@ -54,7 +45,7 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
-            <Link key={project.projectId} href={`/projects/${project.projectId}/diagrams`}>
+            <Link key={project.id} href={`/projects/${project.id}/diagrams`}>
               <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50 hover:border-teal-500/50 transition-all cursor-pointer group">
                 <CardHeader>
                   <CardTitle className="text-white group-hover:text-teal-400 transition-colors">{project.name}</CardTitle>
@@ -62,7 +53,8 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span className="flex items-center gap-1">
+                    {/* we dont have this data  */}
+                    {/* <span className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
                       {formatDate(project.updatedAt)}
                     </span>
@@ -71,7 +63,7 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
                         <Users className="w-4 h-4" />
                         {project.memberCount}
                       </span>
-                    )}
+                    )} */}
                   </div>
                 </CardContent>
               </Card>
