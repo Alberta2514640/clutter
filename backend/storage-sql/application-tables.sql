@@ -146,3 +146,27 @@ ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."diagram_history"
 AS PERMISSIVE TO anon USING (true);
+
+-- ============================
+-- JOBS
+-- ============================
+CREATE TABLE public.jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status VARCHAR(50) NOT NULL DEFAULT 'QUEUED' CHECK (status IN ('QUEUED', 'STARTING', 'RUNNING', 'COMPLETED', 'FAILED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    target_instance_ids JSONB NOT NULL,
+    playbook_s3_key VARCHAR(255) NOT NULL,
+    extra_vars JSONB DEFAULT '{}'::jsonb,
+    task_arn VARCHAR(255),
+    error_message TEXT,
+    config_id UUID
+);
+
+CREATE INDEX idx_jobs_status ON public.jobs(status);
+CREATE INDEX idx_jobs_created_at ON public.jobs(created_at DESC);
+
+ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."jobs"
+AS PERMISSIVE TO anon USING (true);
