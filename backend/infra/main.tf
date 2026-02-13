@@ -18,7 +18,70 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter = module.s3.clutter_bucket_arn
+  s3_clutter               = module.s3.clutter_bucket_arn
+  # dynamodb_jobs_table_arn  = aws_dynamodb_table.ansible_jobs.arn  # Removed
+  s3_clutter_bucket_name   = module.s3.clutter_bucket_name
+  aws_region               = var.aws_region
+  # dynamodb_jobs_table_name = aws_dynamodb_table.ansible_jobs.name # Removed
+}
+
+# ========================
+# Ansible Engine Resources
+# ========================
+
+# DynamoDB — Ansible Jobs Table (REMOVED for PostgreSQL)
+# resource "aws_dynamodb_table" "ansible_jobs" {
+#   name         = "ansible-engine-jobs"
+#   billing_mode = "PAY_PER_REQUEST"
+#   hash_key     = "id"
+#
+#   attribute {
+#     name = "id"
+#     type = "S"
+#   }
+#
+#   attribute {
+#     name = "status"
+#     type = "S"
+#   }
+#
+#   attribute {
+#     name = "createdAt"
+#     type = "S"
+#   }
+#
+#   global_secondary_index {
+#     name            = "status-index"
+#     hash_key        = "status"
+#     range_key       = "createdAt"
+#     projection_type = "ALL"
+#   }
+# }
+
+# SQS — Ansible Job Queue + Dead Letter Queue
+resource "aws_sqs_queue" "ansible_jobs_dlq" {
+  name                      = "ansible-engine-jobs-dlq"
+  message_retention_seconds = 1209600 # 14 days
+}
+
+resource "aws_sqs_queue" "ansible_jobs" {
+  name                       = "ansible-engine-jobs-queue"
+  visibility_timeout_seconds = 900    # 15 minutes
+  message_retention_seconds  = 345600 # 4 days
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.ansible_jobs_dlq.arn
+    maxReceiveCount     = 3
+  })
+}
+
+
+
+# Subnet lookup for Fargate task networking
+data "aws_subnets" "default" {
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
+  }
 }
 
 # ================
@@ -50,7 +113,7 @@ module "authorizer-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "authorizer"
-  actions       = [
+  actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents"
@@ -58,7 +121,7 @@ module "authorizer-lambda" {
   resources     = ["*"]
   zip_dir_slice = "authorizer"
   environment_variables = {
-    JWT_SECRET              = var.jwt_secret
+    JWT_SECRET = var.jwt_secret
   }
 
 }
@@ -77,9 +140,9 @@ module "cloudformation-stack-url-generator-lambda" {
   ]
   zip_dir_slice = "cloudformation/stack-url-generator"
   environment_variables = {
-    PSQL_CONNECTION_STRING = var.psql_connection_string
+    PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
   }
 }
 
@@ -362,8 +425,8 @@ module "user-information-get-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
-  zip_dir_slice = "user-information/get"
+  resources             = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
+  zip_dir_slice         = "user-information/get"
   environment_variables = {}
 
 }
@@ -405,11 +468,138 @@ module "terraform-engine-create-lambda" {
   ]
   zip_dir_slice = "terraform-engine/create"
   environment_variables = {
-    S3_BUCKET_NAME = var.terraform_output_bucket
-    TEMPLATE_BUCKET_NAME = var.terraform_template_bucket 
+    S3_BUCKET_NAME         = var.terraform_output_bucket
+    TEMPLATE_BUCKET_NAME   = var.terraform_template_bucket
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 
+}
+
+# ==================================
+# Ansible Engine Lambda Functions
+# ==================================
+
+module "ansible-submit-job-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-submit-job"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    # "dynamodb:PutItem", # Removed
+    "sqs:SendMessage"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-submit-job:*",
+    # aws_dynamodb_table.ansible_jobs.arn, # Removed
+    aws_sqs_queue.ansible_jobs.arn
+  ]
+  zip_dir_slice = "ansible/submit-job"
+  environment_variables = {
+    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
+  }
+}
+
+module "ansible-get-job-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-get-job"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    # "dynamodb:GetItem" # Removed
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-get-job:*",
+    # aws_dynamodb_table.ansible_jobs.arn # Removed
+  ]
+  zip_dir_slice = "ansible/get-job"
+  environment_variables = {
+    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
+module "ansible-list-jobs-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-list-jobs"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    # "dynamodb:Scan", # Removed
+    # "dynamodb:Query" # Removed
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-list-jobs:*",
+    # aws_dynamodb_table.ansible_jobs.arn, # Removed
+    # "${aws_dynamodb_table.ansible_jobs.arn}/index/*" # Removed
+  ]
+  zip_dir_slice = "ansible/list-jobs"
+  environment_variables = {
+    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
+module "ansible-run-task-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-run-task"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "ecs:RunTask",
+    "iam:PassRole",
+    # "dynamodb:UpdateItem" # Removed
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-run-task:*",
+    module.fargate.cluster_arn,
+    module.fargate.ansible_task_def_arn,
+    # aws_dynamodb_table.ansible_jobs.arn, # Removed
+    module.fargate.ansible_task_role_arn,
+    module.fargate.ecs_execution_role_arn
+  ]
+  zip_dir_slice = "ansible/run-task"
+  environment_variables = {
+    # JOB_TABLE_NAME      = aws_dynamodb_table.ansible_jobs.name # Removed
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    ECS_CLUSTER_ARN        = module.fargate.cluster_arn
+    TASK_DEFINITION_ARN    = module.fargate.ansible_task_def_arn
+    SUBNET_IDS             = join(",", data.aws_subnets.default.ids)
+    SECURITY_GROUP_ID      = module.fargate.ansible_sg_id
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+  }
+}
+
+# SQS → Lambda trigger for ansible-run-task
+resource "aws_lambda_event_source_mapping" "ansible_sqs_trigger" {
+  event_source_arn = aws_sqs_queue.ansible_jobs.arn
+  function_name    = module.ansible-run-task-lambda.arn
+  batch_size       = 1
+  enabled          = true
+}
+
+# Grant SQS permissions to the run-task lambda
+resource "aws_iam_role_policy" "ansible_run_task_sqs" {
+  name = "ansible-run-task-sqs-policy"
+  role = module.ansible-run-task-lambda.role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ]
+      Resource = aws_sqs_queue.ansible_jobs.arn
+    }]
+  })
 }
 
 # ===========
@@ -417,8 +607,8 @@ module "terraform-engine-create-lambda" {
 # ===========
 
 module "clutter-api-gateway" {
-  source = "./modules/api-gateway"
-  aws_region = var.aws_region
+  source             = "./modules/api-gateway"
+  aws_region         = var.aws_region
   jwt_authorizer_arn = module.authorizer-lambda.arn
 }
 
@@ -581,6 +771,37 @@ module "terraform-engine-api-cors-compliance" {
   http_methods = ["POST", "GET"]
 }
 
+# Ansible Engine
+module "ansible-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "ansible"
+}
+module "ansible-jobs-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.ansible-api-path.resource_id
+  path_part   = "jobs"
+}
+module "ansible-jobs-by-id-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.ansible-jobs-api-path.resource_id
+  path_part   = "{jobId}"
+}
+module "ansible-jobs-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.ansible-jobs-api-path.resource_id
+  http_methods = ["POST", "GET"]
+}
+module "ansible-jobs-by-id-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.ansible-jobs-by-id-api-path.resource_id
+  http_methods = ["GET"]
+}
 
 # Validation Models
 
@@ -654,15 +875,15 @@ module "diagram-update-model" {
 
 # POST Log-in
 module "log-in-api-integration" {
-  source               = "./modules/templates/api-lambda-integration"
-  rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.log-in-api-path.resource_id
-  http_method          = "POST"
-  invoke_arn           = module.log-in-lambda.invoke_arn
-  function_name        = module.log-in-lambda.function_name
-  path_part            = module.log-in-api-path.path_part
-  execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.log-in-api-path.path
+  source        = "./modules/templates/api-lambda-integration"
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  resource_id   = module.log-in-api-path.resource_id
+  http_method   = "POST"
+  invoke_arn    = module.log-in-lambda.invoke_arn
+  function_name = module.log-in-lambda.function_name
+  path_part     = module.log-in-api-path.path_part
+  execution_arn = module.clutter-api-gateway.execution_arn
+  path          = module.log-in-api-path.path
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.log-in-model.model_name
@@ -685,16 +906,16 @@ module "cloudformation-stack-url-generator-api-integration" {
 # Organization
 # POST organization
 module "organization-create-api-integration" {
-  source               = "./modules/templates/api-lambda-integration"
-  rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-api-path.resource_id
-  http_method          = "POST"
-  invoke_arn           = module.organization-create-lambda.invoke_arn
-  function_name        = module.organization-create-lambda.function_name
-  path_part            = module.organization-api-path.path_part
-  execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-api-path.path
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.organization-create-lambda.invoke_arn
+  function_name     = module.organization-create-lambda.function_name
+  path_part         = module.organization-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.organization-create-model.model_name
@@ -708,22 +929,22 @@ module "organization-get-api-integration" {
   invoke_arn        = module.organization-get-lambda.invoke_arn
   function_name     = module.organization-get-lambda.function_name
   path_part         = module.organization-api-path.path_part
-  execution_arn      = module.clutter-api-gateway.execution_arn
+  execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.organization-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 # UPDATE organization
 module "organization-update-api-integration" {
-  source               = "./modules/templates/api-lambda-integration"
-  rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.organization-api-path-by-id.resource_id
-  http_method          = "PUT"
-  invoke_arn           = module.organization-update-lambda.invoke_arn
-  function_name        = module.organization-update-lambda.function_name
-  path_part            = module.organization-api-path-by-id.path_part
-  execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.organization-api-path-by-id.path
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-api-path-by-id.resource_id
+  http_method       = "PUT"
+  invoke_arn        = module.organization-update-lambda.invoke_arn
+  function_name     = module.organization-update-lambda.function_name
+  path_part         = module.organization-api-path-by-id.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-api-path-by-id.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.organization-update-model.model_name
@@ -791,16 +1012,16 @@ module "organization-delete-account-api-integration" {
 # Project
 # POST project
 module "project-create-api-integration" {
-  source               = "./modules/templates/api-lambda-integration"
-  rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.project-api-path.resource_id
-  http_method          = "POST"
-  invoke_arn           = module.project-create-lambda.invoke_arn
-  function_name        = module.project-create-lambda.function_name
-  path_part            = module.project-api-path.path_part
-  execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.project-api-path.path
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.project-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.project-create-lambda.invoke_arn
+  function_name     = module.project-create-lambda.function_name
+  path_part         = module.project-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.project-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.project-create-model.model_name
@@ -820,16 +1041,16 @@ module "project-get-api-integration" {
 }
 # UPDATE project
 module "project-update-api-integration" {
-  source               = "./modules/templates/api-lambda-integration"
-  rest_api_id          = module.clutter-api-gateway.rest_api_id
-  resource_id          = module.project-api-path.resource_id
-  http_method          = "PUT"
-  invoke_arn           = module.project-update-lambda.invoke_arn
-  function_name        = module.project-update-lambda.function_name
-  path_part            = module.project-api-path.path_part
-  execution_arn        = module.clutter-api-gateway.execution_arn
-  path                 = module.project-api-path.path
-  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.project-api-path.resource_id
+  http_method       = "PUT"
+  invoke_arn        = module.project-update-lambda.invoke_arn
+  function_name     = module.project-update-lambda.function_name
+  path_part         = module.project-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.project-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.project-update-model.model_name
@@ -904,6 +1125,47 @@ module "diagram-delete-api-integration" {
   path_part         = module.diagram-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.diagram-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# Ansible Engine
+# POST ansible/jobs
+module "ansible-submit-job-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.ansible-jobs-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.ansible-submit-job-lambda.invoke_arn
+  function_name     = module.ansible-submit-job-lambda.function_name
+  path_part         = module.ansible-jobs-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.ansible-jobs-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+# GET ansible/jobs
+module "ansible-list-jobs-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.ansible-jobs-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.ansible-list-jobs-lambda.invoke_arn
+  function_name     = module.ansible-list-jobs-lambda.function_name
+  path_part         = module.ansible-jobs-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.ansible-jobs-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+# GET ansible/jobs/{jobId}
+module "ansible-get-job-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.ansible-jobs-by-id-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.ansible-get-job-lambda.invoke_arn
+  function_name     = module.ansible-get-job-lambda.function_name
+  path_part         = module.ansible-jobs-by-id-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.ansible-jobs-by-id-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
@@ -996,8 +1258,12 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.user-information-get-api-integration.integration_id,
 
       module.terraform-engine-create-api-integration.integration_id,
+      
+      module.resources-get-api-integration.integration_id,
 
-      module.resources-get-api-integration.integration_id
+      module.ansible-submit-job-api-integration.integration_id,
+      module.ansible-list-jobs-api-integration.integration_id,
+      module.ansible-get-job-api-integration.integration_id
     ]))
   }
 

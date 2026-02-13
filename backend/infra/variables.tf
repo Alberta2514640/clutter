@@ -3,12 +3,12 @@ variable "aws_region" {
   description = "The AWS region to deploy resources to"
 }
 variable "jwt_secret" {
-    type        = string
-    description = "JWT secret key"
+  type        = string
+  description = "JWT secret key"
 }
 variable "psql_connection_string" {
-    type        = string
-    description = "PostgreSQL connection string to enable querying"
+  type        = string
+  description = "PostgreSQL connection string to enable querying"
 }
 variable "cloudformation_template_url" {
   description = "Full URL to the CloudFormation template stored in Clutter Templates S3"
