@@ -18,9 +18,9 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter               = module.s3.clutter_bucket_arn
-  s3_clutter_bucket_name   = module.s3.clutter_bucket_name
-  aws_region               = var.aws_region
+  s3_clutter             = module.s3.clutter_bucket_arn
+  s3_clutter_bucket_name = module.s3.clutter_bucket_name
+  aws_region             = var.aws_region
 }
 
 # ========================
