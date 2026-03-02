@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
-	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 	taskDefARN := os.Getenv("TASK_DEFINITION_ARN")
 	subnetIDsRaw := os.Getenv("SUBNET_IDS")
 	securityGroupID := os.Getenv("SECURITY_GROUP_ID")
-	connString := os.Getenv("PSQL_CONNECTION_STRING")
+	connString := os.Getenv("PSQL_CONNECTION_STRING") // Also passed to Fargate container
 	s3BucketName := os.Getenv("S3_BUCKET_NAME")
 
 	// Validate all required environment variables
@@ -65,7 +65,8 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 
 	ecsClient := ecs.NewFromConfig(cfg)
 
-	conn, err := pgx.Connect(ctx, connString)
+	// Connect to PostgreSQL using shared helper
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return events.SQSEventResponse{}, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -86,7 +87,7 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 
 		jobID := msg["job_id"]
 		playbookS3Key := msg["playbook_s3_key"]
-		targetInstanceIDs := msg["target_instance_ids"]
+		rawTargetInstanceIDs := msg["target_instance_ids"]
 		extraVars := msg["extra_vars"]
 
 		// Validate required message fields
@@ -97,7 +98,7 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 		if playbookS3Key == "" {
 			missingFields = append(missingFields, "playbook_s3_key")
 		}
-		if targetInstanceIDs == "" {
+		if rawTargetInstanceIDs == "" {
 			missingFields = append(missingFields, "target_instance_ids")
 		}
 		if len(missingFields) > 0 {
@@ -106,6 +107,17 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 				ItemIdentifier: record.MessageId,
 			})
 			continue
+		}
+
+		// Convert target_instance_ids from JSON array to comma-separated string
+		// submit-job sends it as '["i-abc","i-def"]' but entrypoint.sh expects 'i-abc,i-def'
+		var targetInstanceIDsList []string
+		var targetInstanceIDs string
+		if err := json.Unmarshal([]byte(rawTargetInstanceIDs), &targetInstanceIDsList); err == nil {
+			targetInstanceIDs = strings.Join(targetInstanceIDsList, ",")
+		} else {
+			// Fallback: assume it's already comma-separated
+			targetInstanceIDs = rawTargetInstanceIDs
 		}
 
 		log.Printf("Processing job %s: playbook=%s, targets=%s", jobID, playbookS3Key, targetInstanceIDs)

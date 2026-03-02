@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 type SubmitJobRequest struct {
@@ -42,12 +41,12 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Validate required fields
 	if len(body.TargetInstanceIDs) == 0 {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"error": "target_instance_ids is required and must not be empty",
+			"message": "target_instance_ids is required and must not be empty",
 		})
 	}
 	if body.PlaybookS3Key == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"error": "playbook_s3_key is required",
+			"message": "playbook_s3_key is required",
 		})
 	}
 
@@ -56,18 +55,11 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Get and validate environment variables
-	connString := os.Getenv("PSQL_CONNECTION_STRING")
 	queueURL := os.Getenv("JOB_QUEUE_URL")
-	if connString == "" {
-		log.Printf("ERROR: PSQL_CONNECTION_STRING environment variable is not set")
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "server configuration error",
-		})
-	}
 	if queueURL == "" {
 		log.Printf("ERROR: JOB_QUEUE_URL environment variable is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "server configuration error",
+			"message": "server configuration error",
 		})
 	}
 
@@ -77,17 +69,19 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		log.Printf("ERROR: failed to load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to load AWS config",
+			"message": "failed to load AWS config",
+			"error":   err.Error(),
 		})
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
 
-	// Initialize PostgreSQL connection
-	conn, err := pgx.Connect(ctx, connString)
+	// Connect to PostgreSQL using shared helper
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to connect to database",
+			"message": "failed to connect to database",
+			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -97,14 +91,16 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		log.Printf("ERROR: failed to marshal target_instance_ids: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to process target instance IDs",
+			"message": "failed to process target instance IDs",
+			"error":   err.Error(),
 		})
 	}
 	extraVarsJSON, err := json.Marshal(body.ExtraVars)
 	if err != nil {
 		log.Printf("ERROR: failed to marshal extra_vars: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to process extra vars",
+			"message": "failed to process extra vars",
+			"error":   err.Error(),
 		})
 	}
 
@@ -115,7 +111,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		log.Printf("ERROR: failed to begin transaction: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "database error",
+			"message": "database error",
+			"error":   err.Error(),
 		})
 	}
 	defer tx.Rollback(ctx) // Rollback if not committed
@@ -135,7 +132,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		log.Printf("ERROR: failed to create job record for job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to create job record",
+			"message": "failed to create job record",
+			"error":   err.Error(),
 		})
 	}
 
@@ -153,7 +151,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		log.Printf("ERROR: failed to marshal SQS message: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to prepare job",
+			"message": "failed to prepare job",
+			"error":   err.Error(),
 		})
 	}
 	msgStr := string(msgBody)
@@ -167,7 +166,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		log.Printf("ERROR: failed to send SQS message for job %s: %v", jobID, err)
 		// We can return error here; transaction rollbacks on defer
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to queue job",
+			"message": "failed to queue job",
+			"error":   err.Error(),
 		})
 	}
 
@@ -175,7 +175,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err := tx.Commit(ctx); err != nil {
 		log.Printf("ERROR: failed to commit transaction: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "database error during commit",
+			"message": "database error during commit",
+			"error":   err.Error(),
 		})
 	}
 

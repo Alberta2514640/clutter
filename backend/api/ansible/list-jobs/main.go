@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -20,24 +19,17 @@ func main() {
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
-	connString := os.Getenv("PSQL_CONNECTION_STRING")
-	if connString == "" {
-		log.Printf("ERROR: PSQL_CONNECTION_STRING environment variable is not set")
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "server configuration error",
-		})
-	}
-
 	statusFilter := request.QueryStringParameters["status"]
 
 	ctx := context.Background()
 
-	// Initialize PostgreSQL connection
-	conn, err := pgx.Connect(ctx, connString)
+	// Connect to PostgreSQL using shared helper
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to connect to database",
+			"message": "failed to connect to database",
+			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -65,7 +57,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if queryErr != nil {
 		log.Printf("ERROR: failed to query jobs: %v", queryErr)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to query jobs",
+			"message": "failed to query jobs",
+			"error":   queryErr.Error(),
 		})
 	}
 	defer rows.Close()
@@ -125,7 +118,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if rows.Err() != nil {
 		log.Printf("ERROR: rows iteration error: %v", rows.Err())
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to process job list",
+			"message": "failed to process job list",
+			"error":   rows.Err().Error(),
 		})
 	}
 

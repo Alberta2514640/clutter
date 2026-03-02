@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -23,24 +22,24 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	jobID := request.PathParameters["jobId"]
 	if jobID == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"error": "jobId path parameter is required",
+			"message": "jobId path parameter is required",
 		})
 	}
 
-	connString := os.Getenv("PSQL_CONNECTION_STRING")
-	if connString == "" {
-		log.Printf("ERROR: PSQL_CONNECTION_STRING environment variable is not set")
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "server configuration error",
+	// Validate jobId is a valid UUID
+	if !generic.IsValidUuid(jobID) {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "jobId must be a valid UUID",
 		})
 	}
 
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, connString)
+	conn, err := generic.PsqlConnect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to connect to database",
+			"message": "failed to connect to database",
+			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -63,12 +62,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return generic.Response(http.StatusNotFound, generic.Json{
-				"error": "job not found",
+				"message": "job not found",
 			})
 		}
 		log.Printf("ERROR: failed to retrieve job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error": "failed to retrieve job",
+			"message": "failed to retrieve job",
+			"error":   err.Error(),
 		})
 	}
 
