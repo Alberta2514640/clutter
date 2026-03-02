@@ -19,44 +19,15 @@ module "fargate" {
   source = "./modules/fargate"
 
   s3_clutter               = module.s3.clutter_bucket_arn
-  # dynamodb_jobs_table_arn  = aws_dynamodb_table.ansible_jobs.arn  # Removed
   s3_clutter_bucket_name   = module.s3.clutter_bucket_name
   aws_region               = var.aws_region
-  # dynamodb_jobs_table_name = aws_dynamodb_table.ansible_jobs.name # Removed
 }
 
 # ========================
 # Ansible Engine Resources
 # ========================
 
-# DynamoDB — Ansible Jobs Table (REMOVED for PostgreSQL)
-# resource "aws_dynamodb_table" "ansible_jobs" {
-#   name         = "ansible-engine-jobs"
-#   billing_mode = "PAY_PER_REQUEST"
-#   hash_key     = "id"
-#
-#   attribute {
-#     name = "id"
-#     type = "S"
-#   }
-#
-#   attribute {
-#     name = "status"
-#     type = "S"
-#   }
-#
-#   attribute {
-#     name = "createdAt"
-#     type = "S"
-#   }
-#
-#   global_secondary_index {
-#     name            = "status-index"
-#     hash_key        = "status"
-#     range_key       = "createdAt"
-#     projection_type = "ALL"
-#   }
-# }
+
 
 # SQS — Ansible Job Queue + Dead Letter Queue
 resource "aws_sqs_queue" "ansible_jobs_dlq" {
@@ -468,17 +439,17 @@ module "ansible-submit-job-lambda" {
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-    # "dynamodb:PutItem", # Removed
+
     "sqs:SendMessage"
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-submit-job:*",
-    # aws_dynamodb_table.ansible_jobs.arn, # Removed
+
     aws_sqs_queue.ansible_jobs.arn
   ]
   zip_dir_slice = "ansible/submit-job"
   environment_variables = {
-    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
   }
@@ -491,15 +462,15 @@ module "ansible-get-job-lambda" {
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-    # "dynamodb:GetItem" # Removed
+
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-get-job:*",
-    # aws_dynamodb_table.ansible_jobs.arn # Removed
+
   ]
   zip_dir_slice = "ansible/get-job"
   environment_variables = {
-    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
@@ -511,17 +482,15 @@ module "ansible-list-jobs-lambda" {
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-    # "dynamodb:Scan", # Removed
-    # "dynamodb:Query" # Removed
+
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-list-jobs:*",
-    # aws_dynamodb_table.ansible_jobs.arn, # Removed
-    # "${aws_dynamodb_table.ansible_jobs.arn}/index/*" # Removed
+
   ]
   zip_dir_slice = "ansible/list-jobs"
   environment_variables = {
-    # JOB_TABLE_NAME = aws_dynamodb_table.ansible_jobs.name # Removed
+
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
@@ -535,19 +504,19 @@ module "ansible-run-task-lambda" {
     "logs:PutLogEvents",
     "ecs:RunTask",
     "iam:PassRole",
-    # "dynamodb:UpdateItem" # Removed
+
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-run-task:*",
     module.fargate.cluster_arn,
     module.fargate.ansible_task_def_arn,
-    # aws_dynamodb_table.ansible_jobs.arn, # Removed
+
     module.fargate.ansible_task_role_arn,
     module.fargate.ecs_execution_role_arn
   ]
   zip_dir_slice = "ansible/run-task"
   environment_variables = {
-    # JOB_TABLE_NAME      = aws_dynamodb_table.ansible_jobs.name # Removed
+
     PSQL_CONNECTION_STRING = var.psql_connection_string
     ECS_CLUSTER_ARN        = module.fargate.cluster_arn
     TASK_DEFINITION_ARN    = module.fargate.ansible_task_def_arn
