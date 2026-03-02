@@ -169,15 +169,7 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
           "${var.s3_clutter}/*"
         ]
       },
-      # {
-      #   Effect = "Allow"
-      #   Action = [
-      #     "dynamodb:GetItem",
-      #     "dynamodb:PutItem",
-      #     "dynamodb:UpdateItem"
-      #   ]
-      #   Resource = var.dynamodb_jobs_table_arn
-      # },
+
       {
         Effect   = "Allow"
         Action   = "ec2:DescribeInstances"
@@ -251,7 +243,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
 
       environment = [
         { name = "S3_BUCKET_NAME", value = var.s3_clutter_bucket_name },
-        { name = "AWS_REGION", value = var.aws_region }
+        { name = "AWS_DEFAULT_REGION", value = var.aws_region }
       ]
 
       essential = true
@@ -263,10 +255,18 @@ resource "aws_security_group" "ansible_runner" {
   name   = "ansible-runner"
   vpc_id = data.aws_vpc.default.id
 
-  # HTTPS egress for AWS API calls (S3, DynamoDB, SSM, CloudWatch)
+  # HTTPS egress for AWS API calls (S3, SSM Session Manager, CloudWatch)
   egress {
     from_port   = 443
     to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # PostgreSQL egress for job status updates (Supabase)
+  egress {
+    from_port   = 5432
+    to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
