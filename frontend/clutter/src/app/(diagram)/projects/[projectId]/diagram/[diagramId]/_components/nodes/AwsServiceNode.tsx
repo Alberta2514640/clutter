@@ -2,21 +2,14 @@
 
 import { NodeData } from "@/lib/features/diagram/types";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import Image from "next/image";
 
 export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeData>>) {
   return (
-    <div
-      className={[
-        "rounded-xl border px-4 py-3 shadow-lg transition-all",
-        "bg-[rgba(30,35,45,0.85)]",
-        selected
-          ? "border-[rgba(100,180,255,0.8)] shadow-[0_0_20px_rgba(100,180,255,0.3)]"
-          : "border-white/20",
-      ].join(" ")}
-    >
+    <div className={["rounded-xl border px-4 py-3 shadow-lg transition-all", "bg-[rgba(30,35,45,0.85)]", selected ? "border-[rgba(100,180,255,0.8)] shadow-[0_0_20px_rgba(100,180,255,0.3)]" : "border-white/20"].join(" ")}>
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/20 bg-white/10 text-sm font-bold">
-          {data.img}
+          <Image src={data.img as string} alt="" width={24} height={24} unoptimized />
         </div>
         <div className="leading-tight">
           <div className="text-sm font-semibold text-white">{data.label}</div>

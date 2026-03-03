@@ -1,18 +1,8 @@
 "use client";
 
 import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
-import {
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
-  Background,
-  BackgroundVariant,
-  Controls,
-  Panel,
-  ReactFlow,
-  useReactFlow,
-} from "@xyflow/react";
-import React, { useCallback, useEffect, useMemo } from "react";
+import { addEdge, applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, useReactFlow } from "@xyflow/react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import Palette from "./Palette";
 import TopNav from "./TopNav";
@@ -34,18 +24,18 @@ const DND_MIME = "application/x-palette-item";
 
 export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
   const router = useRouter();
-  
+
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
 
   const { screenToFlowPosition } = useReactFlow();
 
   const diagramQ = useDiagram(token, projectId, diagramId);
-  console.log(diagramQ.data)
+  console.log(diagramQ.data);
   const saveM = useUpdateDiagramData(token);
 
   const editor = useDiagramEditor(diagramId);
-  const { ensure, reset,  hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
+  const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
 
   useEffect(() => {
     ensure(diagramId);
@@ -55,14 +45,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   useEffect(() => {
     if (!diagramQ.data) return;
 
-    hydrateFromServer(
-      diagramId,
-      diagramQ.data.name ?? "",
-      diagramQ.data.uiLayout?.nodes ?? [],
-      diagramQ.data.uiLayout?.edges ?? []
-    );
+    hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.uiLayout?.nodes ?? [], diagramQ.data.uiLayout?.edges ?? []);
   }, [diagramId, diagramQ.data, hydrateFromServer]);
-
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
   const edges = useMemo(() => editor?.edges ?? [], [editor?.edges]);
@@ -85,7 +69,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     () => ({
       awsService: AwsServiceNode as React.ComponentType<NodeProps>,
     }),
-    []
+    [],
   );
 
   // ---------------------------
@@ -94,43 +78,33 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const onNodesChange = useCallback(
     (changes: NodeChange<DiagramNode>[]) => {
       // Only these change types require saving
-      const requiresSave = changes.some(
-        (change) => 
-          change.type === 'position' ||
-          change.type === 'dimensions' ||
-          change.type === 'add' ||
-          change.type === 'remove' ||
-          change.type === 'replace'
-      );
-      
+      const requiresSave = changes.some((change) => change.type === "position" || change.type === "dimensions" || change.type === "add" || change.type === "remove" || change.type === "replace");
+
       const next = applyNodeChanges(changes, nodes);
-      
+
       if (requiresSave) {
         setNodes(diagramId, next);
       } else {
         setNodesWithoutDirty(diagramId, next);
       }
     },
-    [diagramId, nodes, setNodes, setNodesWithoutDirty]
+    [diagramId, nodes, setNodes, setNodesWithoutDirty],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<DiagramEdge>[]) => {
       // Only these change types require saving
-      const requiresSave = changes.some(
-        (change) => 
-          change.type !== 'select'
-      );
-      
+      const requiresSave = changes.some((change) => change.type !== "select");
+
       const next = applyEdgeChanges(changes, edges);
-      
+
       if (requiresSave) {
         setEdges(diagramId, next);
       } else {
         setEdgesWithoutDirty(diagramId, next);
       }
     },
-    [diagramId, edges, setEdges, setEdgesWithoutDirty]
+    [diagramId, edges, setEdges, setEdgesWithoutDirty],
   );
 
   const onConnect = useCallback(
@@ -138,7 +112,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       const next = addEdge({ ...params }, edges);
       setEdges(diagramId, next);
     },
-    [diagramId, edges, setEdges]
+    [diagramId, edges, setEdges],
   );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -164,12 +138,14 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
       setNodes(diagramId, [...nodes, newNode]);
     },
-    [diagramId, nodes, screenToFlowPosition, setNodes]
+    [diagramId, nodes, screenToFlowPosition, setNodes],
   );
 
   // ---------------------------
   // Save handler (uses new hook signature)
   // ---------------------------
+  const [showSaved, setShowSaved] = useState(false);
+
   const onSave = useCallback(async () => {
     if (!token) return;
 
@@ -182,6 +158,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     });
 
     markClean(diagramId);
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
   }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
   return (
@@ -190,35 +168,33 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
         <Palette />
 
         <div className="relative flex-1">
-          <ReactFlow
-            colorMode="dark"
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-            nodeTypes={nodeTypes}
-            snapToGrid
-            snapGrid={[20, 20]}
-          >
-            <Panel position="top-left" className="w-full pr-5" >
+          <ReactFlow colorMode="dark" nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDragOver={onDragOver} onDrop={onDrop} nodeTypes={nodeTypes} snapToGrid snapGrid={[20, 20]}>
+            <Panel position="top-left" className="w-full pr-5">
               <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} dirty={dirty} isSaving={isSaving} />
             </Panel>
 
             <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
 
-            <Controls
-              orientation="horizontal"
-              className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
-              showInteractive={false}
-            />
+            <Controls orientation="horizontal" className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10" showInteractive={false} />
           </ReactFlow>
 
           {isLoading && (
             <div className="absolute inset-0 grid place-items-center bg-black/40">
               <div className="rounded-lg bg-neutral-900 px-4 py-2 text-sm">Loading diagram…</div>
+            </div>
+          )}
+          {isSaving && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-white shadow-lg flex items-center gap-2">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Saving…
+            </div>
+          )}
+          {showSaved && !isSaving && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-emerald-900/80 border border-emerald-700 px-4 py-2 text-sm text-emerald-100 shadow-lg flex items-center gap-2">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Saved
             </div>
           )}
         </div>

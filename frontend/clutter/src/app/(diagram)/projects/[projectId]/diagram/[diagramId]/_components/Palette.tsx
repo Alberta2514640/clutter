@@ -2,10 +2,13 @@
 
 import { ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useMemo, useState } from "react";
+import Image from "next/image";
 
 const DND_MIME = "application/x-palette-item";
 
 export type PaletteItem = {
+  type: "lambda" | "ec2" | "dynamodb" | "s3" | "apigateway";
+
   label: string;
   img: string;
 };
@@ -17,14 +20,16 @@ export default function Palette() {
 
   const sections = useMemo<Section[]>(() => {
     const storage: PaletteItem[] = [
-      { label: "DynamoDB", img: "DB" },
-      { label: "S3", img: "S3" },
+      { type: "dynamodb", label: "DynamoDB", img: "/aws/dynamodb.png" },
+      { type: "s3", label: "S3", img: "/aws/s3.png" },
     ];
+
     const compute: PaletteItem[] = [
-      { label: "Lambda", img: "λ" },
-      { label: "EC2 Container", img: "EC2" },
+      { type: "lambda", label: "Lambda", img: "/aws/lambda.png" },
+      { type: "ec2", label: "EC2 Container", img: "/aws/ec2.png" },
     ];
-    const network: PaletteItem[] = [{ label: "API Gateway", img: "API" }];
+
+    const network: PaletteItem[] = [{ type: "apigateway", label: "API Gateway", img: "/aws/apigateway.png" }];
 
     return [
       { title: "COMPUTE", items: compute },
@@ -43,8 +48,7 @@ export default function Palette() {
         "relative z-50 overflow-visible pointer-events-auto h-full shrink-0 border-r border-slate-800 bg-slate-950/70 backdrop-blur",
         "transition-[width] duration-200",
         isCollapsed ? "w-14" : "w-[200px]",
-      ].join(" ")}
-    >
+      ].join(" ")}>
       {/* Mid-edge circular collapse/expand button */}
       <button
         type="button"
@@ -60,13 +64,8 @@ export default function Palette() {
           "hover:bg-slate-800 transition",
         ].join(" ")}
         aria-label={isCollapsed ? "Expand palette" : "Collapse palette"}
-        title={isCollapsed ? "Expand" : "Collapse"}
-      >
-        {isCollapsed ? (
-          <ChevronRight className="h-4 w-4 text-slate-300" />
-        ) : (
-          <ChevronLeft className="h-4 w-4 text-slate-300" />
-        )}
+        title={isCollapsed ? "Expand" : "Collapse"}>
+        {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-300" /> : <ChevronLeft className="h-4 w-4 text-slate-300" />}
       </button>
 
       {/* Header */}
@@ -78,9 +77,7 @@ export default function Palette() {
 
           {!isCollapsed && (
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-slate-100">
-                Resources
-              </div>
+              <div className="truncate text-sm font-semibold text-slate-100">Resources</div>
             </div>
           )}
         </div>
@@ -89,9 +86,7 @@ export default function Palette() {
       {/* Collapsed rail label */}
       {isCollapsed ? (
         <div className="flex h-[calc(100%-3.5rem)] items-center justify-center">
-          <span className="select-none text-[11px] font-semibold tracking-widest text-slate-300 [writing-mode:vertical-rl] rotate-180">
-            PALETTE
-          </span>
+          <span className="select-none text-[11px] font-semibold tracking-widest text-slate-300 [writing-mode:vertical-rl] rotate-180">PALETTE</span>
         </div>
       ) : (
         <>
@@ -101,9 +96,7 @@ export default function Palette() {
               {sections.map((sec) => (
                 <section key={sec.title}>
                   <div className="mb-2 flex items-center gap-2">
-                    <div className="text-[11px] font-semibold tracking-wider text-slate-400">
-                      {sec.title}
-                    </div>
+                    <div className="text-[11px] font-semibold tracking-wider text-slate-400">{sec.title}</div>
                     <div className="h-px flex-1 bg-slate-800" />
                   </div>
 
@@ -116,23 +109,13 @@ export default function Palette() {
                           e.dataTransfer.setData(DND_MIME, JSON.stringify(item));
                           e.dataTransfer.effectAllowed = "move";
                         }}
-                        className={[
-                          "flex cursor-grab select-none items-center gap-3 rounded-lg",
-                          "border border-slate-800 bg-slate-900/40 px-3 py-2.5",
-                          "hover:bg-slate-900/70 hover:border-slate-700 transition",
-                          "active:cursor-grabbing",
-                        ].join(" ")}
-                      >
-                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-slate-800 bg-slate-950 text-xs font-bold text-slate-200">
-                          {item.img}
+                        className={["flex cursor-grab select-none items-center gap-3 rounded-lg", "border border-slate-800 bg-slate-900/40 px-3 py-2.5", "hover:bg-slate-900/70 hover:border-slate-700 transition", "active:cursor-grabbing"].join(" ")}>
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-slate-800 bg-slate-950">
+                          <Image src={item.img} alt={item.label} width={22} height={22} className="object-contain" unoptimized />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-slate-100">
-                            {item.label}
-                          </div>
-                          <div className="truncate text-[11px] text-slate-400">
-                            Drag to add
-                          </div>
+                          <div className="truncate text-sm font-medium text-slate-100">{item.label}</div>
+                          <div className="truncate text-[11px] text-slate-400">Drag to add</div>
                         </div>
                       </div>
                     ))}
