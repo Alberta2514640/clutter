@@ -1,6 +1,6 @@
 "use client";
 
-import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
+import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes, IsValidConnection } from "@xyflow/react";
 import { addEdge, applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, useReactFlow } from "@xyflow/react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -55,6 +55,28 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const isLoading = diagramQ.isLoading;
   const isSaving = saveM.isPending;
+
+  const isValidConnection: IsValidConnection<DiagramEdge> = useCallback(
+    (connection) => {
+      const source = nodes.find((n) => n.id === connection.source);
+      const target = nodes.find((n) => n.id === connection.target);
+
+      if (!source || !target) return false;
+
+      const sourceLabel = source.data.label.toLowerCase();
+      const targetLabel = target.data.label.toLowerCase();
+
+      if (targetLabel.includes("api gateway")) return false;
+      if (sourceLabel.includes("dynamodb")) return false;
+      if (sourceLabel.includes("s3")) return false;
+      if (sourceLabel.includes("lambda") && targetLabel.includes("api gateway")) return false;
+      if (sourceLabel.includes("ec2") && targetLabel.includes("api gateway")) return false;
+      if (connection.source === connection.target) return false;
+
+      return true;
+    },
+    [nodes],
+  );
 
   const onBack = React.useCallback(() => {
     // Optional: guard if you don't want accidental loss
@@ -168,7 +190,19 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
         <Palette />
 
         <div className="relative flex-1">
-          <ReactFlow colorMode="dark" nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDragOver={onDragOver} onDrop={onDrop} nodeTypes={nodeTypes} snapToGrid snapGrid={[20, 20]}>
+          <ReactFlow
+            colorMode="dark"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            nodeTypes={nodeTypes}
+            snapToGrid
+            snapGrid={[20, 20]}
+            isValidConnection={isValidConnection}>
             <Panel position="top-left" className="w-full pr-5">
               <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} dirty={dirty} isSaving={isSaving} />
             </Panel>
