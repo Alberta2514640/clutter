@@ -2,7 +2,7 @@
 
 import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
 import { addEdge, applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, useReactFlow } from "@xyflow/react";
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import Palette from "./Palette";
 import TopNav from "./TopNav";
@@ -144,6 +144,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   // ---------------------------
   // Save handler (uses new hook signature)
   // ---------------------------
+  const [showSaved, setShowSaved] = useState(false);
+
   const onSave = useCallback(async () => {
     if (!token) return;
 
@@ -156,29 +158,9 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     });
 
     markClean(diagramId);
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
   }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
-
-  // ---------------------------
-  // Delete handler for selected nodes/edges
-  // ---------------------------
-  const deleteSelected = useCallback(() => {
-    const selectedNodeIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
-    const selectedEdgeIds = new Set(edges.filter((e) => e.selected).map((e) => e.id));
-
-    if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return;
-
-    // remove edges that are selected OR attached to deleted nodes
-    const nextEdges = edges.filter((e) => {
-      if (selectedEdgeIds.has(e.id)) return false;
-      if (selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target)) return false;
-      return true;
-    });
-
-    const nextNodes = nodes.filter((n) => !selectedNodeIds.has(n.id));
-
-    setNodes(diagramId, nextNodes);
-    setEdges(diagramId, nextEdges);
-  }, [nodes, edges, diagramId, setNodes, setEdges]);
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -188,7 +170,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
         <div className="relative flex-1">
           <ReactFlow colorMode="dark" nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDragOver={onDragOver} onDrop={onDrop} nodeTypes={nodeTypes} snapToGrid snapGrid={[20, 20]}>
             <Panel position="top-left" className="w-full pr-5">
-              <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} onDeleteSelected={deleteSelected} dirty={dirty} isSaving={isSaving} />
+              <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} dirty={dirty} isSaving={isSaving} />
             </Panel>
 
             <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
@@ -199,6 +181,20 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           {isLoading && (
             <div className="absolute inset-0 grid place-items-center bg-black/40">
               <div className="rounded-lg bg-neutral-900 px-4 py-2 text-sm">Loading diagram…</div>
+            </div>
+          )}
+          {isSaving && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-white shadow-lg flex items-center gap-2">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Saving…
+            </div>
+          )}
+          {showSaved && !isSaving && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-emerald-900/80 border border-emerald-700 px-4 py-2 text-sm text-emerald-100 shadow-lg flex items-center gap-2">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Saved
             </div>
           )}
         </div>
