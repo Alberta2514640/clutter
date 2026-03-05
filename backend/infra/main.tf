@@ -21,6 +21,7 @@ module "fargate" {
   s3_clutter             = module.s3.clutter_bucket_arn
   s3_clutter_bucket_name = module.s3.clutter_bucket_name
   aws_region             = var.aws_region
+  psql_connection_string = var.psql_connection_string
 }
 
 # ========================
@@ -75,6 +76,7 @@ module "log-in-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JWT_SECRET             = var.jwt_secret
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -114,6 +116,7 @@ module "cloudformation-stack-url-generator-lambda" {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
     CLUTTER_ACCOUNT_ID          = var.clutter_account_id
+    CORS_ALLOWED_ORIGIN         = var.frontend_url
   }
 }
 
@@ -133,6 +136,7 @@ module "organization-create-lambda" {
   zip_dir_slice = "organization/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -151,6 +155,7 @@ module "organization-get-lambda" {
   zip_dir_slice = "organization/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -169,6 +174,7 @@ module "organization-update-lambda" {
   zip_dir_slice = "organization/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -187,6 +193,7 @@ module "organization-delete-lambda" {
   zip_dir_slice = "organization/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -262,6 +269,7 @@ module "project-create-lambda" {
   zip_dir_slice = "project/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -280,6 +288,7 @@ module "project-get-lambda" {
   zip_dir_slice = "project/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -298,6 +307,7 @@ module "project-update-lambda" {
   zip_dir_slice = "project/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -316,6 +326,7 @@ module "project-delete-lambda" {
   zip_dir_slice = "project/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -334,6 +345,7 @@ module "diagram-create-lambda" {
   zip_dir_slice = "diagram/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -350,6 +362,7 @@ module "diagram-get-lambda" {
   zip_dir_slice = "diagram/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -366,6 +379,7 @@ module "diagram-update-lambda" {
   zip_dir_slice = "diagram/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -382,6 +396,7 @@ module "diagram-delete-lambda" {
   zip_dir_slice = "diagram/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -398,7 +413,9 @@ module "user-information-get-lambda" {
   ]
   resources             = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
   zip_dir_slice         = "user-information/get"
-  environment_variables = {}
+  environment_variables = {
+    CORS_ALLOWED_ORIGIN = var.frontend_url
+  }
 
 }
 
@@ -467,9 +484,9 @@ module "ansible-submit-job-lambda" {
   ]
   zip_dir_slice = "ansible/submit-job"
   environment_variables = {
-
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -488,8 +505,8 @@ module "ansible-get-job-lambda" {
   ]
   zip_dir_slice = "ansible/get-job"
   environment_variables = {
-
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -508,8 +525,8 @@ module "ansible-list-jobs-lambda" {
   ]
   zip_dir_slice = "ansible/list-jobs"
   environment_variables = {
-
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -534,7 +551,6 @@ module "ansible-run-task-lambda" {
   ]
   zip_dir_slice = "ansible/run-task"
   environment_variables = {
-
     PSQL_CONNECTION_STRING = var.psql_connection_string
     ECS_CLUSTER_ARN        = module.fargate.cluster_arn
     TASK_DEFINITION_ARN    = module.fargate.ansible_task_def_arn

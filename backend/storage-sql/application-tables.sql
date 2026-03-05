@@ -152,11 +152,22 @@ AS PERMISSIVE TO anon USING (true);
 -- ============================
 CREATE TABLE public.jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_type VARCHAR(20) NOT NULL DEFAULT 'ansible' CHECK (job_type IN ('ansible', 'terraform')),
     status VARCHAR(50) NOT NULL DEFAULT 'QUEUED' CHECK (status IN ('QUEUED', 'STARTING', 'RUNNING', 'COMPLETED', 'FAILED')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    target_instance_ids JSONB NOT NULL,
-    playbook_s3_key VARCHAR(255) NOT NULL,
+    created_by UUID NOT NULL REFERENCES public.users(id),
+
+    -- Ansible-specific fields
+    target_instance_ids JSONB,
+    playbook_s3_key VARCHAR(255),
+
+    -- Terraform-specific fields
+    terraform_directory VARCHAR(255),
+    role_arn VARCHAR(255),
+    assume_role_external_id VARCHAR(36),
+
+    -- Shared fields
     extra_vars JSONB DEFAULT '{}'::jsonb,
     task_arn VARCHAR(255),
     error_message TEXT,
@@ -165,6 +176,8 @@ CREATE TABLE public.jobs (
 
 CREATE INDEX idx_jobs_status ON public.jobs(status);
 CREATE INDEX idx_jobs_created_at ON public.jobs(created_at DESC);
+CREATE INDEX idx_jobs_created_by ON public.jobs(created_by);
+CREATE INDEX idx_jobs_job_type ON public.jobs(job_type);
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"

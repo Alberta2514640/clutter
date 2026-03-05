@@ -16,7 +16,41 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/jackc/pgx/v5"
 )
+
+// sanitizeError removes potentially sensitive information from error messages
+func sanitizeError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+
+	errMsg := err.Error()
+
+	// List of patterns to redact
+	sensitivePatterns := []string{
+		"aws_access_key",
+		"aws_secret_access_key",
+		"password",
+		"secret",
+		"token",
+		"AKIA", // AWS access key prefix
+		"postgres://",
+		"postgresql://",
+	}
+
+	redacted := errMsg
+	for _, pattern := range sensitivePatterns {
+		redacted = strings.ReplaceAll(redacted, pattern, "***REDACTED***")
+	}
+
+	// Truncate to prevent very long error messages
+	if len(redacted) > 500 {
+		redacted = redacted[:500] + "...(truncated)"
+	}
+
+	return redacted
+}
 
 func main() {
 	lambda.Start(handler)
@@ -24,39 +58,23 @@ func main() {
 
 func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResponse, error) {
 
-	clusterARN := os.Getenv("ECS_CLUSTER_ARN")
-	taskDefARN := os.Getenv("TASK_DEFINITION_ARN")
-	subnetIDsRaw := os.Getenv("SUBNET_IDS")
-	securityGroupID := os.Getenv("SECURITY_GROUP_ID")
-	connString := os.Getenv("PSQL_CONNECTION_STRING") // Also passed to Fargate container
-	s3BucketName := os.Getenv("S3_BUCKET_NAME")
+	// Ansible environment variables
+	ansibleClusterARN := os.Getenv("ANSIBLE_ECS_CLUSTER_ARN")
+	ansibleTaskDefARN := os.Getenv("ANSIBLE_TASK_DEFINITION_ARN")
+	ansibleSubnetIDsRaw := os.Getenv("ANSIBLE_SUBNET_IDS")
+	ansibleSecurityGroupID := os.Getenv("ANSIBLE_SECURITY_GROUP_ID")
+	ansibleS3BucketName := os.Getenv("S3_BUCKET_NAME")
 
-	// Validate all required environment variables
-	var missingVars []string
-	if clusterARN == "" {
-		missingVars = append(missingVars, "ECS_CLUSTER_ARN")
-	}
-	if taskDefARN == "" {
-		missingVars = append(missingVars, "TASK_DEFINITION_ARN")
-	}
-	if subnetIDsRaw == "" {
-		missingVars = append(missingVars, "SUBNET_IDS")
-	}
-	if securityGroupID == "" {
-		missingVars = append(missingVars, "SECURITY_GROUP_ID")
-	}
-	if connString == "" {
-		missingVars = append(missingVars, "PSQL_CONNECTION_STRING")
-	}
-	if s3BucketName == "" {
-		missingVars = append(missingVars, "S3_BUCKET_NAME")
-	}
-	if len(missingVars) > 0 {
-		return events.SQSEventResponse{}, fmt.Errorf("missing required environment variables: %s", strings.Join(missingVars, ", "))
-	}
+	// Terraform environment variables
+	terraformClusterARN := os.Getenv("TERRAFORM_ECS_CLUSTER_ARN")
+	terraformTaskDefARN := os.Getenv("TERRAFORM_TASK_DEFINITION_ARN")
+	terraformSubnetIDsRaw := os.Getenv("TERRAFORM_SUBNET_IDS")
+	terraformSecurityGroupID := os.Getenv("TERRAFORM_SECURITY_GROUP_ID")
 
-	// Parse SUBNET_IDS safely — an empty string would produce [""] from Split
-	subnetIDs := strings.Split(subnetIDsRaw, ",")
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion == "" {
+		awsRegion = "us-west-2"
+	}
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -86,143 +104,269 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 		}
 
 		jobID := msg["job_id"]
-		playbookS3Key := msg["playbook_s3_key"]
-		rawTargetInstanceIDs := msg["target_instance_ids"]
-		extraVars := msg["extra_vars"]
+		jobType := msg["job_type"] // "ansible" or "terraform"
 
-		// Validate required message fields
-		var missingFields []string
-		if jobID == "" {
-			missingFields = append(missingFields, "job_id")
-		}
-		if playbookS3Key == "" {
-			missingFields = append(missingFields, "playbook_s3_key")
-		}
-		if rawTargetInstanceIDs == "" {
-			missingFields = append(missingFields, "target_instance_ids")
-		}
-		if len(missingFields) > 0 {
-			log.Printf("ERROR: SQS message missing required fields: %s", strings.Join(missingFields, ", "))
-			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
-				ItemIdentifier: record.MessageId,
-			})
-			continue
+		// Default to ansible for backwards compatibility
+		if jobType == "" {
+			jobType = "ansible"
 		}
 
-		// Convert target_instance_ids from JSON array to comma-separated string
-		// submit-job sends it as '["i-abc","i-def"]' but entrypoint.sh expects 'i-abc,i-def'
-		var targetInstanceIDsList []string
-		var targetInstanceIDs string
-		if err := json.Unmarshal([]byte(rawTargetInstanceIDs), &targetInstanceIDsList); err == nil {
-			targetInstanceIDs = strings.Join(targetInstanceIDsList, ",")
+		log.Printf("Processing job %s (type: %s)", jobID, jobType)
+
+		// Route to appropriate handler
+		if jobType == "terraform" {
+			err = handleTerraformJob(ctx, conn, ecsClient, msg, terraformClusterARN, terraformTaskDefARN, terraformSubnetIDsRaw, terraformSecurityGroupID, awsRegion)
 		} else {
-			// Fallback: assume it's already comma-separated
-			targetInstanceIDs = rawTargetInstanceIDs
+			err = handleAnsibleJob(ctx, conn, ecsClient, msg, ansibleClusterARN, ansibleTaskDefARN, ansibleSubnetIDsRaw, ansibleSecurityGroupID, ansibleS3BucketName)
 		}
-
-		log.Printf("Processing job %s: playbook=%s, targets=%s", jobID, playbookS3Key, targetInstanceIDs)
-
-		// Update job status to STARTING
-		now := time.Now().UTC().Format(time.RFC3339)
-		_, err = conn.Exec(ctx, `
-			UPDATE jobs
-			SET status = $1, updated_at = $2
-			WHERE id = $3
-		`, "STARTING", now, jobID)
 
 		if err != nil {
-			log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
-			// Proceeding anyway as we want to try to run the task? Or fail?
-			// If we can't update DB, we might want to retry.
-			// For now, let's log and proceed, but maybe we should fail the batch item?
-		}
-
-		// Launch Fargate task with environment variable overrides
-		runInput := &ecs.RunTaskInput{
-			Cluster:        &clusterARN,
-			TaskDefinition: &taskDefARN,
-			LaunchType:     ecstypes.LaunchTypeFargate,
-			Count:          aws.Int32(1),
-			NetworkConfiguration: &ecstypes.NetworkConfiguration{
-				AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
-					Subnets:        subnetIDs,
-					SecurityGroups: []string{securityGroupID},
-					AssignPublicIp: ecstypes.AssignPublicIpEnabled,
-				},
-			},
-			Overrides: &ecstypes.TaskOverride{
-				ContainerOverrides: []ecstypes.ContainerOverride{
-					{
-						Name: aws.String("ansible-executor"),
-						Environment: []ecstypes.KeyValuePair{
-							{Name: aws.String("JOB_ID"), Value: aws.String(jobID)},
-							{Name: aws.String("PLAYBOOK_S3_KEY"), Value: aws.String(playbookS3Key)},
-							{Name: aws.String("TARGET_INSTANCE_IDS"), Value: aws.String(targetInstanceIDs)},
-							{Name: aws.String("EXTRA_VARS"), Value: aws.String(extraVars)},
-							{Name: aws.String("S3_BUCKET_NAME"), Value: aws.String(s3BucketName)},
-							{Name: aws.String("PSQL_CONNECTION_STRING"), Value: aws.String(connString)}, // Pass DB conn string to task if needed
-						},
-					},
-				},
-			},
-		}
-
-		result, err := ecsClient.RunTask(ctx, runInput)
-		if err != nil {
-			log.Printf("ERROR: failed to launch Fargate task for job %s: %v", jobID, err)
-			// Update job status to FAILED with fresh timestamp
-			failNow := time.Now().UTC().Format(time.RFC3339)
-			_, _ = conn.Exec(ctx, `
-				UPDATE jobs
-				SET status = $1, updated_at = $2, error_message = $3
-				WHERE id = $4
-			`, "FAILED", failNow, err.Error(), jobID)
-
+			log.Printf("ERROR: failed to process job %s: %v", jobID, err)
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
 			})
-			continue
-		}
-
-		// Check for RunTask failures (e.g., placement/capacity issues)
-		if len(result.Failures) > 0 {
-			var failureMsgs []string
-			for _, f := range result.Failures {
-				failureMsg := fmt.Sprintf("arn=%s reason=%s detail=%s",
-					aws.ToString(f.Arn), aws.ToString(f.Reason), aws.ToString(f.Detail))
-				failureMsgs = append(failureMsgs, failureMsg)
-			}
-			aggregatedFailure := strings.Join(failureMsgs, "; ")
-			log.Printf("ERROR: RunTask returned failures for job %s: %s", jobID, aggregatedFailure)
-
-			// Update job status to FAILED with failure details and fresh timestamp
-			failNow := time.Now().UTC().Format(time.RFC3339)
-
-			_, _ = conn.Exec(ctx, `
-				UPDATE jobs
-				SET status = $1, updated_at = $2, error_message = $3
-				WHERE id = $4
-			`, "FAILED", failNow, aggregatedFailure, jobID)
-
-			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
-				ItemIdentifier: record.MessageId,
-			})
-			continue
-		}
-
-		if len(result.Tasks) > 0 {
-			taskARN := *result.Tasks[0].TaskArn
-			log.Printf("Launched Fargate task %s for job %s", taskARN, jobID)
-
-			// Update job with task ARN and fresh timestamp
-			successNow := time.Now().UTC().Format(time.RFC3339)
-			_, _ = conn.Exec(ctx, `
-				UPDATE jobs
-				SET task_arn = $1, updated_at = $2
-				WHERE id = $3
-			`, taskARN, successNow, jobID)
 		}
 	}
 
 	return events.SQSEventResponse{BatchItemFailures: batchItemFailures}, nil
+}
+
+func handleAnsibleJob(
+	ctx context.Context,
+	conn *pgx.Conn,
+	ecsClient *ecs.Client,
+	msg map[string]string,
+	clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, s3BucketName string,
+) error {
+	// Validate Ansible-specific env vars
+	if clusterARN == "" || taskDefARN == "" || subnetIDsRaw == "" || securityGroupID == "" {
+		return fmt.Errorf("missing required Ansible environment variables")
+	}
+
+	jobID := msg["job_id"]
+	playbookS3Key := msg["playbook_s3_key"]
+	rawTargetInstanceIDs := msg["target_instance_ids"]
+	extraVars := msg["extra_vars"]
+
+	// Validate required fields
+	if playbookS3Key == "" || rawTargetInstanceIDs == "" {
+		return fmt.Errorf("missing required Ansible fields: playbook_s3_key or target_instance_ids")
+	}
+
+	// Validate playbook_s3_key to prevent path traversal
+	if strings.Contains(playbookS3Key, "..") ||
+		strings.Contains(playbookS3Key, "~") ||
+		strings.HasPrefix(playbookS3Key, "/") ||
+		strings.HasPrefix(playbookS3Key, "\\") {
+		err := updateJobStatus(ctx, conn, jobID, "FAILED", "invalid playbook_s3_key: path traversal not allowed")
+		return err
+	}
+
+	// Convert target_instance_ids from JSON array to comma-separated string
+	var targetInstanceIDsList []string
+	var targetInstanceIDs string
+	if err := json.Unmarshal([]byte(rawTargetInstanceIDs), &targetInstanceIDsList); err == nil {
+		targetInstanceIDs = strings.Join(targetInstanceIDsList, ",")
+	} else {
+		targetInstanceIDs = rawTargetInstanceIDs
+	}
+
+	log.Printf("Processing Ansible job %s: playbook=%s, targets=%s", jobID, playbookS3Key, targetInstanceIDs)
+
+	// Update job status to STARTING
+	if err := updateJobStatus(ctx, conn, jobID, "STARTING", ""); err != nil {
+		log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
+	}
+
+	// Parse subnet IDs
+	subnetIDs := strings.Split(subnetIDsRaw, ",")
+
+	// Launch Fargate task
+	runInput := &ecs.RunTaskInput{
+		Cluster:        &clusterARN,
+		TaskDefinition: &taskDefARN,
+		LaunchType:     ecstypes.LaunchTypeFargate,
+		Count:          aws.Int32(1),
+		NetworkConfiguration: &ecstypes.NetworkConfiguration{
+			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
+				Subnets:        subnetIDs,
+				SecurityGroups: []string{securityGroupID},
+				AssignPublicIp: ecstypes.AssignPublicIpEnabled,
+			},
+		},
+		Overrides: &ecstypes.TaskOverride{
+			ContainerOverrides: []ecstypes.ContainerOverride{
+				{
+					Name: aws.String("ansible-executor"),
+					Environment: []ecstypes.KeyValuePair{
+						{Name: aws.String("JOB_ID"), Value: aws.String(jobID)},
+						{Name: aws.String("PLAYBOOK_S3_KEY"), Value: aws.String(playbookS3Key)},
+						{Name: aws.String("TARGET_INSTANCE_IDS"), Value: aws.String(targetInstanceIDs)},
+						{Name: aws.String("EXTRA_VARS"), Value: aws.String(extraVars)},
+						{Name: aws.String("S3_BUCKET_NAME"), Value: aws.String(s3BucketName)},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := ecsClient.RunTask(ctx, runInput)
+	if err != nil {
+		sanitizedErr := sanitizeError(err)
+		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
+		return fmt.Errorf("failed to launch Fargate task: %w", err)
+	}
+
+	if len(result.Failures) > 0 {
+		var failureMsgs []string
+		for _, f := range result.Failures {
+			failureMsg := fmt.Sprintf("arn=%s reason=%s detail=%s",
+				aws.ToString(f.Arn), aws.ToString(f.Reason), aws.ToString(f.Detail))
+			failureMsgs = append(failureMsgs, failureMsg)
+		}
+		aggregatedFailure := strings.Join(failureMsgs, "; ")
+		sanitizedErr := sanitizeError(fmt.Errorf(aggregatedFailure))
+		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
+		return fmt.Errorf("RunTask returned failures: %s", aggregatedFailure)
+	}
+
+	if len(result.Tasks) > 0 {
+		taskARN := *result.Tasks[0].TaskArn
+		log.Printf("Launched Ansible Fargate task %s for job %s", taskARN, jobID)
+		updateJobWithTaskArn(ctx, conn, jobID, taskARN)
+	}
+
+	return nil
+}
+
+func handleTerraformJob(
+	ctx context.Context,
+	conn *pgx.Conn,
+	ecsClient *ecs.Client,
+	msg map[string]string,
+	clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, awsRegion string,
+) error {
+	// Validate Terraform-specific env vars
+	if clusterARN == "" || taskDefARN == "" || subnetIDsRaw == "" || securityGroupID == "" {
+		return fmt.Errorf("missing required Terraform environment variables")
+	}
+
+	jobID := msg["job_id"]
+	terraformDirectory := msg["terraform_directory"]
+	roleArn := msg["role_arn"]
+	assumeRoleExternalId := msg["assume_role_external_id"]
+	extraVars := msg["extra_vars"]
+
+	// Validate required fields
+	if terraformDirectory == "" || roleArn == "" || assumeRoleExternalId == "" {
+		return fmt.Errorf("missing required Terraform fields")
+	}
+
+	// Validate terraform_directory to prevent path traversal
+	if strings.Contains(terraformDirectory, "..") ||
+		strings.Contains(terraformDirectory, "~") ||
+		strings.HasPrefix(terraformDirectory, "/") ||
+		strings.HasPrefix(terraformDirectory, "\\") {
+		err := updateJobStatus(ctx, conn, jobID, "FAILED", "invalid terraform_directory: path traversal not allowed")
+		return err
+	}
+
+	log.Printf("Processing Terraform job %s: directory=%s, role=%s", jobID, terraformDirectory, roleArn)
+
+	// Update job status to STARTING
+	if err := updateJobStatus(ctx, conn, jobID, "STARTING", ""); err != nil {
+		log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
+	}
+
+	// Parse subnet IDs
+	subnetIDs := strings.Split(subnetIDsRaw, ",")
+
+	// Launch Terraform Fargate task
+	runInput := &ecs.RunTaskInput{
+		Cluster:        &clusterARN,
+		TaskDefinition: &taskDefARN,
+		LaunchType:     ecstypes.LaunchTypeFargate,
+		Count:          aws.Int32(1),
+		NetworkConfiguration: &ecstypes.NetworkConfiguration{
+			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
+				Subnets:        subnetIDs,
+				SecurityGroups: []string{securityGroupID},
+				AssignPublicIp: ecstypes.AssignPublicIpEnabled,
+			},
+		},
+		Overrides: &ecstypes.TaskOverride{
+			ContainerOverrides: []ecstypes.ContainerOverride{
+				{
+					Name: aws.String("terraform-deployer"),
+					Environment: []ecstypes.KeyValuePair{
+						{Name: aws.String("JOB_ID"), Value: aws.String(jobID)},
+						{Name: aws.String("AWS_REGION"), Value: aws.String(awsRegion)},
+						{Name: aws.String("TERRAFORM_DIRECTORY"), Value: aws.String(terraformDirectory)},
+						{Name: aws.String("CLIENT_ROLE_ARN"), Value: aws.String(roleArn)},
+						{Name: aws.String("ASSUME_ROLE_EXTERNAL_ID"), Value: aws.String(assumeRoleExternalId)},
+						{Name: aws.String("EXTRA_VARS"), Value: aws.String(extraVars)},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := ecsClient.RunTask(ctx, runInput)
+	if err != nil {
+		sanitizedErr := sanitizeError(err)
+		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
+		return fmt.Errorf("failed to launch Fargate task: %w", err)
+	}
+
+	if len(result.Failures) > 0 {
+		var failureMsgs []string
+		for _, f := range result.Failures {
+			failureMsg := fmt.Sprintf("arn=%s reason=%s detail=%s",
+				aws.ToString(f.Arn), aws.ToString(f.Reason), aws.ToString(f.Detail))
+			failureMsgs = append(failureMsgs, failureMsg)
+		}
+		aggregatedFailure := strings.Join(failureMsgs, "; ")
+		sanitizedErr := sanitizeError(fmt.Errorf(aggregatedFailure))
+		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
+		return fmt.Errorf("RunTask returned failures: %s", aggregatedFailure)
+	}
+
+	if len(result.Tasks) > 0 {
+		taskARN := *result.Tasks[0].TaskArn
+		log.Printf("Launched Terraform Fargate task %s for job %s", taskARN, jobID)
+		updateJobWithTaskArn(ctx, conn, jobID, taskARN)
+	}
+
+	return nil
+}
+
+func updateJobStatus(ctx context.Context, conn *pgx.Conn, jobID, status, errorMessage string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	if errorMessage != "" {
+		_, err := conn.Exec(ctx, `
+			UPDATE jobs
+			SET status = $1, updated_at = $2, error_message = $3
+			WHERE id = $4
+		`, status, now, errorMessage, jobID)
+		return err
+	}
+
+	_, err := conn.Exec(ctx, `
+		UPDATE jobs
+		SET status = $1, updated_at = $2
+		WHERE id = $3
+	`, status, now, jobID)
+	return err
+}
+
+func updateJobWithTaskArn(ctx context.Context, conn *pgx.Conn, jobID, taskArn string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := conn.Exec(ctx, `
+		UPDATE jobs
+		SET task_arn = $1, updated_at = $2
+		WHERE id = $3
+	`, taskArn, now, jobID)
+	return err
 }

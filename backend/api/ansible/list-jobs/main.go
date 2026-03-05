@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -13,15 +12,47 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Allowed job_type filter values
+var allowedJobTypes = map[string]bool{
+	"ansible":   true,
+	"terraform": true,
+}
+
 func main() {
 	lambda.Start(handler)
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
+	// 1. Extract authenticated user from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
+	if err != nil {
+		log.Printf("ERROR: unauthorized request: %v", err)
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
+		})
+	}
+	log.Printf("Authenticated user: %s (%s)", userData.Id, userData.Email)
+
+	// Get user ID for filtering
+	userID := userData.Id
+
+	// Validate optional status filter
 	statusFilter := request.QueryStringParameters["status"]
+	if statusFilter != "" && !generic.AllowedJobStatuses[statusFilter] {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "invalid status filter. Allowed: QUEUED, STARTING, RUNNING, COMPLETED, FAILED",
+		})
+	}
 
-	ctx := context.Background()
+	// Validate optional job_type filter
+	jobTypeFilter := request.QueryStringParameters["job_type"]
+	if jobTypeFilter != "" && !allowedJobTypes[jobTypeFilter] {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "invalid job_type filter. Allowed: ansible, terraform",
+		})
+	}
 
 	// Connect to PostgreSQL using shared helper
 	conn, err := generic.PsqlConnect()
@@ -34,31 +65,38 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	defer conn.Close(ctx)
 
-	var rows pgx.Rows
-	var queryErr error
+	// Build query dynamically based on filters
+	query := `
+		SELECT id, COALESCE(job_type, 'ansible') as job_type, status, created_at, updated_at,
+		       extra_vars, task_arn, error_message,
+		       target_instance_ids, playbook_s3_key,
+		       terraform_directory, role_arn, assume_role_external_id
+		FROM jobs
+		WHERE created_by = $1`
+	args := []interface{}{userID}
+	argNum := 2
 
 	if statusFilter != "" {
-		rows, queryErr = conn.Query(ctx, `
-			SELECT id, status, created_at, updated_at, target_instance_ids, playbook_s3_key, extra_vars, task_arn, error_message
-			FROM jobs
-			WHERE status = $1
-			ORDER BY created_at DESC
-			LIMIT 50
-		`, statusFilter)
-	} else {
-		rows, queryErr = conn.Query(ctx, `
-			SELECT id, status, created_at, updated_at, target_instance_ids, playbook_s3_key, extra_vars, task_arn, error_message
-			FROM jobs
-			ORDER BY created_at DESC
-			LIMIT 50
-		`)
+		query += ` AND status = $` + itoa(argNum)
+		args = append(args, statusFilter)
+		argNum++
+	}
+	if jobTypeFilter != "" {
+		query += ` AND COALESCE(job_type, 'ansible') = $` + itoa(argNum)
+		args = append(args, jobTypeFilter)
+		argNum++
 	}
 
-	if queryErr != nil {
-		log.Printf("ERROR: failed to query jobs: %v", queryErr)
+	query += ` ORDER BY created_at DESC LIMIT 50`
+
+	var rows pgx.Rows
+	rows, err = conn.Query(ctx, query, args...)
+
+	if err != nil {
+		log.Printf("ERROR: failed to query jobs: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to query jobs",
-			"error":   queryErr.Error(),
+			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -66,51 +104,30 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	jobs := []map[string]interface{}{}
 
 	for rows.Next() {
-		var id, status, playbookS3Key string
+		var id, jobType, status string
 		var createdAt, updatedAt time.Time
-		var targetInstanceIDs, extraVars []byte
+		var extraVars, targetInstanceIDs []byte
 		var taskArn, errorMessage *string
+		var playbookS3Key, terraformDirectory, roleArn, assumeRoleExternalId *string
 
 		err := rows.Scan(
-			&id, &status, &createdAt, &updatedAt,
-			&targetInstanceIDs, &playbookS3Key, &extraVars,
-			&taskArn, &errorMessage,
+			&id, &jobType, &status, &createdAt, &updatedAt,
+			&extraVars, &taskArn, &errorMessage,
+			&targetInstanceIDs, &playbookS3Key,
+			&terraformDirectory, &roleArn, &assumeRoleExternalId,
 		)
 		if err != nil {
 			log.Printf("ERROR: failed to scan row: %v", err)
 			continue
 		}
 
-		job := map[string]interface{}{
-			"id":              id,
-			"status":          status,
-			"created_at":      createdAt,
-			"updated_at":      updatedAt,
-			"playbook_s3_key": playbookS3Key,
-		}
-
-		if taskArn != nil {
-			job["task_arn"] = *taskArn
-		}
-		if errorMessage != nil {
-			job["error_message"] = *errorMessage
-		}
-
-		// Unmarshal JSON types
-		var targets []string
-		if err := json.Unmarshal(targetInstanceIDs, &targets); err == nil {
-			job["target_instance_ids"] = targets
-		} else {
-			job["target_instance_ids"] = targetInstanceIDs // Fallback
-		}
-
-		var vars map[string]interface{}
-		// extraVars might be empty JSON object "{}" or null depending on DB default, but we set default '{}'
-		if len(extraVars) > 0 {
-			if err := json.Unmarshal(extraVars, &vars); err == nil {
-				job["extra_vars"] = vars
-			}
-		}
+		job := generic.BuildJobResponse(
+			id, jobType, status,
+			createdAt, updatedAt,
+			extraVars, taskArn, errorMessage,
+			targetInstanceIDs, playbookS3Key,
+			terraformDirectory, roleArn, assumeRoleExternalId,
+		)
 
 		jobs = append(jobs, job)
 	}
@@ -127,4 +144,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		"data":  jobs,
 		"count": len(jobs),
 	})
+}
+
+// itoa converts a small int to string (avoids importing strconv for 1-digit numbers)
+func itoa(n int) string {
+	return string(rune('0' + n))
 }
