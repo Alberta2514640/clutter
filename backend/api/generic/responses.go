@@ -2,6 +2,7 @@ package generic
 
 import (
 	"encoding/json"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -18,9 +19,15 @@ func Response(status int, body Json, cookie ...string) (events.APIGatewayProxyRe
 		}, nil
 	}
 
+	// Use configured CORS origin, fall back to "*" for local development
+	corsOrigin := os.Getenv("CORS_ALLOWED_ORIGIN")
+	if corsOrigin == "" {
+		corsOrigin = "*"
+	}
+
 	headers := map[string]string{
 		"Content-Type":                 "application/json",
-		"Access-Control-Allow-Origin":  "*",
+		"Access-Control-Allow-Origin":  corsOrigin,
 		"Access-Control-Allow-Headers": "Content-Type,Authorization",
 		"Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}

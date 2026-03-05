@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -27,7 +28,18 @@ func main() {
 	lambda.Start(handler)
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+
+	// 1. Extract authenticated user from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
+	if err != nil {
+		log.Printf("ERROR: unauthorized request: %v", err)
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
+		})
+	}
+	log.Printf("Authenticated user: %s (%s)", userData.Id, userData.Email)
 
 	// Parse request body
 	var body SubmitJobRequest
@@ -50,9 +62,41 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
+	// Validate playbook_s3_key to prevent path traversal
+	if strings.Contains(body.PlaybookS3Key, "..") ||
+		strings.Contains(body.PlaybookS3Key, "~") ||
+		strings.HasPrefix(body.PlaybookS3Key, "/") ||
+		strings.HasPrefix(body.PlaybookS3Key, "\\") {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "playbook_s3_key contains invalid path",
+		})
+	}
+
+	// Validate target_instance_ids are valid EC2 instance ID format (i-xxxxxxxx)
+	for _, id := range body.TargetInstanceIDs {
+		if len(id) < 10 || len(id) > 20 {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "invalid instance ID format: " + id,
+			})
+		}
+	}
+
+	// Validate extra_vars size (limit to 64KB)
+	if body.ExtraVars != nil {
+		extraVarsJSON, err := json.Marshal(body.ExtraVars)
+		if err == nil && len(extraVarsJSON) > 65536 {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "extra_vars exceeds maximum size of 64KB",
+			})
+		}
+	}
+
 	// Generate job ID and timestamp
 	jobID := uuid.NewString()
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Get user ID from authorizer context
+	userID := userData.Id
 
 	// Get and validate environment variables
 	queueURL := os.Getenv("JOB_QUEUE_URL")
@@ -64,13 +108,12 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	// Initialize AWS SDK clients
-	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		log.Printf("ERROR: failed to load AWS config: %v", err)
+	cfg, cfgErr := config.LoadDefaultConfig(ctx)
+	if cfgErr != nil {
+		log.Printf("ERROR: failed to load AWS config: %v", cfgErr)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"error":   cfgErr.Error(),
 		})
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
@@ -104,9 +147,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
-	// Start transaction to ensure atomicity if possible (SQS is external, but we can structure logic)
-	// For simplicity in Lambda, we'll insert into DB first, then SQS. If SQS fails, we mark job as FAILED or delete it.
-
+	// Start transaction
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		log.Printf("ERROR: failed to begin transaction: %v", err)
@@ -117,17 +158,16 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	defer tx.Rollback(ctx) // Rollback if not committed
 
-	// Insert job into PostgreSQL
-	// config_id can be UUID or NULL. If string is empty, we pass nil.
+	// Insert job into PostgreSQL with created_by
 	var configID *string
 	if body.ConfigID != "" {
 		configID = &body.ConfigID
 	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO jobs (id, status, created_at, updated_at, target_instance_ids, playbook_s3_key, extra_vars, config_id)
-		VALUES ($1, $2, $3, $3, $4, $5, $6, $7)
-	`, jobID, "QUEUED", now, instanceIDsJSON, body.PlaybookS3Key, extraVarsJSON, configID)
+		INSERT INTO jobs (id, status, created_at, updated_at, created_by, target_instance_ids, playbook_s3_key, extra_vars, config_id)
+		VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8)
+	`, jobID, "QUEUED", now, userID, instanceIDsJSON, body.PlaybookS3Key, extraVarsJSON, configID)
 
 	if err != nil {
 		log.Printf("ERROR: failed to create job record for job %s: %v", jobID, err)
@@ -164,7 +204,6 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	})
 	if err != nil {
 		log.Printf("ERROR: failed to send SQS message for job %s: %v", jobID, err)
-		// We can return error here; transaction rollbacks on defer
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to queue job",
 			"error":   err.Error(),

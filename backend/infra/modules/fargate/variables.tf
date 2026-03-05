@@ -3,8 +3,6 @@ variable "s3_clutter" {
   type        = string
 }
 
-
-
 variable "s3_clutter_bucket_name" {
   description = "Name of the S3 Clutter bucket (for container environment variables)"
   type        = string
@@ -21,4 +19,8 @@ variable "ansible_runner_image_tag" {
   default     = "latest"
 }
 
-
+variable "psql_connection_string" {
+  description = "PostgreSQL connection string to store in Secrets Manager for Fargate tasks"
+  type        = string
+  sensitive   = true
+}

@@ -70,6 +70,7 @@ def generate_inventory(instances: dict[str, dict], region: str, remote_user: str
             'ansible_host': instance_id,  # SSM uses instance ID, not IP
             'ansible_connection': 'community.aws.aws_ssm',
             'ansible_aws_ssm_region': region,
+            'ansible_user': remote_user,
             'ansible_aws_ssm_bucket_name': '',  # Optional: S3 bucket for file transfers
         }
 
@@ -79,6 +80,7 @@ def generate_inventory(instances: dict[str, dict], region: str, remote_user: str
             'vars': {
                 'ansible_connection': 'community.aws.aws_ssm',
                 'ansible_aws_ssm_region': region,
+                'ansible_user': remote_user,
             },
         },
     }
