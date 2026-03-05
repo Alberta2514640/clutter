@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -17,7 +16,20 @@ func main() {
 	lambda.Start(handler)
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+
+	// 1. Extract authenticated user from authorizer context
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
+	if err != nil {
+		log.Printf("ERROR: unauthorized request: %v", err)
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+			"error":   err.Error(),
+		})
+	}
+
+	// Get user ID for filtering
+	userID := userData.Id
 
 	jobID := request.PathParameters["jobId"]
 	if jobID == "" {
@@ -33,8 +45,8 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
-	ctx := context.Background()
-	conn, err := generic.PsqlConnect()
+	var conn *pgx.Conn
+	conn, err = generic.PsqlConnect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
@@ -44,23 +56,31 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	defer conn.Close(ctx)
 
-	var id, status, playbookS3Key string
+	var id, jobType, status string
 	var createdAt, updatedAt time.Time
-	var targetInstanceIDs, extraVars []byte
+	var extraVars, targetInstanceIDs []byte
 	var taskArn, errorMessage *string
+	var playbookS3Key, terraformDirectory, roleArn, assumeRoleExternalId *string
 
+	// Query job filtered by user_id (ensures user can only access their own jobs)
 	err = conn.QueryRow(ctx, `
-		SELECT id, status, created_at, updated_at, target_instance_ids, playbook_s3_key, extra_vars, task_arn, error_message
+		SELECT id, COALESCE(job_type, 'ansible') as job_type, status, created_at, updated_at,
+		       extra_vars, task_arn, error_message,
+		       target_instance_ids, playbook_s3_key,
+		       terraform_directory, role_arn, assume_role_external_id
 		FROM jobs
-		WHERE id = $1
-	`, jobID).Scan(
-		&id, &status, &createdAt, &updatedAt,
-		&targetInstanceIDs, &playbookS3Key, &extraVars,
-		&taskArn, &errorMessage,
+		WHERE id = $1 AND created_by = $2
+	`, jobID, userID).Scan(
+		&id, &jobType, &status, &createdAt, &updatedAt,
+		&extraVars, &taskArn, &errorMessage,
+		&targetInstanceIDs, &playbookS3Key,
+		&terraformDirectory, &roleArn, &assumeRoleExternalId,
 	)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			// Return 404 whether job doesn't exist or belongs to another user
+			// This prevents user enumeration
 			return generic.Response(http.StatusNotFound, generic.Json{
 				"message": "job not found",
 			})
@@ -72,37 +92,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
-	job := map[string]interface{}{
-		"id":              id,
-		"status":          status,
-		"created_at":      createdAt,
-		"updated_at":      updatedAt,
-		"playbook_s3_key": playbookS3Key,
-	}
-
-	// Optional fields
-	if taskArn != nil {
-		job["task_arn"] = *taskArn
-	}
-	if errorMessage != nil {
-		job["error_message"] = *errorMessage
-	}
-
-	// Unmarshal JSON types
-	var targets []string
-	if err := json.Unmarshal(targetInstanceIDs, &targets); err == nil {
-		job["target_instance_ids"] = targets
-	} else {
-		job["target_instance_ids"] = targetInstanceIDs // Fallback
-	}
-
-	var vars map[string]interface{}
-	// extraVars might be empty JSON object "{}" or null depending on DB default
-	if len(extraVars) > 0 {
-		if err := json.Unmarshal(extraVars, &vars); err == nil {
-			job["extra_vars"] = vars
-		}
-	}
+	job := generic.BuildJobResponse(
+		id, jobType, status,
+		createdAt, updatedAt,
+		extraVars, taskArn, errorMessage,
+		targetInstanceIDs, playbookS3Key,
+		terraformDirectory, roleArn, assumeRoleExternalId,
+	)
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"data": job,

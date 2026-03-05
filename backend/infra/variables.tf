@@ -5,10 +5,16 @@ variable "aws_region" {
 variable "jwt_secret" {
   type        = string
   description = "JWT secret key"
+  sensitive   = true
 }
 variable "psql_connection_string" {
   type        = string
   description = "PostgreSQL connection string to enable querying"
+  sensitive   = true
+}
+variable "frontend_url" {
+  type        = string
+  description = "Frontend URL for CORS allowed origin (e.g. https://clutter.alberta2514640.ca)"
 }
 variable "cloudformation_template_url" {
   description = "Full URL to the CloudFormation template stored in Clutter Templates S3"
