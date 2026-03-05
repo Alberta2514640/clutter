@@ -3,18 +3,12 @@ variable "aws_region" {
   description = "The AWS region to deploy resources to"
 }
 variable "jwt_secret" {
-  type        = string
-  description = "JWT secret key"
-  sensitive   = true
+    type        = string
+    description = "JWT secret key"
 }
 variable "psql_connection_string" {
-  type        = string
-  description = "PostgreSQL connection string to enable querying"
-  sensitive   = true
-}
-variable "frontend_url" {
-  type        = string
-  description = "Frontend URL for CORS allowed origin (e.g. https://clutter.alberta2514640.ca)"
+    type        = string
+    description = "PostgreSQL connection string to enable querying"
 }
 variable "cloudformation_template_url" {
   description = "Full URL to the CloudFormation template stored in Clutter Templates S3"
