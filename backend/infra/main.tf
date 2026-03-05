@@ -76,7 +76,6 @@ module "log-in-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JWT_SECRET             = var.jwt_secret
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -86,7 +85,7 @@ module "authorizer-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "authorizer"
-  actions = [
+  actions       = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents"
@@ -94,7 +93,7 @@ module "authorizer-lambda" {
   resources     = ["*"]
   zip_dir_slice = "authorizer"
   environment_variables = {
-    JWT_SECRET = var.jwt_secret
+    JWT_SECRET              = var.jwt_secret
   }
 
 }
@@ -113,10 +112,9 @@ module "cloudformation-stack-url-generator-lambda" {
   ]
   zip_dir_slice = "cloudformation/stack-url-generator"
   environment_variables = {
-    PSQL_CONNECTION_STRING      = var.psql_connection_string
+    PSQL_CONNECTION_STRING = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
-    CORS_ALLOWED_ORIGIN         = var.frontend_url
+    CLUTTER_ACCOUNT_ID = var.clutter_account_id
   }
 }
 
@@ -136,7 +134,6 @@ module "organization-create-lambda" {
   zip_dir_slice = "organization/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 
 }
@@ -411,11 +408,9 @@ module "user-information-get-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources             = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
-  zip_dir_slice         = "user-information/get"
-  environment_variables = {
-    CORS_ALLOWED_ORIGIN = var.frontend_url
-  }
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
+  zip_dir_slice = "user-information/get"
+  environment_variables = {}
 
 }
 
@@ -486,7 +481,6 @@ module "ansible-submit-job-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -506,7 +500,6 @@ module "ansible-get-job-lambda" {
   zip_dir_slice = "ansible/get-job"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -526,7 +519,6 @@ module "ansible-list-jobs-lambda" {
   zip_dir_slice = "ansible/list-jobs"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
