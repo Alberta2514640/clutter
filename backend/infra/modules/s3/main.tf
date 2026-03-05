@@ -87,7 +87,7 @@ resource "aws_s3_bucket_policy" "clutter_bucket" {
         Resource  = "${aws_s3_bucket.clutter_bucket.arn}/*"
         Condition = {
           StringNotEquals = {
-            "s3:x-amz-server-side-encryption" : "AES256"
+            "s3:x-amz-server-side-encryption": "AES256"
           }
         }
       }
@@ -152,7 +152,7 @@ resource "aws_s3_object" "terraform_deployer_role_template" {
 
   bucket = aws_s3_bucket.templates.id
 
-  key    = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
+  key = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
   source = "${path.module}/uploads/client_side_terraform_deployer_role.yaml"
 
   server_side_encryption = "AES256"
