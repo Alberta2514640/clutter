@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "role_arn": {
+      "type": "string"
+    }
+  },
+  "required": ["accountId", "roleArn"]
+}
