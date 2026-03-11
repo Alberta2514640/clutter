@@ -5,7 +5,7 @@ import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjects } from "@/lib/features/projects/hooks";
 import { useLogout, useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
-import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, LogOut, Plus, Settings, Sparkles } from "lucide-react";
+import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, LogOut, Plus, Settings, KeySquare } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,7 +21,6 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   const router = useRouter();
   const logout = useLogout();
 
-
   const meQ = useMe();
   const user = meQ.data ?? null;
   const token = user?.token ?? null;
@@ -35,10 +34,10 @@ export default function DashboardSidebar({ className }: SidebarProps) {
 
   const bottomItems = [
     { icon: Settings, label: "Admin Panel", href: "/settings/organization/manage" },
+    { icon: KeySquare, label: "AWS Account", href: "/settings/aws-connection" },
     { icon: BookTemplate, label: "Templates", href: "/templates" },
     { icon: BarChart3, label: "Insights", href: "/insights" },
     { icon: HelpCircle, label: "Help", href: "/help" },
-    { icon: Sparkles, label: "What's New", href: "/whats-new" },
   ];
 
   const handleExpand = () => {
@@ -68,7 +67,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
   };
 
   return (
-    <aside onClick={handleExpand} className={cn("relative flex flex-col border-r border-slate-800/50 bg-slate-900/40 backdrop-blur-xl transition-all duration-300", collapsed ? "w-16 cursor-pointer" : "w-64", className)}>
+    <aside onClick={handleExpand} className={cn("relative flex h-screen shrink-0 flex-col border-r border-slate-800/50 bg-slate-900/40 backdrop-blur-xl transition-all duration-300", collapsed ? "w-16 cursor-pointer" : "w-64", className)}>
       {/* Expand / Collapse toggle */}
       {collapsed ? (
         <button onClick={handleToggle} className="absolute -right-3 top-1/2 z-10 p-1.5 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-colors shadow-lg">
@@ -190,12 +189,7 @@ export default function DashboardSidebar({ className }: SidebarProps) {
             <button
               type="button"
               onClick={handleLogout}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all",
-                isActive ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/50 hover:text-white",
-                collapsed && "justify-center"
-              )}
-            >
+              className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all", isActive ? "bg-slate-800/50 text-white" : "text-gray-400 hover:bg-slate-800/50 hover:text-white", collapsed && "justify-center")}>
               <Icon className="w-5 h-5 flex-shrink-0" />
               {!collapsed && <span className="text-sm">Logout</span>}
             </button>

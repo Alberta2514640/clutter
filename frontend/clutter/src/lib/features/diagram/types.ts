@@ -23,7 +23,7 @@ export type DiagramApiItem = {
   latestUpdateAt?: string;
 };
 
-/** ✅ What the FRONTEND uses everywhere */
+/**  What the FRONTEND uses everywhere */
 export type Diagram = {
   id: string;
   name: string;
