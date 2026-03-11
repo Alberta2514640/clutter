@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, ArrowRight, CheckCircle2, Copy, ExternalLink, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Copy, ExternalLink, KeyRound, Sparkles } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -113,14 +113,6 @@ export default function IamRole() {
                 </CardDescription>
               </div>
             </div>
-
-            <div className="grid min-w-[220px] gap-3 rounded-2xl border border-slate-700 bg-slate-800/40 p-4 text-sm">
-              <div className="flex items-center gap-2 text-slate-200">
-                <ShieldCheck className="h-4 w-4 text-teal-400" />
-                No long-lived AWS keys
-              </div>
-              <div className="text-slate-400">Frontend only stores metadata like alias, role ARN, and region.</div>
-            </div>
           </div>
         </CardHeader>
 
@@ -145,7 +137,6 @@ export default function IamRole() {
             <Card className="border-slate-800 bg-slate-950/40 shadow-none">
               <CardHeader>
                 <CardTitle className="text-xl text-white">1. Why Clutter needs this role</CardTitle>
-                <CardDescription className="text-slate-400">This should explain the deployment boundary before the user leaves for AWS.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 text-sm text-slate-300">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">Clutter assumes a cross-account IAM role only when running deployment actions for this workspace.</div>
