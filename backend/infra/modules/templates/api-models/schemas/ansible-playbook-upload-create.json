@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "required": [
+    "file_name"
+  ],
+  "properties": {
+    "file_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!.*[\\\\/])(?!.*\\.\\.)[A-Za-z0-9._ -]+\\.(yml|yaml)$",
+      "description": "Playbook file name ending in .yml or .yaml. Directory separators are not allowed."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,263 @@
+{
+  "info": {
+    "name": "Clutter Ansible API",
+    "description": "Collection for testing the Clutter Ansible Engine API endpoints.\n\n## Setup\n1. Set the `base_url` variable to your API Gateway URL\n2. Set the `jwt_token` variable to a valid JWT (generate with `go run backend/api/log-in/generate-test-jwt/main.go`)\n\n## Flow\n1. Upload Playbook URL → get a presigned S3 URL\n2. Upload Playbook File → PUT the .yml file to S3\n3. Submit Job → queue an Ansible job\n4. List Jobs → check job status\n5. Get Job → get a specific job by ID",
+    "_postman_id": "clutter-ansible-api-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://jh2dcnjkp0.execute-api.us-west-2.amazonaws.com/prod",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "PASTE_YOUR_JWT_HERE",
+      "type": "string"
+    },
+    {
+      "key": "upload_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "playbook_s3_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "job_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "Authorization",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Create Playbook Upload URL",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    var json = pm.response.json();",
+              "    pm.collectionVariables.set('upload_url', json.data.upload_url);",
+              "    pm.collectionVariables.set('playbook_s3_key', json.data.playbook_s3_key);",
+              "    console.log('Saved upload_url and playbook_s3_key');",
+              "    console.log('S3 Key: ' + json.data.playbook_s3_key);",
+              "}",
+              "",
+              "pm.test('Status is 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test('Response has upload_url', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.data).to.have.property('upload_url');",
+              "    pm.expect(json.data).to.have.property('playbook_s3_key');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"file_name\": \"test-playbook.yml\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/ansible/playbooks/upload-url",
+          "host": ["{{base_url}}"],
+          "path": ["ansible", "playbooks", "upload-url"]
+        },
+        "description": "Get a presigned S3 URL to upload a playbook YAML file.\n\nThe `upload_url` and `playbook_s3_key` are automatically saved to collection variables for use in subsequent requests."
+      }
+    },
+    {
+      "name": "2. Upload Playbook File to S3",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    console.log('Playbook uploaded successfully to S3');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "x-amz-server-side-encryption",
+            "value": "AES256"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/octet-stream"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "---\n- name: Test playbook\n  hosts: all\n  gather_facts: no\n  tasks:\n    - name: Ping test\n      ping:\n    - name: Show hostname\n      command: hostname\n"
+        },
+        "url": {
+          "raw": "{{upload_url}}",
+          "host": ["{{upload_url}}"]
+        },
+        "description": "Upload the playbook YAML file to S3 using the presigned URL from step 1.\n\n**IMPORTANT:** This request uses NO auth (the presigned URL contains the credentials). Make sure you ran step 1 first so `upload_url` is set."
+      }
+    },
+    {
+      "name": "3. Submit Ansible Job",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 202) {",
+              "    var json = pm.response.json();",
+              "    pm.collectionVariables.set('job_id', json.data.job_id);",
+              "    console.log('Job submitted! ID: ' + json.data.job_id);",
+              "}",
+              "",
+              "pm.test('Status is 202', function () {",
+              "    pm.response.to.have.status(202);",
+              "});",
+              "",
+              "pm.test('Response has job_id', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json.data).to.have.property('job_id');",
+              "    pm.expect(json.data.status).to.eql('QUEUED');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"playbook_s3_key\": \"{{playbook_s3_key}}\",\n    \"target_instance_ids\": [\"i-0abc123def456789a\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/ansible/jobs",
+          "host": ["{{base_url}}"],
+          "path": ["ansible", "jobs"]
+        },
+        "description": "Submit an Ansible job. This inserts a job record in the DB and sends an SQS message that triggers the Fargate runner.\n\n**Replace `target_instance_ids` with real EC2 instance IDs.**\n\nThe `job_id` is automatically saved for use in step 5."
+      }
+    },
+    {
+      "name": "4. List All Jobs",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('Response has data array', function () {",
+              "    var json = pm.response.json();",
+              "    pm.expect(json).to.have.property('data');",
+              "    pm.expect(json.data).to.be.an('array');",
+              "    console.log('Total jobs: ' + json.count);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/ansible/jobs",
+          "host": ["{{base_url}}"],
+          "path": ["ansible", "jobs"]
+        },
+        "description": "List all Ansible jobs for the authenticated user."
+      }
+    },
+    {
+      "name": "5. Get Job by ID",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    var json = pm.response.json();",
+              "    console.log('Job status: ' + json.data.status);",
+              "    if (json.data.task_arn) {",
+              "        console.log('Fargate task: ' + json.data.task_arn);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/ansible/jobs/{{job_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["ansible", "jobs", "{{job_id}}"]
+        },
+        "description": "Get a specific job by ID. Use this to poll job status after submitting.\n\nStatuses: QUEUED → STARTING → RUNNING → COMPLETED / FAILED"
+      }
+    }
+  ]
+}

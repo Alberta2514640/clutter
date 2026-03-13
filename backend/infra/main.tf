@@ -85,7 +85,7 @@ module "authorizer-lambda" {
 
   source        = "./modules/templates/lambda"
   function_name = "authorizer"
-  actions       = [
+  actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents"
@@ -93,7 +93,7 @@ module "authorizer-lambda" {
   resources     = ["*"]
   zip_dir_slice = "authorizer"
   environment_variables = {
-    JWT_SECRET              = var.jwt_secret
+    JWT_SECRET = var.jwt_secret
   }
 
 }
@@ -112,9 +112,9 @@ module "cloudformation-stack-url-generator-lambda" {
   ]
   zip_dir_slice = "cloudformation/stack-url-generator"
   environment_variables = {
-    PSQL_CONNECTION_STRING = var.psql_connection_string
+    PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
   }
 }
 
@@ -408,8 +408,8 @@ module "user-information-get-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents"
   ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
-  zip_dir_slice = "user-information/get"
+  resources             = ["arn:aws:logs:*:*:log-group:/aws/lambda/user-information-get:*"]
+  zip_dir_slice         = "user-information/get"
   environment_variables = {}
 
 }
@@ -434,7 +434,6 @@ module "resources-get-lambda" {
 
 # Terraform Engine
 module "terraform-engine-create-lambda" {
-
   source        = "./modules/templates/lambda"
   function_name = "terraform-engine-create"
   actions = [
@@ -455,7 +454,6 @@ module "terraform-engine-create-lambda" {
     TEMPLATE_BUCKET_NAME   = var.terraform_template_bucket
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
-
 }
 
 # ==================================
@@ -522,6 +520,25 @@ module "ansible-list-jobs-lambda" {
   }
 }
 
+module "ansible-create-playbook-upload-url-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-create-playbook-upload-url"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:PutObject"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-create-playbook-upload-url:*",
+    "${module.s3.clutter_bucket_arn}/*"
+  ]
+  zip_dir_slice = "ansible/create-playbook-upload-url"
+  environment_variables = {
+    S3_BUCKET_NAME = module.s3.clutter_bucket_name
+  }
+}
+
 module "ansible-run-task-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "ansible-run-task"
@@ -543,12 +560,12 @@ module "ansible-run-task-lambda" {
   ]
   zip_dir_slice = "ansible/run-task"
   environment_variables = {
-    PSQL_CONNECTION_STRING = var.psql_connection_string
-    ECS_CLUSTER_ARN        = module.fargate.cluster_arn
-    TASK_DEFINITION_ARN    = module.fargate.ansible_task_def_arn
-    SUBNET_IDS             = join(",", data.aws_subnets.default.ids)
-    SECURITY_GROUP_ID      = module.fargate.ansible_sg_id
-    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    PSQL_CONNECTION_STRING      = var.psql_connection_string
+    ANSIBLE_ECS_CLUSTER_ARN     = module.fargate.cluster_arn
+    ANSIBLE_TASK_DEFINITION_ARN = module.fargate.ansible_task_def_arn
+    ANSIBLE_SUBNET_IDS          = join(",", data.aws_subnets.default.ids)
+    ANSIBLE_SECURITY_GROUP_ID   = module.fargate.ansible_sg_id
+    S3_BUCKET_NAME              = module.s3.clutter_bucket_name
   }
 }
 
@@ -767,6 +784,18 @@ module "ansible-jobs-by-id-api-path" {
   parent_id   = module.ansible-jobs-api-path.resource_id
   path_part   = "{jobId}"
 }
+module "ansible-playbooks-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.ansible-api-path.resource_id
+  path_part   = "playbooks"
+}
+module "ansible-playbooks-upload-url-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.ansible-playbooks-api-path.resource_id
+  path_part   = "upload-url"
+}
 module "ansible-jobs-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
@@ -778,6 +807,12 @@ module "ansible-jobs-by-id-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.ansible-jobs-by-id-api-path.resource_id
   http_methods = ["GET"]
+}
+module "ansible-playbooks-upload-url-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.ansible-playbooks-upload-url-api-path.resource_id
+  http_methods = ["POST"]
 }
 
 # Validation Models
@@ -846,6 +881,13 @@ module "diagram-update-model" {
   model_name      = "diagramupdate"
   description     = "Model to validate diagram update requests"
   schema_filename = "diagram-update.json"
+}
+module "ansible-playbook-upload-create-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "ansiblePlaybookUploadCreate"
+  description     = "Model to validate ansible playbook upload URL requests"
+  schema_filename = "ansible-playbook-upload-create.json"
 }
 
 # Integrations
@@ -1145,6 +1187,22 @@ module "ansible-get-job-api-integration" {
   path              = module.ansible-jobs-by-id-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
+# POST ansible/playbooks/upload-url
+module "ansible-create-playbook-upload-url-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.ansible-playbooks-upload-url-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.ansible-create-playbook-upload-url-lambda.invoke_arn
+  function_name     = module.ansible-create-playbook-upload-url-lambda.function_name
+  path_part         = module.ansible-playbooks-upload-url-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.ansible-playbooks-upload-url-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.ansible-playbook-upload-create-model.model_name
+}
 
 # User Information
 # GET user-information
@@ -1240,7 +1298,8 @@ resource "aws_api_gateway_deployment" "clutter" {
 
       module.ansible-submit-job-api-integration.integration_id,
       module.ansible-list-jobs-api-integration.integration_id,
-      module.ansible-get-job-api-integration.integration_id
+      module.ansible-get-job-api-integration.integration_id,
+      module.ansible-create-playbook-upload-url-api-integration.integration_id
     ]))
   }
 

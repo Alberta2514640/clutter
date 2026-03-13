@@ -18,11 +18,15 @@ variable "clutter_account_id" {
   description = "AWS Account ID for Clutter Fargate deployment role"
   type        = string
 }
+variable "frontend_url" {
+  description = "Frontend URL for CORS allowed origin"
+  type        = string
+}
 variable "terraform_output_bucket" {
-    type        = string
-    description = "S3 bucket name for terraform output files"
+  description = "S3 bucket name for Terraform engine output artifacts"
+  type        = string
 }
 variable "terraform_template_bucket" {
-    type        = string
-    description = "S3 bucket name for terraform template files"
+  description = "S3 bucket name for Terraform engine templates"
+  type        = string
 }
