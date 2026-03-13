@@ -18,8 +18,8 @@
 #   - jq on PATH (optional but recommended; falls back to python3)
 #
 # Usage:
-#   cd /Users/syriljacob/Documents/CapstoneFinalProject/clutter/backend/infra
-#   chmod +x e2e-test.sh
+#   export JWT_SECRET="<your-jwt-secret>"
+#   cd backend/infra
 #   ./e2e-test.sh
 # =============================================================================
 set -euo pipefail
@@ -28,10 +28,11 @@ INFRA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${INFRA_DIR}/../.."
 JWT_TOOL_DIR="${REPO_ROOT}/backend/api/log-in/generate-test-jwt"
 AWS_REGION="us-west-2"
-JWT_SECRET="32a4940b55936710a13cd031d562184d2e9ec413267b4c1d1eb66e4919d93376"
 
 log()  { echo "[e2e] $*"; }
 fail() { echo "[e2e] ERROR: $*" >&2; exit 1; }
+
+[ -z "${JWT_SECRET:-}" ] && fail "JWT_SECRET environment variable is not set. Export it before running this script."
 
 # ---------------------------------------------------------------------------
 # Helper: extract a JSON field (uses jq if available, else python3)

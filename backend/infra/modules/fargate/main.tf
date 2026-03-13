@@ -157,12 +157,15 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # S3 — playbook download, log upload, and SSM connection plugin file transfer
       {
         Effect = "Allow"
         Action = [
           "s3:GetObject",
           "s3:PutObject",
-          "s3:ListBucket"
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
         ]
         Resource = [
           var.s3_clutter,
@@ -175,23 +178,16 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
         Action   = "ec2:DescribeInstances"
         Resource = "*"
       },
-      # SSM Session Manager — start sessions on the SSM document
+      # SSM Session Manager — start sessions on EC2 instances and SSM documents.
+      # The community.aws.aws_ssm connection plugin requires StartSession on both
+      # the target instance ARN and the SSM document ARN.
       {
         Effect = "Allow"
         Action = [
           "ssm:StartSession"
         ]
         Resource = [
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
-        ]
-      },
-      # SSM Session Manager — start sessions on tagged instances
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:StartSession"
-        ]
-        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell",
           "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
         ]
         Condition = {
@@ -206,13 +202,14 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
           "ssm:TerminateSession",
           "ssm:ResumeSession"
         ]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/$${aws:userid}/*"
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/*"
       },
       {
         Effect = "Allow"
         Action = [
           "ssm:DescribeSessions",
-          "ssm:DescribeInstanceInformation"
+          "ssm:DescribeInstanceInformation",
+          "ssm:GetConnectionStatus"
         ]
         Resource = "*"
       },
