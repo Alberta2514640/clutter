@@ -1,12 +1,13 @@
 {
   "type": "object",
   "properties": {
-    "account_id": {
-      "type": "string"
-    },
-    "role_arn": {
-      "type": "string"
-    }
+      "role_arn": {
+          "type": "string",
+          "pattern": "^arn:aws:iam::[0-9]{12}:role/AllowClutterToDeployTerraformRole-[a-z0-9]{8}$",
+          "description": "AWS IAM Role ARN in the format arn:aws:iam::{12-digit account ID}:role/AllowClutterToDeployTerraformRole-{8 character alphanumeric ID}"
+      }
   },
-  "required": ["accountId", "roleArn"]
+  "required": [
+      "role_arn"
+  ]
 }

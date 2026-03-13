@@ -38,14 +38,14 @@ alias pushtfdeployerdocker="( cdtfdeployer && ./build-and-push.sh)"
 alias tfi="( cdinfra && terraform init )"
 alias tfa="( cdinfra && terraform apply )"
 alias tfaa="( cdinfra && terraform apply -auto-approve)"
-alias tfia="tfpi && tfpa"
-alias tfiaa="tfpi && tfpaa"
+alias tfia="tfi && tfa"
+alias tfiaa="tfi && tfaa"
 
 # Build go code and Terraform commands
-alias tfbia="gob && tfpia"   # Build, init and apply
-alias tfbiaa="gob && tfpiaa" # Build, init and apply auto-approve
-alias tfba="gob && tfpa"     # Build and apply
-alias tfbaa="gob && tfpaa"   # Build and apply auto-approve
+alias tfbia="gob && tfia"   # Build, init and apply
+alias tfbiaa="gob && tfiaa" # Build, init and apply auto-approve
+alias tfba="gob && tfa"     # Build and apply
+alias tfbaa="gob && tfaa"   # Build and apply auto-approve
 
 # Build go code (linux) and Terraform commands
 alias tflbia="golb && tfia"   # Build, init and apply

@@ -249,7 +249,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		http.StatusOK,
 		generic.Json{
 			"message": "The URL was generated successfully and a partial client AWS Account Role record has been created in the DB. Client must now provide the Role ARN once the CloudFormation stack is successfully created to complete the account access setup.",
-			"url":     fullUrl,
+			"data": generic.Json{
+				"account_id": recordId,
+				"url":        fullUrl,
+			},
 		},
 	)
 

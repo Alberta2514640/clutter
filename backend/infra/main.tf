@@ -484,13 +484,13 @@ module "organization-accounts-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.organization-accounts-api-path.resource_id
-  http_methods = ["POST", "GET"]
+  http_methods = ["GET"]
 }
 module "organization-accounts-api-by-account-id-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.organization-accounts-api-path-by-account-id.resource_id
-  http_methods = ["DELETE"]
+  http_methods = ["POST", "DELETE"]
 }
 
 # Project
@@ -711,23 +711,6 @@ module "organization-delete-api-integration" {
 }
 
 # Organization Accounts
-# POST organization/{organizationId}/accounts
-module "organization-submit-account-role-arn-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.organization-accounts-api-path.resource_id
-  http_method       = "POST"
-  invoke_arn        = module.organization-submit-account-role-arn-lambda.invoke_arn
-  function_name     = module.organization-submit-account-role-arn-lambda.function_name
-  path_part         = module.organization-accounts-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.organization-accounts-api-path.path
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
-
-  request_validator_id = module.clutter-api-gateway.body_validator_id
-  model_name           = module.organization-submit-account-role-arn-model.model_name
-}
-
 # GET organization/{organizationId}/accounts
 module "organization-get-accounts-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
@@ -740,6 +723,23 @@ module "organization-get-accounts-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.organization-accounts-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# POST organization/{organizationId}/accounts/{accountId}
+module "organization-submit-account-role-arn-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-accounts-api-path-by-account-id.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.organization-submit-account-role-arn-lambda.invoke_arn
+  function_name     = module.organization-submit-account-role-arn-lambda.function_name
+  path_part         = module.organization-accounts-api-path-by-account-id.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-accounts-api-path-by-account-id.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-submit-account-role-arn-model.model_name
 }
 
 # DELETE organization/{organizationId}/accounts
