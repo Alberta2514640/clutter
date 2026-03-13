@@ -1,0 +1,26 @@
+# S3 Bucket
+resource "aws_s3_bucket" "{{.ResourceName}}" {
+  bucket = "{{.BucketName}}"
+}
+
+{{- if .EnableVersioning}}
+# Versioning
+resource "aws_s3_bucket_versioning" "{{.ResourceName}}_versioning" {
+  bucket = aws_s3_bucket.{{.ResourceName}}.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+{{- end}}
+
+{{- if .BlockPublicAccess}}
+# Block Public Access
+resource "aws_s3_bucket_public_access_block" "{{.ResourceName}}_public_access" {
+  bucket = aws_s3_bucket.{{.ResourceName}}.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+{{- end}}

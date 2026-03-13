@@ -1,5 +1,16 @@
 package generic
 
+type DiagramRecord struct {
+	ID             string       `json:"id"`
+	Name           string       `json:"name"`
+	ProjectID      string       `json:"project_id"`
+	CreatedAt      string       `json:"created_at"`
+	CreatedBy      string       `json:"created_by"`
+	LatestUpdateAt *string      `json:"latest_update_at"`
+	LatestUpdateBy *string      `json:"latest_update_by"`
+	Data           DiagramLayout  `json:"data"`
+}
+
 // DiagramLayout represents the full diagram state stored in the 'data' column
 type DiagramLayout struct {
 	Nodes []DiagramNode `json:"nodes"`
@@ -8,12 +19,12 @@ type DiagramLayout struct {
 
 // DiagramNode represents a node in the flow diagram
 type DiagramNode struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Position  Position               `json:"position"`
-	Data      map[string]interface{} `json:"data"`
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Position Position               `json:"position"`
+	Data     map[string]interface{} `json:"data"`
 	Variables map[string]interface{} `json:"variables,omitempty"`
-	Measured  *Measure               `json:"measured,omitempty"`
+	Measured *Measure               `json:"measured,omitempty"`
 }
 
 // Position represents the x,y coordinates of a node

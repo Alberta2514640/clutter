@@ -13,3 +13,5 @@
 **/deploy
 
 **/postman_*.json
+
+backend/infra/backend.tf
