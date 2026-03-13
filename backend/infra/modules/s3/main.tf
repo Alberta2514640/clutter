@@ -86,8 +86,13 @@ resource "aws_s3_bucket_policy" "clutter_bucket" {
         Action    = "s3:PutObject"
         Resource  = "${aws_s3_bucket.clutter_bucket.arn}/*"
         Condition = {
-          StringNotEquals = {
-            "s3:x-amz-server-side-encryption": "AES256"
+          # Use StringNotEqualsIfExists so that PutObject requests that omit the
+          # header entirely are allowed (they inherit the bucket default AES256
+          # encryption), while requests that explicitly set a *different* algorithm
+          # are denied. This avoids blocking the SSM connection plugin which does
+          # not set the header on its temporary file transfers.
+          StringNotEqualsIfExists = {
+            "s3:x-amz-server-side-encryption" = "AES256"
           }
         }
       }
@@ -152,7 +157,7 @@ resource "aws_s3_object" "terraform_deployer_role_template" {
 
   bucket = aws_s3_bucket.templates.id
 
-  key = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
+  key    = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
   source = "${path.module}/uploads/client_side_terraform_deployer_role.yaml"
 
   server_side_encryption = "AES256"
