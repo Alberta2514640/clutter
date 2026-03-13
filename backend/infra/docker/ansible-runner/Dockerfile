@@ -9,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-    ansible-core==2.16.0 \
+    ansible-core==2.17.7 \
+    awscli>=1.31.0 \
     boto3>=1.34.0 \
     botocore>=1.34.0 \
     psycopg2-binary>=2.9.0 \
@@ -17,12 +18,12 @@ RUN pip install --no-cache-dir \
     jinja2>=3.1.0
 
 # Install the Ansible AWS collection (includes aws_ssm connection plugin)
-RUN ansible-galaxy collection install amazon.aws community.aws
+RUN ansible-galaxy collection install amazon.aws:==8.2.1 community.aws:==8.0.0
 
 # Install the SSM Session Manager plugin (required for aws_ssm connection)
 RUN curl -o /tmp/session-manager-plugin.deb \
     "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" \
-    && dpkg -i /tmp/session-manager-plugin.deb || true \
+    && dpkg -i /tmp/session-manager-plugin.deb \
     && rm /tmp/session-manager-plugin.deb
 
 # -------------------------------------------------------------------
@@ -38,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install SSM Session Manager plugin in runtime stage
 RUN curl -o /tmp/session-manager-plugin.deb \
     "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" \
-    && dpkg -i /tmp/session-manager-plugin.deb || true \
+    && dpkg -i /tmp/session-manager-plugin.deb \
     && rm /tmp/session-manager-plugin.deb
 
 # Copy installed Python packages from builder
