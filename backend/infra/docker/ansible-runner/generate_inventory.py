@@ -28,35 +28,35 @@ def get_instance_details(instance_ids: list[str], region: str) -> dict[str, dict
     """
     ec2 = boto3.client('ec2', region_name=region)
 
+    instances = {}
     try:
-        response = ec2.describe_instances(InstanceIds=instance_ids)
+        paginator = ec2.get_paginator('describe_instances')
+        for page in paginator.paginate(InstanceIds=instance_ids):
+            for reservation in page.get('Reservations', []):
+                for instance in reservation.get('Instances', []):
+                    instance_id = instance['InstanceId']
+                    state = instance.get('State', {}).get('Name', 'unknown')
+
+                    if state != 'running':
+                        print(
+                            f"[generate_inventory] WARNING: Instance {instance_id} is not running "
+                            f"(state: {state})",
+                            file=sys.stderr,
+                        )
+                        continue
+
+                    instances[instance_id] = {
+                        'private_ip': instance.get('PrivateIpAddress', ''),
+                        'state': state,
+                    }
     except ClientError as e:
         print(f"[generate_inventory] ERROR: Failed to describe instances: {e}", file=sys.stderr)
         sys.exit(1)
 
-    instances = {}
-    for reservation in response.get('Reservations', []):
-        for instance in reservation.get('Instances', []):
-            instance_id = instance['InstanceId']
-            state = instance.get('State', {}).get('Name', 'unknown')
-
-            if state != 'running':
-                print(
-                    f"[generate_inventory] WARNING: Instance {instance_id} is not running "
-                    f"(state: {state})",
-                    file=sys.stderr,
-                )
-                continue
-
-            instances[instance_id] = {
-                'private_ip': instance.get('PrivateIpAddress', ''),
-                'state': state,
-            }
-
     return instances
 
 
-def generate_inventory(instances: dict[str, dict], region: str, remote_user: str = 'ec2-user') -> dict:
+def generate_inventory(instances: dict[str, dict], region: str, remote_user: str = 'ec2-user', s3_bucket: str = '') -> dict:
     """
     Build an Ansible inventory structure using the aws_ssm connection plugin.
 
@@ -66,22 +66,28 @@ def generate_inventory(instances: dict[str, dict], region: str, remote_user: str
     """
     hosts = {}
     for instance_id, details in instances.items():
-        hosts[instance_id] = {
+        host_vars = {
             'ansible_host': instance_id,  # SSM uses instance ID, not IP
             'ansible_connection': 'community.aws.aws_ssm',
             'ansible_aws_ssm_region': region,
             'ansible_user': remote_user,
-            'ansible_aws_ssm_bucket_name': '',  # Optional: S3 bucket for file transfers
         }
+        if s3_bucket:
+            host_vars['ansible_aws_ssm_bucket_name'] = s3_bucket
+        hosts[instance_id] = host_vars
+
+    group_vars = {
+        'ansible_connection': 'community.aws.aws_ssm',
+        'ansible_aws_ssm_region': region,
+        'ansible_user': remote_user,
+    }
+    if s3_bucket:
+        group_vars['ansible_aws_ssm_bucket_name'] = s3_bucket
 
     inventory = {
         'all': {
             'hosts': hosts,
-            'vars': {
-                'ansible_connection': 'community.aws.aws_ssm',
-                'ansible_aws_ssm_region': region,
-                'ansible_user': remote_user,
-            },
+            'vars': group_vars,
         },
     }
 
@@ -110,6 +116,11 @@ def main():
         default='ec2-user',
         help='SSH user for Ansible (default: ec2-user)',
     )
+    parser.add_argument(
+        '--s3-bucket',
+        default='',
+        help='S3 bucket for SSM file transfers (ansible_aws_ssm_bucket_name)',
+    )
 
     args = parser.parse_args()
 
@@ -131,7 +142,7 @@ def main():
     print(f'[generate_inventory] Found {len(instances)} running instance(s)')
 
     # Generate and write inventory
-    inventory = generate_inventory(instances, args.region, args.remote_user)
+    inventory = generate_inventory(instances, args.region, args.remote_user, args.s3_bucket)
 
     with open(args.output, 'w') as f:
         yaml.dump(inventory, f, default_flow_style=False)

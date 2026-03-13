@@ -77,7 +77,8 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # ---- Validate required env vars ----
-for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING; do
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-}}"
+for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION; do
     if [ -z "${!var:-}" ]; then
         echo "[entrypoint] ERROR: Missing required environment variable: $var"
         update_job_status "FAILED" "Missing environment variable: $var"
@@ -109,7 +110,8 @@ host_key_checking = False
 log_path = /var/log/ansible/ansible.log
 timeout = 60
 forks = 10
-stdout_callback = yaml
+stdout_callback = default
+remote_tmp = /tmp/.ansible/tmp
 
 [privilege_escalation]
 become = True
@@ -123,6 +125,7 @@ echo "[entrypoint] Generating inventory..."
 if ! python3 /usr/local/bin/generate_inventory.py \
     --instance-ids "$TARGET_INSTANCE_IDS" \
     --region "$AWS_DEFAULT_REGION" \
+    --s3-bucket "$S3_BUCKET_NAME" \
     --output "$INVENTORY_FILE"; then
     echo "[entrypoint] ERROR: Failed to generate inventory"
     update_job_status "FAILED" "Failed to generate inventory from instance IDs"
@@ -135,7 +138,7 @@ cat "$INVENTORY_FILE"
 
 # 5. Build extra vars argument if provided
 EXTRA_VARS_ARGS=""
-if [ -n "${EXTRA_VARS:-}" ]; then
+if [ -n "${EXTRA_VARS:-}" ] && [ "$EXTRA_VARS" != "null" ] && [ "$EXTRA_VARS" != "{}" ]; then
     echo "$EXTRA_VARS" > /playbooks/extra_vars.json
     EXTRA_VARS_ARGS="-e @/playbooks/extra_vars.json"
 fi

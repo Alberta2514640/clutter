@@ -175,13 +175,23 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
         Action   = "ec2:DescribeInstances"
         Resource = "*"
       },
+      # SSM Session Manager — start sessions on the SSM document
       {
         Effect = "Allow"
         Action = [
           "ssm:StartSession"
         ]
         Resource = [
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell",
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
+        ]
+      },
+      # SSM Session Manager — start sessions on tagged instances
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:StartSession"
+        ]
+        Resource = [
           "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
         ]
         Condition = {
@@ -199,8 +209,23 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/$${aws:userid}/*"
       },
       {
-        Effect   = "Allow"
-        Action   = "ssm:DescribeSessions"
+        Effect = "Allow"
+        Action = [
+          "ssm:DescribeSessions",
+          "ssm:DescribeInstanceInformation"
+        ]
+        Resource = "*"
+      },
+      # SSM Session Manager data channel — required for the WebSocket
+      # transport that community.aws.aws_ssm connection plugin uses
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
         Resource = "*"
       }
     ]
