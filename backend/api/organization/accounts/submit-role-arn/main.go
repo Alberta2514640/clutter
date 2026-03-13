@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
+	"github.com/Alberta2514640/clutter/backend/api/organization/accounts/submit-role-arn/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
@@ -24,6 +26,15 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		)
 	}
 	userId := userData.Id
+
+	// Process body from API Gateway request
+	var body internal.RequestBody
+
+	err = json.Unmarshal([]byte(request.Body), &body)
+	if err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
+	}
+	roleArn := body.RoleArn
 
 	// Read path parameters
 	// Required: organizationId (Path Param)
@@ -99,12 +110,60 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
+	// Get unique ID from the role ARN the user passed in.
+	// This MUST match what is on the database!
+	uniqueId := internal.GetUniqueIdFromArn(roleArn)
+
+	// Insertion query
+	query := `
+		UPDATE aws_account_access_roles
+		SET role_arn = $1, status = 'complete'
+		WHERE id = $2
+		AND organization_id = $3
+		AND unique_id = $4
+		AND status = 'incomplete';
+	`
+
+	// Execute query
+	cmdTag, err := conn.Exec(ctx, query,
+		roleArn,
+		accountId,
+		organizationId,
+		uniqueId,
+	)
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to update role arn in database",
+			"error":   err.Error(),
+		})
+	}
+	if cmdTag.RowsAffected() == 0 {
+		// Check if the row exists but is already complete
+		var status string
+		err := conn.QueryRow(ctx, `
+			SELECT status
+			FROM aws_account_access_roles
+			WHERE id = $1
+			AND organization_id = $2
+			AND unique_id = $3;
+		`,
+			accountId,
+			organizationId,
+			uniqueId,
+		).Scan(&status)
+
+		if err == nil && status == "complete" {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "role ARN already submitted for this account",
+			})
+		}
+
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "account ID, organization ID, or unique ID mismatch",
+		})
+	}
+
 	return generic.Response(http.StatusOK, generic.Json{
-		"message": "submit role arn test",
-		"data": generic.Json{
-			"organizationId": organizationId,
-			"accountId":      accountId,
-			"roleArn":        request.Body,
-		},
+		"message": "role ARN submitted successfully",
 	})
 }
