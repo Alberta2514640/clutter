@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -36,17 +37,17 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
+		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
+			"message": "unauthorized",
 		})
 	}
 
 	var body createPlaybookUploadURLRequest
 	if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+		log.Printf("ERROR: failed to unmarshal request body: %v", err)
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid request body",
-			"error":   err.Error(),
 		})
 	}
 
@@ -69,9 +70,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Printf("ERROR: failed to load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"message": "internal server error",
 		})
 	}
 
@@ -88,9 +89,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		},
 	)
 	if err != nil {
+		log.Printf("ERROR: failed to create upload URL: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to create upload URL",
-			"error":   err.Error(),
+			"message": "internal server error",
 		})
 	}
 

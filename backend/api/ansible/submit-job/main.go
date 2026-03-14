@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,11 +37,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
-	log.Printf("Authenticated user: %s (%s)", userData.Id, userData.Email)
-
 	// Parse request body
 	var body SubmitJobRequest
 	if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
@@ -72,9 +70,10 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate target_instance_ids are valid EC2 instance ID format (i-xxxxxxxx)
+	// Validate target_instance_ids are valid EC2 instance ID format
+	ec2IDPattern := regexp.MustCompile(`^i-[0-9a-fA-F]{8,17}$`)
 	for _, id := range body.TargetInstanceIDs {
-		if len(id) < 10 || len(id) > 20 {
+		if !ec2IDPattern.MatchString(id) {
 			return generic.Response(http.StatusBadRequest, generic.Json{
 				"message": "invalid instance ID format: " + id,
 			})
@@ -84,7 +83,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// Validate extra_vars size (limit to 64KB)
 	if body.ExtraVars != nil {
 		extraVarsJSON, err := json.Marshal(body.ExtraVars)
-		if err == nil && len(extraVarsJSON) > 65536 {
+		if err != nil {
+			log.Printf("ERROR: failed to marshal extra_vars for size check: %v", err)
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "invalid extra_vars",
+			})
+		}
+		if len(extraVarsJSON) > 65536 {
 			return generic.Response(http.StatusBadRequest, generic.Json{
 				"message": "extra_vars exceeds maximum size of 64KB",
 			})
@@ -113,7 +118,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to load AWS config: %v", cfgErr)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to load AWS config",
-			"error":   cfgErr.Error(),
 		})
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
@@ -124,7 +128,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -135,7 +138,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to marshal target_instance_ids: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to process target instance IDs",
-			"error":   err.Error(),
 		})
 	}
 	extraVarsJSON, err := json.Marshal(body.ExtraVars)
@@ -143,7 +145,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to marshal extra_vars: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to process extra vars",
-			"error":   err.Error(),
 		})
 	}
 
@@ -153,7 +154,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to begin transaction: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "database error",
-			"error":   err.Error(),
 		})
 	}
 	defer tx.Rollback(ctx) // Rollback if not committed
@@ -173,7 +173,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to create job record for job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to create job record",
-			"error":   err.Error(),
 		})
 	}
 
@@ -192,30 +191,37 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to marshal SQS message: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to prepare job",
-			"error":   err.Error(),
 		})
 	}
 	msgStr := string(msgBody)
 
-	// Send to SQS
+	// Commit transaction before sending to SQS
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("ERROR: failed to commit transaction: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "database error during commit",
+		})
+	}
+
+	// Send to SQS after successful commit
 	_, err = sqsClient.SendMessage(ctx, &sqs.SendMessageInput{
 		QueueUrl:    &queueURL,
 		MessageBody: &msgStr,
 	})
 	if err != nil {
 		log.Printf("ERROR: failed to send SQS message for job %s: %v", jobID, err)
+		// Compensating action: update job status to FAILED since SQS send failed
+		compensateConn, compensateErr := generic.PsqlConnect()
+		if compensateErr != nil {
+			log.Printf("ERROR: failed to connect to database for compensating action on job %s: %v", jobID, compensateErr)
+		} else {
+			defer compensateConn.Close(ctx)
+			if _, execErr := compensateConn.Exec(ctx, "UPDATE jobs SET status = 'FAILED', error_message = 'Failed to queue job', updated_at = NOW() WHERE id = $1", jobID); execErr != nil {
+				log.Printf("ERROR: failed to update job %s to FAILED: %v", jobID, execErr)
+			}
+		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to queue job",
-			"error":   err.Error(),
-		})
-	}
-
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		log.Printf("ERROR: failed to commit transaction: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "database error during commit",
-			"error":   err.Error(),
 		})
 	}
 

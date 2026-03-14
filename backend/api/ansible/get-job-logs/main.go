@@ -28,7 +28,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 
@@ -51,7 +50,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -75,7 +73,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to retrieve job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to retrieve job",
-			"error":   err.Error(),
 		})
 	}
 
@@ -102,7 +99,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to load AWS config",
-			"error":   err.Error(),
 		})
 	}
 
@@ -121,26 +117,36 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to fetch log from S3 key %s: %v", *logS3Key, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to retrieve log file",
-			"error":   err.Error(),
 		})
 	}
 	defer result.Body.Close()
 
-	logBytes, err := io.ReadAll(result.Body)
+	const maxLogBytes int64 = 10 * 1024 * 1024 // 10 MB
+	// Read up to maxLogBytes + 1 to detect truncation
+	logBytes, err := io.ReadAll(io.LimitReader(result.Body, maxLogBytes+1))
 	if err != nil {
 		log.Printf("ERROR: failed to read log body: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to read log content",
-			"error":   err.Error(),
 		})
+	}
+	// Check if the log was truncated (more data exists beyond maxLogBytes)
+	truncated := int64(len(logBytes)) > maxLogBytes
+	if truncated {
+		logBytes = logBytes[:maxLogBytes]
+	}
+
+	responseData := generic.Json{
+		"job_id":      jobID,
+		"status":      status,
+		"log_s3_key":  *logS3Key,
+		"log_content": string(logBytes),
+	}
+	if truncated {
+		responseData["truncated"] = true
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{
-		"data": generic.Json{
-			"job_id":      jobID,
-			"status":      status,
-			"log_s3_key":  *logS3Key,
-			"log_content": string(logBytes),
-		},
+		"data": responseData,
 	})
 }

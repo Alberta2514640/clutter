@@ -168,9 +168,9 @@ func TestValidateAnsibleMessage_RejectsPathTraversalInPlaybookKey(t *testing.T) 
 
 func TestValidateTerraformMessage_AcceptsValidMessage(t *testing.T) {
 	msg := map[string]string{
-		"job_id":                "job-tf-1",
-		"terraform_directory":   "infra/prod",
-		"role_arn":              "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc",
+		"job_id":                  "job-tf-1",
+		"terraform_directory":     "infra/prod",
+		"role_arn":                "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc",
 		"assume_role_external_id": "ext-id-abc",
 	}
 	if err := validateTerraformMessage(msg); err != nil {
@@ -180,16 +180,16 @@ func TestValidateTerraformMessage_AcceptsValidMessage(t *testing.T) {
 
 func TestValidateTerraformMessage_RejectsMissingRequiredFields(t *testing.T) {
 	base := map[string]string{
-		"terraform_directory":   "infra/prod",
-		"role_arn":              "arn:aws:iam::123456789012:role/SomeRole",
+		"terraform_directory":     "infra/prod",
+		"role_arn":                "arn:aws:iam::123456789012:role/SomeRole",
 		"assume_role_external_id": "ext-id",
 	}
 
 	for _, field := range []string{"terraform_directory", "role_arn", "assume_role_external_id"} {
 		t.Run("missing "+field, func(t *testing.T) {
 			msg := map[string]string{
-				"terraform_directory":   base["terraform_directory"],
-				"role_arn":              base["role_arn"],
+				"terraform_directory":     base["terraform_directory"],
+				"role_arn":                base["role_arn"],
 				"assume_role_external_id": base["assume_role_external_id"],
 			}
 			delete(msg, field)
@@ -214,8 +214,8 @@ func TestValidateTerraformMessage_RejectsPathTraversalInDirectory(t *testing.T) 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := map[string]string{
-				"terraform_directory":   tc.dir,
-				"role_arn":              "arn:aws:iam::123456789012:role/SomeRole",
+				"terraform_directory":     tc.dir,
+				"role_arn":                "arn:aws:iam::123456789012:role/SomeRole",
 				"assume_role_external_id": "ext-id",
 			}
 			if err := validateTerraformMessage(msg); err == nil {
@@ -238,7 +238,7 @@ func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	input := buildAnsibleRunTaskInput(
 		"arn:aws:ecs:us-west-2:123:cluster/clutter",
 		"arn:aws:ecs:us-west-2:123:task-definition/ansible-runner:1",
-		"subnet-aaa,subnet-bbb",
+		[]string{"subnet-aaa", "subnet-bbb"},
 		"sg-111",
 		"clutter-bucket",
 		msg,
@@ -259,7 +259,7 @@ func TestBuildAnsibleRunTaskInput_UsesLaunchTypeFargate(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	if input.LaunchType != ecstypes.LaunchTypeFargate {
 		t.Errorf("expected LaunchTypeFargate, got %v", input.LaunchType)
@@ -276,7 +276,7 @@ func TestBuildAnsibleRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-aaa,subnet-bbb,subnet-ccc", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"}, "sg-1", "bucket", msg)
 
 	subnets := input.NetworkConfiguration.AwsvpcConfiguration.Subnets
 	if len(subnets) != 3 {
@@ -294,7 +294,7 @@ func TestBuildAnsibleRunTaskInput_AssignsPublicIP(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	got := input.NetworkConfiguration.AwsvpcConfiguration.AssignPublicIp
 	if got != ecstypes.AssignPublicIpEnabled {
@@ -309,7 +309,7 @@ func TestBuildAnsibleRunTaskInput_SetsContainerName(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	overrides := input.Overrides.ContainerOverrides
 	if len(overrides) != 1 {
@@ -329,7 +329,7 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 	}
 
 	input := buildAnsibleRunTaskInput(
-		"cluster", "taskdef", "subnet-a", "sg-1", "my-bucket", msg,
+		"cluster", "taskdef", []string{"subnet-a"}, "sg-1", "my-bucket", msg,
 	)
 
 	envMap := make(map[string]string)
@@ -358,7 +358,7 @@ func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
 		"target_instance_ids": `["i-0aaa","i-0bbb","i-0ccc"]`,
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -378,7 +378,7 @@ func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 		"target_instance_ids": "i-0aaa,i-0bbb",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "bucket", msg)
+	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -394,16 +394,16 @@ func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 
 func TestBuildTerraformRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	msg := map[string]string{
-		"job_id":                "job-tf-1",
-		"terraform_directory":   "infra/prod",
-		"role_arn":              "arn:aws:iam::123:role/SomeRole",
+		"job_id":                  "job-tf-1",
+		"terraform_directory":     "infra/prod",
+		"role_arn":                "arn:aws:iam::123:role/SomeRole",
 		"assume_role_external_id": "ext-id",
 	}
 
 	input := buildTerraformRunTaskInput(
 		"arn:aws:ecs:us-west-2:123:cluster/clutter",
 		"arn:aws:ecs:us-west-2:123:task-definition/terraform-deployer:2",
-		"subnet-aaa",
+		[]string{"subnet-aaa"},
 		"sg-222",
 		"us-west-2",
 		msg,
@@ -419,13 +419,13 @@ func TestBuildTerraformRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 
 func TestBuildTerraformRunTaskInput_SetsContainerName(t *testing.T) {
 	msg := map[string]string{
-		"job_id":                "job-tf-1",
-		"terraform_directory":   "infra/prod",
-		"role_arn":              "arn:aws:iam::123:role/SomeRole",
+		"job_id":                  "job-tf-1",
+		"terraform_directory":     "infra/prod",
+		"role_arn":                "arn:aws:iam::123:role/SomeRole",
 		"assume_role_external_id": "ext-id",
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "us-west-2", msg)
+	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "us-west-2", msg)
 
 	overrides := input.Overrides.ContainerOverrides
 	if len(overrides) != 1 {
@@ -445,7 +445,7 @@ func TestBuildTerraformRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 		"extra_vars":              `{"region":"us-east-1"}`,
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", "subnet-a", "sg-1", "ca-central-1", msg)
+	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "ca-central-1", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -474,13 +474,13 @@ func TestBuildTerraformRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 
 func TestBuildTerraformRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 	msg := map[string]string{
-		"job_id":                "job-tf-1",
-		"terraform_directory":   "infra/prod",
-		"role_arn":              "arn:aws:iam::123:role/SomeRole",
+		"job_id":                  "job-tf-1",
+		"terraform_directory":     "infra/prod",
+		"role_arn":                "arn:aws:iam::123:role/SomeRole",
 		"assume_role_external_id": "ext-id",
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", "subnet-x,subnet-y", "sg-1", "us-west-2", msg)
+	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-x", "subnet-y"}, "sg-1", "us-west-2", msg)
 
 	subnets := input.NetworkConfiguration.AwsvpcConfiguration.Subnets
 	if len(subnets) != 2 {

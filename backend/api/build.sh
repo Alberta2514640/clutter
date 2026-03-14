@@ -23,6 +23,7 @@ LAMBDA_DIRS=(
   "diagram/delete"
   "user-information/get"
   "terraform-engine/create"
+  "ansible/create-playbook-upload-url"
   "ansible/submit-job"
   "ansible/get-job"
   "ansible/get-job-logs"

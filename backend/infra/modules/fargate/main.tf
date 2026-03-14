@@ -1,7 +1,8 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "terraform_deployer" {
-  name = "clutter-terraform-deployer"
+  name                  = "clutter-terraform-deployer"
+  image_tag_mutability  = "IMMUTABLE"
 }
 
 resource "aws_iam_role" "ecs_execution" {
@@ -135,7 +136,8 @@ resource "aws_security_group" "terraform_deployer" {
 # ===============================================================
 
 resource "aws_ecr_repository" "ansible_runner" {
-  name = "clutter-ansible-runner"
+  name                  = "clutter-ansible-runner"
+  image_tag_mutability  = "IMMUTABLE"
 }
 
 resource "aws_iam_role" "ansible_runner_task" {
@@ -248,9 +250,15 @@ resource "aws_secretsmanager_secret" "psql_connection_string" {
   recovery_window_in_days = 7
 }
 
+# NOTE: The secret_string value will be stored in Terraform state in plain text.
+# Ensure your S3 backend has encryption at rest enabled and access is restricted.
 resource "aws_secretsmanager_secret_version" "psql_connection_string" {
   secret_id     = aws_secretsmanager_secret.psql_connection_string.id
   secret_string = var.psql_connection_string
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
 }
 
 # Grant ECS execution role permission to read the secret
@@ -313,6 +321,21 @@ resource "aws_ecs_task_definition" "ansible_runner" {
 resource "aws_security_group" "ansible_runner" {
   name   = "ansible-runner"
   vpc_id = data.aws_vpc.default.id
+
+  # DNS egress for AWS and database hostname resolution.
+  egress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   # HTTPS egress for AWS API calls (S3, SSM Session Manager, CloudWatch)
   egress {

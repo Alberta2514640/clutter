@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,36 +36,29 @@ type runtimeConfig struct {
 }
 
 // sanitizeError removes potentially sensitive information from error messages
+var sensitivePattern = regexp.MustCompile(`\b\d{12}\b|arn:aws:[^\s,]+|i-[0-9a-f]+|sg-[0-9a-f]+|subnet-[0-9a-f]+|vpc-[0-9a-f]+`)
+var sensitiveKeywords = regexp.MustCompile(`(?i)\b(password|postgresql://|postgres://|token|secret|AKIA)[^\s,]*`)
+
+const maxErrorMessageLength = 500
+
 func sanitizeError(err error) string {
 	if err == nil {
 		return "unknown error"
 	}
+	msg := err.Error()
 
-	errMsg := err.Error()
+	// Redact AWS-specific patterns first (before truncation)
+	msg = sensitivePattern.ReplaceAllString(msg, "***REDACTED***")
 
-	// List of patterns to redact
-	sensitivePatterns := []string{
-		"aws_access_key",
-		"aws_secret_access_key",
-		"password",
-		"secret",
-		"token",
-		"AKIA", // AWS access key prefix
-		"postgres://",
-		"postgresql://",
+	// Redact sensitive keywords (before truncation)
+	msg = sensitiveKeywords.ReplaceAllString(msg, "***REDACTED***")
+
+	// Truncate long messages after redaction
+	if len(msg) > maxErrorMessageLength {
+		msg = msg[:maxErrorMessageLength] + "...(truncated)"
 	}
 
-	redacted := errMsg
-	for _, pattern := range sensitivePatterns {
-		redacted = strings.ReplaceAll(redacted, pattern, "***REDACTED***")
-	}
-
-	// Truncate to prevent very long error messages
-	if len(redacted) > 500 {
-		redacted = redacted[:500] + "...(truncated)"
-	}
-
-	return redacted
+	return msg
 }
 
 func main() {
@@ -125,10 +119,21 @@ func validateTerraformMessage(msg map[string]string) error {
 	return nil
 }
 
+// filterEmpty removes empty and whitespace-only strings from a slice, trimming whitespace.
+func filterEmpty(ss []string) []string {
+	var out []string
+	for _, s := range ss {
+		if trimmed := strings.TrimSpace(s); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 // buildAnsibleRunTaskInput constructs the ECS RunTaskInput for an Ansible job.
 // target_instance_ids may be a JSON array (["i-abc", "i-def"]) or a raw
 // comma-separated string; both are normalised to a comma-separated scalar.
-func buildAnsibleRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, s3BucketName string, msg map[string]string) *ecs.RunTaskInput {
+func buildAnsibleRunTaskInput(clusterARN, taskDefARN string, subnets []string, securityGroupID, s3BucketName string, msg map[string]string) *ecs.RunTaskInput {
 	raw := msg["target_instance_ids"]
 	targetInstanceIDs := raw
 	var list []string
@@ -143,7 +148,7 @@ func buildAnsibleRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGrou
 		Count:          aws.Int32(1),
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
-				Subnets:        strings.Split(subnetIDsRaw, ","),
+				Subnets:        subnets,
 				SecurityGroups: []string{securityGroupID},
 				AssignPublicIp: ecstypes.AssignPublicIpEnabled,
 			},
@@ -166,7 +171,7 @@ func buildAnsibleRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGrou
 }
 
 // buildTerraformRunTaskInput constructs the ECS RunTaskInput for a Terraform job.
-func buildTerraformRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, awsRegion string, msg map[string]string) *ecs.RunTaskInput {
+func buildTerraformRunTaskInput(clusterARN, taskDefARN string, subnets []string, securityGroupID, awsRegion string, msg map[string]string) *ecs.RunTaskInput {
 	return &ecs.RunTaskInput{
 		Cluster:        aws.String(clusterARN),
 		TaskDefinition: aws.String(taskDefARN),
@@ -174,7 +179,7 @@ func buildTerraformRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGr
 		Count:          aws.Int32(1),
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
-				Subnets:        strings.Split(subnetIDsRaw, ","),
+				Subnets:        subnets,
 				SecurityGroups: []string{securityGroupID},
 				AssignPublicIp: ecstypes.AssignPublicIpEnabled,
 			},
@@ -207,7 +212,6 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 
 	ecsClient := ecs.NewFromConfig(awsCfg)
 
-	// Connect to PostgreSQL using shared helper
 	conn, err := generic.PsqlConnect()
 	if err != nil {
 		return events.SQSEventResponse{}, fmt.Errorf("failed to connect to database: %w", err)
@@ -217,7 +221,6 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 	var batchItemFailures []events.SQSBatchItemFailure
 
 	for _, record := range sqsEvent.Records {
-		// Parse SQS message
 		var msg map[string]string
 		if err := json.Unmarshal([]byte(record.Body), &msg); err != nil {
 			log.Printf("ERROR: failed to parse SQS message: %v", err)
@@ -228,43 +231,23 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 		}
 
 		jobID := msg["job_id"]
-		jobType := msg["job_type"] // "ansible" or "terraform"
+		jobType := msg["job_type"]
 
-		// Default to ansible for backwards compatibility
+		if jobID == "" {
+			log.Printf("ERROR: SQS message missing job_id")
+			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
+				ItemIdentifier: record.MessageId,
+			})
+			continue
+		}
+
 		if jobType == "" {
 			jobType = "ansible"
 		}
 
 		log.Printf("Processing job %s (type: %s)", jobID, jobType)
 
-		// Route to appropriate handler
-		if jobType == "terraform" {
-			err = handleTerraformJob(
-				ctx,
-				conn,
-				ecsClient,
-				msg,
-				cfg.terraform.clusterARN,
-				cfg.terraform.taskDefinitionARN,
-				cfg.terraform.subnetIDsRaw,
-				cfg.terraform.securityGroupID,
-				cfg.awsRegion,
-			)
-		} else {
-			err = handleAnsibleJob(
-				ctx,
-				conn,
-				ecsClient,
-				msg,
-				cfg.ansible.clusterARN,
-				cfg.ansible.taskDefinitionARN,
-				cfg.ansible.subnetIDsRaw,
-				cfg.ansible.securityGroupID,
-				cfg.ansible.s3BucketName,
-			)
-		}
-
-		if err != nil {
+		if err := processJob(ctx, conn, ecsClient, msg, jobType, cfg); err != nil {
 			log.Printf("ERROR: failed to process job %s: %v", jobID, err)
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -275,88 +258,102 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 	return events.SQSEventResponse{BatchItemFailures: batchItemFailures}, nil
 }
 
-func handleAnsibleJob(
-	ctx context.Context,
-	conn *pgx.Conn,
-	ecsClient *ecs.Client,
-	msg map[string]string,
-	clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, s3BucketName string,
-) error {
-	if clusterARN == "" || taskDefARN == "" || subnetIDsRaw == "" || securityGroupID == "" {
-		return fmt.Errorf("missing required Ansible environment variables")
-	}
+// jobConfig holds the configuration needed to process a job
+type jobConfig struct {
+	clusterARN        string
+	taskDefinitionARN string
+	subnetIDsRaw      string
+	securityGroupID   string
+	s3BucketName      string
+	awsRegion         string
+}
+
+// processJob routes a job to the appropriate handler based on type
+func processJob(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, msg map[string]string, jobType string, cfg runtimeConfig) error {
+	var jobCfg jobConfig
+	var validateFn func(map[string]string) error
+	var logFn func()
+	var buildInputFn func() *ecs.RunTaskInput
+	var launchLogFn func(string)
 
 	jobID := msg["job_id"]
 
-	if err := validateAnsibleMessage(msg); err != nil {
+	if jobType == "terraform" {
+		jobCfg = jobConfig{
+			clusterARN:        cfg.terraform.clusterARN,
+			taskDefinitionARN: cfg.terraform.taskDefinitionARN,
+			subnetIDsRaw:      cfg.terraform.subnetIDsRaw,
+			securityGroupID:   cfg.terraform.securityGroupID,
+			awsRegion:         cfg.awsRegion,
+		}
+		validateFn = validateTerraformMessage
+		logFn = func() {
+			log.Printf("Processing Terraform job %s: directory=%s, role=%s",
+				jobID, msg["terraform_directory"], msg["role_arn"])
+		}
+		buildInputFn = func() *ecs.RunTaskInput {
+			subnets := filterEmpty(strings.Split(jobCfg.subnetIDsRaw, ","))
+			return buildTerraformRunTaskInput(jobCfg.clusterARN, jobCfg.taskDefinitionARN, subnets, jobCfg.securityGroupID, jobCfg.awsRegion, msg)
+		}
+		launchLogFn = func(taskARN string) {
+			log.Printf("Launched Terraform Fargate task %s for job %s", taskARN, jobID)
+		}
+	} else {
+		jobCfg = jobConfig{
+			clusterARN:        cfg.ansible.clusterARN,
+			taskDefinitionARN: cfg.ansible.taskDefinitionARN,
+			subnetIDsRaw:      cfg.ansible.subnetIDsRaw,
+			securityGroupID:   cfg.ansible.securityGroupID,
+			s3BucketName:      cfg.ansible.s3BucketName,
+		}
+		validateFn = validateAnsibleMessage
+		logFn = func() {
+			log.Printf("Processing Ansible job %s: playbook=%s, targets=%s",
+				jobID, msg["playbook_s3_key"], msg["target_instance_ids"])
+		}
+		buildInputFn = func() *ecs.RunTaskInput {
+			subnets := filterEmpty(strings.Split(jobCfg.subnetIDsRaw, ","))
+			return buildAnsibleRunTaskInput(jobCfg.clusterARN, jobCfg.taskDefinitionARN, subnets, jobCfg.securityGroupID, jobCfg.s3BucketName, msg)
+		}
+		launchLogFn = func(taskARN string) {
+			log.Printf("Launched Ansible Fargate task %s for job %s", taskARN, jobID)
+		}
+	}
+
+	if err := validateEnvVars(jobCfg); err != nil {
+		return err
+	}
+
+	if err := validateFn(msg); err != nil {
 		updateJobStatus(ctx, conn, jobID, "FAILED", err.Error())
 		return err
 	}
 
-	log.Printf("Processing Ansible job %s: playbook=%s, targets=%s",
-		jobID, msg["playbook_s3_key"], msg["target_instance_ids"])
+	logFn()
 
 	if err := updateJobStatus(ctx, conn, jobID, "STARTING", ""); err != nil {
 		log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
 	}
 
-	runInput := buildAnsibleRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, s3BucketName, msg)
-
-	result, err := ecsClient.RunTask(ctx, runInput)
-	if err != nil {
-		sanitizedErr := sanitizeError(err)
-		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
-		return fmt.Errorf("failed to launch Fargate task: %w", err)
+	subnets := filterEmpty(strings.Split(jobCfg.subnetIDsRaw, ","))
+	if len(subnets) == 0 {
+		updateJobStatus(ctx, conn, jobID, "FAILED", "no valid subnet IDs configured")
+		return fmt.Errorf("no valid subnet IDs configured")
 	}
 
-	if len(result.Failures) > 0 {
-		var failureMsgs []string
-		for _, f := range result.Failures {
-			failureMsgs = append(failureMsgs, fmt.Sprintf("arn=%s reason=%s detail=%s",
-				aws.ToString(f.Arn), aws.ToString(f.Reason), aws.ToString(f.Detail)))
-		}
-		aggregatedFailure := strings.Join(failureMsgs, "; ")
-		sanitizedErr := sanitizeError(errors.New(aggregatedFailure))
-		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
-		return fmt.Errorf("RunTask returned failures: %s", aggregatedFailure)
-	}
+	return launchECSTask(ctx, conn, ecsClient, jobID, buildInputFn(), launchLogFn)
+}
 
-	if len(result.Tasks) > 0 {
-		taskARN := *result.Tasks[0].TaskArn
-		log.Printf("Launched Ansible Fargate task %s for job %s", taskARN, jobID)
-		updateJobWithTaskArn(ctx, conn, jobID, taskARN)
+// validateEnvVars checks that all required environment variables are configured
+func validateEnvVars(cfg jobConfig) error {
+	if cfg.clusterARN == "" || cfg.taskDefinitionARN == "" || cfg.subnetIDsRaw == "" || cfg.securityGroupID == "" {
+		return fmt.Errorf("missing required environment variables")
 	}
-
 	return nil
 }
 
-func handleTerraformJob(
-	ctx context.Context,
-	conn *pgx.Conn,
-	ecsClient *ecs.Client,
-	msg map[string]string,
-	clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, awsRegion string,
-) error {
-	if clusterARN == "" || taskDefARN == "" || subnetIDsRaw == "" || securityGroupID == "" {
-		return fmt.Errorf("missing required Terraform environment variables")
-	}
-
-	jobID := msg["job_id"]
-
-	if err := validateTerraformMessage(msg); err != nil {
-		updateJobStatus(ctx, conn, jobID, "FAILED", err.Error())
-		return err
-	}
-
-	log.Printf("Processing Terraform job %s: directory=%s, role=%s",
-		jobID, msg["terraform_directory"], msg["role_arn"])
-
-	if err := updateJobStatus(ctx, conn, jobID, "STARTING", ""); err != nil {
-		log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
-	}
-
-	runInput := buildTerraformRunTaskInput(clusterARN, taskDefARN, subnetIDsRaw, securityGroupID, awsRegion, msg)
-
+// launchECSTask launches an ECS task and handles the response
+func launchECSTask(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, jobID string, runInput *ecs.RunTaskInput, launchLogFn func(string)) error {
 	result, err := ecsClient.RunTask(ctx, runInput)
 	if err != nil {
 		sanitizedErr := sanitizeError(err)
@@ -373,13 +370,15 @@ func handleTerraformJob(
 		aggregatedFailure := strings.Join(failureMsgs, "; ")
 		sanitizedErr := sanitizeError(errors.New(aggregatedFailure))
 		updateJobStatus(ctx, conn, jobID, "FAILED", sanitizedErr)
-		return fmt.Errorf("RunTask returned failures: %s", aggregatedFailure)
+		return fmt.Errorf("RunTask returned failures: %s", sanitizedErr)
 	}
 
-	if len(result.Tasks) > 0 {
+	if len(result.Tasks) > 0 && result.Tasks[0].TaskArn != nil {
 		taskARN := *result.Tasks[0].TaskArn
-		log.Printf("Launched Terraform Fargate task %s for job %s", taskARN, jobID)
-		updateJobWithTaskArn(ctx, conn, jobID, taskARN)
+		launchLogFn(taskARN)
+		if err := updateJobWithTaskArn(ctx, conn, jobID, taskARN); err != nil {
+			log.Printf("ERROR: failed to record task ARN for job %s: %v", jobID, err)
+		}
 	}
 
 	return nil
