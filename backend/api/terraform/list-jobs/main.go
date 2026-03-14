@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -30,10 +31,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
-	log.Printf("Authenticated user: %s (%s)", userData.Id, userData.Email)
+	log.Printf("Authenticated user: %s", userData.Id)
 
 	// Get user ID for filtering
 	userID := userData.Id
@@ -60,7 +60,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -77,12 +76,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	argNum := 2
 
 	if statusFilter != "" {
-		query += ` AND status = $` + itoa(argNum)
+		query += ` AND status = $` + strconv.Itoa(argNum)
 		args = append(args, statusFilter)
 		argNum++
 	}
 	if jobTypeFilter != "" {
-		query += ` AND COALESCE(job_type, 'ansible') = $` + itoa(argNum)
+		query += ` AND COALESCE(job_type, 'ansible') = $` + strconv.Itoa(argNum)
 		args = append(args, jobTypeFilter)
 		argNum++
 	}
@@ -96,7 +95,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to query jobs: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to query jobs",
-			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -118,7 +116,10 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		)
 		if err != nil {
 			log.Printf("ERROR: failed to scan row: %v", err)
-			continue
+			rows.Close()
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"message": "failed to process job list",
+			})
 		}
 
 		job := generic.BuildJobResponse(
@@ -136,7 +137,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: rows iteration error: %v", rows.Err())
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to process job list",
-			"error":   rows.Err().Error(),
 		})
 	}
 
@@ -144,9 +144,4 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data":  jobs,
 		"count": len(jobs),
 	})
-}
-
-// itoa converts a small int to string (avoids importing strconv for 1-digit numbers)
-func itoa(n int) string {
-	return string(rune('0' + n))
 }

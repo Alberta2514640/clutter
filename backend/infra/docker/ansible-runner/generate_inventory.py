@@ -114,7 +114,7 @@ def main():
     parser.add_argument(
         '--remote-user',
         default='ec2-user',
-        help='SSH user for Ansible (default: ec2-user)',
+        help='SSM user for Ansible (default: ec2-user)',
     )
     parser.add_argument(
         '--s3-bucket',
@@ -144,10 +144,13 @@ def main():
     # Generate and write inventory
     inventory = generate_inventory(instances, args.region, args.remote_user, args.s3_bucket)
 
-    with open(args.output, 'w') as f:
-        yaml.dump(inventory, f, default_flow_style=False)
-
-    print(f'[generate_inventory] Inventory written to {args.output}')
+    try:
+        with open(args.output, 'w') as f:
+            yaml.dump(inventory, f, default_flow_style=False)
+        print(f'[generate_inventory] Inventory written to {args.output}')
+    except OSError as e:
+        print(f'[generate_inventory] ERROR: Failed to write inventory to {args.output}: {e}', file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

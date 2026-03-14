@@ -51,8 +51,6 @@ func BuildJobResponse(
 		var targets []string
 		if err := json.Unmarshal(targetInstanceIDs, &targets); err == nil {
 			job["target_instance_ids"] = targets
-		} else {
-			job["target_instance_ids"] = targetInstanceIDs
 		}
 	}
 

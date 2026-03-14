@@ -25,6 +25,10 @@ set -euo pipefail
 LOG_FILE="/var/log/ansible/ansible.log"
 INVENTORY_FILE="/playbooks/inventory.yml"
 
+# Retry configuration constants (global scope for use in functions and error handlers)
+DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
+GENERATE_INVENTORY_MAX_RETRIES=3
+
 # Create log directory and file immediately so all output is captured,
 # even if Ansible never runs (e.g. early failures in inventory generation).
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -68,13 +72,27 @@ PYEOF
 
 # ---- Helper: Upload logs to S3 and record the key in the database ----
 upload_logs() {
+    local upload_failed=0
+    local max_retries=3
+    local retry_count=0
+    local retry_delay=2
+
     if [ -f "$LOG_FILE" ]; then
         local log_key="logs/${JOB_ID}/ansible.log"
-        aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME}/${log_key}" \
-            --region "$AWS_DEFAULT_REGION" \
-            --sse AES256 2>/dev/null || true
 
-        python3 - <<'PYEOF' "$JOB_ID" "$log_key"
+        # Retry loop for S3 upload with exponential backoff
+        while [ $retry_count -lt $max_retries ]; do
+            if aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME}/${log_key}" \
+                --region "$AWS_DEFAULT_REGION" \
+                --sse AES256 2>&1; then
+                echo "[upload_logs] Log file uploaded successfully to s3://${S3_BUCKET_NAME}/${log_key}"
+
+                # Record log location in database (with retry)
+                local db_retry_count=0
+                local db_max_retries=3
+                local db_update_success=0
+                while [ $db_retry_count -lt $db_max_retries ]; do
+                    if python3 - <<'PYEOF' "$JOB_ID" "$log_key"
 import sys
 import os
 import psycopg2
@@ -92,16 +110,48 @@ try:
                 (log_key, now, job_id)
             )
             conn.commit()
+    print(f"[upload_logs] Log S3 key recorded in database")
 except Exception as e:
     print(f"[upload_logs] WARNING: Failed to record log_s3_key in database: {e}", file=sys.stderr)
+    sys.exit(1)
 PYEOF
+                    then
+                        db_update_success=1
+                        break
+                    else
+                        db_retry_count=$((db_retry_count + 1))
+                        if [ $db_retry_count -lt $db_max_retries ]; then
+                            echo "[upload_logs] Database update failed, retrying in $((db_retry_count * 2))s..."
+                            sleep $((db_retry_count * 2))
+                        fi
+                    fi
+                done
+                # If DB update retries were exhausted, log error and return failure
+                if [ $db_update_success -eq 0 ]; then
+                    echo "[upload_logs] ERROR: Failed to update database with log_s3_key after $db_max_retries attempts" >&2
+                    return 1
+                fi
+                return 0
+            else
+                retry_count=$((retry_count + 1))
+                if [ $retry_count -lt $max_retries ]; then
+                    echo "[upload_logs] WARNING: S3 upload failed, retrying in ${retry_delay}s (attempt $retry_count/$max_retries)" >&2
+                    sleep $retry_delay
+                    retry_delay=$((retry_delay * 2))
+                else
+                    echo "[upload_logs] ERROR: S3 upload failed after $max_retries attempts" >&2
+                    upload_failed=1
+                fi
+            fi
+        done
     fi
+    return $upload_failed
 }
 
 # ---- Trap: Handle signals for graceful shutdown ----
 cleanup() {
     echo "[entrypoint] Received shutdown signal. Uploading logs and marking as FAILED."
-    upload_logs
+    upload_logs || true
     update_job_status "FAILED" "Task was terminated by signal"
     exit 1
 }
@@ -112,7 +162,7 @@ export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-}}"
 for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION; do
     if [ -z "${!var:-}" ]; then
         echo "[entrypoint] ERROR: Missing required environment variable: $var"
-        upload_logs
+        upload_logs || true
         update_job_status "FAILED" "Missing environment variable: $var"
         exit 1
     fi
@@ -128,9 +178,29 @@ update_job_status "RUNNING"
 
 # 2. Download playbook from S3
 echo "[entrypoint] Downloading playbook from S3..."
-if ! aws s3 cp "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" /playbooks/main.yml --region "$AWS_DEFAULT_REGION"; then
-    echo "[entrypoint] ERROR: Failed to download playbook"
-    upload_logs
+download_playbook_with_retry() {
+    local retry_count=0
+    local retry_delay=5
+
+    while [ $retry_count -lt $DOWNLOAD_PLAYBOOK_MAX_RETRIES ]; do
+        if aws s3 cp "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" /playbooks/main.yml --region "$AWS_DEFAULT_REGION" 2>&1; then
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $DOWNLOAD_PLAYBOOK_MAX_RETRIES ]; then
+                echo "[entrypoint] WARNING: Playbook download failed, retrying in ${retry_delay}s (attempt $retry_count/$DOWNLOAD_PLAYBOOK_MAX_RETRIES)"
+                sleep $retry_delay
+                retry_delay=$((retry_delay * 2))
+            else
+                return 1
+            fi
+        fi
+    done
+}
+
+if ! download_playbook_with_retry; then
+    echo "[entrypoint] ERROR: Failed to download playbook after $DOWNLOAD_PLAYBOOK_MAX_RETRIES attempts"
+    upload_logs || true
     update_job_status "FAILED" "Failed to download playbook from S3"
     exit 1
 fi
@@ -155,14 +225,34 @@ export ANSIBLE_CONFIG=/playbooks/ansible.cfg
 
 # 4. Generate dynamic inventory from instance IDs (uses SSM connection)
 echo "[entrypoint] Generating inventory..."
-if ! python3 /usr/local/bin/generate_inventory.py \
-    --instance-ids "$TARGET_INSTANCE_IDS" \
-    --region "$AWS_DEFAULT_REGION" \
-    --s3-bucket "$S3_BUCKET_NAME" \
-    --output "$INVENTORY_FILE"; then
-    echo "[entrypoint] ERROR: Failed to generate inventory"
+generate_inventory_with_retry() {
+    local retry_count=0
+    local retry_delay=5
+
+    while [ $retry_count -lt $GENERATE_INVENTORY_MAX_RETRIES ]; do
+        if python3 /usr/local/bin/generate_inventory.py \
+            --instance-ids "$TARGET_INSTANCE_IDS" \
+            --region "$AWS_DEFAULT_REGION" \
+            --s3-bucket "$S3_BUCKET_NAME" \
+            --output "$INVENTORY_FILE" 2>&1; then
+            return 0
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $GENERATE_INVENTORY_MAX_RETRIES ]; then
+                echo "[entrypoint] WARNING: Inventory generation failed, retrying in ${retry_delay}s (attempt $retry_count/$GENERATE_INVENTORY_MAX_RETRIES)"
+                sleep $retry_delay
+                retry_delay=$((retry_delay * 2))
+            else
+                return 1
+            fi
+        fi
+    done
+}
+
+if ! generate_inventory_with_retry; then
+    echo "[entrypoint] ERROR: Failed to generate inventory after $GENERATE_INVENTORY_MAX_RETRIES attempts"
+    upload_logs || true
     update_job_status "FAILED" "Failed to generate inventory from instance IDs"
-    upload_logs
     exit 1
 fi
 
@@ -186,12 +276,12 @@ set -e
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo "[entrypoint] Ansible playbook completed successfully"
-    upload_logs
+    upload_logs || true
     update_job_status "COMPLETED"
     exit 0
 else
     echo "[entrypoint] Ansible playbook failed with exit code: $EXIT_CODE"
-    upload_logs
+    upload_logs || true
     update_job_status "FAILED" "Ansible playbook exited with code $EXIT_CODE"
     exit $EXIT_CODE
 fi

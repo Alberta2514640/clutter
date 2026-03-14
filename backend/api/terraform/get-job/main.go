@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -24,7 +25,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 
@@ -51,7 +51,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -78,7 +77,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return generic.Response(http.StatusNotFound, generic.Json{
 				"message": "job not found",
 			})
@@ -86,7 +85,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to retrieve job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to retrieve job",
-			"error":   err.Error(),
 		})
 	}
 

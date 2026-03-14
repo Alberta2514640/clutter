@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,10 +19,10 @@ import (
 )
 
 type SubmitTerraformJobRequest struct {
-	TerraformDirectory      string            `json:"terraform_directory"`
-	RoleArn                 string            `json:"role_arn"`
-	AssumeRoleExternalId    string            `json:"assume_role_external_id"`
-	ExtraVars               map[string]string `json:"extra_vars,omitempty"`
+	TerraformDirectory   string            `json:"terraform_directory"`
+	RoleArn              string            `json:"role_arn"`
+	AssumeRoleExternalId string            `json:"assume_role_external_id"`
+	ExtraVars            map[string]string `json:"extra_vars,omitempty"`
 }
 
 func main() {
@@ -36,10 +37,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
-	log.Printf("Authenticated user: %s (%s)", userData.Id, userData.Email)
+	log.Printf("Authenticated user: %s", userData.Id)
 
 	// Parse request body
 	var body SubmitTerraformJobRequest
@@ -54,11 +54,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if body.TerraformDirectory == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "terraform_directory is required",
-		})
-	}
-	if body.RoleArn == "" {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "role_arn is required",
 		})
 	}
 	if body.AssumeRoleExternalId == "" {
@@ -77,17 +72,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate role_arn format
-	if !strings.HasPrefix(body.RoleArn, "arn:aws:iam::") {
+	// Validate role_arn format (arn:aws:iam::<12-digit-account>:role/<name>)
+	roleArnPattern := regexp.MustCompile(`^arn:aws:iam::\d{12}:role/.+$`)
+	if !roleArnPattern.MatchString(body.RoleArn) {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "role_arn must be a valid AWS IAM role ARN",
+			"message": "role_arn must be a valid IAM role ARN",
 		})
 	}
 
 	// Validate extra_vars size (limit to 64KB)
 	if body.ExtraVars != nil {
 		extraVarsJSON, err := json.Marshal(body.ExtraVars)
-		if err == nil && len(extraVarsJSON) > 65536 {
+		if err != nil {
+			log.Printf("ERROR: failed to marshal extra_vars for size check: %v", err)
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "invalid extra_vars",
+			})
+		}
+		if len(extraVarsJSON) > 65536 {
 			return generic.Response(http.StatusBadRequest, generic.Json{
 				"message": "extra_vars exceeds maximum size of 64KB",
 			})
@@ -116,7 +118,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to load AWS config: %v", cfgErr)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to load AWS config",
-			"error":   cfgErr.Error(),
 		})
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
@@ -127,18 +128,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Marshal extra vars to JSON
-	extraVarsJSON, err := json.Marshal(body.ExtraVars)
+	extraVarsBytes, err := json.Marshal(body.ExtraVars)
 	if err != nil {
 		log.Printf("ERROR: failed to marshal extra_vars: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to process extra vars",
-			"error":   err.Error(),
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "invalid extra_vars format",
 		})
 	}
 
@@ -148,7 +147,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		log.Printf("ERROR: failed to begin transaction: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "database error",
-			"error":   err.Error(),
 		})
 	}
 	defer tx.Rollback(ctx) // Rollback if not committed
@@ -157,31 +155,37 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	_, err = tx.Exec(ctx, `
 		INSERT INTO jobs (id, job_type, status, created_at, updated_at, created_by, terraform_directory, role_arn, assume_role_external_id, extra_vars)
 		VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9)
-	`, jobID, "terraform", "QUEUED", now, userID, body.TerraformDirectory, body.RoleArn, body.AssumeRoleExternalId, extraVarsJSON)
+	`, jobID, "terraform", "QUEUED", now, userID, body.TerraformDirectory, body.RoleArn, body.AssumeRoleExternalId, extraVarsBytes)
 
 	if err != nil {
 		log.Printf("ERROR: failed to create job record for job %s: %v", jobID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to create job record",
-			"error":   err.Error(),
+		})
+	}
+
+	// Commit transaction before sending to SQS to avoid orphaned messages
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("ERROR: failed to commit transaction: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "database error during commit",
 		})
 	}
 
 	// Prepare SQS message
 	sqsMessage := map[string]string{
-		"job_id":                      jobID,
-		"job_type":                    "terraform",
-		"terraform_directory":          body.TerraformDirectory,
-		"role_arn":                    body.RoleArn,
-		"assume_role_external_id":      body.AssumeRoleExternalId,
-		"extra_vars":                  string(extraVarsJSON),
+		"job_id":                 jobID,
+		"job_type":               "terraform",
+		"terraform_directory":    body.TerraformDirectory,
+		"role_arn":               body.RoleArn,
+		"assume_role_external_id": body.AssumeRoleExternalId,
+		"extra_vars":             string(extraVarsBytes),
 	}
 	msgBody, err := json.Marshal(sqsMessage)
 	if err != nil {
 		log.Printf("ERROR: failed to marshal SQS message: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to prepare job",
-			"error":   err.Error(),
 		})
 	}
 	msgStr := string(msgBody)
@@ -193,27 +197,27 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	})
 	if err != nil {
 		log.Printf("ERROR: failed to send SQS message for job %s: %v", jobID, err)
+		// Compensating action: update job status to FAILED since SQS send failed
+		compensateConn, compensateErr := generic.PsqlConnect()
+		if compensateErr != nil {
+			log.Printf("ERROR: failed to open compensating DB connection for job %s: %v", jobID, compensateErr)
+		} else {
+			defer compensateConn.Close(ctx)
+			if _, execErr := compensateConn.Exec(ctx, "UPDATE jobs SET status = 'FAILED', error_message = 'Failed to queue job', updated_at = NOW() WHERE id = $1", jobID); execErr != nil {
+				log.Printf("ERROR: failed compensating status update for job %s: %v", jobID, execErr)
+			}
+		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to queue job",
-			"error":   err.Error(),
-		})
-	}
-
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		log.Printf("ERROR: failed to commit transaction: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "database error during commit",
-			"error":   err.Error(),
 		})
 	}
 
 	return generic.Response(http.StatusAccepted, generic.Json{
 		"message": "terraform job submitted successfully",
 		"data": generic.Json{
-			"job_id":     jobID,
-			"status":     "QUEUED",
-			"job_type":   "terraform",
+			"job_id":   jobID,
+			"status":   "QUEUED",
+			"job_type": "terraform",
 		},
 	})
 }
