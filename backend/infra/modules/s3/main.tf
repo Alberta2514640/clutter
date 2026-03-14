@@ -86,13 +86,17 @@ resource "aws_s3_bucket_policy" "clutter_bucket" {
         Action    = "s3:PutObject"
         Resource  = "${aws_s3_bucket.clutter_bucket.arn}/*"
         Condition = {
-          # Use StringNotEqualsIfExists so that PutObject requests that omit the
-          # header entirely are allowed (they inherit the bucket default AES256
-          # encryption), while requests that explicitly set a *different* algorithm
-          # are denied. This avoids blocking the SSM connection plugin which does
-          # not set the header on its temporary file transfers.
+          # Deny requests that explicitly set a non-AES256 encryption algorithm.
+          # Requests that omit the header entirely inherit bucket default AES256.
           StringNotEqualsIfExists = {
             "s3:x-amz-server-side-encryption" = "AES256"
+          }
+          # Exempt the Ansible Fargate task role — the SSM connection plugin's
+          # internal S3 file transfers do not set the SSE header but bucket
+          # default encryption (AES256) covers them automatically.
+          # aws:userId for assumed roles is "ROLE_UNIQUE_ID:SESSION_NAME".
+          StringNotLike = {
+            "aws:userId" = "${var.ansible_runner_role_id}:*"
           }
         }
       }

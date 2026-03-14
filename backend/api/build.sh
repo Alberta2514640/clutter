@@ -25,6 +25,7 @@ LAMBDA_DIRS=(
   "terraform-engine/create"
   "ansible/submit-job"
   "ansible/get-job"
+  "ansible/get-job-logs"
   "ansible/list-jobs"
   "ansible/run-task"
 )

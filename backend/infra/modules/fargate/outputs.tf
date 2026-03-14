@@ -27,3 +27,8 @@ output "ecs_execution_role_arn" {
   description = "ARN of the ECS task execution role (for iam:PassRole scoping)"
   value       = aws_iam_role.ecs_execution.arn
 }
+
+output "ansible_task_role_unique_id" {
+  description = "Unique ID of the Ansible runner task role (for aws:userId conditions in bucket policies)"
+  value       = aws_iam_role.ansible_runner_task.unique_id
+}

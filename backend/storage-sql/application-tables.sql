@@ -171,7 +171,8 @@ CREATE TABLE public.jobs (
     extra_vars JSONB DEFAULT '{}'::jsonb,
     task_arn VARCHAR(255),
     error_message TEXT,
-    config_id UUID
+    config_id UUID,
+    log_s3_key VARCHAR(255)
 );
 
 CREATE INDEX idx_jobs_status ON public.jobs(status);
