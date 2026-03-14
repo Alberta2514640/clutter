@@ -178,18 +178,17 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
         Action   = "ec2:DescribeInstances"
         Resource = "*"
       },
-      # SSM Session Manager — start sessions on EC2 instances and SSM documents.
-      # The community.aws.aws_ssm connection plugin requires StartSession on both
-      # the target instance ARN and the SSM document ARN.
+      # SSM Session Manager — start sessions on the SSM document (no tag condition)
       {
-        Effect = "Allow"
-        Action = [
-          "ssm:StartSession"
-        ]
-        Resource = [
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell",
-          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
-        ]
+        Effect   = "Allow"
+        Action   = "ssm:StartSession"
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
+      },
+      # SSM Session Manager — start sessions on EC2 instances tagged ManagedBy=Ansible
+      {
+        Effect   = "Allow"
+        Action   = "ssm:StartSession"
+        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
         Condition = {
           StringEquals = {
             "ssm:resourceTag/ManagedBy" = "Ansible"

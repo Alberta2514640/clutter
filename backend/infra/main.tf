@@ -5,10 +5,11 @@
 module "s3" {
   source = "./modules/s3"
 
-  aws_region           = var.aws_region
-  enable_versioning    = true
-  enable_cors          = true
-  cors_allowed_origins = ["*"]
+  aws_region              = var.aws_region
+  enable_versioning       = true
+  enable_cors             = true
+  cors_allowed_origins    = ["*"]
+  ansible_runner_role_id  = module.fargate.ansible_task_role_unique_id
 }
 
 # ================
@@ -520,6 +521,28 @@ module "ansible-list-jobs-lambda" {
   }
 }
 
+module "ansible-get-job-logs-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "ansible-get-job-logs"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:GetObject",
+    "s3:ListBucket",
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-get-job-logs:*",
+    module.s3.clutter_bucket_arn,
+    "${module.s3.clutter_bucket_arn}/logs/*",
+  ]
+  zip_dir_slice = "ansible/get-job-logs"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+  }
+}
+
 module "ansible-create-playbook-upload-url-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "ansible-create-playbook-upload-url"
@@ -784,6 +807,12 @@ module "ansible-jobs-by-id-api-path" {
   parent_id   = module.ansible-jobs-api-path.resource_id
   path_part   = "{jobId}"
 }
+module "ansible-jobs-by-id-logs-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.ansible-jobs-by-id-api-path.resource_id
+  path_part   = "logs"
+}
 module "ansible-playbooks-api-path" {
   source      = "./modules/templates/api-path"
   rest_api_id = module.clutter-api-gateway.rest_api_id
@@ -806,6 +835,12 @@ module "ansible-jobs-by-id-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.ansible-jobs-by-id-api-path.resource_id
+  http_methods = ["GET"]
+}
+module "ansible-jobs-by-id-logs-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.ansible-jobs-by-id-logs-api-path.resource_id
   http_methods = ["GET"]
 }
 module "ansible-playbooks-upload-url-api-cors-compliance" {
@@ -1187,6 +1222,19 @@ module "ansible-get-job-api-integration" {
   path              = module.ansible-jobs-by-id-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
+# GET ansible/jobs/{jobId}/logs
+module "ansible-get-job-logs-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.ansible-jobs-by-id-logs-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.ansible-get-job-logs-lambda.invoke_arn
+  function_name     = module.ansible-get-job-logs-lambda.function_name
+  path_part         = module.ansible-jobs-by-id-logs-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.ansible-jobs-by-id-logs-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
 # POST ansible/playbooks/upload-url
 module "ansible-create-playbook-upload-url-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
@@ -1299,6 +1347,7 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.ansible-submit-job-api-integration.integration_id,
       module.ansible-list-jobs-api-integration.integration_id,
       module.ansible-get-job-api-integration.integration_id,
+      module.ansible-get-job-logs-api-integration.integration_id,
       module.ansible-create-playbook-upload-url-api-integration.integration_id
     ]))
   }

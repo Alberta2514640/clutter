@@ -26,6 +26,7 @@ LAMBDA_DIRS=(
   "resources/get"
   "ansible/submit-job"
   "ansible/get-job"
+  "ansible/get-job-logs"
   "ansible/list-jobs"
   "ansible/run-task"
 )
