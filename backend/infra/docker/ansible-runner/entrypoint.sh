@@ -25,45 +25,76 @@ set -euo pipefail
 LOG_FILE="/var/log/ansible/ansible.log"
 INVENTORY_FILE="/playbooks/inventory.yml"
 
+# Create log directory and file immediately so all output is captured,
+# even if Ansible never runs (e.g. early failures in inventory generation).
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+# Tee all stdout and stderr into the log file while still printing to console.
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 # ---- Helper: Update job status in PostgreSQL (parameterized, no SQL injection) ----
 update_job_status() {
     local status="$1"
     local error_message="${2:-}"
 
-    python3 - <<'PYEOF' "$PSQL_CONNECTION_STRING" "$JOB_ID" "$status" "$error_message"
+    python3 - <<'PYEOF' "$JOB_ID" "$status" "$error_message"
 import sys
+import os
 import psycopg2
 from datetime import datetime, timezone
 
-conn_string, job_id, status, error_message = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+conn_string = os.environ['PSQL_CONNECTION_STRING']
+job_id, status, error_message = sys.argv[1], sys.argv[2], sys.argv[3]
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 try:
-    conn = psycopg2.connect(conn_string)
-    cur = conn.cursor()
-    if error_message:
-        cur.execute(
-            "UPDATE jobs SET status = %s, error_message = %s, updated_at = %s WHERE id = %s",
-            (status, error_message, now, job_id)
-        )
-    else:
-        cur.execute(
-            "UPDATE jobs SET status = %s, updated_at = %s WHERE id = %s",
-            (status, now, job_id)
-        )
-    conn.commit()
-    cur.close()
-    conn.close()
+    with psycopg2.connect(conn_string) as conn:
+        with conn.cursor() as cur:
+            if error_message:
+                cur.execute(
+                    "UPDATE jobs SET status = %s, error_message = %s, updated_at = %s WHERE id = %s",
+                    (status, error_message, now, job_id)
+                )
+            else:
+                cur.execute(
+                    "UPDATE jobs SET status = %s, updated_at = %s WHERE id = %s",
+                    (status, now, job_id)
+                )
+            conn.commit()
 except Exception as e:
     print(f"[update_job_status] WARNING: Failed to update job status: {e}", file=sys.stderr)
 PYEOF
 }
 
-# ---- Helper: Upload logs to S3 ----
+# ---- Helper: Upload logs to S3 and record the key in the database ----
 upload_logs() {
     if [ -f "$LOG_FILE" ]; then
-        aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME}/logs/${JOB_ID}/ansible.log" \
-            --region "$AWS_DEFAULT_REGION" 2>/dev/null || true
+        local log_key="logs/${JOB_ID}/ansible.log"
+        aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME}/${log_key}" \
+            --region "$AWS_DEFAULT_REGION" \
+            --sse AES256 2>/dev/null || true
+
+        python3 - <<'PYEOF' "$JOB_ID" "$log_key"
+import sys
+import os
+import psycopg2
+from datetime import datetime, timezone
+
+conn_string = os.environ['PSQL_CONNECTION_STRING']
+job_id, log_key = sys.argv[1], sys.argv[2]
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+try:
+    with psycopg2.connect(conn_string) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE jobs SET log_s3_key = %s, updated_at = %s WHERE id = %s",
+                (log_key, now, job_id)
+            )
+            conn.commit()
+except Exception as e:
+    print(f"[upload_logs] WARNING: Failed to record log_s3_key in database: {e}", file=sys.stderr)
+PYEOF
     fi
 }
 
@@ -81,6 +112,7 @@ export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-}}"
 for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION; do
     if [ -z "${!var:-}" ]; then
         echo "[entrypoint] ERROR: Missing required environment variable: $var"
+        upload_logs
         update_job_status "FAILED" "Missing environment variable: $var"
         exit 1
     fi
@@ -98,6 +130,7 @@ update_job_status "RUNNING"
 echo "[entrypoint] Downloading playbook from S3..."
 if ! aws s3 cp "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" /playbooks/main.yml --region "$AWS_DEFAULT_REGION"; then
     echo "[entrypoint] ERROR: Failed to download playbook"
+    upload_logs
     update_job_status "FAILED" "Failed to download playbook from S3"
     exit 1
 fi
