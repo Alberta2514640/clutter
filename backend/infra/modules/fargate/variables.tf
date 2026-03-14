@@ -16,11 +16,11 @@ variable "aws_region" {
 variable "ansible_runner_image_tag" {
   description = "Docker image tag for the Ansible runner container (avoid using 'latest' in production)"
   type        = string
-  default     = "latest"
 }
 
 variable "psql_connection_string" {
-  description = "PostgreSQL connection string to store in Secrets Manager for Fargate tasks"
+  description = "DEPRECATED: Secret is now managed outside Terraform. This variable is kept for backward compatibility but is no longer used."
   type        = string
   sensitive   = true
+  default     = ""
 }

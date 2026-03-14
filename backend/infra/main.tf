@@ -19,10 +19,11 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter             = module.s3.clutter_bucket_arn
-  s3_clutter_bucket_name = module.s3.clutter_bucket_name
-  aws_region             = var.aws_region
-  psql_connection_string = var.psql_connection_string
+  s3_clutter                = module.s3.clutter_bucket_arn
+  s3_clutter_bucket_name    = module.s3.clutter_bucket_name
+  aws_region                = var.aws_region
+  psql_connection_string    = var.psql_connection_string
+  ansible_runner_image_tag  = var.ansible_runner_image_tag
 }
 
 # ========================
@@ -30,6 +31,23 @@ module "fargate" {
 # ========================
 
 
+
+# DynamoDB table for Terraform state locking
+resource "aws_dynamodb_table" "terraform_state_lock" {
+  name           = "terraform-state-lock"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "terraform-state-lock"
+    Description = "Terraform state lock table"
+  }
+}
 
 # SQS — Ansible Job Queue + Dead Letter Queue
 resource "aws_sqs_queue" "ansible_jobs_dlq" {
@@ -480,6 +498,7 @@ module "ansible-submit-job-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -499,6 +518,7 @@ module "ansible-get-job-lambda" {
   zip_dir_slice = "ansible/get-job"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -518,6 +538,7 @@ module "ansible-list-jobs-lambda" {
   zip_dir_slice = "ansible/list-jobs"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -540,6 +561,7 @@ module "ansible-get-job-logs-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
   }
 }
 
@@ -558,7 +580,8 @@ module "ansible-create-playbook-upload-url-lambda" {
   ]
   zip_dir_slice = "ansible/create-playbook-upload-url"
   environment_variables = {
-    S3_BUCKET_NAME = module.s3.clutter_bucket_name
+    S3_BUCKET_NAME      = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN = var.frontend_url
   }
 }
 
@@ -589,6 +612,7 @@ module "ansible-run-task-lambda" {
     ANSIBLE_SUBNET_IDS          = join(",", data.aws_subnets.default.ids)
     ANSIBLE_SECURITY_GROUP_ID   = module.fargate.ansible_sg_id
     S3_BUCKET_NAME              = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN         = var.frontend_url
   }
 }
 
@@ -924,6 +948,13 @@ module "ansible-playbook-upload-create-model" {
   description     = "Model to validate ansible playbook upload URL requests"
   schema_filename = "ansible-playbook-upload-create.json"
 }
+module "ansible-job-submit-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "ansibleJobSubmit"
+  description     = "Model to validate ansible job submission requests"
+  schema_filename = "ansible-job-submit.json"
+}
 
 # Integrations
 
@@ -1195,6 +1226,9 @@ module "ansible-submit-job-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.ansible-jobs-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.ansible-job-submit-model.model_name
 }
 # GET ansible/jobs
 module "ansible-list-jobs-api-integration" {
@@ -1348,13 +1382,21 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.ansible-list-jobs-api-integration.integration_id,
       module.ansible-get-job-api-integration.integration_id,
       module.ansible-get-job-logs-api-integration.integration_id,
-      module.ansible-create-playbook-upload-url-api-integration.integration_id
+      module.ansible-create-playbook-upload-url-api-integration.integration_id,
+      module.ansible-playbook-upload-create-model.model_id,
+      module.ansible-job-submit-model.model_id
     ]))
   }
 
   lifecycle {
     create_before_destroy = true
   }
+}
+
+variable "ansible_runner_image_tag" {
+  type        = string
+  description = "Docker image tag for the Ansible runner"
+  default     = "latest"
 }
 
 variable "stage_name" {
