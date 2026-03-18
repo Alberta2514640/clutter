@@ -14,4 +14,4 @@
 
 **/postman_*.json
 
-backend/infra/backend.tf
+infra/backend.tf

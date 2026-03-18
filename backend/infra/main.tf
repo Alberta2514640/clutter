@@ -156,6 +156,61 @@ module "organization-delete-lambda" {
   }
 
 }
+# Organization Accounts
+module "organization-submit-account-role-arn-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-submit-account-role-arn"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-submit-account-role-arn:*"
+  ]
+  zip_dir_slice = "organization/accounts/submit-role-arn"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+
+}
+module "organization-get-accounts-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-get-accounts"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-get-accounts:*"
+  ]
+  zip_dir_slice = "organization/accounts/get"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+
+}
+module "organization-delete-account-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "organization-delete-account"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/organization-delete-account:*"
+  ]
+  zip_dir_slice = "organization/accounts/delete"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+
+}
 
 # Project
 module "project-create-lambda" {
@@ -412,6 +467,31 @@ module "organization-api-by-id-cors-compliance" {
   resource_id  = module.organization-api-path-by-id.resource_id
   http_methods = ["PUT", "DELETE"]
 }
+# Organization Accounts
+module "organization-accounts-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.organization-api-path-by-id.resource_id
+  path_part   = "accounts"
+}
+module "organization-accounts-api-path-by-account-id" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.organization-accounts-api-path.resource_id
+  path_part   = "{accountId}"
+}
+module "organization-accounts-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.organization-accounts-api-path.resource_id
+  http_methods = ["GET"]
+}
+module "organization-accounts-api-by-account-id-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.organization-accounts-api-path-by-account-id.resource_id
+  http_methods = ["POST", "DELETE"]
+}
 
 # Project
 module "project-api-path" {
@@ -496,6 +576,13 @@ module "organization-update-model" {
   model_name      = "organizationUpdate"
   description     = "Model to validate organization update requests"
   schema_filename = "organization-update.json"
+}
+module "organization-submit-account-role-arn-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "organizationSubmitAccountRoleArn"
+  description     = "Model to validate organization account role arn submission requests"
+  schema_filename = "organization-submit-account-role-arn.json"
 }
 
 # Project
@@ -620,6 +707,52 @@ module "organization-delete-api-integration" {
   path_part         = module.organization-api-path-by-id.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.organization-api-path-by-id.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# Organization Accounts
+# GET organization/{organizationId}/accounts
+module "organization-get-accounts-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-accounts-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.organization-get-accounts-lambda.invoke_arn
+  function_name     = module.organization-get-accounts-lambda.function_name
+  path_part         = module.organization-accounts-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-accounts-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# POST organization/{organizationId}/accounts/{accountId}
+module "organization-submit-account-role-arn-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-accounts-api-path-by-account-id.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.organization-submit-account-role-arn-lambda.invoke_arn
+  function_name     = module.organization-submit-account-role-arn-lambda.function_name
+  path_part         = module.organization-accounts-api-path-by-account-id.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-accounts-api-path-by-account-id.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.organization-submit-account-role-arn-model.model_name
+}
+
+# DELETE organization/{organizationId}/accounts
+module "organization-delete-account-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.organization-accounts-api-path-by-account-id.resource_id
+  http_method       = "DELETE"
+  invoke_arn        = module.organization-delete-account-lambda.invoke_arn
+  function_name     = module.organization-delete-account-lambda.function_name
+  path_part         = module.organization-accounts-api-path-by-account-id.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.organization-accounts-api-path-by-account-id.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
@@ -789,6 +922,7 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.project-update-model.model_id,
       module.diagram-create-model.model_id,
       module.diagram-update-model.model_id,
+      module.organization-submit-account-role-arn-model.model_id,
 
       module.log-in-api-integration.integration_id,
 
@@ -798,6 +932,10 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.organization-get-api-integration.integration_id,
       module.organization-update-api-integration.integration_id,
       module.organization-delete-api-integration.integration_id,
+
+      module.organization-submit-account-role-arn-api-integration.integration_id,
+      module.organization-get-accounts-api-integration.integration_id,
+      module.organization-delete-account-api-integration.integration_id,
 
       module.project-create-api-integration.integration_id,
       module.project-get-api-integration.integration_id,
