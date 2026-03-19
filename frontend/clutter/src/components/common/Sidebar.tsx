@@ -34,8 +34,8 @@ export default function DashboardSidebar({ className }: SidebarProps) {
 
   const bottomItems = [
     { icon: Settings, label: "Admin Panel", href: "/settings/organization/manage" },
-    { icon: KeySquare, label: "AWS Account", href: "/settings/aws-connection" },
-    { icon: BookTemplate, label: "Templates", href: "/templates" },
+    // { icon: KeySquare, label: "AWS Account", href: "/settings/organization/aws-account" },
+    // { icon: BookTemplate, label: "Templates", href: "/templates" },
     { icon: BarChart3, label: "Insights", href: "/insights" },
     { icon: HelpCircle, label: "Help", href: "/help" },
   ];
