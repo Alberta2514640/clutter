@@ -22,6 +22,38 @@ export type UpdateOrganizationInput = {
   description: string;
 };
 
+export type CreateCloudFormationStackUrlInput = {
+  organizationId: string;
+  accountName: string;
+  region?: string;
+};
+
+export type UpdateOrganizationAwsAccountInput = {
+  role_arn: string;
+};
+
+export interface OrganizationAwsAccount {
+  id: string;
+  organization_id?: string;
+  unique_id?: string;
+  account_name: string;
+  role_arn: string | null;
+  external_id?: string;
+  status: "incomplete" | "complete" | "revoked" | string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface OrganizationAwsAccountsResponse {
+  complete: OrganizationAwsAccount[];
+  incomplete: OrganizationAwsAccount[];
+}
+
+export interface CloudFormationStackUrlResponse {
+  account_id: string;
+  url: string;
+}
+
 // common envelope your API seems to use
 export type ApiEnvelope<T> = {
   data: T;

@@ -1,0 +1,285 @@
+"use client";
+
+import { useState } from "react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  useCreateCloudFormationStackUrl,
+  useDeleteOrganizationAccount,
+  useOrganizationAccounts,
+  useOrganizations,
+  useUpdateOrganizationAccount,
+} from "@/lib/features/organization/hooks";
+import type { CloudFormationStackUrlResponse } from "@/lib/features/organization/types";
+import { useMe } from "@/lib/features/user/hooks";
+import AwsAccountDangerZone from "./AwsAccountDangerZone";
+import AwsAccountHeader from "./AwsAccountHeader";
+import AwsConnectionPreview from "./AwsConnectionPreview";
+import AwsExistingAccountCard from "./AwsExistingAccountCard";
+import AwsRoleSetupCard from "./AwsRoleSetupCard";
+import AwsRoleVerificationForm from "./AwsRoleVerificationForm";
+
+export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "error";
+
+const roleArnPattern = /^arn:aws:iam::\d{12}:role\/[\w+=,.@\-_/]+$/;
+export default function ArnPage() {
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
+  const orgQ = useOrganizations(token);
+  const organizationId = orgQ.data?.[0]?.id ?? "";
+  const createStackUrl = useCreateCloudFormationStackUrl(token);
+  const accountsQ = useOrganizationAccounts(token, organizationId);
+  const deleteAccount = useDeleteOrganizationAccount(token);
+  const updateAccount = useUpdateOrganizationAccount(token);
+
+  const [accountName, setAccountName] = useState("");
+  const [roleArn, setRoleArn] = useState("");
+  const [defaultRegion, setDefaultRegion] = useState("us-west-2");
+  const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState<LinkStatus>("idle");
+  const [error, setError] = useState("");
+  const [stackData, setStackData] = useState<CloudFormationStackUrlResponse | null>(null);
+  const completeAccount = accountsQ.data?.find((account) => account.status === "complete") ?? null;
+  const pendingAccount = accountsQ.data?.find((account) => account.status === "incomplete") ?? null;
+  const activePendingAccountId = stackData?.account_id ?? pendingAccount?.id ?? null;
+  const effectiveAccountName = accountName.trim() || pendingAccount?.account_name || "";
+  const effectiveRoleArn = roleArn.trim() || pendingAccount?.role_arn || "";
+
+  const handleGenerateStackUrl = async () => {
+    if (!token) {
+      setStatus("error");
+      setError("You must be signed in before generating the AWS setup link.");
+      return;
+    }
+
+    if (!organizationId) {
+      setStatus("error");
+      setError("Organization context is still loading. Try again once settings finish loading.");
+      return;
+    }
+
+    if (!accountName.trim()) {
+      setStatus("error");
+      setError("Enter the AWS account name before generating the setup link.");
+      return;
+    }
+
+    setError("");
+    setStatus("creating-template-link");
+
+    try {
+      const response = await createStackUrl.mutateAsync({
+        organizationId,
+        accountName: accountName.trim(),
+        region: defaultRegion,
+      });
+
+      setStackData(response);
+      setStatus("awaiting-role-arn");
+    } catch (err) {
+      setStatus("error");
+      setStackData(null);
+      setError(err instanceof Error ? err.message : "Failed to generate CloudFormation launch URL.");
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!effectiveAccountName) {
+      setStatus("error");
+      setError("Enter an account name before verifying the role.");
+      return;
+    }
+
+    if (!activePendingAccountId) {
+      setStatus("error");
+      setError("Generate the CloudFormation setup link before submitting the ARN.");
+      return;
+    }
+
+    if (!roleArnPattern.test(effectiveRoleArn)) {
+      setStatus("error");
+      setError("Enter a valid IAM Role ARN in the format arn:aws:iam::<account-id>:role/<role-name>.");
+      return;
+    }
+
+    setError("");
+    setStatus("verifying");
+
+    window.setTimeout(() => {
+      setStatus("verified");
+    }, 900);
+  };
+
+  const handleSave = async () => {
+    if (status !== "verified") {
+      setStatus("error");
+      setError("Verify the role before saving the account link.");
+      return;
+    }
+
+    if (!organizationId || !activePendingAccountId) {
+      setStatus("error");
+      setError("The pending account record is missing. Generate the setup link again.");
+      return;
+    }
+
+    if (!roleArnPattern.test(effectiveRoleArn)) {
+      setStatus("error");
+      setError("Enter a valid IAM Role ARN before saving.");
+      return;
+    }
+
+    setError("");
+    setStatus("saving");
+
+    try {
+      await updateAccount.mutateAsync({
+        organizationId,
+        accountId: activePendingAccountId,
+        data: {
+          role_arn: effectiveRoleArn,
+        },
+      });
+
+      setStatus("verified");
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Failed to save the AWS account role ARN.");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!organizationId || !completeAccount) return;
+
+    const confirmed = window.confirm(
+      `Delete the AWS account link "${completeAccount.account_name}"? This will return the page to the creation flow.`
+    );
+    if (!confirmed) return;
+
+    await deleteAccount.mutateAsync({
+      organizationId,
+      accountId: completeAccount.id,
+    });
+
+    setAccountName("");
+    setRoleArn("");
+    setDefaultRegion("us-west-2");
+    setNotes("");
+    setStatus("idle");
+    setError("");
+    setStackData(null);
+  };
+
+  const handleDeletePendingAccount = async () => {
+    if (!organizationId || !pendingAccount) return;
+
+    const confirmed = window.confirm(
+      `Delete the pending AWS account link "${pendingAccount.account_name}"? This will return the page to the creation flow.`
+    );
+    if (!confirmed) return;
+
+    await deleteAccount.mutateAsync({
+      organizationId,
+      accountId: pendingAccount.id,
+    });
+
+    setAccountName("");
+    setRoleArn("");
+    setDefaultRegion("us-west-2");
+    setNotes("");
+    setStatus("idle");
+    setError("");
+    setStackData(null);
+  };
+
+  const currentAccountName = effectiveAccountName;
+  const currentRoleArn = effectiveRoleArn;
+  const hasPendingFlow = !!pendingAccount || !!stackData;
+
+  const currentStatus: LinkStatus =
+    status === "idle" && pendingAccount ? "awaiting-role-arn" : status;
+
+  return (
+    <main className="space-y-6">
+      <AwsAccountHeader />
+
+      {status === "error" && error && (
+        <Alert className="border-red-500/30 bg-red-500/10 text-red-100">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Verification blocked</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {status === "verified" && (
+        <Alert className="border-teal-500/30 bg-teal-500/10 text-teal-50">
+          <CheckCircle2 className="h-4 w-4 text-teal-300" />
+          <AlertTitle>ARN format validated</AlertTitle>
+          <AlertDescription>The ARN format looks valid locally. Save the account link to submit it to the backend.</AlertDescription>
+        </Alert>
+      )}
+
+      {completeAccount ? (
+        <div className="space-y-6">
+          <AwsExistingAccountCard account={completeAccount} />
+          <AwsAccountDangerZone
+            accountName={completeAccount.account_name}
+            isDeleting={deleteAccount.isPending}
+            onDelete={handleDeleteAccount}
+          />
+        </div>
+      ) : (
+        <Card className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
+          <CardContent className="grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <section className="space-y-6">
+              <AwsRoleSetupCard
+                accountName={currentAccountName}
+                defaultRegion={defaultRegion}
+                isGenerating={createStackUrl.isPending}
+                launchUrl={stackData?.url ?? null}
+                linkedAccountId={activePendingAccountId}
+                onAccountNameChange={setAccountName}
+                onDefaultRegionChange={setDefaultRegion}
+                onGenerateStackUrl={handleGenerateStackUrl}
+              />
+
+              {pendingAccount && (
+                <AwsAccountDangerZone
+                  accountName={pendingAccount.account_name}
+                  isDeleting={deleteAccount.isPending}
+                  onDelete={handleDeletePendingAccount}
+                />
+              )}
+            </section>
+
+            <section className="space-y-6">
+              <AwsRoleVerificationForm
+                accountName={currentAccountName}
+                defaultRegion={defaultRegion}
+                isReadyForArn={hasPendingFlow}
+                notes={notes}
+                roleArn={currentRoleArn}
+                status={currentStatus}
+                onDefaultRegionChange={setDefaultRegion}
+                onNotesChange={setNotes}
+                onRoleArnChange={setRoleArn}
+                onSave={handleSave}
+                onVerify={handleVerify}
+              />
+
+              <AwsConnectionPreview
+                accountName={currentAccountName}
+                defaultRegion={defaultRegion}
+                launchUrl={stackData?.url ?? null}
+                linkedAccountId={activePendingAccountId}
+                status={currentStatus}
+              />
+            </section>
+          </CardContent>
+        </Card>
+      )}
+    </main>
+  );
+}
