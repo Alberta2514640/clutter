@@ -9,7 +9,6 @@ LAMBDA_DIRS=(
   "organization/create"
   "organization/delete"
   "organization/get"
-  "organization/overview"
   "organization/update"
   "project/create"
   "project/delete"
@@ -20,6 +19,9 @@ LAMBDA_DIRS=(
   "diagram/update"
   "diagram/delete"
   "user-information/get"
+  "organization/accounts/get"
+  "organization/accounts/submit-role-arn"
+  "organization/accounts/delete"
 )
 
 # Detect root directory of script
