@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": [
+    "organizationId",
+    "projectId",
+    "diagramId",
+    "command"
+  ],
+  "properties": {
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Must be a valid organization UUID"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Must be a valid project UUID"
+    },
+    "diagramId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Must be a valid diagram UUID"
+    },
+    "command": {
+      "type": "string",
+      "enum": ["apply", "destroy"],
+      "description": "Terraform command to execute"
+    }
+  },
+  "additionalProperties": false
+}

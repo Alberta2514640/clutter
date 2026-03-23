@@ -139,7 +139,32 @@ module "cloudformation-stack-url-generator-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
+    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+  }
+}
+
+module "terraform-command-runner-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-command-runner"
+
+  actions = [
+    "ecs:RunTask",
+    "iam:PassRole"
+  ]
+
+  resources = [
+    module.fargate.terraform_task_role_arn,
+    module.fargate.ecs_execution_role_arn,
+    module.fargate.terraform_task_definition_arn
+  ]
+
+  zip_dir_slice = "terraform-command-runner"
+
+  environment_variables = {
+    ECS_CLUSTER_NAME    = module.fargate.ecs_cluster_name
+    TASK_DEFINITION_ARN = module.fargate.terraform_task_definition_arn
+    SUBNET_IDS          = join(",", module.fargate.subnet_ids)
+    SECURITY_GROUP_ID   = module.fargate.terraform_security_group_id
   }
 }
 
@@ -718,6 +743,20 @@ module "cloudformation-stack-url-generator-api-by-id-cors-compliance" {
   http_methods = ["GET"]
 }
 
+# Teraform Command
+module "terraform-command-runner-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "terraform-command-runner"
+}
+module "terraform-command-runner-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-command-runner-api-path.resource_id
+  http_methods = ["POST"]
+}
+
 # Organization
 module "organization-api-path" {
   source      = "./modules/templates/api-path"
@@ -910,6 +949,15 @@ module "log-in-model" {
   model_name      = "login"
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
+}
+
+# Terraform Command
+module "terraform-command-runner-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "terraformCommand"
+  description     = "Model to validate terraform command requests"
+  schema_filename = "terraform-command-runner.json"
 }
 
 # Organization
@@ -1240,6 +1288,23 @@ module "diagram-delete-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+# Terraform Command
+# POST terraform-command-runner
+module "terraform-command-runner-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-command-runner-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.terraform-command-runner-lambda.invoke_arn
+  function_name     = module.terraform-command-runner-lambda.function_name
+  path_part         = module.terraform-command-runner-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-command-runner-api-path.path
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.terraform-command-runner-model.model_name
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
 # Ansible Engine
 # POST ansible/jobs
 module "ansible-submit-job-api-integration" {
@@ -1375,6 +1440,7 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.diagram-create-model.model_id,
       module.diagram-update-model.model_id,
       module.organization-submit-account-role-arn-model.model_id,
+      module.terraform-command-runner-model.model_id,
 
       module.log-in-api-integration.integration_id,
 
@@ -1398,6 +1464,8 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.diagram-get-api-integration.integration_id,
       module.diagram-update-api-integration.integration_id,
       module.diagram-delete-api-integration.integration_id,
+
+      module.terraform-command-runner-api-integration.integration_id,
 
       module.user-information-get-api-integration.integration_id,
 

@@ -1,3 +1,33 @@
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "terraform_task_definition_arn" {
+  value = aws_ecs_task_definition.terraform_deployer.arn
+}
+
+output "terraform_security_group_id" {
+  value = aws_security_group.terraform_deployer.id
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+output "subnet_ids" {
+  value = data.aws_subnets.default.ids
+}
+
+output "ecs_execution_role_arn" {
+  value = aws_iam_role.ecs_execution.arn
+}
+
+output "terraform_task_role_arn" {
+  value = aws_iam_role.terraform_deployer_task.arn
+}
 output "cluster_arn" {
   description = "ARN of the ECS cluster"
   value       = aws_ecs_cluster.main.arn
