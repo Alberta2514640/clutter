@@ -240,41 +240,6 @@ resource "aws_cloudwatch_log_group" "ansible_runner" {
   retention_in_days = 14
 }
 
-# ===============================================================
-# Secrets Manager — PSQL connection string for Ansible Fargate tasks
-# ===============================================================
-
-resource "aws_secretsmanager_secret" "psql_connection_string" {
-  name                    = "clutter/ansible-runner/psql-connection-string"
-  description             = "PostgreSQL connection string for Ansible Runner Fargate tasks"
-  recovery_window_in_days = 7
-}
-
-# NOTE: The secret_string value will be stored in Terraform state in plain text.
-# Ensure your S3 backend has encryption at rest enabled and access is restricted.
-resource "aws_secretsmanager_secret_version" "psql_connection_string" {
-  secret_id     = aws_secretsmanager_secret.psql_connection_string.id
-  secret_string = var.psql_connection_string
-
-  lifecycle {
-    ignore_changes = [secret_string]
-  }
-}
-
-# Grant ECS execution role permission to read the secret
-resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "ecs-execution-secrets-access"
-  role = aws_iam_role.ecs_execution.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "secretsmanager:GetSecretValue"
-      Resource = aws_secretsmanager_secret.psql_connection_string.arn
-    }]
-  })
-}
 
 resource "aws_ecs_task_definition" "ansible_runner" {
   family                   = "ansible-runner"
@@ -302,15 +267,8 @@ resource "aws_ecs_task_definition" "ansible_runner" {
 
       environment = [
         { name = "S3_BUCKET_NAME", value = var.s3_clutter_bucket_name },
-        { name = "AWS_DEFAULT_REGION", value = var.aws_region }
-      ]
-
-      # Inject PSQL connection string from Secrets Manager (resolved at container start)
-      secrets = [
-        {
-          name      = "PSQL_CONNECTION_STRING"
-          valueFrom = aws_secretsmanager_secret.psql_connection_string.arn
-        }
+        { name = "AWS_DEFAULT_REGION", value = var.aws_region },
+        { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string }
       ]
 
       essential = true
