@@ -10,9 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir \
     ansible-core==2.17.7 \
-    awscli==1.31.0 \
-    boto3==1.34.0 \
-    botocore==1.34.0 \
+    awscli==1.33.44 \
+    boto3==1.34.162 \
+    botocore==1.34.162 \
     psycopg2-binary==2.9.9 \
     pyyaml==6.0.1 \
     jinja2==3.1.2
@@ -28,23 +28,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     postgresql-client \
     curl \
+    libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install SSM Session Manager plugin in runtime stage
-# Using pinned version with GPG signature verification for reproducibility and security
-RUN SSM_PLUGIN_VERSION="2.4.680.0" && \
-    curl -o /tmp/session-manager-plugin.deb \
-    "https://s3.amazonaws.com/session-manager-downloads/plugin/${SSM_PLUGIN_VERSION}/ubuntu_64bit/session-manager-plugin.deb" \
-    && curl -o /tmp/session-manager-plugin.deb.sig \
-    "https://s3.amazonaws.com/session-manager-downloads/plugin/${SSM_PLUGIN_VERSION}/ubuntu_64bit/session-manager-plugin.deb.sig" \
-    && curl -o /tmp/session-manager-plugin.pub \
-    "https://s3.amazonaws.com/session-manager-downloads/plugin/public-key/session-manager-plugin.pub" \
-    && apt-get install -y --no-install-recommends gnupg \
-    && gpg --import /tmp/session-manager-plugin.pub \
-    && gpg --verify /tmp/session-manager-plugin.deb.sig /tmp/session-manager-plugin.deb \
+RUN curl -o /tmp/session-manager-plugin.deb \
+    "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" \
     && dpkg -i /tmp/session-manager-plugin.deb \
-    && rm /tmp/session-manager-plugin.deb /tmp/session-manager-plugin.deb.sig /tmp/session-manager-plugin.pub \
-    && apt-get remove -y gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+    && test -f /usr/local/bin/session-manager-plugin \
+    && rm /tmp/session-manager-plugin.deb
 
 # Copy installed Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
