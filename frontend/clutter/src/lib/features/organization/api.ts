@@ -1,5 +1,15 @@
 // lib/features/organization/api.ts
-import type { ApiEnvelope, CreateOrganizationInput, Organization, UpdateOrganizationInput } from "./types";
+import type {
+  ApiEnvelope,
+  CloudFormationStackUrlResponse,
+  CreateCloudFormationStackUrlInput,
+  CreateOrganizationInput,
+  OrganizationAwsAccount,
+  OrganizationAwsAccountsResponse,
+  Organization,
+  UpdateOrganizationAwsAccountInput,
+  UpdateOrganizationInput,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
@@ -57,5 +67,63 @@ export const organizationApi = {
     await apiFetch<ApiEnvelope<unknown>>(`/organization/${organizationId}`, token, {
       method: "DELETE",
     });
+  },
+
+  // GET /cloudformation-stack-url/:organizationId?accountName=...&region=...
+  createCloudFormationStackUrl: async (
+    token: string,
+    input: CreateCloudFormationStackUrlInput
+  ): Promise<CloudFormationStackUrlResponse> => {
+    const params = new URLSearchParams({
+      accountName: input.accountName,
+      region: input.region ?? "us-west-2",
+    });
+
+    const json = await apiFetch<ApiEnvelope<CloudFormationStackUrlResponse>>(
+      `/cloudformation-stack-url/${input.organizationId}?${params.toString()}`,
+      token,
+      { method: "GET" }
+    );
+
+    return json.data;
+  },
+
+  // GET /organization/:organizationId/accounts
+  listAccounts: async (token: string, organizationId: string): Promise<OrganizationAwsAccount[]> => {
+    const json = await apiFetch<ApiEnvelope<OrganizationAwsAccountsResponse>>(
+      `/organization/${organizationId}/accounts`,
+      token,
+      { method: "GET" }
+    );
+
+    return [...(json.data?.complete ?? []), ...(json.data?.incomplete ?? [])].filter(
+      (account): account is OrganizationAwsAccount => !!account && typeof account === "object"
+    );
+  },
+
+  // DELETE /organization/:organizationId/accounts/:accountId
+  deleteAccount: async (token: string, organizationId: string, accountId: string): Promise<void> => {
+    await apiFetch<ApiEnvelope<unknown>>(`/organization/${organizationId}/accounts/${accountId}`, token, {
+      method: "DELETE",
+    });
+  },
+
+  // POST /organization/:organizationId/accounts/:accountId
+  updateAccount: async (
+    token: string,
+    organizationId: string,
+    accountId: string,
+    input: UpdateOrganizationAwsAccountInput
+  ): Promise<OrganizationAwsAccount> => {
+    const json = await apiFetch<ApiEnvelope<OrganizationAwsAccount>>(
+      `/organization/${organizationId}/accounts/${accountId}`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      }
+    );
+
+    return json.data;
   },
 };

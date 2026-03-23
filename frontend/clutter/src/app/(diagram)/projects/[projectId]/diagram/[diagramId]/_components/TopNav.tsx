@@ -1,5 +1,4 @@
 "use client";
-
 import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -8,19 +7,18 @@ type TopNavProps = {
   onNameChange: (nextName: string) => void;
   onSave: () => void;
   onBack?: () => void;
+  onDeploy?: () => void;
   dirty: boolean;
   isSaving?: boolean;
   nameDisabled?: boolean;
 };
 
-export default function TopNav({ diagramName, onNameChange, onSave, onBack, dirty, isSaving, nameDisabled }: TopNavProps) {
+export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, dirty, isSaving, nameDisabled }: TopNavProps) {
   const canSave = dirty && !isSaving;
-
   const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(""); // only meaningful while editing
+  const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // focus when we enter edit mode
   useEffect(() => {
     if (!isEditing) return;
     queueMicrotask(() => {
@@ -31,34 +29,22 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, dirt
 
   const startEdit = useCallback(() => {
     if (nameDisabled) return;
-    setDraft(diagramName); // initialize from store at the moment editing begins
+    setDraft(diagramName);
     setIsEditing(true);
   }, [diagramName, nameDisabled]);
 
   const commit = useCallback(() => {
     const next = draft.trim();
-
-    // empty => revert
-    if (!next) {
-      setIsEditing(false);
-      return;
-    }
-
-    if (next !== diagramName) {
-      onNameChange(next);
-    }
+    if (!next) { setIsEditing(false); return; }
+    if (next !== diagramName) onNameChange(next);
     setIsEditing(false);
   }, [draft, diagramName, onNameChange]);
 
-  const cancel = useCallback(() => {
-    setIsEditing(false);
-  }, []);
-
-  // onDeleteSelected: () => void;
+  const cancel = useCallback(() => setIsEditing(false), []);
 
   return (
     <div className="flex items-center justify-between gap-4 px-5 py-5">
-      {/* Left: Diagram name (click to edit) */}
+      {/* Left: Diagram name */}
       <div className="min-w-0">
         {!isEditing ? (
           <button
@@ -66,7 +52,6 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, dirt
             disabled={!!nameDisabled}
             onClick={startEdit}
             className={[
-              // Palette-like styling
               "h-10 max-w-[420px] truncate rounded-lg border border-slate-800 bg-slate-950/70 px-4",
               "text-sm font-semibold text-slate-100 shadow-lg backdrop-blur-sm",
               "transition-colors hover:bg-slate-900/70",
@@ -91,17 +76,23 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, dirt
         )}
       </div>
 
-      {/* Right: Back + Save */}
+      {/* Right: Back + Save + Deploy */}
       <div className="flex items-center gap-4">
-        <Button onClick={onBack} className="h-10 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/10">
+        <Button
+          onClick={onBack}
+          className="h-10 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/10">
           ← Back
         </Button>
-
         <Button
           onClick={onSave}
           disabled={!canSave}
           className={["h-10 px-6 rounded-lg font-semibold shadow-lg text-white", canSave ? "bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90" : "bg-white/10 text-white/60 cursor-not-allowed"].join(" ")}>
           {isSaving ? "Saving…" : dirty ? "Save" : "Saved"}
+        </Button>
+        <Button
+          onClick={onDeploy}
+          className="h-10 px-6 rounded-lg font-semibold shadow-lg text-white bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90">
+          Deploy
         </Button>
       </div>
     </div>

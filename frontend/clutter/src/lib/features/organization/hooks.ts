@@ -2,7 +2,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { organizationApi } from "./api";
 import { orgKeys } from "./keys";
-import type { CreateOrganizationInput, Organization, UpdateOrganizationInput } from "./types";
+import type {
+  CreateCloudFormationStackUrlInput,
+  CreateOrganizationInput,
+  OrganizationAwsAccount,
+  Organization,
+  UpdateOrganizationAwsAccountInput,
+  UpdateOrganizationInput,
+} from "./types";
 
 export const useOrganizations = (token?: string | null) => {
   return useQuery({
@@ -43,6 +50,72 @@ export const useDeleteOrganization = (token?: string | null) => {
     onSuccess: (_void, organizationId) => {
       qc.setQueryData<Organization[]>(orgKeys.list(), (prev) => (prev ?? []).filter((o) => o.id !== organizationId));
       qc.removeQueries({ queryKey: ["members"] });
+    },
+  });
+};
+
+export const useCreateCloudFormationStackUrl = (token?: string | null) => {
+  return useMutation({
+    mutationKey: orgKeys.cloudFormationStackUrl(),
+    mutationFn: (input: CreateCloudFormationStackUrlInput) =>
+      organizationApi.createCloudFormationStackUrl(token as string, input),
+  });
+};
+
+export const useOrganizationAccounts = (token?: string | null, organizationId?: string | null) => {
+  return useQuery({
+    queryKey: orgKeys.accounts(organizationId ?? ""),
+    queryFn: () => organizationApi.listAccounts(token as string, organizationId as string),
+    enabled: !!token && !!organizationId,
+    staleTime: 60 * 1000,
+  });
+};
+
+export const useDeleteOrganizationAccount = (token?: string | null) => {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { organizationId: string; accountId: string }) =>
+      organizationApi.deleteAccount(token as string, input.organizationId, input.accountId),
+    onSuccess: (_void, input) => {
+      qc.setQueryData<OrganizationAwsAccount[]>(
+        orgKeys.accounts(input.organizationId),
+        (prev) => (prev ?? []).filter((account) => account.id !== input.accountId)
+      );
+    },
+  });
+};
+
+export const useUpdateOrganizationAccount = (token?: string | null) => {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      organizationId: string;
+      accountId: string;
+      data: UpdateOrganizationAwsAccountInput;
+    }) => organizationApi.updateAccount(token as string, input.organizationId, input.accountId, input.data),
+    onSuccess: (updated, input) => {
+      qc.setQueryData<OrganizationAwsAccount[]>(
+        orgKeys.accounts(input.organizationId),
+        (prev) => {
+          const current = prev ?? [];
+          const existingIndex = current.findIndex((account) => account.id === updated.id);
+
+          if (existingIndex === -1) {
+            return [updated, ...current];
+          }
+
+          const next = [...current];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            ...updated,
+          };
+          return next;
+        }
+      );
+
+      qc.invalidateQueries({ queryKey: orgKeys.accounts(input.organizationId) });
     },
   });
 };

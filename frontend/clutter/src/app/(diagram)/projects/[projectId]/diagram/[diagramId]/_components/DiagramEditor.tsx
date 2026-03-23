@@ -1,6 +1,6 @@
 "use client";
 
-import type { Connection, EdgeChange, NodeChange, NodeProps, NodeTypes, IsValidConnection } from "@xyflow/react";
+import type { Connection, EdgeChange, IsValidConnection, NodeChange, NodeProps, NodeTypes } from "@xyflow/react";
 import { addEdge, applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, useReactFlow } from "@xyflow/react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -8,6 +8,7 @@ import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 import ConfigPanel from "./nodes/ConfigPanel";
+import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
 
 import { useDiagram, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
@@ -36,6 +37,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const editor = useDiagramEditor(diagramId);
   const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
+
+  const [logs, setLogs] = useState<LogEntry[]>([]); //temp probably be changed after deploy flow
 
   useEffect(() => {
     ensure(diagramId);
@@ -231,6 +234,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
               Saved
             </div>
           )}
+          <LogsPanel logs={logs} />
         </div>
 
         <ConfigPanel diagramId={diagramId} />
