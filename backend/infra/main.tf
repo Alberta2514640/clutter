@@ -67,6 +67,8 @@ resource "aws_sqs_queue" "ansible_jobs" {
 
 
 
+data "aws_caller_identity" "current" {}
+
 # Subnet lookup for Fargate task networking
 data "aws_subnets" "default" {
   filter {
@@ -599,7 +601,7 @@ module "ansible-run-task-lambda" {
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-run-task:*",
     module.fargate.cluster_arn,
-    module.fargate.ansible_task_def_arn,
+    "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/ansible-runner:*",
 
     module.fargate.ansible_task_role_arn,
     module.fargate.ecs_execution_role_arn
