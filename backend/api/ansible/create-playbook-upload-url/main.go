@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"regexp"
-	"strings"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -23,11 +21,10 @@ import (
 
 const defaultUploadURLTTLSeconds = 900
 
-var invalidPlaybookChars = regexp.MustCompile(`[^a-z0-9._-]+`)
-var repeatedDash = regexp.MustCompile(`-+`)
-
 type createPlaybookUploadURLRequest struct {
-	FileName string `json:"file_name"`
+	FileName  string `json:"file_name"`
+	ProjectID string `json:"project_id"`
+	DiagramID string `json:"diagram_id"`
 }
 
 func main() {
@@ -51,11 +48,57 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	normalizedFileName, err := validatePlaybookFileName(body.FileName)
+	normalizedFileName, err := uploadutils.ValidatePlaybookFileName(body.FileName)
 	if err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": err.Error(),
 		})
+	}
+
+	if body.ProjectID == "" || body.DiagramID == "" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "project_id and diagram_id are required",
+		})
+	}
+
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		log.Printf("ERROR: failed to connect to database: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+	defer conn.Close(ctx)
+
+	// 1. Get org from project (404 if project doesn't exist)
+	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, body.ProjectID)
+	if err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
+		}
+		log.Printf("ERROR: failed to fetch project: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+
+	// 2. Check org membership (403 if not a member)
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
+		}
+		log.Printf("ERROR: failed to check membership: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+
+	// 3. Confirm diagram belongs to this project (404 if not)
+	var diagramExists bool
+	err = conn.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM diagrams WHERE id = $1 AND project_id = $2)`,
+		body.DiagramID, body.ProjectID,
+	).Scan(&diagramExists)
+	if err != nil {
+		log.Printf("ERROR: failed to verify diagram: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+	if !diagramExists {
+		return generic.Response(http.StatusNotFound, generic.Json{"message": "diagram not found"})
 	}
 
 	bucketName := os.Getenv("S3_BUCKET_NAME")
@@ -66,7 +109,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	uploadID := uuid.NewString()
-	objectKey := buildPlaybookObjectKey(userData.Id, normalizedFileName, uploadID)
+	objectKey := uploadutils.BuildPlaybookObjectKey(orgID, body.ProjectID, body.DiagramID, normalizedFileName, uploadID)
 
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -108,43 +151,4 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			},
 		},
 	})
-}
-
-func validatePlaybookFileName(fileName string) (string, error) {
-	trimmed := strings.TrimSpace(fileName)
-	if trimmed == "" {
-		return "", fmt.Errorf("file_name is required")
-	}
-	if strings.Contains(trimmed, "..") || strings.Contains(trimmed, "/") || strings.Contains(trimmed, "\\") {
-		return "", fmt.Errorf("file_name contains an invalid path")
-	}
-
-	lower := strings.ToLower(trimmed)
-	if !strings.HasSuffix(lower, ".yml") && !strings.HasSuffix(lower, ".yaml") {
-		return "", fmt.Errorf("file_name must end with .yml or .yaml")
-	}
-
-	if len(trimmed) > 128 {
-		return "", fmt.Errorf("file_name must be 128 characters or fewer")
-	}
-
-	return trimmed, nil
-}
-
-func buildPlaybookObjectKey(userID, fileName, uploadID string) string {
-	lower := strings.ToLower(fileName)
-	ext := ".yml"
-	if strings.HasSuffix(lower, ".yaml") {
-		ext = ".yaml"
-	}
-
-	baseName := strings.TrimSuffix(lower, ext)
-	baseName = invalidPlaybookChars.ReplaceAllString(baseName, "-")
-	baseName = repeatedDash.ReplaceAllString(baseName, "-")
-	baseName = strings.Trim(baseName, "-.")
-	if baseName == "" {
-		baseName = "playbook"
-	}
-
-	return fmt.Sprintf("playbooks/%s/%s-%s%s", userID, uploadID, baseName, ext)
 }

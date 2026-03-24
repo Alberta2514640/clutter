@@ -1,6 +1,10 @@
-package main
+package ansible_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/jobsutils"
+)
 
 func TestItoa_ConvertsSmallIntsToStrings(t *testing.T) {
 	cases := []struct {
@@ -14,21 +18,21 @@ func TestItoa_ConvertsSmallIntsToStrings(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := itoa(tc.input)
+		got := jobsutils.Itoa(tc.input)
 		if got != tc.want {
-			t.Errorf("itoa(%d) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("Itoa(%d) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }
 
 func TestAllowedJobTypes_ContainsAnsibleAndTerraform(t *testing.T) {
-	if !allowedJobTypes["ansible"] {
+	if !jobsutils.AllowedJobTypes["ansible"] {
 		t.Error("expected ansible to be an allowed job type")
 	}
-	if !allowedJobTypes["terraform"] {
+	if !jobsutils.AllowedJobTypes["terraform"] {
 		t.Error("expected terraform to be an allowed job type")
 	}
-	if allowedJobTypes["unknown"] {
+	if jobsutils.AllowedJobTypes["unknown"] {
 		t.Error("expected unknown to not be an allowed job type")
 	}
 }

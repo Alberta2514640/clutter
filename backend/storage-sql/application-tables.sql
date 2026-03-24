@@ -163,7 +163,7 @@ CREATE TABLE public.jobs (
 
     -- Ansible-specific fields
     target_instance_ids JSONB,
-    playbook_s3_key VARCHAR(255),
+    playbook_s3_key VARCHAR(512),
 
     -- Terraform-specific fields
     terraform_directory VARCHAR(255),
