@@ -1470,9 +1470,6 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.user-information-get-api-integration.integration_id,
 
       module.terraform-engine-create-api-integration.integration_id,
-      
-      module.resources-get-api-integration.integration_id,
-
       module.ansible-submit-job-api-integration.integration_id,
       module.ansible-list-jobs-api-integration.integration_id,
       module.ansible-get-job-api-integration.integration_id,
