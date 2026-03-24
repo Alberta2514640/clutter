@@ -105,9 +105,13 @@ echo "Running Terraform Command."
 COMMAND_START_TIME=$(date +%s)
 
 if [ "$COMMAND" = "apply" ]; then
-  terraform apply -auto-approve >"$COMMAND_LOG" 2>&1
+  terraform apply \
+  -auto-approve \
+  -var="aws_region=$AWS_REGION" >"$COMMAND_LOG" 2>&1
 elif [ "$COMMAND" = "destroy" ]; then
-  terraform destroy -auto-approve >"$COMMAND_LOG" 2>&1
+  terraform destroy \
+  -auto-approve \
+  -var="aws_region=$AWS_REGION" >"$COMMAND_LOG" 2>&1
 else
   echo "Invalid COMMAND: $COMMAND"
   exit 1

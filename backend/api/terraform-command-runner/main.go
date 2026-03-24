@@ -99,7 +99,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// Run terraform-deployer Fargate
 
 	// Load config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(generic.DefaultRegion))
 	if err != nil {
 		return generic.Response(500, generic.Json{"message": "failed to load AWS config", "error": err.Error()})
 	}
