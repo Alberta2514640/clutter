@@ -1,4 +1,6 @@
-package main
+package ansible_test
+
+import "github.com/Alberta2514640/clutter/backend/api/ansible/shared/runtaskutils"
 
 import (
 	"fmt"
@@ -9,7 +11,7 @@ import (
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 )
 
-// ── loadRuntimeConfig ─────────────────────────────────────────────────────────
+// ── runtaskutils.LoadRuntimeConfig ─────────────────────────────────────────────────────────
 
 func TestLoadRuntimeConfig_UsesAnsiblePrefixedEnvironmentVariables(t *testing.T) {
 	t.Setenv("ANSIBLE_ECS_CLUSTER_ARN", "ansible-cluster")
@@ -19,42 +21,42 @@ func TestLoadRuntimeConfig_UsesAnsiblePrefixedEnvironmentVariables(t *testing.T)
 	t.Setenv("S3_BUCKET_NAME", "clutter-bucket")
 	t.Setenv("AWS_REGION", "ca-central-1")
 
-	cfg := loadRuntimeConfig()
+	cfg := runtaskutils.LoadRuntimeConfig()
 
-	if cfg.awsRegion != "ca-central-1" {
-		t.Fatalf("expected awsRegion ca-central-1, got %q", cfg.awsRegion)
+	if cfg.AWSRegion != "ca-central-1" {
+		t.Fatalf("expected awsRegion ca-central-1, got %q", cfg.AWSRegion)
 	}
-	if cfg.ansible.clusterARN != "ansible-cluster" {
-		t.Fatalf("expected ansible cluster ARN from prefixed env var, got %q", cfg.ansible.clusterARN)
+	if cfg.Ansible.ClusterARN != "ansible-cluster" {
+		t.Fatalf("expected ansible cluster ARN from prefixed env var, got %q", cfg.Ansible.ClusterARN)
 	}
-	if cfg.ansible.taskDefinitionARN != "ansible-task" {
-		t.Fatalf("expected ansible task definition ARN from prefixed env var, got %q", cfg.ansible.taskDefinitionARN)
+	if cfg.Ansible.TaskDefinitionARN != "ansible-task" {
+		t.Fatalf("expected ansible task definition ARN from prefixed env var, got %q", cfg.Ansible.TaskDefinitionARN)
 	}
-	if cfg.ansible.subnetIDsRaw != "subnet-1,subnet-2" {
-		t.Fatalf("expected ansible subnet IDs from prefixed env var, got %q", cfg.ansible.subnetIDsRaw)
+	if cfg.Ansible.SubnetIDsRaw != "subnet-1,subnet-2" {
+		t.Fatalf("expected ansible subnet IDs from prefixed env var, got %q", cfg.Ansible.SubnetIDsRaw)
 	}
-	if cfg.ansible.securityGroupID != "sg-1" {
-		t.Fatalf("expected ansible security group ID from prefixed env var, got %q", cfg.ansible.securityGroupID)
+	if cfg.Ansible.SecurityGroupID != "sg-1" {
+		t.Fatalf("expected ansible security group ID from prefixed env var, got %q", cfg.Ansible.SecurityGroupID)
 	}
-	if cfg.ansible.s3BucketName != "clutter-bucket" {
-		t.Fatalf("expected ansible S3 bucket name, got %q", cfg.ansible.s3BucketName)
+	if cfg.Ansible.S3BucketName != "clutter-bucket" {
+		t.Fatalf("expected ansible S3 bucket name, got %q", cfg.Ansible.S3BucketName)
 	}
 }
 
 func TestLoadRuntimeConfig_DefaultsRegionWhenUnset(t *testing.T) {
 	t.Setenv("AWS_REGION", "")
 
-	cfg := loadRuntimeConfig()
+	cfg := runtaskutils.LoadRuntimeConfig()
 
-	if cfg.awsRegion != "us-west-2" {
-		t.Fatalf("expected default region us-west-2, got %q", cfg.awsRegion)
+	if cfg.AWSRegion != "us-west-2" {
+		t.Fatalf("expected default region us-west-2, got %q", cfg.AWSRegion)
 	}
 }
 
-// ── sanitizeError ─────────────────────────────────────────────────────────────
+// ── runtaskutils.SanitizeError ─────────────────────────────────────────────────────────────
 
 func TestSanitizeError_ReturnsUnknownErrorForNil(t *testing.T) {
-	got := sanitizeError(nil)
+	got := runtaskutils.SanitizeError(nil)
 	if got != "unknown error" {
 		t.Fatalf("expected %q, got %q", "unknown error", got)
 	}
@@ -76,7 +78,7 @@ func TestSanitizeError_RedactsSensitiveKeywords(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := sanitizeError(fmt.Errorf("%s", tc.input))
+			got := runtaskutils.SanitizeError(fmt.Errorf("%s", tc.input))
 			if strings.Contains(got, tc.pattern) {
 				t.Errorf("sensitive pattern %q still present in output %q", tc.pattern, got)
 			}
@@ -89,7 +91,7 @@ func TestSanitizeError_RedactsSensitiveKeywords(t *testing.T) {
 
 func TestSanitizeError_TruncatesLongMessages(t *testing.T) {
 	long := strings.Repeat("a", 600)
-	got := sanitizeError(fmt.Errorf("%s", long))
+	got := runtaskutils.SanitizeError(fmt.Errorf("%s", long))
 	if !strings.Contains(got, "...(truncated)") {
 		t.Fatalf("expected truncation marker in output %q", got)
 	}
@@ -100,13 +102,13 @@ func TestSanitizeError_TruncatesLongMessages(t *testing.T) {
 
 func TestSanitizeError_PreservesNonSensitiveMessages(t *testing.T) {
 	input := "connection refused: dial tcp 127.0.0.1:5432"
-	got := sanitizeError(fmt.Errorf("%s", input))
+	got := runtaskutils.SanitizeError(fmt.Errorf("%s", input))
 	if got != input {
 		t.Fatalf("expected non-sensitive message unchanged, got %q", got)
 	}
 }
 
-// ── validateAnsibleMessage ────────────────────────────────────────────────────
+// ── runtaskutils.ValidateAnsibleMessage ────────────────────────────────────────────────────
 
 func TestValidateAnsibleMessage_AcceptsValidMessage(t *testing.T) {
 	msg := map[string]string{
@@ -114,7 +116,7 @@ func TestValidateAnsibleMessage_AcceptsValidMessage(t *testing.T) {
 		"playbook_s3_key":     "playbooks/user-1/upload-abc-site.yml",
 		"target_instance_ids": `["i-0abc123def456"]`,
 	}
-	if err := validateAnsibleMessage(msg); err != nil {
+	if err := runtaskutils.ValidateAnsibleMessage(msg); err != nil {
 		t.Fatalf("expected no error for valid message, got: %v", err)
 	}
 }
@@ -124,7 +126,7 @@ func TestValidateAnsibleMessage_RejectsMissingPlaybookKey(t *testing.T) {
 		"job_id":              "job-123",
 		"target_instance_ids": `["i-0abc123def456"]`,
 	}
-	if err := validateAnsibleMessage(msg); err == nil {
+	if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
 		t.Fatal("expected error for missing playbook_s3_key, got nil")
 	}
 }
@@ -134,7 +136,7 @@ func TestValidateAnsibleMessage_RejectsMissingTargetInstanceIDs(t *testing.T) {
 		"job_id":          "job-123",
 		"playbook_s3_key": "playbooks/user-1/upload-abc-site.yml",
 	}
-	if err := validateAnsibleMessage(msg); err == nil {
+	if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
 		t.Fatal("expected error for missing target_instance_ids, got nil")
 	}
 }
@@ -157,14 +159,14 @@ func TestValidateAnsibleMessage_RejectsPathTraversalInPlaybookKey(t *testing.T) 
 				"playbook_s3_key":     tc.key,
 				"target_instance_ids": `["i-0abc"]`,
 			}
-			if err := validateAnsibleMessage(msg); err == nil {
+			if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
 				t.Errorf("expected path traversal error for key %q, got nil", tc.key)
 			}
 		})
 	}
 }
 
-// ── validateTerraformMessage ──────────────────────────────────────────────────
+// ── runtaskutils.ValidateTerraformMessage ──────────────────────────────────────────────────
 
 func TestValidateTerraformMessage_AcceptsValidMessage(t *testing.T) {
 	msg := map[string]string{
@@ -173,7 +175,7 @@ func TestValidateTerraformMessage_AcceptsValidMessage(t *testing.T) {
 		"role_arn":                "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc",
 		"assume_role_external_id": "ext-id-abc",
 	}
-	if err := validateTerraformMessage(msg); err != nil {
+	if err := runtaskutils.ValidateTerraformMessage(msg); err != nil {
 		t.Fatalf("expected no error for valid Terraform message, got: %v", err)
 	}
 }
@@ -193,7 +195,7 @@ func TestValidateTerraformMessage_RejectsMissingRequiredFields(t *testing.T) {
 				"assume_role_external_id": base["assume_role_external_id"],
 			}
 			delete(msg, field)
-			if err := validateTerraformMessage(msg); err == nil {
+			if err := runtaskutils.ValidateTerraformMessage(msg); err == nil {
 				t.Errorf("expected error when %q is absent, got nil", field)
 			}
 		})
@@ -218,14 +220,14 @@ func TestValidateTerraformMessage_RejectsPathTraversalInDirectory(t *testing.T) 
 				"role_arn":                "arn:aws:iam::123456789012:role/SomeRole",
 				"assume_role_external_id": "ext-id",
 			}
-			if err := validateTerraformMessage(msg); err == nil {
+			if err := runtaskutils.ValidateTerraformMessage(msg); err == nil {
 				t.Errorf("expected path traversal error for directory %q, got nil", tc.dir)
 			}
 		})
 	}
 }
 
-// ── buildAnsibleRunTaskInput ──────────────────────────────────────────────────
+// ── runtaskutils.BuildAnsibleRunTaskInput ──────────────────────────────────────────────────
 
 func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	msg := map[string]string{
@@ -235,7 +237,7 @@ func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 		"extra_vars":          "",
 	}
 
-	input := buildAnsibleRunTaskInput(
+	input := runtaskutils.BuildAnsibleRunTaskInput(
 		"arn:aws:ecs:us-west-2:123:cluster/clutter",
 		"arn:aws:ecs:us-west-2:123:task-definition/ansible-runner:1",
 		[]string{"subnet-aaa", "subnet-bbb"},
@@ -259,7 +261,7 @@ func TestBuildAnsibleRunTaskInput_UsesLaunchTypeFargate(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	if input.LaunchType != ecstypes.LaunchTypeFargate {
 		t.Errorf("expected LaunchTypeFargate, got %v", input.LaunchType)
@@ -276,7 +278,7 @@ func TestBuildAnsibleRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"}, "sg-1", "bucket", msg)
 
 	subnets := input.NetworkConfiguration.AwsvpcConfiguration.Subnets
 	if len(subnets) != 3 {
@@ -294,7 +296,7 @@ func TestBuildAnsibleRunTaskInput_AssignsPublicIP(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	got := input.NetworkConfiguration.AwsvpcConfiguration.AssignPublicIp
 	if got != ecstypes.AssignPublicIpEnabled {
@@ -309,7 +311,7 @@ func TestBuildAnsibleRunTaskInput_SetsContainerName(t *testing.T) {
 		"target_instance_ids": "i-0abc123",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	overrides := input.Overrides.ContainerOverrides
 	if len(overrides) != 1 {
@@ -328,7 +330,7 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 		"extra_vars":          `{"env":"prod"}`,
 	}
 
-	input := buildAnsibleRunTaskInput(
+	input := runtaskutils.BuildAnsibleRunTaskInput(
 		"cluster", "taskdef", []string{"subnet-a"}, "sg-1", "my-bucket", msg,
 	)
 
@@ -358,7 +360,7 @@ func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
 		"target_instance_ids": `["i-0aaa","i-0bbb","i-0ccc"]`,
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -378,7 +380,7 @@ func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 		"target_instance_ids": "i-0aaa,i-0bbb",
 	}
 
-	input := buildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -390,7 +392,7 @@ func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 	}
 }
 
-// ── buildTerraformRunTaskInput ────────────────────────────────────────────────
+// ── runtaskutils.BuildTerraformRunTaskInput ────────────────────────────────────────────────
 
 func TestBuildTerraformRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	msg := map[string]string{
@@ -400,7 +402,7 @@ func TestBuildTerraformRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 		"assume_role_external_id": "ext-id",
 	}
 
-	input := buildTerraformRunTaskInput(
+	input := runtaskutils.BuildTerraformRunTaskInput(
 		"arn:aws:ecs:us-west-2:123:cluster/clutter",
 		"arn:aws:ecs:us-west-2:123:task-definition/terraform-deployer:2",
 		[]string{"subnet-aaa"},
@@ -425,7 +427,7 @@ func TestBuildTerraformRunTaskInput_SetsContainerName(t *testing.T) {
 		"assume_role_external_id": "ext-id",
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "us-west-2", msg)
+	input := runtaskutils.BuildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "us-west-2", msg)
 
 	overrides := input.Overrides.ContainerOverrides
 	if len(overrides) != 1 {
@@ -445,7 +447,7 @@ func TestBuildTerraformRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 		"extra_vars":              `{"region":"us-east-1"}`,
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "ca-central-1", msg)
+	input := runtaskutils.BuildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "ca-central-1", msg)
 
 	envMap := make(map[string]string)
 	for _, kv := range input.Overrides.ContainerOverrides[0].Environment {
@@ -480,7 +482,7 @@ func TestBuildTerraformRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 		"assume_role_external_id": "ext-id",
 	}
 
-	input := buildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-x", "subnet-y"}, "sg-1", "us-west-2", msg)
+	input := runtaskutils.BuildTerraformRunTaskInput("cluster", "taskdef", []string{"subnet-x", "subnet-y"}, "sg-1", "us-west-2", msg)
 
 	subnets := input.NetworkConfiguration.AwsvpcConfiguration.Subnets
 	if len(subnets) != 2 {

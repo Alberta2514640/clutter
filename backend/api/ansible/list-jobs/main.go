@@ -4,25 +4,16 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/jobsutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/jackc/pgx/v5"
 )
 
-// Allowed job_type filter values
-var allowedJobTypes = map[string]bool{
-	"ansible":   true,
-	"terraform": true,
-}
 
-// itoa converts an integer to a string (wrapper around strconv.Itoa)
-func itoa(i int) string {
-	return strconv.Itoa(i)
-}
 
 func main() {
 	lambda.Start(handler)
@@ -38,7 +29,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "unauthorized: missing user identity",
 		})
 	}
-	log.Printf("Authenticated user: %s", userData.Id)
 
 	// Get user ID for filtering
 	userID := userData.Id
@@ -53,7 +43,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Validate optional job_type filter
 	jobTypeFilter := request.QueryStringParameters["job_type"]
-	if jobTypeFilter != "" && !allowedJobTypes[jobTypeFilter] {
+	if jobTypeFilter != "" && !jobsutils.AllowedJobTypes[jobTypeFilter] {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid job_type filter. Allowed: ansible, terraform",
 		})
@@ -81,12 +71,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	argNum := 2
 
 	if statusFilter != "" {
-		query += ` AND status = $` + strconv.Itoa(argNum)
+		query += ` AND status = $` + jobsutils.Itoa(argNum)
 		args = append(args, statusFilter)
 		argNum++
 	}
 	if jobTypeFilter != "" {
-		query += ` AND COALESCE(job_type, 'ansible') = $` + strconv.Itoa(argNum)
+		query += ` AND COALESCE(job_type, 'ansible') = $` + jobsutils.Itoa(argNum)
 		args = append(args, jobTypeFilter)
 		argNum++
 	}
