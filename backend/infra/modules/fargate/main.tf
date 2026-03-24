@@ -53,14 +53,14 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
       },
       {
-        Effect   = "Allow"
-        Action   = "s3:ListBucket"
-        Resource = var.s3_clutter
+        Effect = "Allow"
+        Action = "s3:ListBucket"
+        Resource = var.s3_clutter_arn
       },
       {
-        Effect   = "Allow"
-        Action   = "s3:GetObject"
-        Resource = "${var.s3_clutter}/*"
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = "${var.s3_clutter_arn}/*"
       }
     ]
   })
@@ -107,7 +107,8 @@ resource "aws_ecs_task_definition" "terraform_deployer" {
 
       environment = [
         { name = "TF_IN_AUTOMATION", value = "true" },
-        { name = "TF_CLI_ARGS", value = "-no-color -input=false" }
+        { name = "TF_CLI_ARGS", value = "-no-color -input=false" },
+        { name = "S3_BUCKET_NAME", value = var.s3_clutter_name }
       ]
 
       essential = true

@@ -12,6 +12,7 @@ echo "Starting Terraform deploy."
 # CLIENT_ROLE_ARN
 # ASSUME_ROLE_EXTERNAL_ID
 # COMMAND
+# COMMAND_ID
 
 # -------------------------------
 # Log files
@@ -37,10 +38,10 @@ on_error() {
     echo "----------------------"
   fi
 
-  if [[ -f "$APPLY_LOG" ]]; then
-    echo "Terraform apply output:"
+  if [[ -f "$COMMAND_LOG" ]]; then
+    echo "Terraform command output:"
     echo "-----------------------"
-    cat "$APPLY_LOG"
+    cat "$COMMAND_LOG"
     echo "-----------------------"
   fi
 
@@ -53,7 +54,13 @@ trap on_error ERR
 # Fetch Terraform code
 # -------------------------------
 echo "Downloading Terraform from S3."
-aws s3 sync "s3://clutter-us-west-2-446fe866/$TERRAFORM_DIRECTORY" /app
+aws s3 sync "s3://$S3_BUCKET_NAME/$TERRAFORM_DIRECTORY" /app
+
+# Check to see if Terraform file exists
+if [ -z "$(ls -A /app)" ]; then
+  echo "ERROR: No Terraform files found in S3 path."
+  exit 1
+fi
 
 # -------------------------------
 # Assume customer role
@@ -70,7 +77,7 @@ export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessK
 export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
 
 INIT_LOG="/tmp/terraform-init.log"
-APPLY_LOG="/tmp/terraform-apply.log"
+COMMAND_LOG="/tmp/terraform-command.log"
 
 # -------------------------------
 # Terraform Init

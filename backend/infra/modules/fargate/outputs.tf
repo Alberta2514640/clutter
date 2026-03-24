@@ -28,6 +28,10 @@ output "ecs_execution_role_arn" {
 output "terraform_task_role_arn" {
   value = aws_iam_role.terraform_deployer_task.arn
 }
+
+output "terraform_container_name" {
+  value = jsondecode(aws_ecs_task_definition.terraform_deployer.container_definitions)[0].name
+}
 output "cluster_arn" {
   description = "ARN of the ECS cluster"
   value       = aws_ecs_cluster.main.arn

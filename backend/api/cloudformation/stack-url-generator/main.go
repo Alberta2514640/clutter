@@ -167,7 +167,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		})
 	}
 
-	uniqueId := internal.RandomID(8)
+	uniqueId := generic.RandomID(8)
 	// Stack name has format of: Clutter-<organizationName>-<accountName>-TerraformDeployerRoleStack-<uniqueId>
 	stackName := fmt.Sprintf("Clutter-%s-%s-TerraformDeployerRoleStack-%s", safeOrgName, accountName, uniqueId)
 	externalId := uuid.NewString()

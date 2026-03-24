@@ -19,7 +19,8 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter                = module.s3.clutter_bucket_arn
+  s3_clutter_arn                = module.s3.clutter_bucket_arn
+  s3_clutter_name = module.s3.clutter_bucket_name
   s3_clutter_bucket_name    = module.s3.clutter_bucket_name
   aws_region                = var.aws_region
   psql_connection_string    = var.psql_connection_string
@@ -161,11 +162,12 @@ module "terraform-command-runner-lambda" {
   zip_dir_slice = "terraform-command-runner"
 
   environment_variables = {
-    PSQL_CONNECTION_STRING = var.psql_connection_string
-    ECS_CLUSTER_NAME    = module.fargate.ecs_cluster_name
-    TASK_DEFINITION_ARN = module.fargate.terraform_task_definition_arn
-    SUBNET_IDS          = join(",", module.fargate.subnet_ids)
-    SECURITY_GROUP_ID   = module.fargate.terraform_security_group_id
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+    ECS_CLUSTER_NAME        = module.fargate.ecs_cluster_name
+    TASK_DEFINITION_ARN     = module.fargate.terraform_task_definition_arn
+    CONTAINER_NAME          = module.fargate.terraform_container_name
+    SUBNET_IDS              = join(",", module.fargate.subnet_ids)
+    SECURITY_GROUP_ID       = module.fargate.terraform_security_group_id
   }
 }
 
