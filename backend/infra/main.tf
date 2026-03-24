@@ -161,6 +161,7 @@ module "terraform-command-runner-lambda" {
   zip_dir_slice = "terraform-command-runner"
 
   environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
     ECS_CLUSTER_NAME    = module.fargate.ecs_cluster_name
     TASK_DEFINITION_ARN = module.fargate.terraform_task_definition_arn
     SUBNET_IDS          = join(",", module.fargate.subnet_ids)

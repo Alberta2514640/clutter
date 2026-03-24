@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -14,7 +15,7 @@ func main() {
 	lambda.Start(handler)
 }
 
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 
 	// The authorizer context retains data about the user (extracted from the JWT provided in the Authorization header)
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
@@ -26,6 +27,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 	userId := userData.Id
 
+	// Parse request body
 	var body internal.RequestBody
 
 	err = json.Unmarshal([]byte(request.Body), &body)
@@ -35,7 +37,52 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	organizationId := body.OrganizationId
 	projectId := body.ProjectId
 	diagramId := body.DiagramId
+	accountAccessRoleId := body.AccountAccessRoleId
 	command := body.Command
+
+	// Connect to PostgreSQL
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to connect to database",
+			"error":   err.Error(),
+		})
+	}
+	defer conn.Close(ctx)
+
+	// Check user's membership to organization
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId); err != nil {
+		if authErr, ok := err.(*generic.AuthorizationError); ok {
+			return generic.Response(authErr.StatusCode, generic.Json{
+				"message": authErr.Message,
+			})
+		}
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to check authorization",
+			"error":   err.Error(),
+		})
+	}
+
+	// Get Client Role ARN from DB
+	roleArnQuery := `
+		SELECT role_arn
+		FROM aws_account_access_roles
+		WHERE id = $1
+			AND organization_id = $2
+			AND status = 'complete';
+	`
+	var roleArn string
+	if err := conn.QueryRow(
+		ctx,
+		roleArnQuery,
+		accountAccessRoleId,
+		organizationId,
+	).Scan(&roleArn); err != nil {
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to retrieve role ARN",
+			"error":   err.Error(),
+		})
+	}
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"message": "Terraform command executed successfully",
@@ -43,6 +90,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 			"organizationId": organizationId,
 			"projectId":      projectId,
 			"diagramId":      diagramId,
+			"roleArn":        roleArn,
 			"command":        command,
 			"userId":         userId,
 		},

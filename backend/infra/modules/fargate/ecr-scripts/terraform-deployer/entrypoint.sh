@@ -16,7 +16,7 @@ echo "Starting Terraform deploy."
 # Log files
 # -------------------------------
 INIT_LOG="/tmp/terraform-init.log"
-APPLY_LOG="/tmp/terraform-apply.log"
+COMMAND_LOG="/tmp/terraform-command.log"
 
 # -------------------------------
 # Error handler
@@ -91,22 +91,29 @@ cat "$INIT_LOG"
 echo "----------------------"
 
 # -------------------------------
-# Terraform Apply
+# Terraform Command
 # -------------------------------
-echo "Applying Terraform."
-APPLY_START_TIME=$(date +%s)
+echo "Running Terraform Command."
+COMMAND_START_TIME=$(date +%s)
 
-terraform apply -auto-approve >"$APPLY_LOG" 2>&1
+if [ "$COMMAND" = "apply" ]; then
+  terraform apply -auto-approve >"$COMMAND_LOG" 2>&1
+elif [ "$COMMAND" = "destroy" ]; then
+  terraform destroy -auto-approve >"$COMMAND_LOG" 2>&1
+else
+  echo "Invalid COMMAND: $COMMAND"
+  exit 1
+fi
 
-APPLY_END_TIME=$(date +%s)
-APPLY_DURATION=$((APPLY_END_TIME - APPLY_START_TIME))
-APPLY_MIN=$((APPLY_DURATION / 60))
-APPLY_SEC=$((APPLY_DURATION % 60))
+COMMAND_END_TIME=$(date +%s)
+COMMAND_DURATION=$((COMMAND_END_TIME - COMMAND_START_TIME))
+COMMAND_MIN=$((COMMAND_DURATION / 60))
+COMMAND_SEC=$((COMMAND_DURATION % 60))
 
-echo "Terraform apply time: ${APPLY_MIN}m ${APPLY_SEC}s"
-echo "Terraform apply output:"
+echo "Terraform command time: ${COMMAND_MIN}m ${COMMAND_SEC}s"
+echo "Terraform command output:"
 echo "-----------------------"
-cat "$APPLY_LOG"
+cat "$COMMAND_LOG"
 echo "-----------------------"
 
 # -------------------------------
@@ -117,5 +124,5 @@ TOTAL_DURATION=$((TOTAL_END_TIME - TOTAL_START_TIME))
 TOTAL_MIN=$((TOTAL_DURATION / 60))
 TOTAL_SEC=$((TOTAL_DURATION % 60))
 
-echo "Terraform deploy complete."
+echo "Terraform command complete."
 echo "Total time taken: ${TOTAL_MIN}m ${TOTAL_SEC}s"
