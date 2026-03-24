@@ -1,9 +1,13 @@
-package main
+package ansible_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
+)
 
 func TestValidatePlaybookFileName_AllowsYamlExtensions(t *testing.T) {
-	got, err := validatePlaybookFileName("test-main.yml")
+	got, err := uploadutils.ValidatePlaybookFileName("test-main.yml")
 	if err != nil {
 		t.Fatalf("expected yml file name to be accepted, got error: %v", err)
 	}
@@ -23,7 +27,7 @@ func TestValidatePlaybookFileName_RejectsInvalidPathsAndExtensions(t *testing.T)
 
 	for _, input := range cases {
 		t.Run(input, func(t *testing.T) {
-			if _, err := validatePlaybookFileName(input); err == nil {
+			if _, err := uploadutils.ValidatePlaybookFileName(input); err == nil {
 				t.Fatalf("expected error for %q", input)
 			}
 		})
@@ -31,8 +35,8 @@ func TestValidatePlaybookFileName_RejectsInvalidPathsAndExtensions(t *testing.T)
 }
 
 func TestBuildPlaybookObjectKey_UsesUserScopedPrefix(t *testing.T) {
-	key := buildPlaybookObjectKey("user-123", "My Playbook.yml", "upload-456")
-	want := "playbooks/user-123/upload-456-my-playbook.yml"
+	key := uploadutils.BuildPlaybookObjectKey("org-123", "proj-456", "diag-789", "My Playbook.yml", "upload-abc")
+	want := "orgs/org-123/projects/proj-456/diagrams/diag-789/playbooks/upload-abc-my-playbook.yml"
 	if key != want {
 		t.Fatalf("expected object key %q, got %q", want, key)
 	}
