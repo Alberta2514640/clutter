@@ -30,6 +30,16 @@ func ValidatePlaybookFileName(fileName string) (string, error) {
 	return trimmed, nil
 }
 
+// ExtractOrgIDFromPlaybookKey parses the org ID from a key of the form
+// orgs/{orgID}/projects/{projectID}/diagrams/{diagramID}/playbooks/{filename}
+func ExtractOrgIDFromPlaybookKey(key string) (string, error) {
+	parts := strings.SplitN(key, "/", 3)
+	if len(parts) < 3 || parts[0] != "orgs" || parts[1] == "" {
+		return "", fmt.Errorf("invalid playbook key format")
+	}
+	return parts[1], nil
+}
+
 func BuildPlaybookObjectKey(orgID, projectID, diagramID, fileName, uploadID string) string {
 	lower := strings.ToLower(fileName)
 	ext := ".yml"

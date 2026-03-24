@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS public.playbooks;
 DROP TABLE IF EXISTS public.diagram_history;
 DROP TABLE IF EXISTS public.diagrams;
 DROP TABLE IF EXISTS public.projects;
@@ -183,6 +184,33 @@ CREATE INDEX idx_jobs_created_at ON public.jobs(created_at DESC);
 CREATE INDEX idx_jobs_created_by ON public.jobs(created_by);
 CREATE INDEX idx_jobs_job_type ON public.jobs(job_type);
 
+-- ============================
+-- PLAYBOOKS
+-- ============================
+-- Migration for existing DBs:
+--   CREATE TABLE public.playbooks ( ... ) -- see below
+--   ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "anon_all_permissions" ON "public"."playbooks" AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
+CREATE TABLE public.playbooks (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    diagram_id  UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
+    org_id      UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+    file_name   VARCHAR(128) NOT NULL,
+    s3_key      VARCHAR(512) NOT NULL,
+    uploaded_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_playbooks_diagram_id ON public.playbooks(diagram_id);
+CREATE INDEX idx_playbooks_org_id ON public.playbooks(org_id);
+
+ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."playbooks"
+AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
+
 -- Trigger function to auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -195,6 +223,12 @@ $$ LANGUAGE plpgsql;
 -- Apply to jobs table
 CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Apply to playbooks table
+CREATE TRIGGER set_updated_at
+    BEFORE UPDATE ON playbooks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
