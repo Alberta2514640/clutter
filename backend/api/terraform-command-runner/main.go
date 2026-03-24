@@ -38,7 +38,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	projectId := body.ProjectId
 	diagramId := body.DiagramId
 	accountAccessRoleId := body.AccountAccessRoleId
+	region := body.Region
 	command := body.Command
+	// Set default region if not passed in
+	if region == "" {
+		region = generic.DefaultRegion
+	}
 
 	// Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
@@ -91,6 +96,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"projectId":      projectId,
 			"diagramId":      diagramId,
 			"roleArn":        roleArn,
+			"region":         region,
 			"command":        command,
 			"userId":         userId,
 		},

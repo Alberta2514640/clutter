@@ -5,5 +5,6 @@ type RequestBody struct {
 	ProjectId           string `json:"projectId"`
 	DiagramId           string `json:"diagramId"`
 	AccountAccessRoleId string `json:"accountAccessRoleId"`
+	Region              string `json:"region"`
 	Command             string `json:"command"`
 }

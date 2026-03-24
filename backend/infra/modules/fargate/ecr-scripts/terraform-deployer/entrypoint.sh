@@ -11,6 +11,7 @@ echo "Starting Terraform deploy."
 # TERRAFORM_DIRECTORY
 # CLIENT_ROLE_ARN
 # ASSUME_ROLE_EXTERNAL_ID
+# COMMAND
 
 # -------------------------------
 # Log files
