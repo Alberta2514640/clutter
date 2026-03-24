@@ -1,6 +1,10 @@
 import type { Edge, Node } from "@xyflow/react";
 
-export type NodeData = { label: string; img: string };
+export type NodeData = {
+  label: string;
+  img: string;
+  ansiblePlaybookName?: string;
+};
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;
 
