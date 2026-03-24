@@ -1,19 +1,19 @@
 "use client";
 
 import { Play, Settings, Trash2, Upload, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-import { useCallback, useMemo } from "react";
 import Image from "next/image";
+import { useCallback, useMemo, useState } from "react";
 
-import type { DiagramNode } from "@/lib/features/diagram/types";
-import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileToS3 } from "@/lib/features/runs/hooks";
-import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
-import { useMe } from "@/lib/features/user/hooks";
-import type { LogEntry } from "./LogsPanel";
-import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { DiagramNode } from "@/lib/features/diagram/types";
+import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import { useSupportedResources } from "@/lib/features/resources/hooks";
+import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileToS3 } from "@/lib/features/runs/hooks";
+import { useMe } from "@/lib/features/user/hooks";
+import type { LogEntry } from "./LogsPanel";
+
 
 export default function ConfigPanel({
   diagramId,
@@ -71,16 +71,6 @@ export default function ConfigPanel({
         variables: { ...(n.data.variables ?? {}), [varName]: value },
       },
     }));
-  };
-
-  const handleAnsiblePlaybookUpload = (file: File | null) => {
-    if (!file) return;
-    patchSelectedNode((n) => ({ ...n, data: { ...n.data, ansiblePlaybookName: file.name } }));
-  };
-
-  const handleRunPlaybook = () => {
-    if (!selectedNode?.data.ansiblePlaybookName) return;
-    window.alert(`Ansible playbook "${selectedNode.data.ansiblePlaybookName}" is ready to run on this EC2 block.`);
   };
 
   const handleAnsiblePlaybookUpload = useCallback(
