@@ -492,19 +492,20 @@ module "ansible-submit-job-lambda" {
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-
-    "sqs:SendMessage"
+    "sqs:SendMessage",
+    "s3:GetObject"
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-submit-job:*",
-
-    aws_sqs_queue.ansible_jobs.arn
+    aws_sqs_queue.ansible_jobs.arn,
+    "${module.s3.clutter_bucket_arn}/*"
   ]
   zip_dir_slice = "ansible/submit-job"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
     CORS_ALLOWED_ORIGIN    = var.frontend_url
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
   }
 }
 
@@ -586,8 +587,9 @@ module "ansible-create-playbook-upload-url-lambda" {
   ]
   zip_dir_slice = "ansible/create-playbook-upload-url"
   environment_variables = {
-    S3_BUCKET_NAME      = module.s3.clutter_bucket_name
-    CORS_ALLOWED_ORIGIN = var.frontend_url
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
 

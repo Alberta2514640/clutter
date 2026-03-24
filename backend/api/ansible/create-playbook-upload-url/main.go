@@ -138,9 +138,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
+	// Insert playbook record into DB and get the generated ID
+	var playbookID string
+	err = conn.QueryRow(ctx, `
+		INSERT INTO playbooks (diagram_id, org_id, project_id, file_name, s3_key, uploaded_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id
+	`, body.DiagramID, orgID, body.ProjectID, normalizedFileName, objectKey, userData.Id).Scan(&playbookID)
+	if err != nil {
+		log.Printf("ERROR: failed to insert playbook record: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "internal server error",
+		})
+	}
+
 	return generic.Response(http.StatusCreated, generic.Json{
 		"message": "playbook upload URL created successfully",
 		"data": generic.Json{
+			"playbook_id":        playbookID,
 			"method":             "PUT",
 			"upload_url":         presignedRequest.URL,
 			"playbook_s3_key":    objectKey,

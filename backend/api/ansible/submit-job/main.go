@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -19,12 +19,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type SubmitJobRequest struct {
 	ConfigID          string            `json:"config_id"`
 	TargetInstanceIDs []string          `json:"target_instance_ids"`
-	PlaybookS3Key     string            `json:"playbook_s3_key"`
+	PlaybookID        string            `json:"playbook_id,omitempty"`
+	PlaybookS3Key     string            `json:"playbook_s3_key,omitempty"`
 	ExtraVars         map[string]string `json:"extra_vars,omitempty"`
 }
 
@@ -47,7 +49,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
 		log.Printf("ERROR: failed to unmarshal request body: %v", err)
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"error": "invalid request body",
+			"message": "invalid request body",
 		})
 	}
 
@@ -57,29 +59,38 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "target_instance_ids is required and must not be empty",
 		})
 	}
-	if body.PlaybookS3Key == "" {
+	if body.PlaybookID == "" && body.PlaybookS3Key == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "playbook_s3_key is required",
+			"message": "either playbook_id or playbook_s3_key is required",
+		})
+	}
+	if body.PlaybookID != "" && body.PlaybookS3Key != "" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "provide either playbook_id or playbook_s3_key, not both",
 		})
 	}
 
-	// Validate playbook_s3_key to prevent path traversal
-	if strings.Contains(body.PlaybookS3Key, "..") ||
-		strings.Contains(body.PlaybookS3Key, "~") ||
-		strings.HasPrefix(body.PlaybookS3Key, "/") ||
-		strings.HasPrefix(body.PlaybookS3Key, "\\") {
+	// Validate playbook_s3_key to prevent path traversal (only when provided directly)
+	if body.PlaybookS3Key != "" {
+		if strings.Contains(body.PlaybookS3Key, "..") ||
+			strings.Contains(body.PlaybookS3Key, "~") ||
+			strings.HasPrefix(body.PlaybookS3Key, "/") ||
+			strings.HasPrefix(body.PlaybookS3Key, "\\") {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "playbook_s3_key contains invalid path",
+			})
+		}
+	}
+
+	// Validate playbook_id is a valid UUID when provided
+	if body.PlaybookID != "" && !generic.IsValidUuid(body.PlaybookID) {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "playbook_s3_key contains invalid path",
+			"message": "playbook_id must be a valid UUID",
 		})
 	}
 
-	// Extract org ID from key prefix (orgs/{orgID}/projects/...) and verify membership later
-	playbookOrgID, err := extractOrgIDFromPlaybookKey(body.PlaybookS3Key)
-	if err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "playbook_s3_key has invalid format",
-		})
-	}
+	// playbookOrgID is resolved below after DB connection (needed for membership check)
+	var playbookOrgID string
 
 	// Validate target_instance_ids are valid EC2 instance ID format
 	ec2IDPattern := regexp.MustCompile(`^i-[0-9a-fA-F]{8,17}$`)
@@ -140,7 +151,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 	sqsClient := sqs.NewFromConfig(cfg)
 
-	// Verify the playbook S3 object exists before accepting the job
 	s3BucketName := os.Getenv("S3_BUCKET_NAME")
 	if s3BucketName == "" {
 		log.Printf("ERROR: S3_BUCKET_NAME environment variable is not set")
@@ -149,16 +159,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 	s3Client := s3.NewFromConfig(cfg)
-	_, err = s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s3BucketName),
-		Key:    aws.String(body.PlaybookS3Key),
-	})
-	if err != nil {
-		log.Printf("ERROR: playbook not found in S3 for key %s: %v", body.PlaybookS3Key, err)
-		return generic.Response(http.StatusNotFound, generic.Json{
-			"message": "playbook not found: upload the playbook before submitting a job",
-		})
-	}
 
 	// Connect to PostgreSQL using shared helper
 	conn, err := generic.PsqlConnect()
@@ -169,6 +169,44 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 	defer conn.Close(ctx)
+
+	// Resolve playbook S3 key and org ID
+	if body.PlaybookID != "" {
+		// Look up s3_key and org_id from the playbooks table
+		err = conn.QueryRow(ctx,
+			`SELECT s3_key, org_id FROM playbooks WHERE id = $1`,
+			body.PlaybookID,
+		).Scan(&body.PlaybookS3Key, &playbookOrgID)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return generic.Response(http.StatusNotFound, generic.Json{
+					"message": "playbook not found",
+				})
+			}
+			log.Printf("ERROR: failed to look up playbook %q: %v", body.PlaybookID, err)
+			return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+		}
+	} else {
+		// Extract org ID from key prefix (orgs/{orgID}/projects/...)
+		playbookOrgID, err = uploadutils.ExtractOrgIDFromPlaybookKey(body.PlaybookS3Key)
+		if err != nil {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "playbook_s3_key has invalid format",
+			})
+		}
+	}
+
+	// Verify the playbook S3 object exists before accepting the job
+	_, err = s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s3BucketName),
+		Key:    aws.String(body.PlaybookS3Key),
+	})
+	if err != nil {
+		log.Printf("ERROR: playbook not found in S3 for key %q: %v", body.PlaybookS3Key, err)
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"message": "playbook not found: upload the playbook before submitting a job",
+		})
+	}
 
 	// Verify the authenticated user is a member of the org that owns the playbook
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, playbookOrgID); err != nil {
@@ -187,12 +225,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "failed to process target instance IDs",
 		})
 	}
-	extraVarsJSON, err := json.Marshal(body.ExtraVars)
-	if err != nil {
-		log.Printf("ERROR: failed to marshal extra_vars: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to process extra vars",
-		})
+	extraVarsJSON := []byte("{}")
+	if body.ExtraVars != nil {
+		extraVarsJSON, err = json.Marshal(body.ExtraVars)
+		if err != nil {
+			log.Printf("ERROR: failed to marshal extra_vars: %v", err)
+			return generic.Response(http.StatusInternalServerError, generic.Json{
+				"message": "failed to process extra vars",
+			})
+		}
 	}
 
 	// Start transaction
@@ -259,14 +300,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		log.Printf("ERROR: failed to send SQS message for job %s: %v", jobID, err)
 		// Compensating action: update job status to FAILED since SQS send failed
-		compensateConn, compensateErr := generic.PsqlConnect()
-		if compensateErr != nil {
-			log.Printf("ERROR: failed to connect to database for compensating action on job %s: %v", jobID, compensateErr)
-		} else {
-			defer compensateConn.Close(ctx)
-			if _, execErr := compensateConn.Exec(ctx, "UPDATE jobs SET status = 'FAILED', error_message = 'Failed to queue job', updated_at = NOW() WHERE id = $1", jobID); execErr != nil {
-				log.Printf("ERROR: failed to update job %s to FAILED: %v", jobID, execErr)
-			}
+		if _, execErr := conn.Exec(ctx, "UPDATE jobs SET status = 'FAILED', error_message = 'Failed to queue job', updated_at = NOW() WHERE id = $1", jobID); execErr != nil {
+			log.Printf("ERROR: failed to update job %s to FAILED: %v", jobID, execErr)
 		}
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to queue job",
@@ -282,12 +317,3 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	})
 }
 
-// extractOrgIDFromPlaybookKey parses the org ID from a key of the form
-// orgs/{orgID}/projects/{projectID}/diagrams/{diagramID}/playbooks/{filename}
-func extractOrgIDFromPlaybookKey(key string) (string, error) {
-	parts := strings.SplitN(key, "/", 3)
-	if len(parts) < 3 || parts[0] != "orgs" || parts[1] == "" {
-		return "", fmt.Errorf("invalid playbook key format")
-	}
-	return parts[1], nil
-}
