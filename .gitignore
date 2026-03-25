@@ -1,3 +1,4 @@
 .vscode/.aws_credentials
 /experimental
 frontend/clutter/.prettierrc
+.claude/settings.local.json
