@@ -61,10 +61,32 @@ on_error() {
       --sse AES256 || true
   fi
 
+  # Upload logs on failure
+  upload_logs
+
   exit "$exit_code"
 }
 
 trap on_error ERR
+
+# -------------------------------
+# Upload logs
+# -------------------------------
+upload_logs() {
+  LOG_S3_PATH="s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY/logs/$COMMAND_ID"
+  
+  echo "Uploading logs to $LOG_S3_PATH ..."
+  
+  # Upload init.log
+  if [[ -f "$INIT_LOG" ]]; then
+    aws s3 cp "$INIT_LOG" "$LOG_S3_PATH/init.log" --sse AES256 || true
+  fi
+
+  # Upload command.log
+  if [[ -f "$COMMAND_LOG" ]]; then
+    aws s3 cp "$COMMAND_LOG" "$LOG_S3_PATH/command.log" --sse AES256 || true
+  fi
+}
 
 # -------------------------------
 # Fetch Terraform code
@@ -175,6 +197,9 @@ aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
   --include "*.tfstate.backup" \
   --include ".terraform.lock.hcl" \
   --sse AES256
+
+# Upload logs on success
+upload_logs
 
 # -------------------------------
 # Totals
