@@ -1,0 +1,11 @@
+resource "aws_instance" "{{.ResourceName}}" {
+  ami           = "{{.AMI}}"
+  instance_type = "{{.InstanceType}}"
+{{- if .KeyName}}
+  key_name = "{{.KeyName}}"
+{{- end}}
+
+  tags = {
+    Name = "{{.ResourceName}}"
+  }
+}

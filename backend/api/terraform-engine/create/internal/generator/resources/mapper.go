@@ -20,6 +20,8 @@ func ParseResourceType(label string) (internal.ResourceType, error) {
 		return internal.ResourceTypeS3, nil
 	case "api-gateway":
 		return internal.ResourceTypeAPIGateway, nil
+	case "ec2":
+		return internal.ResourceTypeEC2, nil
 	default:
 		return "", fmt.Errorf("unknown resource type: %s", label)
 	}
@@ -30,12 +32,14 @@ func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loade
 	switch resourceType {
 	case internal.ResourceTypeLambda:
 		return NewLambdaGenerator(ctx, loader), nil
-	// case internal.ResourceTypeDynamoDB:
-	// 	return NewDynamoDBGenerator(ctx, loader), nil
+	case internal.ResourceTypeDynamoDB:
+		return NewDynamoDBGenerator(ctx, loader), nil
 	case internal.ResourceTypeS3:
 		return NewS3Generator(ctx, loader), nil
-	// case internal.ResourceTypeAPIGateway:
-	// 	return NewAPIGatewayGenerator(ctx, loader), nil
+	case internal.ResourceTypeAPIGateway:
+		return NewAPIGatewayGenerator(ctx, loader), nil
+	case internal.ResourceTypeEC2:
+		return NewEC2Generator(ctx, loader), nil
 	default:
 		return nil, fmt.Errorf("no generator for resource type: %s", resourceType)
 	}

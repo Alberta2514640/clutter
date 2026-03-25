@@ -20,6 +20,7 @@ const (
 	ResourceTypeDynamoDB   ResourceType = "DynamoDB"
 	ResourceTypeS3         ResourceType = "S3"
 	ResourceTypeAPIGateway ResourceType = "API Gateway"
+	ResourceTypeEC2        ResourceType = "EC2"
 )
 
 // TerraformResource represents a parsed diagram node ready for TF generation
