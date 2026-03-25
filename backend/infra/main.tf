@@ -21,6 +21,8 @@ module "fargate" {
 
   s3_clutter_arn                = module.s3.clutter_bucket_arn
   s3_clutter_name = module.s3.clutter_bucket_name
+  s3_templates_arn = module.s3.clutter_templates_bucket_arn 
+  s3_templates_name = module.s3.clutter_templates_bucket_name
   s3_clutter_bucket_name    = module.s3.clutter_bucket_name
   aws_region                = var.aws_region
   psql_connection_string    = var.psql_connection_string

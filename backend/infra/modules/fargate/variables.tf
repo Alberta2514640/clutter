@@ -6,6 +6,15 @@ variable "s3_clutter_name" {
   description = "Name of the S3 bucket for user Terraform/Ansible artifacts"
   type = string
 }
+variable "s3_templates_arn" {
+  description = "ARN of the S3 bucket for common templates"
+  type        = string
+}
+variable "s3_templates_name" {
+  description = "Name of the S3 bucket for common templates"
+  type = string
+}
+
 variable "s3_clutter_bucket_name" {
   description = "Name of the S3 Clutter bucket (for container environment variables)"
   type        = string

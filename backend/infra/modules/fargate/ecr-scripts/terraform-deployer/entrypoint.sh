@@ -54,13 +54,28 @@ trap on_error ERR
 # Fetch Terraform code
 # -------------------------------
 echo "Downloading Terraform from S3."
-aws s3 sync "s3://$S3_BUCKET_NAME/$TERRAFORM_DIRECTORY" /app
+aws s3 sync "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" /app
 
 # Check to see if Terraform file exists
 if [ -z "$(ls -A /app)" ]; then
   echo "ERROR: No Terraform files found in S3 path."
   exit 1
 fi
+
+# -------------------------------
+# Fetch Lambda bootstrap.zip
+# -------------------------------
+echo "Downloading bootstrap.zip."
+
+aws s3 cp "s3://$S3_TEMPLATES_NAME/zip/bootstrap.zip" /app/bootstrap.zip
+
+# Verify it exists
+if [ ! -f "/app/bootstrap.zip" ]; then
+  echo "ERROR: Failed to download bootstrap.zip"
+  exit 1
+fi
+
+echo "bootstrap.zip downloaded successfully."
 
 # -------------------------------
 # Assume customer role

@@ -61,6 +61,16 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Effect = "Allow"
         Action = "s3:GetObject"
         Resource = "${var.s3_clutter_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = "s3:ListBucket"
+        Resource = var.s3_templates_arn
+      },
+      {
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = "${var.s3_templates_arn}/zip/*"
       }
     ]
   })
@@ -108,7 +118,8 @@ resource "aws_ecs_task_definition" "terraform_deployer" {
       environment = [
         { name = "TF_IN_AUTOMATION", value = "true" },
         { name = "TF_CLI_ARGS", value = "-no-color -input=false" },
-        { name = "S3_BUCKET_NAME", value = var.s3_clutter_name }
+        { name = "S3_CLUTTER_NAME", value = var.s3_clutter_name },
+        { name = "S3_TEMPLATES_NAME", value = var.s3_templates_name }
       ]
 
       essential = true
