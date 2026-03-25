@@ -1,0 +1,17 @@
+resource "aws_dynamodb_table" "{{.ResourceName}}" {
+  name         = "{{.TableName}}"
+  billing_mode = "{{.BillingMode}}"
+  hash_key     = "{{.HashKey}}"
+
+  attribute {
+    name = "{{.HashKey}}"
+    type = "{{.HashKeyType}}"
+  }
+{{- if .EnableTTL}}
+
+  ttl {
+    attribute_name = "{{.TTLAttribute}}"
+    enabled        = true
+  }
+{{- end}}
+}
