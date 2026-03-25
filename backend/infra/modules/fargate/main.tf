@@ -52,16 +52,24 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Action   = "sts:AssumeRole"
         Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
       },
+      # ----------- CLUTTER S3 (READ + WRITE STATE) -----------
       {
         Effect = "Allow"
-        Action = "s3:ListBucket"
+        Action = [
+          "s3:ListBucket"
+        ]
         Resource = var.s3_clutter_arn
       },
       {
         Effect = "Allow"
-        Action = "s3:GetObject"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
         Resource = "${var.s3_clutter_arn}/*"
       },
+      # ----------- TEMPLATES S3 (READ ONLY) -----------
       {
         Effect = "Allow"
         Action = "s3:ListBucket"

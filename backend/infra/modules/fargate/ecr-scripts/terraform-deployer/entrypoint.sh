@@ -45,6 +45,22 @@ on_error() {
     echo "-----------------------"
   fi
 
+  # Upload state even on failure if state exists
+  # Unset assumed role credentials and go back to using Fargate's own role
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+  if [ -f "/app/terraform.tfstate" ]; then
+    echo "Uploading Terraform state after failure..."
+
+    aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
+      --exclude "*" \
+      --include "*.tfstate" \
+      --include "*.tfstate.backup" \
+      --include ".terraform.lock.hcl" \
+      --sse AES256 || true
+  fi
+
   exit "$exit_code"
 }
 
@@ -95,7 +111,7 @@ INIT_LOG="/tmp/terraform-init.log"
 COMMAND_LOG="/tmp/terraform-command.log"
 
 # -------------------------------
-# Terraform Init
+# Run Terraform Init
 # -------------------------------
 echo "Initializing Terraform."
 INIT_START_TIME=$(date +%s)
@@ -114,7 +130,7 @@ cat "$INIT_LOG"
 echo "----------------------"
 
 # -------------------------------
-# Terraform Command
+# Run Terraform Command
 # -------------------------------
 echo "Running Terraform Command."
 COMMAND_START_TIME=$(date +%s)
@@ -142,6 +158,23 @@ echo "Terraform command output:"
 echo "-----------------------"
 cat "$COMMAND_LOG"
 echo "-----------------------"
+
+# -------------------------------
+# Upload Terraform state
+# -------------------------------
+echo "-----------------------"
+echo "Uploading state back to S3..."
+echo "-----------------------"
+# Unset assumed role credentials and go back to using Fargate's own role
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
+  --exclude "*" \
+  --include "*.tfstate" \
+  --include "*.tfstate.backup" \
+  --include ".terraform.lock.hcl" \
+  --sse AES256
 
 # -------------------------------
 # Totals
