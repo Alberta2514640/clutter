@@ -64,7 +64,7 @@ export const useUpdateDiagramData = (token?: string | null) => {
         projectId: input.projectId,
         diagramId: input.diagramId,
         name: input.name,
-        uiLayout: { nodes: input.nodes, edges: input.edges },
+        data: { nodes: input.nodes, edges: input.edges },
       }),
 
     onSuccess: (updated, vars) => {

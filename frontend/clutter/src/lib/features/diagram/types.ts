@@ -1,6 +1,10 @@
 import type { Edge, Node } from "@xyflow/react";
 
-export type NodeData = { label: string; img: string };
+export type NodeData = {
+  label: string;
+  img: string;
+  ansiblePlaybookName?: string;
+};
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;
 
@@ -13,41 +17,27 @@ export type DiagramApiItem = {
   id: string;
   name: string;
   projectId: string;
-
-  // backend GET uses "data"
   data: DiagramUiLayout;
-
   createdBy?: string;
   createdAt?: string;
   latestUpdateBy?: string;
   latestUpdateAt?: string;
 };
 
-/**  What the FRONTEND uses everywhere */
-export type Diagram = {
-  id: string;
-  name: string;
-  projectId: string;
-
-  // frontend uses one consistent key
-  uiLayout: DiagramUiLayout;
-
-  createdBy?: string;
-  createdAt?: string;
-  latestUpdateBy?: string;
-  latestUpdateAt?: string;
-};
+// Diagram and DiagramApiItem now share the same shape
+export type Diagram = DiagramApiItem;
 
 export type CreateDiagramInput = {
   projectId: string;
   name: string;
+  data?: DiagramUiLayout;
 };
 
 export type UpdateDiagramInput = {
   projectId: string;
   diagramId: string;
   name: string;
-  uiLayout: DiagramUiLayout;
+  data: DiagramUiLayout; // was uiLayout — now consistently "data"
 };
 
 export type ApiEnvelope<T> = { data: T; message?: string };

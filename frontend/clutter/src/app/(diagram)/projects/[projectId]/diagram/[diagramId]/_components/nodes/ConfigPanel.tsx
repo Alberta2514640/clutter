@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings, Trash2, X } from "lucide-react";
+import { Play, Settings, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import Image from "next/image";
 
@@ -16,6 +16,7 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
 
   const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
   const showContent = !!selectedNode;
+  const isEc2Node = selectedNode?.data.img?.includes("ec2") ?? false;
 
   const patchSelectedNode = useCallback(
     (patch: (node: DiagramNode) => DiagramNode) => {
@@ -36,6 +37,24 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
 
   const handleClose = () => {
     patchSelectedNode((n) => ({ ...n, selected: false }));
+  };
+
+  const handleAnsiblePlaybookUpload = (file: File | null) => {
+    if (!file) return;
+
+    patchSelectedNode((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        ansiblePlaybookName: file.name,
+      },
+    }));
+  };
+
+  const handleRunPlaybook = () => {
+    if (!selectedNode?.data.ansiblePlaybookName) return;
+
+    window.alert(`Ansible playbook "${selectedNode.data.ansiblePlaybookName}" is ready to run on this EC2 block.`);
   };
 
   const handleDeleteSelected = useCallback(() => {
@@ -110,6 +129,53 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
                   </div>
                 </div>
               </div>
+
+              {isEc2Node && (
+                <div>
+                  <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Ansible Playbook</div>
+                  <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                    <label
+                      htmlFor="ansible-playbook-upload"
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-3 text-sm font-medium text-slate-200 transition hover:border-teal-500/60 hover:bg-slate-900"
+                    >
+                      <Upload className="h-4 w-4" />
+                      {selectedNode!.data.ansiblePlaybookName ? "Replace Ansible playbook" : "Upload Ansible playbook"}
+                    </label>
+                    <input
+                      id="ansible-playbook-upload"
+                      type="file"
+                      accept=".yml,.yaml"
+                      className="hidden"
+                      onChange={(e) => {
+                        handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Uploaded file</div>
+                      <div className="mt-1 text-sm font-medium text-white">
+                        {selectedNode!.data.ansiblePlaybookName ?? "No playbook uploaded yet"}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRunPlaybook}
+                      disabled={!selectedNode!.data.ansiblePlaybookName}
+                      className={[
+                        "flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition",
+                        selectedNode!.data.ansiblePlaybookName
+                          ? "border-teal-500/40 bg-teal-500/10 text-teal-100 hover:bg-teal-500/20"
+                          : "border-slate-800 bg-slate-950/80 text-slate-500",
+                      ].join(" ")}
+                    >
+                      <Play className="h-4 w-4" />
+                      {selectedNode!.data.ansiblePlaybookName ? "Run uploaded playbook" : "Upload a playbook to run"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Danger Zone */}
               <div className="pt-2">
