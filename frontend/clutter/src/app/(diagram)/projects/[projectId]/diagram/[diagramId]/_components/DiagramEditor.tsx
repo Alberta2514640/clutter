@@ -44,11 +44,10 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     ensure(diagramId);
   }, [diagramId, ensure]);
 
-  //IMPORTANT: hydrate from normalized uiLayout (NOT diagramQ.data.nodes)
   useEffect(() => {
     if (!diagramQ.data) return;
 
-    hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.uiLayout?.nodes ?? [], diagramQ.data.uiLayout?.edges ?? []);
+    hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.data?.nodes ?? [], diagramQ.data.data?.edges ?? []);
   }, [diagramId, diagramQ.data, hydrateFromServer]);
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
