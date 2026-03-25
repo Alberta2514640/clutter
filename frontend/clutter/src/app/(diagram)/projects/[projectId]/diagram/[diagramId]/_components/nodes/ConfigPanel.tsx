@@ -292,16 +292,24 @@ export default function ConfigPanel({
                 <div>
                   <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Ansible Playbook</div>
                   <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Bound EC2 container</div>
+                      <div className="mt-1 text-sm font-medium text-white">{selectedNode!.data.label}</div>
+                    </div>
                     <label
-                      htmlFor="ansible-playbook-upload"
+                      htmlFor={ansibleUploadInputId}
                       className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-3 text-sm font-medium text-slate-200 transition hover:border-teal-500/60 hover:bg-slate-900"
                     >
                       <Upload className="h-4 w-4" />
-                      {selectedNode!.data.ansiblePlaybookName ? "Replace Ansible playbook" : "Upload Ansible playbook"}
+                      {selectedNode!.data.ansiblePlaybookName ? "Replace playbook for this EC2 container" : "Upload playbook for this EC2 container"}
                     </label>
-                    <input id="ansible-playbook-upload" type="file" accept=".yml,.yaml" className="hidden"
-                      onChange={(e) => {
-                        handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
+                    <input
+                      id={ansibleUploadInputId}
+                      type="file"
+                      accept=".yml,.yaml"
+                      className="hidden"
+                      onChange={async (e) => {
+                        await handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
                         e.currentTarget.value = "";
                       }}
                     />
@@ -311,20 +319,86 @@ export default function ConfigPanel({
                         {selectedNode!.data.ansiblePlaybookName ?? "No playbook uploaded yet"}
                       </div>
                     </div>
+
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Target EC2 instance ID
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode!.data.ansibleTargetInstanceId ?? ""}
+                        onChange={(e) => handleTargetInstanceIdChange(e.target.value)}
+                        placeholder="i-0a05920cb52c4555d"
+                        className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-white transition-colors focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <div className="mt-1 text-xs text-slate-400">
+                        This instance ID is stored on this EC2 container node and used as the Ansible target.
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Playbook ID</div>
+                      <div className="mt-1 break-all text-sm font-medium text-white">
+                        {selectedNode!.data.ansiblePlaybookId ?? "Not available until upload succeeds"}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleRunPlaybook}
-                      disabled={!selectedNode!.data.ansiblePlaybookName}
+                      disabled={
+                        !selectedNode!.data.ansiblePlaybookId ||
+                        !selectedNode!.data.ansibleTargetInstanceId?.trim() ||
+                        createPlaybookUploadUrl.isPending ||
+                        uploadPlaybookFileToS3.isPending ||
+                        submitAnsibleJob.isPending
+                      }
                       className={[
                         "flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition",
-                        selectedNode!.data.ansiblePlaybookName
+                        selectedNode!.data.ansiblePlaybookId && selectedNode!.data.ansibleTargetInstanceId?.trim()
                           ? "border-teal-500/40 bg-teal-500/10 text-teal-100 hover:bg-teal-500/20"
                           : "border-slate-800 bg-slate-950/80 text-slate-500",
                       ].join(" ")}
                     >
                       <Play className="h-4 w-4" />
-                      {selectedNode!.data.ansiblePlaybookName ? "Run uploaded playbook" : "Upload a playbook to run"}
+                      {submitAnsibleJob.isPending
+                        ? "Submitting Ansible job..."
+                        : selectedNode!.data.ansiblePlaybookId
+                          ? "Run playbook on this EC2 container"
+                          : "Upload a playbook to run"}
                     </button>
+
+                    {(createPlaybookUploadUrl.isPending || uploadPlaybookFileToS3.isPending) && (
+                      <div className="text-xs text-slate-400">Uploading playbook…</div>
+                    )}
+
+                    {submitAnsibleJob.isPending && (
+                      <div className="text-xs text-slate-400">Submitting Ansible job…</div>
+                    )}
+
+                    {uploadMessage && (
+                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                        {uploadMessage}
+                      </div>
+                    )}
+
+                    {uploadError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        {uploadError}
+                      </div>
+                    )}
+
+                    {runMessage && (
+                      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
+                        {runMessage}
+                      </div>
+                    )}
+
+                    {runError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        {runError}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -10,6 +10,11 @@ export type NodeData = {
   lastAnsibleJobId?: string;
   lastAnsibleJobStatus?: string;
   variables?: Record<string, unknown>;
+  ansiblePlaybookKey?: string;
+  ansiblePlaybookId?: string;
+  ansibleTargetInstanceId?: string;
+  lastAnsibleJobId?: string;
+  lastAnsibleJobStatus?: string;
 };
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;

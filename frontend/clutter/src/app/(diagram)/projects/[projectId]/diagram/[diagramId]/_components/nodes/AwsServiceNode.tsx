@@ -36,6 +36,9 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
           {isEc2Node && data.ansiblePlaybookName && (
             <div className="mt-1 max-w-[160px] truncate text-[11px] text-slate-300">{data.ansiblePlaybookName}</div>
           )}
+          {hasQueuedAnsibleJob && (
+            <div className="mt-1 max-w-[160px] truncate text-[11px] text-slate-300">Job: {data.lastAnsibleJobId}</div>
+          )}
         </div>
       </div>
 
