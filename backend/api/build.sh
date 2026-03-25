@@ -30,7 +30,6 @@ LAMBDA_DIRS=(
   "ansible/get-job-logs"
   "ansible/list-jobs"
   "ansible/run-task"
-  "resources/get"
 )
 
 # Detect root directory of script
