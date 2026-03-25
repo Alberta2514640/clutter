@@ -633,6 +633,25 @@ resource "aws_iam_role_policy" "ansible_run_task_sqs" {
   })
 }
 
+# Grant EC2 start permissions to the run-task lambda
+resource "aws_iam_role_policy" "ansible_run_task_ec2_start" {
+  name = "ansible-run-task-ec2-start-policy"
+  role = module.ansible-run-task-lambda.role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ec2:StartInstances",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 # ===========
 # API Gateway
 # ===========

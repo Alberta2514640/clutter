@@ -176,8 +176,11 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
       },
 
       {
-        Effect   = "Allow"
-        Action   = "ec2:DescribeInstances"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:StopInstances"
+        ]
         Resource = "*"
       },
       # SSM Session Manager — start sessions on the SSM document (no tag condition)
