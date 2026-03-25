@@ -149,10 +149,21 @@ PYEOF
 }
 
 # ---- Trap: Handle signals for graceful shutdown ----
+stop_ec2_instances() {
+    if [ -n "${TARGET_INSTANCE_IDS:-}" ]; then
+        local ids
+        ids=$(echo "$TARGET_INSTANCE_IDS" | tr ',' ' ')
+        echo "[entrypoint] Stopping EC2 instances: $ids"
+        aws ec2 stop-instances --instance-ids $ids --region "$AWS_DEFAULT_REGION" 2>&1 || \
+            echo "[entrypoint] WARNING: Failed to stop EC2 instances (non-fatal)"
+    fi
+}
+
 cleanup() {
     echo "[entrypoint] Received shutdown signal. Uploading logs and marking as FAILED."
     upload_logs || true
     update_job_status "FAILED" "Task was terminated by signal"
+    stop_ec2_instances
     exit 1
 }
 trap cleanup SIGTERM SIGINT
@@ -278,10 +289,12 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "[entrypoint] Ansible playbook completed successfully"
     upload_logs || true
     update_job_status "COMPLETED"
+    stop_ec2_instances
     exit 0
 else
     echo "[entrypoint] Ansible playbook failed with exit code: $EXIT_CODE"
     upload_logs || true
     update_job_status "FAILED" "Ansible playbook exited with code $EXIT_CODE"
+    stop_ec2_instances
     exit $EXIT_CODE
 fi
