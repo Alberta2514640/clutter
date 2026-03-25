@@ -11,13 +11,13 @@ import ConfigPanel from "./nodes/ConfigPanel";
 import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
 
 import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
-import { useDiagram, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
-import { useSupportedResources } from "@/lib/features/resources/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
 import { useOrganizations } from "@/lib/features/organization/hooks";
+import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { useRouter } from "next/navigation";
+;
 
 export type PaletteItem = {
   label: string;
