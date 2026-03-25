@@ -19,11 +19,11 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter_arn                = module.s3.clutter_bucket_arn
-  s3_clutter_name = module.s3.clutter_bucket_name
-  s3_templates_arn = module.s3.clutter_templates_bucket_arn 
-  s3_templates_name = module.s3.clutter_templates_bucket_name
-  s3_clutter_bucket_name    = module.s3.clutter_bucket_name
+  s3_clutter_arn            = module.s3.clutter_bucket_arn
+  s3_clutter_name           = module.s3.clutter_bucket_name
+  s3_templates_arn          = module.s3.clutter_templates_bucket_arn 
+  s3_templates_name         = module.s3.clutter_templates_bucket_name
+
   aws_region                = var.aws_region
   psql_connection_string    = var.psql_connection_string
   ansible_runner_image_tag  = var.ansible_runner_image_tag
@@ -32,29 +32,6 @@ module "fargate" {
 # ========================
 # Ansible Engine Resources
 # ========================
-
-
-
-# DynamoDB table for Terraform state locking
-resource "aws_dynamodb_table" "terraform_state_lock" {
-  name           = "terraform-state-lock"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  server_side_encryption {
-    enabled = true
-  }
-
-  tags = {
-    Name        = "terraform-state-lock"
-    Description = "Terraform state lock table"
-  }
-}
 
 # SQS — Ansible Job Queue + Dead Letter Queue
 resource "aws_sqs_queue" "ansible_jobs_dlq" {
@@ -636,7 +613,7 @@ module "ansible-run-task-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-run-task:*",
-    module.fargate.cluster_arn,
+    module.fargate.ecs_cluster_arn,
     "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/ansible-runner:*",
 
     module.fargate.ansible_task_role_arn,
@@ -645,7 +622,7 @@ module "ansible-run-task-lambda" {
   zip_dir_slice = "ansible/run-task"
   environment_variables = {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
-    ANSIBLE_ECS_CLUSTER_ARN     = module.fargate.cluster_arn
+    ANSIBLE_ECS_CLUSTER_ARN     = module.fargate.ecs_cluster_arn
     ANSIBLE_TASK_DEFINITION_ARN = module.fargate.ansible_task_def_arn
     ANSIBLE_SUBNET_IDS          = join(",", data.aws_subnets.default.ids)
     ANSIBLE_SECURITY_GROUP_ID   = module.fargate.ansible_sg_id

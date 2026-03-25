@@ -190,8 +190,8 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
           "s3:GetBucketLocation"
         ]
         Resource = [
-          var.s3_clutter,
-          "${var.s3_clutter}/*"
+          var.s3_clutter_arn,
+          "${var.s3_clutter_arn}/*"
         ]
       },
 
@@ -289,7 +289,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
       }
 
       environment = [
-        { name = "S3_BUCKET_NAME", value = var.s3_clutter_bucket_name },
+        { name = "S3_BUCKET_NAME", value = var.s3_clutter_name },
         { name = "AWS_DEFAULT_REGION", value = var.aws_region },
         { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string }
       ]
