@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/authorizer/internal"
@@ -26,9 +25,6 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 	if err != nil {
 		return internal.CreatePolicy("Unauthorized", "Deny", event.MethodArn), nil
 	}
-
-	// Strip "Bearer " prefix (case-insensitive)
-	jwtToken = strings.TrimPrefix(strings.TrimPrefix(jwtToken, "Bearer "), "bearer ")
 
 	// Decode JWT token
 	jwtTokenClaims, err := internal.ParseAndVerifyJWTClaims(jwtToken)
