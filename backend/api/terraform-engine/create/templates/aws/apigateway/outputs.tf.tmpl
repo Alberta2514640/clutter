@@ -1,0 +1,15 @@
+output "{{.ResourceName}}_id" {
+  value = aws_api_gateway_rest_api.{{.ResourceName}}.id
+}
+
+output "{{.ResourceName}}_root_resource_id" {
+  value = aws_api_gateway_rest_api.{{.ResourceName}}.root_resource_id
+}
+
+output "{{.ResourceName}}_execution_arn" {
+  value = aws_api_gateway_rest_api.{{.ResourceName}}.execution_arn
+}
+
+output "{{.ResourceName}}_invoke_url" {
+  value = aws_api_gateway_stage.{{.ResourceName}}_stage.invoke_url
+}

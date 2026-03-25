@@ -1,0 +1,92 @@
+# REST API
+resource "aws_api_gateway_rest_api" "{{.ResourceName}}" {
+  name        = "{{.APIName}}"
+  description = "{{.Description}}"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+
+# Request Validator
+resource "aws_api_gateway_request_validator" "{{.ResourceName}}_body_validator" {
+  rest_api_id           = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  name                  = "validate-body"
+  validate_request_body = true
+}
+{{- if .EnableCORS}}
+
+# CORS - OPTIONS preflight
+resource "aws_api_gateway_method" "{{.ResourceName}}_options" {
+  rest_api_id   = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  resource_id   = aws_api_gateway_rest_api.{{.ResourceName}}.root_resource_id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "{{.ResourceName}}_options_integration" {
+  rest_api_id = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  resource_id = aws_api_gateway_rest_api.{{.ResourceName}}.root_resource_id
+  http_method = aws_api_gateway_method.{{.ResourceName}}_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "{{.ResourceName}}_options_response" {
+  rest_api_id = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  resource_id = aws_api_gateway_rest_api.{{.ResourceName}}.root_resource_id
+  http_method = aws_api_gateway_method.{{.ResourceName}}_options.http_method
+  status_code = "200"
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "{{.ResourceName}}_options_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  resource_id = aws_api_gateway_rest_api.{{.ResourceName}}.root_resource_id
+  http_method = aws_api_gateway_method.{{.ResourceName}}_options.http_method
+  status_code = aws_api_gateway_method_response.{{.ResourceName}}_options_response.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'{{.HTTPMethods}},OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+{{- end}}
+
+# Deployment
+resource "aws_api_gateway_deployment" "{{.ResourceName}}_deployment" {
+  rest_api_id = aws_api_gateway_rest_api.{{.ResourceName}}.id
+
+  triggers = {
+    redeployment = sha1(jsonencode(aws_api_gateway_rest_api.{{.ResourceName}}.body))
+  }
+
+  depends_on = [
+    aws_api_gateway_method.{{.ResourceName}}_options,
+    aws_api_gateway_integration.{{.ResourceName}}_options_integration,
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Stage
+resource "aws_api_gateway_stage" "{{.ResourceName}}_stage" {
+  rest_api_id   = aws_api_gateway_rest_api.{{.ResourceName}}.id
+  deployment_id = aws_api_gateway_deployment.{{.ResourceName}}_deployment.id
+  stage_name    = "{{.StageName}}"
+}
