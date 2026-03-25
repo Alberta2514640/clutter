@@ -41,41 +41,102 @@ func TestHandler(t *testing.T) {
 			"name": "Old Name",
 		},
 		"record": map[string]interface{}{
-			"id":   "test-diagram-123",
-			"name": "Test Architecture",
+			"id":         "test-diagram-123",
+			"name":       "Test Architecture",
 			"project_id": "13b9254f-9728-4f37-ab0e-e89a5ada3a18",
 			"data": map[string]interface{}{
 				"nodes": []map[string]interface{}{
 					{
+						"id":   "node-apigw-1",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "API-Gateway"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_api",
+							"http_methods":  "GET,POST,DELETE",
+						},
+					},
+					{
 						"id":   "node-lambda-1",
 						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "Lambda",
-						},
+						"data": map[string]interface{}{"label": "Lambda"},
 						"variables": map[string]interface{}{
-							"resource_name": "my-test-function",
+							"resource_name": "my_handler_one",
 							"timeout":       30,
 							"handler":       "bootstrap",
 						},
 					},
 					{
+						"id":   "node-lambda-2",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "Lambda"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_handler_two",
+							"timeout":       30,
+							"handler":       "bootstrap",
+						},
+					},
+					{
+						"id":   "node-lambda-3",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "Lambda"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_handler_three",
+							"timeout":       30,
+							"handler":       "bootstrap",
+						},
+					},
+					{
+						"id":   "node-lambda-4",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "Lambda"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_handler_four",
+							"timeout":       30,
+							"handler":       "bootstrap",
+						},
+					},
+					{
+						"id":   "node-dynamodb-1",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "DynamoDB"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_users_table",
+							"hash_key":      "userId",
+						},
+					},
+					{
 						"id":   "node-s3-1",
 						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "S3",
-						},
+						"data": map[string]interface{}{"label": "S3"},
 						"variables": map[string]interface{}{
-							"resource_name": "my-test-bucket",
+							"resource_name": "my_assets_bucket",
+						},
+					},
+					{
+						"id":   "node-ec2-1",
+						"type": "awsNode",
+						"data": map[string]interface{}{"label": "EC2"},
+						"variables": map[string]interface{}{
+							"resource_name": "my_server",
 						},
 					},
 				},
 				"edges": []map[string]interface{}{
-					{
-						"id":     "edge-1",
-						"source": "node-lambda-1",
-						"target": "node-s3-1",
-						"label":  "writes to",
-					},
+					// API Gateway → each Lambda
+					{"id": "e1", "source": "node-apigw-1", "target": "node-lambda-1", "label": ""},
+					{"id": "e2", "source": "node-apigw-1", "target": "node-lambda-2", "label": ""},
+					{"id": "e3", "source": "node-apigw-1", "target": "node-lambda-3", "label": ""},
+					{"id": "e4", "source": "node-apigw-1", "target": "node-lambda-4", "label": ""},
+					// each Lambda → DynamoDB
+					{"id": "e5", "source": "node-lambda-1", "target": "node-dynamodb-1", "label": ""},
+					{"id": "e6", "source": "node-lambda-2", "target": "node-dynamodb-1", "label": ""},
+					{"id": "e7", "source": "node-lambda-3", "target": "node-dynamodb-1", "label": ""},
+					{"id": "e8", "source": "node-lambda-4", "target": "node-dynamodb-1", "label": ""},
+					// each Lambda → S3
+					{"id": "e9", "source": "node-lambda-1", "target": "node-s3-1", "label": ""},
+					{"id": "e10", "source": "node-lambda-2", "target": "node-s3-1", "label": ""},
+					{"id": "e11", "source": "node-lambda-3", "target": "node-s3-1", "label": ""},
+					{"id": "e12", "source": "node-lambda-4", "target": "node-s3-1", "label": ""},
 				},
 			},
 		},
@@ -119,35 +180,96 @@ func TestGenerateOnly(t *testing.T) {
 	layout := generic.DiagramLayout{
 		Nodes: []generic.DiagramNode{
 			{
+				ID:   "node-apigw-1",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "API-Gateway"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_api",
+					"http_methods":  "GET,POST,DELETE",
+				},
+			},
+			{
 				ID:   "node-lambda-1",
 				Type: "awsNode",
-				Data: map[string]interface{}{
-					"label": "Lambda",
-				},
+				Data: map[string]interface{}{"label": "Lambda"},
 				Variables: map[string]interface{}{
-					"resource_name": "my-test-function",
+					"resource_name": "my_handler_one",
 					"timeout":       30,
 					"handler":       "bootstrap",
 				},
 			},
 			{
+				ID:   "node-lambda-2",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "Lambda"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_handler_two",
+					"timeout":       30,
+					"handler":       "bootstrap",
+				},
+			},
+			{
+				ID:   "node-lambda-3",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "Lambda"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_handler_three",
+					"timeout":       30,
+					"handler":       "bootstrap",
+				},
+			},
+			{
+				ID:   "node-lambda-4",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "Lambda"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_handler_four",
+					"timeout":       30,
+					"handler":       "bootstrap",
+				},
+			},
+			{
+				ID:   "node-dynamodb-1",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "DynamoDB"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_users_table",
+					"hash_key":      "userId",
+				},
+			},
+			{
 				ID:   "node-s3-1",
 				Type: "awsNode",
-				Data: map[string]interface{}{
-					"label": "S3",
-				},
+				Data: map[string]interface{}{"label": "S3"},
 				Variables: map[string]interface{}{
-					"resource_name": "my-test-bucket",
+					"resource_name": "my_assets_bucket",
+				},
+			},
+			{
+				ID:   "node-ec2-1",
+				Type: "awsNode",
+				Data: map[string]interface{}{"label": "EC2"},
+				Variables: map[string]interface{}{
+					"resource_name": "my_server",
 				},
 			},
 		},
 		Edges: []generic.DiagramEdge{
-			{
-				ID:     "edge-1",
-				Source: "node-lambda-1",
-				Target: "node-s3-1",
-				Label:  "writes to",
-			},
+			// API Gateway → each Lambda
+			{ID: "e1", Source: "node-apigw-1", Target: "node-lambda-1", Label: ""},
+			{ID: "e2", Source: "node-apigw-1", Target: "node-lambda-2", Label: ""},
+			{ID: "e3", Source: "node-apigw-1", Target: "node-lambda-3", Label: ""},
+			{ID: "e4", Source: "node-apigw-1", Target: "node-lambda-4", Label: ""},
+			// each Lambda → DynamoDB
+			{ID: "e5", Source: "node-lambda-1", Target: "node-dynamodb-1", Label: ""},
+			{ID: "e6", Source: "node-lambda-2", Target: "node-dynamodb-1", Label: ""},
+			{ID: "e7", Source: "node-lambda-3", Target: "node-dynamodb-1", Label: ""},
+			{ID: "e8", Source: "node-lambda-4", Target: "node-dynamodb-1", Label: ""},
+			// each Lambda → S3
+			{ID: "e9", Source: "node-lambda-1", Target: "node-s3-1", Label: ""},
+			{ID: "e10", Source: "node-lambda-2", Target: "node-s3-1", Label: ""},
+			{ID: "e11", Source: "node-lambda-3", Target: "node-s3-1", Label: ""},
+			{ID: "e12", Source: "node-lambda-4", Target: "node-s3-1", Label: ""},
 		},
 	}
 
