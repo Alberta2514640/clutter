@@ -4,6 +4,11 @@ export type NodeData = {
   label: string;
   img: string;
   ansiblePlaybookName?: string;
+  ansiblePlaybookKey?: string;
+  ansiblePlaybookId?: string;
+  ansibleTargetInstanceId?: string;
+  lastAnsibleJobId?: string;
+  lastAnsibleJobStatus?: string;
 };
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;

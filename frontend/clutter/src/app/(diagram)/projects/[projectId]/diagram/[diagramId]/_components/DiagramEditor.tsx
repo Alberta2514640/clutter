@@ -40,6 +40,17 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const [logs, setLogs] = useState<LogEntry[]>([]); //temp probably be changed after deploy flow
 
+  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
+    setLogs((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date(),
+        ...entry,
+      },
+    ]);
+  }, []);
+
   useEffect(() => {
     ensure(diagramId);
   }, [diagramId, ensure]);
@@ -236,7 +247,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           <LogsPanel logs={logs} />
         </div>
 
-        <ConfigPanel diagramId={diagramId} />
+        <ConfigPanel diagramId={diagramId} projectId={projectId} onLog={addLog} />
       </div>
     </div>
   );
