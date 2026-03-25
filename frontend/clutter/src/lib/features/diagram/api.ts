@@ -88,4 +88,15 @@ export const diagramApi = {
     const qs = new URLSearchParams({ projectId, diagramId });
     await apiFetch<ApiEnvelope<unknown>>(`/diagram?${qs.toString()}`, token, { method: "DELETE" });
   },
+
+  // POST /terraform-command-runner
+  runTerraform: async (
+    token: string,
+    input: { organizationId: string; projectId: string; diagramId: string; command: "apply" | "destroy" | "plan" }
+  ): Promise<void> => {
+    await apiFetch<unknown>("/terraform-command-runner", token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
 };

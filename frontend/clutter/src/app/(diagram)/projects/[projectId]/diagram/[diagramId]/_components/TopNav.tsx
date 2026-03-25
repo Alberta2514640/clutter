@@ -8,12 +8,13 @@ type TopNavProps = {
   onSave: () => void;
   onBack?: () => void;
   onDeploy?: () => void;
+  isDeploying?: boolean;
   dirty: boolean;
   isSaving?: boolean;
   nameDisabled?: boolean;
 };
 
-export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, dirty, isSaving, nameDisabled }: TopNavProps) {
+export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, isDeploying, dirty, isSaving, nameDisabled }: TopNavProps) {
   const canSave = dirty && !isSaving;
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -91,8 +92,14 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
         </Button>
         <Button
           onClick={onDeploy}
-          className="h-10 px-6 rounded-lg font-semibold shadow-lg text-white bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90">
-          Deploy
+          disabled={isDeploying}
+          className={[
+            "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
+            isDeploying
+              ? "bg-white/10 text-white/60 cursor-not-allowed"
+              : "bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90",
+          ].join(" ")}>
+          {isDeploying ? "Deploying…" : "Deploy"}
         </Button>
       </div>
     </div>
