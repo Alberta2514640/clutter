@@ -439,6 +439,24 @@ module "user-information-get-lambda" {
 
 }
 
+# Resources
+module "resources-get-lambda" {
+
+  source        = "./modules/templates/lambda"
+  function_name = "resources-get"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/resources-get:*"]
+  zip_dir_slice = "resources/get"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+
+}
+
 # Terraform Engine
 module "terraform-engine-create-lambda" {
   source        = "./modules/templates/lambda"
@@ -790,6 +808,20 @@ module "user-information-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.user-information-api-path.resource_id
+  http_methods = ["GET"]
+}
+
+# Resources
+module "resources-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "resources"
+}
+module "resources-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.resources-api-path.resource_id
   http_methods = ["GET"]
 }
 
@@ -1296,6 +1328,20 @@ module "user-information-get-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+# Resources
+# GET resources
+module "resources-get-api-integration" {
+  source        = "./modules/templates/api-lambda-integration"
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  resource_id   = module.resources-api-path.resource_id
+  http_method   = "GET"
+  invoke_arn    = module.resources-get-lambda.invoke_arn
+  function_name = module.resources-get-lambda.function_name
+  path_part     = module.resources-api-path.path_part
+  execution_arn = module.clutter-api-gateway.execution_arn
+  path          = module.resources-api-path.path
+}
+
 # Terraform Engine
 # POST terraform-engine
 module "terraform-engine-create-api-integration" {
@@ -1356,6 +1402,9 @@ resource "aws_api_gateway_deployment" "clutter" {
       module.user-information-get-api-integration.integration_id,
 
       module.terraform-engine-create-api-integration.integration_id,
+      
+      module.resources-get-api-integration.integration_id,
+
       module.ansible-submit-job-api-integration.integration_id,
       module.ansible-list-jobs-api-integration.integration_id,
       module.ansible-get-job-api-integration.integration_id,
