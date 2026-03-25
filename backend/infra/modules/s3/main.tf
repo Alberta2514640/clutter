@@ -86,8 +86,17 @@ resource "aws_s3_bucket_policy" "clutter_bucket" {
         Action    = "s3:PutObject"
         Resource  = "${aws_s3_bucket.clutter_bucket.arn}/*"
         Condition = {
-          StringNotEquals = {
-            "s3:x-amz-server-side-encryption": "AES256"
+          # Deny requests that explicitly set a non-AES256 encryption algorithm.
+          # Requests that omit the header entirely inherit bucket default AES256.
+          StringNotEqualsIfExists = {
+            "s3:x-amz-server-side-encryption" = "AES256"
+          }
+          # Exempt the Ansible Fargate task role — the SSM connection plugin's
+          # internal S3 file transfers do not set the SSE header but bucket
+          # default encryption (AES256) covers them automatically.
+          # aws:userId for assumed roles is "ROLE_UNIQUE_ID:SESSION_NAME".
+          StringNotLike = {
+            "aws:userId" = "${var.ansible_runner_role_id}:*"
           }
         }
       }
@@ -152,7 +161,7 @@ resource "aws_s3_object" "terraform_deployer_role_template" {
 
   bucket = aws_s3_bucket.templates.id
 
-  key = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
+  key    = "templates/cloudformation/client_side_terraform_deployer_role.yaml"
   source = "${path.module}/uploads/client_side_terraform_deployer_role.yaml"
 
   server_side_encryption = "AES256"

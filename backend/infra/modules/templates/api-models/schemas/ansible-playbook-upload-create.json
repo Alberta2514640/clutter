@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "required": [
+    "file_name",
+    "project_id",
+    "diagram_id"
+  ],
+  "properties": {
+    "file_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!.*[\\\\/])(?!.*\\.\\.)(?![\\-._\\s])[A-Za-z0-9._\\- ]+\\.(yml|yaml)$",
+      "description": "Playbook file name ending in .yml or .yaml. Directory separators are not allowed."
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "UUID of the project this playbook belongs to"
+    },
+    "diagram_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "UUID of the diagram this playbook belongs to"
+    }
+  },
+  "additionalProperties": false
+}
