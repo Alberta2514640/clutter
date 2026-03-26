@@ -73,6 +73,12 @@ Resources:
                 - iam:*
               Resource: "*"
 
+            # ---------- SSM ----------
+            - Effect: Allow
+              Action:
+                - ssm:*
+              Resource: "*"
+
             # ---------- IAM PassRole (required for Lambda / EC2) ----------
             - Effect: Allow
               Action:
