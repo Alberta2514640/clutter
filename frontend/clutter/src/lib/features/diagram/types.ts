@@ -4,6 +4,11 @@ export type NodeData = {
   label: string;
   img: string;
   ansiblePlaybookName?: string;
+  ansiblePlaybookKey?: string;
+  ansiblePlaybookId?: string;
+  ansibleTargetInstanceId?: string;
+  lastAnsibleJobId?: string;
+  lastAnsibleJobStatus?: string;
   variables?: Record<string, unknown>;
 };
 export type DiagramNode = Node<NodeData>;
@@ -39,6 +44,13 @@ export type UpdateDiagramInput = {
   diagramId: string;
   name: string;
   data: DiagramUiLayout; // was uiLayout — now consistently "data"
+};
+
+export type TerraformCommandInput = {
+  organizationId: string;
+  projectId: string;
+  diagramId: string;
+  command: "apply" | "destroy" | "plan";
 };
 
 export type ApiEnvelope<T> = { data: T; message?: string };

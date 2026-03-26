@@ -1,17 +1,20 @@
 "use client";
 
 import Navbar from "@/components/common/Navbar";
+import { organizationApi } from "@/lib/features/organization/api";
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useLoginWithGoogle, useMe } from "@/lib/features/user/hooks";
 import { GoogleLogin } from "@react-oauth/google";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
 
   const login = useLoginWithGoogle();
   const meQ = useMe();
+  const [postLoginError, setPostLoginError] = useState<string | null>(null);
+  const [isResolvingLogin, setIsResolvingLogin] = useState(false);
 
   const token = meQ.data?.token ?? null;
 
@@ -33,6 +36,23 @@ export default function LoginPage() {
   }, [token, orgsQ.isLoading, orgsQ.isError, hasOrg, router]);
 
   const isChecking = !!token && orgsQ.isLoading;
+
+  const routeAfterLogin = async (authToken: string) => {
+    const fetchOrganizations = async () => organizationApi.list(authToken);
+
+    try {
+      const orgs = await fetchOrganizations();
+      router.replace(orgs.length > 0 ? "/dashboard" : "/onboarding/create-org");
+      return;
+    } catch {
+      // One quick retry smooths over the transient first-request failure seen after login.
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+
+    const orgs = await fetchOrganizations();
+    router.replace(orgs.length > 0 ? "/dashboard" : "/onboarding/create-org");
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col pt-20 relative overflow-hidden">
@@ -62,26 +82,35 @@ export default function LoginPage() {
                     return;
                   }
 
-                  login.mutate(googleIdToken, {
-                    // After login succeeds, useEffect will redirect based on org existence
-                    onError: (err) => console.error(err),
-                  });
+                  setPostLoginError(null);
+                  setIsResolvingLogin(true);
+
+                  try {
+                    const user = await login.mutateAsync(googleIdToken);
+                    await routeAfterLogin(user.token);
+                  } catch (err) {
+                    console.error(err);
+                    setPostLoginError(String(err));
+                  } finally {
+                    setIsResolvingLogin(false);
+                  }
                 }}
                 onError={() => console.log("Login Failed")}
               />
             </div>
 
-            {isChecking && (
+            {(isChecking || isResolvingLogin) && (
               <div className="mt-6 text-center text-sm text-slate-400">
                 Checking your organizations…
               </div>
             )}
 
-            {(login.isError || meQ.isError || orgsQ.isError) && (
+            {(login.isError || meQ.isError || orgsQ.isError || postLoginError) && (
               <div className="mt-6 text-sm text-red-400">
                 {login.isError && <div>Login error: {String(login.error)}</div>}
                 {meQ.isError && <div>Auth error: {String(meQ.error)}</div>}
                 {orgsQ.isError && <div>Organization lookup error: {String(orgsQ.error)}</div>}
+                {postLoginError && <div>Login error: {postLoginError}</div>}
               </div>
             )}
 

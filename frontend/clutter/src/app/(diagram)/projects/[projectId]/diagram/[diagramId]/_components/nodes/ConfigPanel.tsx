@@ -1,19 +1,36 @@
 "use client";
 
 import { Play, Settings, Trash2, Upload, X } from "lucide-react";
-import { useCallback, useMemo } from "react";
 import Image from "next/image";
+import { useCallback, useMemo, useState } from "react";
 
-import type { DiagramNode } from "@/lib/features/diagram/types";
-import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
-import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { DiagramNode } from "@/lib/features/diagram/types";
+import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import { useSupportedResources } from "@/lib/features/resources/hooks";
+import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileToS3 } from "@/lib/features/runs/hooks";
+import { useMe } from "@/lib/features/user/hooks";
+import type { LogEntry } from "./LogsPanel";
 
-export default function ConfigPanel({ diagramId }: { diagramId: string }) {
+
+export default function ConfigPanel({
+  diagramId,
+  projectId,
+  onLog,
+}: {
+  diagramId: string;
+  projectId: string;
+  onLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
+}) {
   const editor = useDiagramEditor(diagramId);
   const { setNodes, setEdges } = useDiagramEditorActions();
+  const meQ = useMe();
+  const token = meQ.data?.token ?? null;
+  const createPlaybookUploadUrl = useCreatePlaybookUploadUrl(token);
+  const uploadPlaybookFileToS3 = useUploadPlaybookFileToS3();
+  const submitAnsibleJob = useSubmitAnsibleJob(token);
   const { data: supportedResources } = useSupportedResources();
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
@@ -22,6 +39,11 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
   const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
   const showContent = !!selectedNode;
   const isEc2Node = selectedNode?.data.img?.includes("ec2") ?? false;
+  const ansibleUploadInputId = selectedNode ? `ansible-playbook-upload-${selectedNode.id}` : "ansible-playbook-upload";
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [runMessage, setRunMessage] = useState<string | null>(null);
 
   const resourceDef = useMemo(
     () => supportedResources?.find((r) => r.label === selectedNode?.data.label),
@@ -51,15 +73,129 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
     }));
   };
 
-  const handleAnsiblePlaybookUpload = (file: File | null) => {
-    if (!file) return;
-    patchSelectedNode((n) => ({ ...n, data: { ...n.data, ansiblePlaybookName: file.name } }));
-  };
+  const handleAnsiblePlaybookUpload = useCallback(
+    async (file: File | null) => {
+      if (!file || !selectedNode) return;
+      if (!token) {
+        setUploadError("You must be signed in before uploading a playbook.");
+        return;
+      }
 
-  const handleRunPlaybook = () => {
-    if (!selectedNode?.data.ansiblePlaybookName) return;
-    window.alert(`Ansible playbook "${selectedNode.data.ansiblePlaybookName}" is ready to run on this EC2 block.`);
-  };
+      setUploadError(null);
+      setUploadMessage(null);
+      setRunError(null);
+      setRunMessage(null);
+
+      try {
+        const uploadTarget = await createPlaybookUploadUrl.mutateAsync({
+          file_name: file.name,
+          project_id: projectId,
+          diagram_id: diagramId,
+        });
+
+        const targetUrl = (typeof uploadTarget.upload_url === "string" && uploadTarget.upload_url) || (typeof uploadTarget.url === "string" && uploadTarget.url) || "";
+        if (!targetUrl) {
+          throw new Error("Upload URL response did not include a usable target URL.");
+        }
+
+        await uploadPlaybookFileToS3.mutateAsync({
+          upload_url: targetUrl,
+          file,
+        });
+
+        patchSelectedNode((n) => ({
+          ...n,
+          data: {
+            ...n.data,
+            ansiblePlaybookName: file.name,
+            ansiblePlaybookKey:
+              (typeof uploadTarget.playbook_s3_key === "string" && uploadTarget.playbook_s3_key) ||
+              (typeof uploadTarget.key === "string" && uploadTarget.key) ||
+              n.data.ansiblePlaybookKey,
+            ansiblePlaybookId:
+              (typeof uploadTarget.playbook_id === "string" && uploadTarget.playbook_id) ||
+              n.data.ansiblePlaybookId,
+          },
+        }));
+
+        setUploadMessage(`Uploaded "${file.name}" for this EC2 container.`);
+        onLog({
+          message: `Uploaded Ansible playbook "${file.name}" for EC2 node "${selectedNode.data.label}".`,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to upload Ansible playbook.";
+        setUploadError(message);
+        onLog({
+          message: `Playbook upload failed for EC2 node "${selectedNode.data.label}": ${message}`,
+        });
+      }
+    },
+    [createPlaybookUploadUrl, diagramId, onLog, patchSelectedNode, projectId, selectedNode, token, uploadPlaybookFileToS3],
+  );
+
+  const handleTargetInstanceIdChange = useCallback(
+    (targetInstanceId: string) => {
+      patchSelectedNode((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          ansibleTargetInstanceId: targetInstanceId,
+        },
+      }));
+    },
+    [patchSelectedNode],
+  );
+
+  const handleRunPlaybook = useCallback(async () => {
+    if (!selectedNode) return;
+    if (!token) {
+      setRunError("You must be signed in before submitting an Ansible job.");
+      return;
+    }
+
+    const playbookId = selectedNode.data.ansiblePlaybookId?.trim();
+    const targetInstanceId = selectedNode.data.ansibleTargetInstanceId?.trim();
+
+    if (!playbookId) {
+      setRunError("Upload a playbook first so this EC2 container has a playbook ID.");
+      return;
+    }
+
+    if (!targetInstanceId) {
+      setRunError("Enter the target EC2 instance ID before running the playbook.");
+      return;
+    }
+
+    setRunError(null);
+    setRunMessage(null);
+
+    try {
+      const response = await submitAnsibleJob.mutateAsync({
+        playbook_id: playbookId,
+        target_instance_ids: [targetInstanceId],
+      });
+
+      patchSelectedNode((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          lastAnsibleJobId: response.job_id,
+          lastAnsibleJobStatus: response.status,
+        },
+      }));
+
+      setRunMessage(`Submitted Ansible job ${response.job_id} for this EC2 container.`);
+      onLog({
+        message: `Queued Ansible job ${response.job_id} for EC2 node "${selectedNode.data.label}" targeting ${targetInstanceId}.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to submit the Ansible job.";
+      setRunError(message);
+      onLog({
+        message: `Ansible job submission failed for EC2 node "${selectedNode.data.label}": ${message}`,
+      });
+    }
+  }, [onLog, patchSelectedNode, selectedNode, submitAnsibleJob, token]);
 
   const handleDeleteSelected = useCallback(() => {
     if (!selectedNode) return;
@@ -156,16 +292,24 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
                 <div>
                   <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Ansible Playbook</div>
                   <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Bound EC2 container</div>
+                      <div className="mt-1 text-sm font-medium text-white">{selectedNode!.data.label}</div>
+                    </div>
                     <label
-                      htmlFor="ansible-playbook-upload"
+                      htmlFor={ansibleUploadInputId}
                       className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-3 text-sm font-medium text-slate-200 transition hover:border-teal-500/60 hover:bg-slate-900"
                     >
                       <Upload className="h-4 w-4" />
-                      {selectedNode!.data.ansiblePlaybookName ? "Replace Ansible playbook" : "Upload Ansible playbook"}
+                      {selectedNode!.data.ansiblePlaybookName ? "Replace playbook for this EC2 container" : "Upload playbook for this EC2 container"}
                     </label>
-                    <input id="ansible-playbook-upload" type="file" accept=".yml,.yaml" className="hidden"
-                      onChange={(e) => {
-                        handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
+                    <input
+                      id={ansibleUploadInputId}
+                      type="file"
+                      accept=".yml,.yaml"
+                      className="hidden"
+                      onChange={async (e) => {
+                        await handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
                         e.currentTarget.value = "";
                       }}
                     />
@@ -175,24 +319,91 @@ export default function ConfigPanel({ diagramId }: { diagramId: string }) {
                         {selectedNode!.data.ansiblePlaybookName ?? "No playbook uploaded yet"}
                       </div>
                     </div>
+
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Target EC2 instance ID
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode!.data.ansibleTargetInstanceId ?? ""}
+                        onChange={(e) => handleTargetInstanceIdChange(e.target.value)}
+                        placeholder="i-0a05920cb52c4555d"
+                        className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-white transition-colors focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <div className="mt-1 text-xs text-slate-400">
+                        This instance ID is stored on this EC2 container node and used as the Ansible target.
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Playbook ID</div>
+                      <div className="mt-1 break-all text-sm font-medium text-white">
+                        {selectedNode!.data.ansiblePlaybookId ?? "Not available until upload succeeds"}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={handleRunPlaybook}
-                      disabled={!selectedNode!.data.ansiblePlaybookName}
+                      disabled={
+                        !selectedNode!.data.ansiblePlaybookId ||
+                        !selectedNode!.data.ansibleTargetInstanceId?.trim() ||
+                        createPlaybookUploadUrl.isPending ||
+                        uploadPlaybookFileToS3.isPending ||
+                        submitAnsibleJob.isPending
+                      }
                       className={[
                         "flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition",
-                        selectedNode!.data.ansiblePlaybookName
+                        selectedNode!.data.ansiblePlaybookId && selectedNode!.data.ansibleTargetInstanceId?.trim()
                           ? "border-teal-500/40 bg-teal-500/10 text-teal-100 hover:bg-teal-500/20"
                           : "border-slate-800 bg-slate-950/80 text-slate-500",
                       ].join(" ")}
                     >
                       <Play className="h-4 w-4" />
-                      {selectedNode!.data.ansiblePlaybookName ? "Run uploaded playbook" : "Upload a playbook to run"}
+                      {submitAnsibleJob.isPending
+                        ? "Submitting Ansible job..."
+                        : selectedNode!.data.ansiblePlaybookId
+                          ? "Run playbook on this EC2 container"
+                          : "Upload a playbook to run"}
                     </button>
+
+                    {(createPlaybookUploadUrl.isPending || uploadPlaybookFileToS3.isPending) && (
+                      <div className="text-xs text-slate-400">Uploading playbook…</div>
+                    )}
+
+                    {submitAnsibleJob.isPending && (
+                      <div className="text-xs text-slate-400">Submitting Ansible job…</div>
+                    )}
+
+                    {uploadMessage && (
+                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                        {uploadMessage}
+                      </div>
+                    )}
+
+                    {uploadError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        {uploadError}
+                      </div>
+                    )}
+
+                    {runMessage && (
+                      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
+                        {runMessage}
+                      </div>
+                    )}
+
+                    {runError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        {runError}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
+              
             </div>
 
             {/* Danger Zone — pinned to bottom */}

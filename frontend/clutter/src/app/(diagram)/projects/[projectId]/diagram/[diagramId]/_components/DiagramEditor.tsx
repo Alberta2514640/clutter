@@ -10,12 +10,14 @@ import AwsServiceNode from "./nodes/AwsServiceNode";
 import ConfigPanel from "./nodes/ConfigPanel";
 import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
 
-import { useDiagram, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
-import { useSupportedResources } from "@/lib/features/resources/hooks";
+import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import { useOrganizations } from "@/lib/features/organization/hooks";
+import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { useRouter } from "next/navigation";
+;
 
 export type PaletteItem = {
   label: string;
@@ -29,18 +31,32 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
+  const orgsQ = useOrganizations(token);
+  const orgId = orgsQ.data?.[0]?.id ?? null;
 
   const { screenToFlowPosition } = useReactFlow();
 
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
-  console.log(diagramQ.data);
+
   const saveM = useUpdateDiagramData(token);
+  const terraformM = useRunTerraform(token);
 
   const editor = useDiagramEditor(diagramId);
   const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
 
   const [logs, setLogs] = useState<LogEntry[]>([]); //temp probably be changed after deploy flow
+
+  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
+    setLogs((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date(),
+        ...entry,
+      },
+    ]);
+  }, []);
 
   useEffect(() => {
     ensure(diagramId);
@@ -203,6 +219,11 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     setTimeout(() => setShowSaved(false), 2000);
   }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
+  const onDeploy = useCallback(async () => {
+    if (!orgId) return;
+    await terraformM.mutateAsync({ organizationId: orgId, projectId, diagramId, command: "apply" });
+  }, [orgId, projectId, diagramId, terraformM]);
+
   return (
     <div className="h-screen w-screen overflow-hidden">
       <div className="flex h-full w-full">
@@ -223,7 +244,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
             snapGrid={[20, 20]}
             isValidConnection={isValidConnection}>
             <Panel position="top-left" className="w-full pr-5">
-              <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onBack={onBack} dirty={dirty} isSaving={isSaving} />
+              <TopNav diagramName={name} onNameChange={(n) => setName(diagramId, n)} onSave={onSave} onDeploy={onDeploy} isDeploying={terraformM.isPending} onBack={onBack} dirty={dirty} isSaving={isSaving} />
             </Panel>
 
             <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
@@ -253,7 +274,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           <LogsPanel logs={logs} />
         </div>
 
-        <ConfigPanel diagramId={diagramId} />
+        <ConfigPanel diagramId={diagramId} projectId={projectId} onLog={addLog} />
       </div>
     </div>
   );
