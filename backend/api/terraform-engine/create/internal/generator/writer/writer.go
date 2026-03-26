@@ -79,6 +79,10 @@ func GenerateMainTF() string {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -88,8 +92,6 @@ provider "aws" {
 
 variable "aws_region" {
   type        = string
-  description = "AWS region"
-  default     = "us-west-2"
 }
 `
 }

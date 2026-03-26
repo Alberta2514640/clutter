@@ -18,9 +18,9 @@ func ParseResourceType(label string) (internal.ResourceType, error) {
 		return internal.ResourceTypeDynamoDB, nil
 	case "s3":
 		return internal.ResourceTypeS3, nil
-	case "api gateway":
+	case "api gateway", "api-gateway":
 		return internal.ResourceTypeAPIGateway, nil
-	case "ec2 container":
+	case "ec2", "ec2 container":
 		return internal.ResourceTypeEC2, nil
 	default:
 		return "", fmt.Errorf("unknown resource type: %s", label)
