@@ -4,6 +4,7 @@ export type NodeData = {
   label: string;
   img: string;
   ansiblePlaybookName?: string;
+  variables?: Record<string, unknown>;
 };
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;
