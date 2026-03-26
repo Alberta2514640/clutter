@@ -1,3 +1,9 @@
 .vscode/.aws_credentials
 /experimental
 frontend/clutter/.prettierrc
+backend/infra/.deployment-outputs
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+.claude/settings.local.json

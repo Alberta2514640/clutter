@@ -11,6 +11,8 @@ import ConfigPanel from "./nodes/ConfigPanel";
 import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
 
 import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import { useDiagram, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import { useSupportedResources } from "@/lib/features/resources/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
 import { useOrganizations } from "@/lib/features/organization/hooks";
@@ -34,6 +36,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const { screenToFlowPosition } = useReactFlow();
 
+  const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
 
   const saveM = useUpdateDiagramData(token);
@@ -168,16 +171,31 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       const item: PaletteItem = JSON.parse(raw);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
+      // Pre-populate variables with non-null defaults from the resource catalog
+      const resourceDef = supportedResources?.find((r) => r.label === item.label);
+      const defaultVariables: Record<string, unknown> = {};
+      if (resourceDef) {
+        for (const v of resourceDef.variables) {
+          if (v.default !== null) {
+            defaultVariables[v.name] = v.default;
+          }
+        }
+      }
+
       const newNode: DiagramNode = {
         id: crypto.randomUUID(),
         type: "awsService",
         position,
-        data: { label: item.label, img: item.img },
+        data: {
+          label: item.label,
+          img: item.img,
+          ...(Object.keys(defaultVariables).length > 0 && { variables: defaultVariables }),
+        },
       };
 
       setNodes(diagramId, [...nodes, newNode]);
     },
-    [diagramId, nodes, screenToFlowPosition, setNodes],
+    [diagramId, nodes, screenToFlowPosition, setNodes, supportedResources],
   );
 
   // ---------------------------

@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "required": [
+    "target_instance_ids"
+  ],
+  "properties": {
+    "config_id": {
+      "type": "string",
+      "description": "Optional configuration ID for the job"
+    },
+    "target_instance_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^i-[0-9a-fA-F]{8,17}$"
+      },
+      "minItems": 1,
+      "description": "List of EC2 instance IDs to target"
+    },
+    "playbook_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "UUID of a previously uploaded playbook (mutually exclusive with playbook_s3_key)"
+    },
+    "playbook_s3_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "S3 key for the playbook file (mutually exclusive with playbook_id)"
+    },
+    "extra_vars": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional extra variables for the playbook"
+    }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    { "required": ["playbook_id"] },
+    { "required": ["playbook_s3_key"] }
+  ]
+}

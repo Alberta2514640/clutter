@@ -26,3 +26,9 @@ variable "cors_allowed_origins" {
   description = "List of allowed origins for CORS"
   default     = ["*"]
 }
+
+variable "ansible_runner_role_id" {
+  type        = string
+  description = "Unique ID of the Ansible Runner Fargate task role (used to exempt SSM file transfers from SSE deny policy)"
+  default     = ""
+}

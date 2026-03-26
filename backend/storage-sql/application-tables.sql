@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS public.playbooks;
 DROP TABLE IF EXISTS public.diagram_history;
 DROP TABLE IF EXISTS public.diagrams;
 DROP TABLE IF EXISTS public.projects;
@@ -146,3 +147,95 @@ ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_all_permissions"
 ON "public"."diagram_history"
 AS PERMISSIVE TO anon USING (true);
+
+-- ============================
+-- JOBS
+-- ============================
+-- Note: jobs.created_by uses ON DELETE SET NULL (unlike organizations/projects/diagrams)
+-- to preserve job history records when users are deleted. Jobs represent historical
+-- execution records that should be retained for audit purposes.
+CREATE TABLE public.jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_type VARCHAR(20) NOT NULL DEFAULT 'ansible' CHECK (job_type IN ('ansible', 'terraform')),
+    status VARCHAR(50) NOT NULL DEFAULT 'QUEUED' CHECK (status IN ('QUEUED', 'STARTING', 'RUNNING', 'COMPLETED', 'FAILED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+
+    -- Ansible-specific fields
+    target_instance_ids JSONB,
+    playbook_s3_key VARCHAR(512),
+
+    -- Terraform-specific fields
+    terraform_directory VARCHAR(255),
+    role_arn VARCHAR(255),
+    assume_role_external_id VARCHAR(36),
+
+    -- Shared fields
+    extra_vars JSONB DEFAULT '{}'::jsonb,
+    task_arn VARCHAR(255),
+    error_message TEXT,
+    config_id UUID,
+    log_s3_key VARCHAR(255)
+);
+
+CREATE INDEX idx_jobs_status ON public.jobs(status);
+CREATE INDEX idx_jobs_created_at ON public.jobs(created_at DESC);
+CREATE INDEX idx_jobs_created_by ON public.jobs(created_by);
+CREATE INDEX idx_jobs_job_type ON public.jobs(job_type);
+
+-- ============================
+-- PLAYBOOKS
+-- ============================
+-- Migration for existing DBs:
+--   CREATE TABLE public.playbooks ( ... ) -- see below
+--   ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "anon_all_permissions" ON "public"."playbooks" AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
+CREATE TABLE public.playbooks (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    diagram_id  UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
+    org_id      UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+    file_name   VARCHAR(128) NOT NULL,
+    s3_key      VARCHAR(512) NOT NULL,
+    uploaded_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_playbooks_diagram_id ON public.playbooks(diagram_id);
+CREATE INDEX idx_playbooks_org_id ON public.playbooks(org_id);
+
+ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."playbooks"
+AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
+
+-- Trigger function to auto-update updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply to jobs table
+CREATE TRIGGER set_updated_at
+    BEFORE UPDATE ON jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Apply to playbooks table
+CREATE TRIGGER set_updated_at
+    BEFORE UPDATE ON playbooks
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- NOTE: The permissive "anon" RLS policy is intentional.
+-- Access control is enforced at the application layer (Lambda authorizer + created_by filters).
+-- The "anon" role is the Supabase service-key connection used by all Lambdas.
+ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_all_permissions"
+ON "public"."jobs"
+AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
