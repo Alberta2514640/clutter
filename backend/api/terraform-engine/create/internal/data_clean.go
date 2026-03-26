@@ -16,16 +16,16 @@ func HasDataChanged(oldData, newData generic.DiagramRecord) bool {
 	return true
 }
 
-// SanitizeNodes returns nodes with only the fields relevant to terraform:
-// ID, Type, Data, and Variables
+// SanitizeNodes returns nodes with only the fields relevant to terraform.
 func SanitizeNodes(nodes []generic.DiagramNode) []generic.DiagramNode {
 	sanitized := make([]generic.DiagramNode, len(nodes))
 	for i, node := range nodes {
+		variables, _ := node.Data["variables"].(map[string]any)
 		sanitized[i] = generic.DiagramNode{
 			ID:        node.ID,
 			Type:      node.Type,
 			Data:      node.Data,
-			Variables: node.Variables,
+			Variables: variables,
 		}
 	}
 	return sanitized
