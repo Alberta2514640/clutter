@@ -67,6 +67,18 @@ Resources:
                 - s3:*
               Resource: "*"
 
+            # ---------- IAM Full Access (required for Terraform IAM resources) ----------
+            - Effect: Allow
+              Action:
+                - iam:*
+              Resource: "*"
+
+            # ---------- SSM ----------
+            - Effect: Allow
+              Action:
+                - ssm:*
+              Resource: "*"
+
             # ---------- IAM PassRole (required for Lambda / EC2) ----------
             - Effect: Allow
               Action:

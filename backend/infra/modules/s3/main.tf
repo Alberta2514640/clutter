@@ -169,3 +169,16 @@ resource "aws_s3_object" "terraform_deployer_role_template" {
   etag = filemd5("${path.module}/uploads/client_side_terraform_deployer_role.yaml")
 
 }
+
+resource "aws_s3_object" "common_lambda_boostrap_zip" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key = "templates/zip/bootstrap.zip"
+  source = "${path.module}/uploads/bootstrap.zip"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/bootstrap.zip")
+
+}

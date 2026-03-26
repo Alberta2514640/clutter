@@ -18,6 +18,7 @@ LAMBDA_DIRS=(
   "diagram/get"
   "diagram/update"
   "diagram/delete"
+  "terraform-command-runner"
   "user-information/get"
   "organization/accounts/get"
   "organization/accounts/submit-role-arn"

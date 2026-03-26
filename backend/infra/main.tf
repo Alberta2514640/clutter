@@ -19,8 +19,11 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter                = module.s3.clutter_bucket_arn
-  s3_clutter_bucket_name    = module.s3.clutter_bucket_name
+  s3_clutter_arn            = module.s3.clutter_bucket_arn
+  s3_clutter_name           = module.s3.clutter_bucket_name
+  s3_templates_arn          = module.s3.clutter_templates_bucket_arn 
+  s3_templates_name         = module.s3.clutter_templates_bucket_name
+
   aws_region                = var.aws_region
   psql_connection_string    = var.psql_connection_string
   ansible_runner_image_tag  = var.ansible_runner_image_tag
@@ -29,29 +32,6 @@ module "fargate" {
 # ========================
 # Ansible Engine Resources
 # ========================
-
-
-
-# DynamoDB table for Terraform state locking
-resource "aws_dynamodb_table" "terraform_state_lock" {
-  name           = "terraform-state-lock"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  server_side_encryption {
-    enabled = true
-  }
-
-  tags = {
-    Name        = "terraform-state-lock"
-    Description = "Terraform state lock table"
-  }
-}
 
 # SQS — Ansible Job Queue + Dead Letter Queue
 resource "aws_sqs_queue" "ansible_jobs_dlq" {
@@ -139,7 +119,34 @@ module "cloudformation-stack-url-generator-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
+    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+  }
+}
+
+module "terraform-command-runner-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-command-runner"
+
+  actions = [
+    "ecs:RunTask",
+    "iam:PassRole"
+  ]
+
+  resources = [
+    module.fargate.terraform_task_role_arn,
+    module.fargate.ecs_execution_role_arn,
+    module.fargate.terraform_task_definition_arn
+  ]
+
+  zip_dir_slice = "terraform-command-runner"
+
+  environment_variables = {
+    PSQL_CONNECTION_STRING  = var.psql_connection_string
+    ECS_CLUSTER_NAME        = module.fargate.ecs_cluster_name
+    TASK_DEFINITION_ARN     = module.fargate.terraform_task_definition_arn
+    CONTAINER_NAME          = module.fargate.terraform_container_name
+    SUBNET_IDS              = join(",", module.fargate.subnet_ids)
+    SECURITY_GROUP_ID       = module.fargate.terraform_security_group_id
   }
 }
 
@@ -606,7 +613,7 @@ module "ansible-run-task-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-run-task:*",
-    module.fargate.cluster_arn,
+    module.fargate.ecs_cluster_arn,
     "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/ansible-runner:*",
 
     module.fargate.ansible_task_role_arn,
@@ -615,7 +622,7 @@ module "ansible-run-task-lambda" {
   zip_dir_slice = "ansible/run-task"
   environment_variables = {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
-    ANSIBLE_ECS_CLUSTER_ARN     = module.fargate.cluster_arn
+    ANSIBLE_ECS_CLUSTER_ARN     = module.fargate.ecs_cluster_arn
     ANSIBLE_TASK_DEFINITION_ARN = module.fargate.ansible_task_def_arn
     ANSIBLE_SUBNET_IDS          = join(",", data.aws_subnets.default.ids)
     ANSIBLE_SECURITY_GROUP_ID   = module.fargate.ansible_sg_id
@@ -716,6 +723,20 @@ module "cloudformation-stack-url-generator-api-by-id-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.cloudformation-stack-url-generator-api-path-by-id.resource_id
   http_methods = ["GET"]
+}
+
+# Teraform Command
+module "terraform-command-runner-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.clutter-api-gateway.root_resource_id
+  path_part   = "terraform-command-runner"
+}
+module "terraform-command-runner-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-command-runner-api-path.resource_id
+  http_methods = ["POST"]
 }
 
 # Organization
@@ -910,6 +931,15 @@ module "log-in-model" {
   model_name      = "login"
   description     = "Model to validate log-in requests"
   schema_filename = "log-in.json"
+}
+
+# Terraform Command
+module "terraform-command-runner-model" {
+  source          = "./modules/templates/api-models"
+  rest_api_id     = module.clutter-api-gateway.rest_api_id
+  model_name      = "terraformCommand"
+  description     = "Model to validate terraform command requests"
+  schema_filename = "terraform-command-runner.json"
 }
 
 # Organization
@@ -1240,6 +1270,23 @@ module "diagram-delete-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+# Terraform Command
+# POST terraform-command-runner
+module "terraform-command-runner-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-command-runner-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.terraform-command-runner-lambda.invoke_arn
+  function_name     = module.terraform-command-runner-lambda.function_name
+  path_part         = module.terraform-command-runner-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-command-runner-api-path.path
+  request_validator_id = module.clutter-api-gateway.body_validator_id
+  model_name           = module.terraform-command-runner-model.model_name
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
 # Ansible Engine
 # POST ansible/jobs
 module "ansible-submit-job-api-integration" {
@@ -1354,91 +1401,4 @@ module "terraform-engine-create-api-integration" {
   path_part         = module.terraform-engine-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-engine-api-path.path
-}
-
-// API Gateway Staging
-resource "aws_api_gateway_deployment" "clutter" {
-  rest_api_id = module.clutter-api-gateway.rest_api_id
-
-  triggers = {
-    redeploy = sha1(jsonencode([
-
-      module.clutter-api-gateway.rest_api_id,
-      module.clutter-api-gateway.jwt_authorizer_id,
-      module.clutter-api-gateway.body_validator_id,
-
-      module.log-in-model.model_id,
-      module.organization-create-model.model_id,
-      module.organization-update-model.model_id,
-      module.project-create-model.model_id,
-      module.project-update-model.model_id,
-      module.diagram-create-model.model_id,
-      module.diagram-update-model.model_id,
-      module.organization-submit-account-role-arn-model.model_id,
-
-      module.log-in-api-integration.integration_id,
-
-      module.cloudformation-stack-url-generator-api-integration.integration_id,
-
-      module.organization-create-api-integration.integration_id,
-      module.organization-get-api-integration.integration_id,
-      module.organization-update-api-integration.integration_id,
-      module.organization-delete-api-integration.integration_id,
-
-      module.organization-submit-account-role-arn-api-integration.integration_id,
-      module.organization-get-accounts-api-integration.integration_id,
-      module.organization-delete-account-api-integration.integration_id,
-
-      module.project-create-api-integration.integration_id,
-      module.project-get-api-integration.integration_id,
-      module.project-update-api-integration.integration_id,
-      module.project-delete-api-integration.integration_id,
-
-      module.diagram-create-api-integration.integration_id,
-      module.diagram-get-api-integration.integration_id,
-      module.diagram-update-api-integration.integration_id,
-      module.diagram-delete-api-integration.integration_id,
-
-      module.user-information-get-api-integration.integration_id,
-
-      module.terraform-engine-create-api-integration.integration_id,
-      
-      module.resources-get-api-integration.integration_id,
-
-      module.ansible-submit-job-api-integration.integration_id,
-      module.ansible-list-jobs-api-integration.integration_id,
-      module.ansible-get-job-api-integration.integration_id,
-      module.ansible-get-job-logs-api-integration.integration_id,
-      module.ansible-create-playbook-upload-url-api-integration.integration_id,
-      module.ansible-playbook-upload-create-model.model_id,
-      module.ansible-job-submit-model.model_id
-    ]))
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-variable "ansible_runner_image_tag" {
-  type        = string
-  description = "Docker image tag for the Ansible runner"
-  default     = "latest"
-}
-
-variable "stage_name" {
-  type        = string
-  description = "API Gateway stage name"
-  default     = "prod"
-
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.stage_name)
-    error_message = "stage_name must be one of: dev, staging, prod."
-  }
-}
-
-resource "aws_api_gateway_stage" "clutter" {
-  rest_api_id   = module.clutter-api-gateway.rest_api_id
-  deployment_id = aws_api_gateway_deployment.clutter.id
-  stage_name    = var.stage_name
 }
