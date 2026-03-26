@@ -53,7 +53,6 @@ func (g *EC2Generator) Generate(node generic.DiagramNode, resourceName string) (
 
 	vars := map[string]interface{}{
 		"ResourceName": resourceName,
-		"AMI":          generic.GetString(node.Variables, "ami", "ami-0c55b159cbfafe1f0"),
 		"InstanceType": generic.GetString(node.Variables, "instance_type", "t3.micro"),
 		"KeyName":      generic.GetString(node.Variables, "key_name", ""),
 	}
