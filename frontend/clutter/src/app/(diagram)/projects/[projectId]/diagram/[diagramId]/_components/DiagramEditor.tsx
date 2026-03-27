@@ -36,6 +36,9 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const { screenToFlowPosition } = useReactFlow();
 
+  const orgAWS = useOrganizationAccounts(token, orgId);
+  const awsId = orgAWS.data?.[0].id
+
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
 
@@ -61,6 +64,13 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   useEffect(() => {
     ensure(diagramId);
   }, [diagramId, ensure]);
+
+  useEffect(() => {
+    console.log("Current diagram context", {
+      projectId,
+      diagramId,
+    });
+  }, [projectId, diagramId]);
 
   useEffect(() => {
     if (!diagramQ.data) return;
