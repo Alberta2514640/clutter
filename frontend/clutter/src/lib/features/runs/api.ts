@@ -62,7 +62,7 @@ async function apiFetch<T>(path: string, token: string, init: RequestInit = {}):
     ...init,
     headers: {
       "Content-Type": "application/json",
-      Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`,
+      Authorization: `${token}`,
       ...(init.headers ?? {}),
     },
   });

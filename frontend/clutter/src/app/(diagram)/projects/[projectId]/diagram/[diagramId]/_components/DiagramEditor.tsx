@@ -63,6 +63,13 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   }, [diagramId, ensure]);
 
   useEffect(() => {
+    console.log("Current diagram context", {
+      projectId,
+      diagramId,
+    });
+  }, [projectId, diagramId]);
+
+  useEffect(() => {
     if (!diagramQ.data) return;
 
     hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.data?.nodes ?? [], diagramQ.data.data?.edges ?? []);
