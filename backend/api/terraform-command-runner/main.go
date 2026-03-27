@@ -144,6 +144,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				{Name: aws.String("COMMAND"), Value: aws.String(command)},
 				{Name: aws.String("COMMAND_ID"), Value: aws.String(commandId)},
 				{Name: aws.String("PSQL_CONNECTION_STRING"), Value: aws.String(os.Getenv("PSQL_CONNECTION_STRING"))},
+				{Name: aws.String("DIAGRAM_ID"), Value: aws.String(diagramId)},
 			},
 		},
 	}
