@@ -24,6 +24,8 @@ LAMBDA_DIRS=(
   "terraform-command-runner"
   "user-information/get"
   "terraform-engine/create"
+  "terraform-engine/logs/get"
+  "terraform-engine/logs/url"
   "resources/get"
   "ansible/create-playbook-upload-url"
   "ansible/submit-job"
