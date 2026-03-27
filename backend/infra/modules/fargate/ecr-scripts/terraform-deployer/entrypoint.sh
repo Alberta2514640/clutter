@@ -105,7 +105,7 @@ fi
 # -------------------------------
 echo "Downloading bootstrap.zip."
 
-aws s3 cp "s3://$S3_TEMPLATES_NAME/zip/bootstrap.zip" /app/bootstrap.zip
+aws s3 cp "s3://$S3_TEMPLATES_NAME/templates/zip/bootstrap.zip" /app/bootstrap.zip
 
 # Verify it exists
 if [ ! -f "/app/bootstrap.zip" ]; then

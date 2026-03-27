@@ -477,13 +477,13 @@ module "terraform-engine-create-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-create:*",
-    "arn:aws:s3:::${var.terraform_output_bucket}/*",
-    "arn:aws:s3:::${var.terraform_template_bucket}/*"
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*",
+    "arn:aws:s3:::${module.s3.clutter_templates_bucket_name}/*"
   ]
   zip_dir_slice = "terraform-engine/create"
   environment_variables = {
-    S3_BUCKET_NAME         = var.terraform_output_bucket
-    TEMPLATE_BUCKET_NAME   = var.terraform_template_bucket
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    TEMPLATE_BUCKET_NAME   = module.s3.clutter_templates_bucket_name
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
@@ -504,12 +504,12 @@ module "terraform-engine-logs-get-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-get:*",
-    "arn:aws:s3:::${var.terraform_output_bucket}",
-    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*"
   ]
   zip_dir_slice = "terraform-engine/logs/get"
   environment_variables = {
-    S3_BUCKET_NAME         = var.terraform_output_bucket
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
@@ -525,11 +525,11 @@ module "terraform-engine-logs-url-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-url:*",
-    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*"
   ]
   zip_dir_slice = "terraform-engine/logs/url"
   environment_variables = {
-    S3_BUCKET_NAME         = var.terraform_output_bucket
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
