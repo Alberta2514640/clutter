@@ -80,7 +80,7 @@ func (l *TemplateLoader) LoadResourceTemplates(ctx context.Context, resourceType
 	templateFiles := []string{"main.tf.tmpl", "outputs.tf.tmpl"}
 
 	for _, file := range templateFiles {
-		path := fmt.Sprintf("templates/terraform/%s/%s", resourceType, file)
+		path := fmt.Sprintf("templates/aws/%s/%s", resourceType, file)
 		tmpl, err := l.Load(ctx, path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s: %w", file, err)

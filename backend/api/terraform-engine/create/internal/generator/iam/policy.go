@@ -33,6 +33,11 @@ func (g *IAMPolicyGenerator) GenerateFromRelationships(relationships []*internal
 }
 
 func (g *IAMPolicyGenerator) generatePolicy(rel *internal.IAMRelationship) (string, error) {
+	// API Gateway → Lambda uses aws_lambda_permission, not an IAM policy
+	if rel.SourceResource.Type == internal.ResourceTypeAPIGateway && rel.TargetResource.Type == internal.ResourceTypeLambda {
+		return g.generateLambdaPermission(rel), nil
+	}
+
 	actions := g.getActionsForRelationship(rel.SourceResource.Type, rel.TargetResource.Type)
 	if len(actions) == 0 {
 		return "", fmt.Errorf("no IAM actions defined for %s -> %s", rel.SourceResource.Type, rel.TargetResource.Type)
@@ -83,6 +88,19 @@ func (g *IAMPolicyGenerator) generatePolicy(rel *internal.IAMRelationship) (stri
 	return sb.String(), nil
 }
 
+func (g *IAMPolicyGenerator) generateLambdaPermission(rel *internal.IAMRelationship) string {
+	permName := fmt.Sprintf("%s_invoke_%s", rel.SourceResource.Name, rel.TargetResource.Name)
+	return fmt.Sprintf(`resource "aws_lambda_permission" "%s" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.%s.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.%s.execution_arn}/*/*"
+}
+
+`, permName, rel.TargetResource.Name, rel.SourceResource.Name)
+}
+
 // getActionsForRelationship determines IAM actions based on source->target types
 func (g *IAMPolicyGenerator) getActionsForRelationship(source, target internal.ResourceType) []string {
 	switch {
@@ -114,14 +132,16 @@ func (g *IAMPolicyGenerator) getActionsForRelationship(source, target internal.R
 // getResourceArn returns the terraform reference for the target resource ARN
 func (g *IAMPolicyGenerator) getResourceArn(resource *internal.TerraformResource) string {
 	switch resource.Type {
-	// case internal.ResourceTypeDynamoDB:
-	// 	return fmt.Sprintf("aws_dynamodb_table.%s.arn", resource.Name)
+	case internal.ResourceTypeDynamoDB:
+		return fmt.Sprintf("aws_dynamodb_table.%s.arn", resource.Name)
 	case internal.ResourceTypeS3:
 		return fmt.Sprintf("[aws_s3_bucket.%s.arn, \"${aws_s3_bucket.%s.arn}/*\"]", resource.Name, resource.Name)
-	// case internal.ResourceTypeLambda:
-	// 	return fmt.Sprintf("aws_lambda_function.%s.arn", resource.Name)
-	// case internal.ResourceTypeAPIGateway:
-	// 	return fmt.Sprintf("aws_api_gateway_rest_api.%s.execution_arn", resource.Name)
+	case internal.ResourceTypeLambda:
+		return fmt.Sprintf("aws_lambda_function.%s.arn", resource.Name)
+	case internal.ResourceTypeAPIGateway:
+		return fmt.Sprintf("aws_apigatewayv2_api.%s.arn", resource.Name)
+	case internal.ResourceTypeEC2:
+		return fmt.Sprintf("aws_instance.%s.arn", resource.Name)
 	default:
 		return "\"*\""
 	}

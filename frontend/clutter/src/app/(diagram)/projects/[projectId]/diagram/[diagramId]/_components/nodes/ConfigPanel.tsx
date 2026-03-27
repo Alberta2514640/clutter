@@ -309,10 +309,8 @@ export default function ConfigPanel({
                       accept=".yml,.yaml"
                       className="hidden"
                       onChange={async (e) => {
-                        const input = e.currentTarget;
-                        const file = input.files?.[0] ?? null;
-                        await handleAnsiblePlaybookUpload(file);
-                        input.value = "";
+                        await handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
+                        e.currentTarget.value = "";
                       }}
                     />
                     <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
@@ -335,6 +333,13 @@ export default function ConfigPanel({
                       />
                       <div className="mt-1 text-xs text-slate-400">
                         This instance ID is stored on this EC2 container node and used as the Ansible target.
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                      <div className="text-xs text-gray-400">Playbook ID</div>
+                      <div className="mt-1 break-all text-sm font-medium text-white">
+                        {selectedNode!.data.ansiblePlaybookId ?? "Not available until upload succeeds"}
                       </div>
                     </div>
 

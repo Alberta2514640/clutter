@@ -1,6 +1,10 @@
+resource "random_id" "{{.ResourceName}}_suffix" {
+  byte_length = 4
+}
+
 # S3 Bucket
 resource "aws_s3_bucket" "{{.ResourceName}}" {
-  bucket = "{{.BucketName}}"
+  bucket = "{{.BucketName}}-${random_id.{{.ResourceName}}_suffix.hex}"
 }
 
 {{- if .EnableVersioning}}

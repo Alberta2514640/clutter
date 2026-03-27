@@ -11,12 +11,14 @@ echo "Starting Terraform deploy."
 # TERRAFORM_DIRECTORY
 # CLIENT_ROLE_ARN
 # ASSUME_ROLE_EXTERNAL_ID
+# COMMAND
+# COMMAND_ID
 
 # -------------------------------
 # Log files
 # -------------------------------
 INIT_LOG="/tmp/terraform-init.log"
-APPLY_LOG="/tmp/terraform-apply.log"
+COMMAND_LOG="/tmp/terraform-command.log"
 
 # -------------------------------
 # Error handler
@@ -36,12 +38,31 @@ on_error() {
     echo "----------------------"
   fi
 
-  if [[ -f "$APPLY_LOG" ]]; then
-    echo "Terraform apply output:"
+  if [[ -f "$COMMAND_LOG" ]]; then
+    echo "Terraform command output:"
     echo "-----------------------"
-    cat "$APPLY_LOG"
+    cat "$COMMAND_LOG"
     echo "-----------------------"
   fi
+
+  # Upload state even on failure if state exists
+  # Unset assumed role credentials and go back to using Fargate's own role
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+  if [ -f "/app/terraform.tfstate" ]; then
+    echo "Uploading Terraform state after failure..."
+
+    aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
+      --exclude "*" \
+      --include "*.tfstate" \
+      --include "*.tfstate.backup" \
+      --include ".terraform.lock.hcl" \
+      --sse AES256 || true
+  fi
+
+  # Upload logs on failure
+  upload_logs
 
   exit "$exit_code"
 }
@@ -49,10 +70,50 @@ on_error() {
 trap on_error ERR
 
 # -------------------------------
+# Upload logs
+# -------------------------------
+upload_logs() {
+  LOG_S3_PATH="s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY/logs/$COMMAND_ID"
+  
+  echo "Uploading logs to $LOG_S3_PATH ..."
+  
+  # Upload init.log
+  if [[ -f "$INIT_LOG" ]]; then
+    aws s3 cp "$INIT_LOG" "$LOG_S3_PATH/init.log" --sse AES256 || true
+  fi
+
+  # Upload command.log
+  if [[ -f "$COMMAND_LOG" ]]; then
+    aws s3 cp "$COMMAND_LOG" "$LOG_S3_PATH/command.log" --sse AES256 || true
+  fi
+}
+
+# -------------------------------
 # Fetch Terraform code
 # -------------------------------
 echo "Downloading Terraform from S3."
-aws s3 sync "s3://clutter-us-west-2-446fe866/$TERRAFORM_DIRECTORY" /app
+aws s3 sync "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" /app
+
+# Check to see if Terraform file exists
+if [ -z "$(ls -A /app)" ]; then
+  echo "ERROR: No Terraform files found in S3 path."
+  exit 1
+fi
+
+# -------------------------------
+# Fetch Lambda bootstrap.zip
+# -------------------------------
+echo "Downloading bootstrap.zip."
+
+aws s3 cp "s3://$S3_TEMPLATES_NAME/templates/zip/bootstrap.zip" /app/bootstrap.zip
+
+# Verify it exists
+if [ ! -f "/app/bootstrap.zip" ]; then
+  echo "ERROR: Failed to download bootstrap.zip"
+  exit 1
+fi
+
+echo "bootstrap.zip downloaded successfully."
 
 # -------------------------------
 # Assume customer role
@@ -69,10 +130,10 @@ export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessK
 export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
 
 INIT_LOG="/tmp/terraform-init.log"
-APPLY_LOG="/tmp/terraform-apply.log"
+COMMAND_LOG="/tmp/terraform-command.log"
 
 # -------------------------------
-# Terraform Init
+# Run Terraform Init
 # -------------------------------
 echo "Initializing Terraform."
 INIT_START_TIME=$(date +%s)
@@ -91,23 +152,54 @@ cat "$INIT_LOG"
 echo "----------------------"
 
 # -------------------------------
-# Terraform Apply
+# Run Terraform Command
 # -------------------------------
-echo "Applying Terraform."
-APPLY_START_TIME=$(date +%s)
+echo "Running Terraform Command."
+COMMAND_START_TIME=$(date +%s)
 
-terraform apply -auto-approve >"$APPLY_LOG" 2>&1
+if [ "$COMMAND" = "apply" ]; then
+  terraform apply \
+  -auto-approve \
+  -var="aws_region=$AWS_REGION" >"$COMMAND_LOG" 2>&1
+elif [ "$COMMAND" = "destroy" ]; then
+  terraform destroy \
+  -auto-approve \
+  -var="aws_region=$AWS_REGION" >"$COMMAND_LOG" 2>&1
+else
+  echo "Invalid COMMAND: $COMMAND"
+  exit 1
+fi
 
-APPLY_END_TIME=$(date +%s)
-APPLY_DURATION=$((APPLY_END_TIME - APPLY_START_TIME))
-APPLY_MIN=$((APPLY_DURATION / 60))
-APPLY_SEC=$((APPLY_DURATION % 60))
+COMMAND_END_TIME=$(date +%s)
+COMMAND_DURATION=$((COMMAND_END_TIME - COMMAND_START_TIME))
+COMMAND_MIN=$((COMMAND_DURATION / 60))
+COMMAND_SEC=$((COMMAND_DURATION % 60))
 
-echo "Terraform apply time: ${APPLY_MIN}m ${APPLY_SEC}s"
-echo "Terraform apply output:"
+echo "Terraform command time: ${COMMAND_MIN}m ${COMMAND_SEC}s"
+echo "Terraform command output:"
 echo "-----------------------"
-cat "$APPLY_LOG"
+cat "$COMMAND_LOG"
 echo "-----------------------"
+
+# -------------------------------
+# Upload Terraform state
+# -------------------------------
+echo "-----------------------"
+echo "Uploading state back to S3..."
+echo "-----------------------"
+# Unset assumed role credentials and go back to using Fargate's own role
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
+  --exclude "*" \
+  --include "*.tfstate" \
+  --include "*.tfstate.backup" \
+  --include ".terraform.lock.hcl" \
+  --sse AES256
+
+# Upload logs on success
+upload_logs
 
 # -------------------------------
 # Totals
@@ -117,5 +209,5 @@ TOTAL_DURATION=$((TOTAL_END_TIME - TOTAL_START_TIME))
 TOTAL_MIN=$((TOTAL_DURATION / 60))
 TOTAL_SEC=$((TOTAL_DURATION % 60))
 
-echo "Terraform deploy complete."
+echo "Terraform command complete."
 echo "Total time taken: ${TOTAL_MIN}m ${TOTAL_SEC}s"

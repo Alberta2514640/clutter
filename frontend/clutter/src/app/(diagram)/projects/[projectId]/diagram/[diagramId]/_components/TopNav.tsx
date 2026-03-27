@@ -8,15 +8,13 @@ type TopNavProps = {
   onSave: () => void;
   onBack?: () => void;
   onDeploy?: () => void;
-  onDestroy?: () => void;
   isDeploying?: boolean;
-  isDestroying?: boolean;
   dirty: boolean;
   isSaving?: boolean;
   nameDisabled?: boolean;
 };
 
-export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, onDestroy, isDeploying, isDestroying, dirty, isSaving, nameDisabled }: TopNavProps) {
+export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, isDeploying, dirty, isSaving, nameDisabled }: TopNavProps) {
   const canSave = dirty && !isSaving;
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -102,18 +100,6 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
               : "bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90",
           ].join(" ")}>
           {isDeploying ? "Deploying…" : "Deploy"}
-        </Button>
-        <Button
-          onClick={onDestroy}
-          disabled={isDestroying}
-          className={[
-            "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
-            isDestroying
-              ? "bg-white/10 text-white/60 cursor-not-allowed"
-              : "bg-gradient-to-br from-red-600 to-rose-600 hover:opacity-90",
-          ].join(" ")}
-        >
-          {isDestroying ? "Destroying…" : "Destroy"}
         </Button>
       </div>
     </div>

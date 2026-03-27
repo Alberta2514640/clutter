@@ -169,3 +169,146 @@ resource "aws_s3_object" "terraform_deployer_role_template" {
   etag = filemd5("${path.module}/uploads/client_side_terraform_deployer_role.yaml")
 
 }
+
+resource "aws_s3_object" "common_lambda_boostrap_zip" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key = "templates/zip/bootstrap.zip"
+  source = "${path.module}/uploads/bootstrap.zip"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/bootstrap.zip")
+
+}
+
+resource "aws_s3_object" "apigateway_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/apigateway/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/apigateway/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/apigateway/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "apigateway_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/apigateway/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/apigateway/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/apigateway/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "dynamodb_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/dynamodb/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/dynamodb/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/dynamodb/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "dynamodb_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/dynamodb/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/dynamodb/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/dynamodb/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "ec2_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/ec2/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/ec2/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/ec2/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "ec2_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/ec2/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/ec2/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/ec2/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "lambda_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/lambda/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/lambda/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/lambda/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "lambda_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/lambda/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/lambda/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/lambda/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "s3_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/s3/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/s3/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/s3/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "s3_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/s3/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/s3/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/s3/outputs.tf.tmpl")
+
+}

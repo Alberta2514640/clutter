@@ -92,13 +92,7 @@ export const diagramApi = {
   // POST /terraform-command-runner
   runTerraform: async (
     token: string,
-    input: {
-      organizationId: string;
-      projectId: string;
-      diagramId: string;
-      accountAccessRoleId: string;
-      command: "apply" | "destroy" | "plan";
-    }
+    input: { organizationId: string; projectId: string; diagramId: string; command: "apply" | "destroy" | "plan" }
   ): Promise<void> => {
     await apiFetch<unknown>("/terraform-command-runner", token, {
       method: "POST",

@@ -52,15 +52,33 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Action   = "sts:AssumeRole"
         Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
       },
+      # ----------- CLUTTER S3 (READ + WRITE STATE) -----------
       {
-        Effect   = "Allow"
-        Action   = "s3:ListBucket"
-        Resource = var.s3_clutter
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = var.s3_clutter_arn
       },
       {
-        Effect   = "Allow"
-        Action   = "s3:GetObject"
-        Resource = "${var.s3_clutter}/*"
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = "${var.s3_clutter_arn}/*"
+      },
+      # ----------- TEMPLATES S3 (READ ONLY) -----------
+      {
+        Effect = "Allow"
+        Action = "s3:ListBucket"
+        Resource = var.s3_templates_arn
+      },
+      {
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = "${var.s3_templates_arn}/zip/*"
       }
     ]
   })
@@ -107,7 +125,9 @@ resource "aws_ecs_task_definition" "terraform_deployer" {
 
       environment = [
         { name = "TF_IN_AUTOMATION", value = "true" },
-        { name = "TF_CLI_ARGS", value = "-no-color -input=false" }
+        { name = "TF_CLI_ARGS", value = "-no-color -input=false" },
+        { name = "S3_CLUTTER_NAME", value = var.s3_clutter_name },
+        { name = "S3_TEMPLATES_NAME", value = var.s3_templates_name }
       ]
 
       essential = true
@@ -170,8 +190,8 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
           "s3:GetBucketLocation"
         ]
         Resource = [
-          var.s3_clutter,
-          "${var.s3_clutter}/*"
+          var.s3_clutter_arn,
+          "${var.s3_clutter_arn}/*"
         ]
       },
 
@@ -269,7 +289,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
       }
 
       environment = [
-        { name = "S3_BUCKET_NAME", value = var.s3_clutter_bucket_name },
+        { name = "S3_BUCKET_NAME", value = var.s3_clutter_name },
         { name = "AWS_DEFAULT_REGION", value = var.aws_region },
         { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string }
       ]

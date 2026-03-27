@@ -1,4 +1,4 @@
-package internal
+package generic
 
 import (
 	"crypto/rand"
