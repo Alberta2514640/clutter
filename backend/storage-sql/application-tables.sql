@@ -118,7 +118,7 @@ CREATE TABLE public.diagram_deployment_logs (
     status command_status NOT NULL DEFAULT 'RUNNING',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    PRIMARY KEY (diagram_id, command_id),
+    PRIMARY KEY (diagram_id, command_id)
 );
 
 -- ============================
