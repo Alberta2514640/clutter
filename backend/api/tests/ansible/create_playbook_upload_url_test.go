@@ -36,7 +36,7 @@ func TestValidatePlaybookFileName_RejectsInvalidPathsAndExtensions(t *testing.T)
 
 func TestBuildPlaybookObjectKey_UsesUserScopedPrefix(t *testing.T) {
 	key := uploadutils.BuildPlaybookObjectKey("org-123", "proj-456", "diag-789", "My Playbook.yml", "upload-abc")
-	want := "orgs/org-123/projects/proj-456/diagrams/diag-789/playbooks/upload-abc-my-playbook.yml"
+	want := "org-123/proj-456/diag-789/playbooks/upload-abc-my-playbook.yml"
 	if key != want {
 		t.Fatalf("expected object key %q, got %q", want, key)
 	}
