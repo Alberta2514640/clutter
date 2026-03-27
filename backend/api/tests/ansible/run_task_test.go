@@ -113,7 +113,7 @@ func TestSanitizeError_PreservesNonSensitiveMessages(t *testing.T) {
 func TestValidateAnsibleMessage_AcceptsValidMessage(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-123",
-		"playbook_s3_key":     "playbooks/user-1/upload-abc-site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": `["i-0abc123def456"]`,
 	}
 	if err := runtaskutils.ValidateAnsibleMessage(msg); err != nil {
@@ -134,7 +134,7 @@ func TestValidateAnsibleMessage_RejectsMissingPlaybookKey(t *testing.T) {
 func TestValidateAnsibleMessage_RejectsMissingTargetInstanceIDs(t *testing.T) {
 	msg := map[string]string{
 		"job_id":          "job-123",
-		"playbook_s3_key": "playbooks/user-1/upload-abc-site.yml",
+		"playbook_s3_key": "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 	}
 	if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
 		t.Fatal("expected error for missing target_instance_ids, got nil")
@@ -232,7 +232,7 @@ func TestValidateTerraformMessage_RejectsPathTraversalInDirectory(t *testing.T) 
 func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/upload-abc-site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": "i-0abc123",
 		"extra_vars":          "",
 	}
@@ -257,7 +257,7 @@ func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_UsesLaunchTypeFargate(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
 	}
 
@@ -274,7 +274,7 @@ func TestBuildAnsibleRunTaskInput_UsesLaunchTypeFargate(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
 	}
 
@@ -292,7 +292,7 @@ func TestBuildAnsibleRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_AssignsPublicIP(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
 	}
 
@@ -307,7 +307,7 @@ func TestBuildAnsibleRunTaskInput_AssignsPublicIP(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_SetsContainerName(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
 	}
 
@@ -325,7 +325,7 @@ func TestBuildAnsibleRunTaskInput_SetsContainerName(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-xyz",
-		"playbook_s3_key":     "playbooks/user-1/upload-abc-site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": "i-0abc123",
 		"extra_vars":          `{"env":"prod"}`,
 	}
@@ -342,7 +342,7 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 	if envMap["JOB_ID"] != "job-xyz" {
 		t.Errorf("JOB_ID: got %q", envMap["JOB_ID"])
 	}
-	if envMap["PLAYBOOK_S3_KEY"] != "playbooks/user-1/upload-abc-site.yml" {
+	if envMap["PLAYBOOK_S3_KEY"] != "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml" {
 		t.Errorf("PLAYBOOK_S3_KEY: got %q", envMap["PLAYBOOK_S3_KEY"])
 	}
 	if envMap["EXTRA_VARS"] != `{"env":"prod"}` {
@@ -356,7 +356,7 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": `["i-0aaa","i-0bbb","i-0ccc"]`,
 	}
 
@@ -376,7 +376,7 @@ func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
 func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 	msg := map[string]string{
 		"job_id":              "job-abc",
-		"playbook_s3_key":     "playbooks/user-1/site.yml",
+		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0aaa,i-0bbb",
 	}
 

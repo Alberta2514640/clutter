@@ -31,13 +31,13 @@ func ValidatePlaybookFileName(fileName string) (string, error) {
 }
 
 // ExtractOrgIDFromPlaybookKey parses the org ID from a key of the form
-// orgs/{orgID}/projects/{projectID}/diagrams/{diagramID}/playbooks/{filename}
+// {orgID}/{projectID}/{diagramID}/playbooks/{filename}
 func ExtractOrgIDFromPlaybookKey(key string) (string, error) {
-	parts := strings.SplitN(key, "/", 3)
-	if len(parts) < 3 || parts[0] != "orgs" || parts[1] == "" {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) < 2 || parts[0] == "" {
 		return "", fmt.Errorf("invalid playbook key format")
 	}
-	return parts[1], nil
+	return parts[0], nil
 }
 
 func BuildPlaybookObjectKey(orgID, projectID, diagramID, fileName, uploadID string) string {
@@ -55,5 +55,5 @@ func BuildPlaybookObjectKey(orgID, projectID, diagramID, fileName, uploadID stri
 		baseName = "playbook"
 	}
 
-	return fmt.Sprintf("orgs/%s/projects/%s/diagrams/%s/playbooks/%s-%s%s", orgID, projectID, diagramID, uploadID, baseName, ext)
+	return fmt.Sprintf("%s/%s/%s/playbooks/%s-%s%s", orgID, projectID, diagramID, uploadID, baseName, ext)
 }

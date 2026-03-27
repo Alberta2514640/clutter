@@ -8,7 +8,7 @@ import (
 )
 
 func TestExtractOrgIDFromPlaybookKey_ValidKey(t *testing.T) {
-	key := "orgs/org-123/projects/proj-456/diagrams/diag-789/playbooks/upload-abc-main.yml"
+	key := "org-123/proj-456/diag-789/playbooks/upload-abc-main.yml"
 	got, err := uploadutils.ExtractOrgIDFromPlaybookKey(key)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -21,8 +21,8 @@ func TestExtractOrgIDFromPlaybookKey_ValidKey(t *testing.T) {
 func TestExtractOrgIDFromPlaybookKey_InvalidKeys(t *testing.T) {
 	cases := []string{
 		"",
-		"projects/proj-456/diagrams/diag-789/playbooks/main.yml",
-		"orgs//projects/proj-456/playbooks/main.yml",
+		"no-slash-at-all",
+		"/proj-456/diag-789/playbooks/main.yml",
 		"just-a-filename.yml",
 	}
 	for _, key := range cases {
@@ -95,37 +95,37 @@ func TestBuildPlaybookObjectKey(t *testing.T) {
 			name:      "normal yaml file",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "deploy.yml", uploadID: "uuid-abc",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-abc-deploy.yml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-abc-deploy.yml",
 		},
 		{
 			name:      "yaml extension preserved",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "setup.yaml", uploadID: "uuid-xyz",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-xyz-setup.yaml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-xyz-setup.yaml",
 		},
 		{
 			name:      "mixed case lowercased",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "MyPlaybook.YML", uploadID: "uuid-1",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-1-myplaybook.yml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-1-myplaybook.yml",
 		},
 		{
 			name:      "special chars replaced with dash",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "my playbook!.yml", uploadID: "uuid-2",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-2-my-playbook.yml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-2-my-playbook.yml",
 		},
 		{
 			name:      "all special chars falls back to playbook",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "!!!.yml", uploadID: "uuid-3",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-3-playbook.yml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-3-playbook.yml",
 		},
 		{
 			name:      "repeated special chars collapsed",
 			orgID:     "org-1", projectID: "proj-2", diagramID: "diag-3",
 			fileName: "a   b.yml", uploadID: "uuid-4",
-			wantKey: "orgs/org-1/projects/proj-2/diagrams/diag-3/playbooks/uuid-4-a-b.yml",
+			wantKey: "org-1/proj-2/diag-3/playbooks/uuid-4-a-b.yml",
 		},
 	}
 	for _, tc := range cases {

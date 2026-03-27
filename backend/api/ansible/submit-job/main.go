@@ -187,7 +187,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
 		}
 	} else {
-		// Extract org ID from key prefix (orgs/{orgID}/projects/...)
+		// Extract org ID from key prefix ({orgID}/{projectID}/...)
 		playbookOrgID, err = uploadutils.ExtractOrgIDFromPlaybookKey(body.PlaybookS3Key)
 		if err != nil {
 			return generic.Response(http.StatusBadRequest, generic.Json{
