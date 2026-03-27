@@ -98,16 +98,19 @@ upload_logs() {
 update_status() {
   local status=$1
 
+  END_TIME=$(date +%s)
+  DURATION=$((END_TIME - TOTAL_START_TIME))
+
   echo "Updating deployment status to $status..."
 
-  psql "$PSQL_CONNECTION_STRING" \
-    -v ON_ERROR_STOP=1 \
-    -c "
-      UPDATE public.diagram_deployment_logs
-      SET status = '$status'
-      WHERE diagram_id = '$DIAGRAM_ID'
-        AND command_id = '$COMMAND_ID';
-    " || echo "Warning: failed to update deployment status"
+  psql "$PSQL_CONNECTION_STRING" -v ON_ERROR_STOP=1 -c "
+  UPDATE public.diagram_deployment_logs
+  SET 
+    status = '$status',
+    duration_seconds = $DURATION
+  WHERE diagram_id = '$DIAGRAM_ID'
+    AND command_id = '$COMMAND_ID';
+  " || echo "Warning: failed to update deployment status"
 }
 
 # -------------------------------
@@ -227,14 +230,6 @@ upload_logs
 # Mark SUCCESS
 # -------------------------------
 update_status "SUCCESS"
-
-# -------------------------------
-# Totals
-# -------------------------------
-TOTAL_END_TIME=$(date +%s)
-TOTAL_DURATION=$((TOTAL_END_TIME - TOTAL_START_TIME))
-TOTAL_MIN=$((TOTAL_DURATION / 60))
-TOTAL_SEC=$((TOTAL_DURATION % 60))
 
 echo "Terraform command complete."
 echo "Total time taken: ${TOTAL_MIN}m ${TOTAL_SEC}s"
