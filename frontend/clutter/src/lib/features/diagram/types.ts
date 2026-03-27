@@ -50,7 +50,21 @@ export type TerraformCommandInput = {
   organizationId: string;
   projectId: string;
   diagramId: string;
+  accountAccessRoleId: string;
   command: "apply" | "destroy" | "plan";
+};
+
+export type TerraformLogApiItem = {
+  id?: string;
+  timestamp?: string;
+  createdAt?: string;
+  message: string;
+};
+
+export type TerraformLogEntry = {
+  id: string;
+  timestamp: Date;
+  message: string;
 };
 
 export type ApiEnvelope<T> = { data: T; message?: string };
