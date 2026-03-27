@@ -1,5 +1,12 @@
 // lib/features/projects/api.ts
-import type { ApiEnvelope, CreateProjectInput, Project, UpdateProjectInput } from "./types";
+import type {
+  ApiEnvelope,
+  CreateProjectInput,
+  GetTerraformLogsInput,
+  Project,
+  TerraformLogsResponse,
+  UpdateProjectInput,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
@@ -70,5 +77,26 @@ export const projectsApi = {
       token,
       { method: "DELETE" }
     );
+  },
+
+  // GET /terraform-engine/logs?orgId=...&projId=...&diagramId=...
+  getTerraformLogs: async (token: string, input: GetTerraformLogsInput): Promise<TerraformLogsResponse> => {
+    const qs = new URLSearchParams({
+      orgId: input.orgId,
+      projId: input.projId,
+      diagramId: input.diagramId,
+    });
+
+    const json = await apiFetch<ApiEnvelope<TerraformLogsResponse> | TerraformLogsResponse>(
+      `/terraform-engine/logs?${qs.toString()}`,
+      token,
+      { method: "GET" }
+    );
+
+    if (json && typeof json === "object" && "data" in json) {
+      return json.data as TerraformLogsResponse;
+    }
+
+    return json as TerraformLogsResponse;
   },
 };

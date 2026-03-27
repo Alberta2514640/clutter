@@ -1,7 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Organization } from "@/lib/features/organization/types";
 import { useProjects } from "@/lib/features/projects/hooks";
-import type { Run } from "@/lib/features/runs/types";
 import { useMe } from "@/lib/features/user/hooks";
 import type { UserData } from "@/lib/features/user/types";
 import { AlertCircle } from "lucide-react";
@@ -15,11 +14,10 @@ import StatsCards from "./StatsCards";
 interface DashboardContentProps {
   userData: UserData | null;
   organization: Organization | null;
-  recentRuns: Run[];
   error: string | null;
 }
 
-export default function DashboardContent({ userData, organization, recentRuns, error }: DashboardContentProps) {
+export default function DashboardContent({ userData, organization, error }: DashboardContentProps) {
   const meQ = useMe();
 
   const token = meQ.data?.token ?? null;
@@ -47,7 +45,7 @@ export default function DashboardContent({ userData, organization, recentRuns, e
       />
 
       <ProjectsSection projects={projects} />
-      <ActivitySection runs={recentRuns} />
+      <ActivitySection token={token} organizationId={organization?.id ?? null} projects={projects} />
     </div>
   );
 }

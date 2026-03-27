@@ -25,6 +25,27 @@ export type UpdateProjectInput = {
   description?: string;
 };
 
+export type GetTerraformLogsInput = {
+  orgId: string;
+  projId: string;
+  diagramId: string;
+};
+
+export type TerraformLogNode = {
+  name?: string;
+  type?: string;
+  path?: string;
+  children?: TerraformLogNode[];
+  [key: string]: unknown;
+};
+
+export type TerraformLogsResponse =
+  | TerraformLogNode
+  | TerraformLogNode[]
+  | Record<string, unknown>
+  | string[]
+  | null;
+
 export type ApiEnvelope<T> = {
   data: T;
   message?: string;

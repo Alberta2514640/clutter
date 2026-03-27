@@ -7,4 +7,6 @@ export const projectKeys = {
   // single project
   details: () => [...projectKeys.all, "detail"] as const,
   detail: (organizationId: string, projectId: string) => [...projectKeys.details(), organizationId, projectId] as const,
+  terraformLogs: (orgId: string, projId: string, diagramId: string) =>
+    [...projectKeys.all, "terraform-logs", orgId, projId, diagramId] as const,
 };
