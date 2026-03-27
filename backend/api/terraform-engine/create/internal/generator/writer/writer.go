@@ -55,7 +55,7 @@ func (w *TerraformWriter) WriteToS3(ctx context.Context, tf *internal.GeneratedT
 			return fmt.Errorf("missing org/project/diagram id for s3 path (org=%q project=%q diagram=%q)", tf.OrgID, tf.ProjectID, tf.DiagramID)
 		}
 
-		key := fmt.Sprintf("%s/%s/%s/%s", tf.OrgID, tf.ProjectID, tf.DiagramID, filename)
+		key := fmt.Sprintf("%s/%s/%s/terraform/%s", tf.OrgID, tf.ProjectID, tf.DiagramID, filename)
 		_, err := w.s3Client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket:               aws.String(w.bucketName),
 			Key:                  aws.String(key),
