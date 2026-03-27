@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
@@ -52,12 +53,18 @@ func (g *S3Generator) Generate(node generic.DiagramNode, resourceName string) (s
 		return "", fmt.Errorf("failed to load s3 template: %w", err)
 	}
 
+	// S3 bucket names must be lowercase with hyphens, no underscores
+	bucketName := strings.ReplaceAll(
+		strings.ToLower(generic.GetString(node.Variables, "resource_name", "")),
+		"_", "-",
+	)
+
 	// Map diagram variables to template variables
 	vars := map[string]interface{}{
-		"ResourceName":       resourceName,
-		"BucketName":         generic.GetString(node.Variables, "resource_name", ""),
-		"EnableVersioning":   generic.GetBool(node.Variables, "enable_versioning", false),
-		"BlockPublicAccess":  generic.GetBool(node.Variables, "block_public_access", true),
+		"ResourceName":      resourceName,
+		"BucketName":        bucketName,
+		"EnableVersioning":  generic.GetBool(node.Variables, "enable_versioning", false),
+		"BlockPublicAccess": generic.GetBool(node.Variables, "block_public_access", true),
 	}
 
 	// Render template

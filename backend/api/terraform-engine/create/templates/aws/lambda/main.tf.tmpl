@@ -29,7 +29,7 @@ resource "aws_lambda_function" "{{.ResourceName}}" {
   s3_key    = "{{.S3Key}}"
 {{- else if .Filename}}
   filename         = "{{.Filename}}"
-  source_code_hash = filebase64sha256("{{.Filename}}")
+  source_code_hash = fileexists("{{.Filename}}") ? filebase64sha256("{{.Filename}}") : null
 {{- end}}
 
 {{- if .EnvironmentVariables}}

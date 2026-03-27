@@ -1,0 +1,7 @@
+output "{{.ResourceName}}_arn" {
+  value = aws_dynamodb_table.{{.ResourceName}}.arn
+}
+
+output "{{.ResourceName}}_name" {
+  value = aws_dynamodb_table.{{.ResourceName}}.name
+}

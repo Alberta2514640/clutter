@@ -1,0 +1,7 @@
+output "{{.ResourceName}}_id" {
+  value = aws_instance.{{.ResourceName}}.id
+}
+
+output "{{.ResourceName}}_public_ip" {
+  value = aws_instance.{{.ResourceName}}.public_ip
+}

@@ -53,6 +53,13 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 	}
 
 	// Map diagram variables to template variables
+	s3Bucket := generic.GetString(node.Variables, "s3_bucket", "")
+	filename := generic.GetString(node.Variables, "filename", "")
+	// Default to a placeholder zip so Terraform doesn't error on apply
+	if s3Bucket == "" && filename == "" {
+		filename = "bootstrap.zip"
+	}
+
 	vars := map[string]interface{}{
 		"ResourceName": resourceName,
 		"FunctionName": generic.GetString(node.Variables, "resource_name", ""),
@@ -61,9 +68,9 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 		"Runtime":      generic.GetString(node.Variables, "runtime", "provided.al2"),
 		"Architecture": generic.GetString(node.Variables, "architecture", "arm64"),
 		"MemorySize":   generic.GetInt(node.Variables, "memory_size", 128),
-		"S3Bucket":     generic.GetString(node.Variables, "s3_bucket", ""),
+		"S3Bucket":     s3Bucket,
 		"S3Key":        generic.GetString(node.Variables, "s3_key", ""),
-		"Filename":     generic.GetString(node.Variables, "filename", ""),
+		"Filename":     filename,
 	}
 
 	// Add environment variables if present
