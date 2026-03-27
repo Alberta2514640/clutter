@@ -489,6 +489,52 @@ module "terraform-engine-create-lambda" {
 }
 
 # ==================================
+# Deployment logs Lambda Functions
+# ==================================
+
+module "terraform-engine-logs-get-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-logs-get"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:ListBucket",
+    "s3:GetObject"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-get:*",
+    "arn:aws:s3:::${var.terraform_output_bucket}",
+    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+  ]
+  zip_dir_slice = "terraform-engine/logs/get"
+  environment_variables = {
+    S3_BUCKET_NAME         = var.terraform_output_bucket
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
+module "terraform-engine-logs-url-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-logs-url"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:GetObject"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-url:*",
+    "arn:aws:s3:::${var.terraform_output_bucket}/*"
+  ]
+  zip_dir_slice = "terraform-engine/logs/url"
+  environment_variables = {
+    S3_BUCKET_NAME         = var.terraform_output_bucket
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
+# ==================================
 # Ansible Engine Lambda Functions
 # ==================================
 
@@ -858,6 +904,35 @@ module "terraform-engine-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.terraform-engine-api-path.resource_id
   http_methods = ["POST", "GET"]
+}
+
+# Terraform logs
+module "terraform-engine-logs-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-api-path.resource_id
+  path_part   = "logs"
+}
+
+module "terraform-engine-logs-url-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-logs-api-path.resource_id
+  path_part   = "url"
+}
+
+module "terraform-engine-logs-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-logs-api-path.resource_id
+  http_methods = ["GET"]
+}
+
+module "terraform-engine-logs-url-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-logs-url-api-path.resource_id
+  http_methods = ["GET"]
 }
 
 # Ansible Engine
@@ -1284,6 +1359,32 @@ module "terraform-command-runner-api-integration" {
   path              = module.terraform-command-runner-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.terraform-command-runner-model.model_name
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+module "terraform-engine-logs-get-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-logs-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-engine-logs-get-lambda.invoke_arn
+  function_name     = module.terraform-engine-logs-get-lambda.function_name
+  path_part         = module.terraform-engine-logs-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-logs-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+module "terraform-engine-logs-url-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-logs-url-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-engine-logs-url-lambda.invoke_arn
+  function_name     = module.terraform-engine-logs-url-lambda.function_name
+  path_part         = module.terraform-engine-logs-url-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-logs-url-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
