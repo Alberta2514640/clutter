@@ -54,10 +54,10 @@ output "ansible_ecr_repository_url" {
 
 output "ansible_task_role_arn" {
   description = "ARN of the Ansible runner Fargate task role (for iam:PassRole scoping)"
-  value       = aws_iam_role.ansible_runner_task.arn
+  value       = aws_iam_role.terraform_deployer_task.arn
 }
 
 output "ansible_task_role_unique_id" {
   description = "Unique ID of the Ansible runner task role (for aws:userId conditions in bucket policies)"
-  value       = aws_iam_role.ansible_runner_task.unique_id
+  value       = aws_iam_role.terraform_deployer_task.unique_id
 }

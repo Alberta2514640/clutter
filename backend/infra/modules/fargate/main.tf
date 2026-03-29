@@ -52,11 +52,12 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Action   = "sts:AssumeRole"
         Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
       },
-      # ----------- CLUTTER S3 (READ + WRITE STATE) -----------
+      # ----------- CLUTTER S3 (READ + WRITE STATE + ANSIBLE) -----------
       {
         Effect = "Allow"
         Action = [
-          "s3:ListBucket"
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
         ]
         Resource = var.s3_clutter_arn
       },
@@ -79,6 +80,66 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Effect = "Allow"
         Action = "s3:GetObject"
         Resource = "${var.s3_templates_arn}/zip/*"
+      },
+      # ----------- EC2 (Ansible runner) -----------
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:StopInstances"
+        ]
+        Resource = "*"
+      },
+      # ----------- SSM Session Manager (Ansible runner) -----------
+      {
+        Effect   = "Allow"
+        Action   = "ssm:StartSession"
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "ssm:StartSession"
+        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
+        Condition = {
+          StringEquals = {
+            "ssm:resourceTag/ManagedBy" = "Ansible"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:TerminateSession",
+          "ssm:ResumeSession"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:DescribeSessions",
+          "ssm:DescribeInstanceInformation",
+          "ssm:GetConnectionStatus"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      },
+      # ----------- PostgreSQL (Ansible runner - Supabase job status updates) -----------
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:DescribeDBInstances"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -160,110 +221,6 @@ resource "aws_ecr_repository" "ansible_runner" {
   image_tag_mutability  = "IMMUTABLE"
 }
 
-resource "aws_iam_role" "ansible_runner_task" {
-  name = "AnsibleRunnerFargateTaskRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect    = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_policy" "ansible_runner_task_policy" {
-  name = "AnsibleRunnerFargateTaskPolicy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      # STS — assume the client-provided IAM role in their account
-      {
-        Effect   = "Allow"
-        Action   = "sts:AssumeRole"
-        Resource = "arn:aws:iam::*:role/AllowClutterToAnsibleRole-*"
-      },
-      # S3 — playbook download, log upload, and SSM connection plugin file transfer
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
-        ]
-        Resource = [
-          var.s3_clutter_arn,
-          "${var.s3_clutter_arn}/*"
-        ]
-      },
-
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeInstances",
-          "ec2:StopInstances"
-        ]
-        Resource = "*"
-      },
-      # SSM Session Manager — start sessions on the SSM document (no tag condition)
-      {
-        Effect   = "Allow"
-        Action   = "ssm:StartSession"
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
-      },
-      # SSM Session Manager — start sessions on EC2 instances tagged ManagedBy=Ansible
-      {
-        Effect   = "Allow"
-        Action   = "ssm:StartSession"
-        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
-        Condition = {
-          StringEquals = {
-            "ssm:resourceTag/ManagedBy" = "Ansible"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:TerminateSession",
-          "ssm:ResumeSession"
-        ]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:DescribeSessions",
-          "ssm:DescribeInstanceInformation",
-          "ssm:GetConnectionStatus"
-        ]
-        Resource = "*"
-      },
-      # SSM Session Manager data channel — required for the WebSocket
-      # transport that community.aws.aws_ssm connection plugin uses
-      {
-        Effect = "Allow"
-        Action = [
-          "ssmmessages:CreateControlChannel",
-          "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel",
-          "ssmmessages:OpenDataChannel"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ansible_runner_task_attach" {
-  role       = aws_iam_role.ansible_runner_task.name
-  policy_arn = aws_iam_policy.ansible_runner_task_policy.arn
-}
-
 resource "aws_cloudwatch_log_group" "ansible_runner" {
   name              = "/ecs/ansible-runner"
   retention_in_days = 14
@@ -278,7 +235,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
   memory                   = 2048
 
   execution_role_arn = aws_iam_role.ecs_execution.arn
-  task_role_arn      = aws_iam_role.ansible_runner_task.arn
+  task_role_arn      = aws_iam_role.terraform_deployer_task.arn
 
   container_definitions = jsonencode([
     {
