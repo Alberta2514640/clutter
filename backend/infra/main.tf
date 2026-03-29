@@ -615,7 +615,7 @@ module "ansible-get-job-logs-lambda" {
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-get-job-logs:*",
     module.s3.clutter_bucket_arn,
-    "${module.s3.clutter_bucket_arn}/logs/*",
+    "${module.s3.clutter_bucket_arn}/*",
   ]
   zip_dir_slice = "ansible/get-job-logs"
   environment_variables = {
@@ -649,6 +649,7 @@ module "ansible-create-playbook-upload-url-lambda" {
 module "ansible-run-task-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "ansible-run-task"
+  timeout       = 480
   actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",

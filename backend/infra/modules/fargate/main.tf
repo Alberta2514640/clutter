@@ -179,6 +179,12 @@ resource "aws_iam_policy" "ansible_runner_task_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # STS — assume the client-provided IAM role in their account
+      {
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = "arn:aws:iam::*:role/AllowClutterToAnsibleRole-*"
+      },
       # S3 — playbook download, log upload, and SSM connection plugin file transfer
       {
         Effect = "Allow"

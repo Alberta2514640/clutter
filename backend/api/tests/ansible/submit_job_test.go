@@ -7,28 +7,39 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 )
 
-func TestExtractOrgIDFromPlaybookKey_ValidKey(t *testing.T) {
+func TestExtractPathComponentsFromPlaybookKey_ValidKey(t *testing.T) {
 	key := "org-123/proj-456/diag-789/playbooks/upload-abc-main.yml"
-	got, err := uploadutils.ExtractOrgIDFromPlaybookKey(key)
+	orgID, projectID, diagramID, err := uploadutils.ExtractPathComponentsFromPlaybookKey(key)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	if got != "org-123" {
-		t.Fatalf("expected org-123, got %q", got)
+	if orgID != "org-123" {
+		t.Fatalf("expected orgID org-123, got %q", orgID)
+	}
+	if projectID != "proj-456" {
+		t.Fatalf("expected projectID proj-456, got %q", projectID)
+	}
+	if diagramID != "diag-789" {
+		t.Fatalf("expected diagramID diag-789, got %q", diagramID)
 	}
 }
 
-func TestExtractOrgIDFromPlaybookKey_InvalidKeys(t *testing.T) {
-	cases := []string{
-		"",
-		"no-slash-at-all",
-		"/proj-456/diag-789/playbooks/main.yml",
-		"just-a-filename.yml",
+func TestExtractPathComponentsFromPlaybookKey_InvalidKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"empty", ""},
+		{"no slashes", "no-slash-at-all"},
+		{"only two parts", "org-123/proj-456"},
+		{"empty org", "/proj-456/diag-789/playbooks/main.yml"},
+		{"empty project", "org-123//diag-789/playbooks/main.yml"},
+		{"empty diagram", "org-123/proj-456//playbooks/main.yml"},
 	}
-	for _, key := range cases {
-		t.Run(key, func(t *testing.T) {
-			if _, err := uploadutils.ExtractOrgIDFromPlaybookKey(key); err == nil {
-				t.Fatalf("expected error for key %q", key)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, _, err := uploadutils.ExtractPathComponentsFromPlaybookKey(tc.key); err == nil {
+				t.Fatalf("expected error for key %q", tc.key)
 			}
 		})
 	}

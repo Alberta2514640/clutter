@@ -243,6 +243,11 @@ func startAndWaitForEC2Instances(ctx context.Context, ec2Client *ec2.Client, ins
 	}
 
 	log.Printf("EC2 instances %v are running", instanceIDs)
+
+	// SSM agent takes ~30s to register after EC2 reaches "running" state.
+	log.Printf("Waiting 45s for SSM agent to register on instances %v...", instanceIDs)
+	time.Sleep(45 * time.Second)
+
 	return nil
 }
 
