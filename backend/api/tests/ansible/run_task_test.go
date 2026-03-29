@@ -115,8 +115,8 @@ func TestValidateAnsibleMessage_AcceptsValidMessage(t *testing.T) {
 		"job_id":              "job-123",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": `["i-0abc123def456"]`,
-		"role_arn":            "arn",
-		"assume_role_external_id": "ext",
+		"role_arn":            "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc12345",
+		"assume_role_external_id": "ext-id",
 	}
 	if err := runtaskutils.ValidateAnsibleMessage(msg); err != nil {
 		t.Fatalf("expected no error for valid message, got: %v", err)
@@ -350,8 +350,8 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 		"org_id":              "org-1",
 		"project_id":          "proj-1",
 		"diagram_id":          "diag-1",
-		"role_arn":            "arn",
-		"assume_role_external_id": "ext",
+		"role_arn":            "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc12345",
+		"assume_role_external_id": "ext-id",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput(
@@ -383,6 +383,12 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 	}
 	if envMap["DIAGRAM_ID"] != "diag-1" {
 		t.Errorf("DIAGRAM_ID: got %q", envMap["DIAGRAM_ID"])
+	}
+	if envMap["CLIENT_ROLE_ARN"] != msg["role_arn"] {
+		t.Errorf("CLIENT_ROLE_ARN: got %q", envMap["CLIENT_ROLE_ARN"])
+	}
+	if envMap["ASSUME_ROLE_EXTERNAL_ID"] != msg["assume_role_external_id"] {
+		t.Errorf("ASSUME_ROLE_EXTERNAL_ID: got %q", envMap["ASSUME_ROLE_EXTERNAL_ID"])
 	}
 }
 

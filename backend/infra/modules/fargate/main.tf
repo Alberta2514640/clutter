@@ -50,7 +50,10 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
       {
         Effect   = "Allow"
         Action   = "sts:AssumeRole"
-        Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
+        Resource = [
+          "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*",
+          "arn:aws:iam::*:role/AllowClutterToAnsibleRole-*"
+        ]
       },
       # ----------- CLUTTER S3 (READ + WRITE STATE + ANSIBLE) -----------
       {
