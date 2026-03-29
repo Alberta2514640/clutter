@@ -1,8 +1,8 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_repository" "terraform_deployer" {
-  name                  = "clutter-terraform-deployer"
-  image_tag_mutability  = "IMMUTABLE"
+  name                 = "clutter-terraform-deployer"
+  image_tag_mutability = "IMMUTABLE"
 }
 
 resource "aws_iam_role" "ecs_execution" {
@@ -50,10 +50,7 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
       {
         Effect   = "Allow"
         Action   = "sts:AssumeRole"
-        Resource = [
-          "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*",
-          "arn:aws:iam::*:role/AllowClutterToAnsibleRole-*"
-        ]
+        Resource = "arn:aws:iam::*:role/AllowClutterToDeployTerraformRole-*"
       },
       # ----------- CLUTTER S3 (READ + WRITE STATE + ANSIBLE) -----------
       {
@@ -75,13 +72,13 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
       },
       # ----------- TEMPLATES S3 (READ ONLY) -----------
       {
-        Effect = "Allow"
-        Action = "s3:ListBucket"
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
         Resource = var.s3_templates_arn
       },
       {
-        Effect = "Allow"
-        Action = "s3:GetObject"
+        Effect   = "Allow"
+        Action   = "s3:GetObject"
         Resource = "${var.s3_templates_arn}/zip/*"
       },
       # ----------- EC2 (Ansible runner) -----------
@@ -220,8 +217,8 @@ resource "aws_security_group" "terraform_deployer" {
 # ===============================================================
 
 resource "aws_ecr_repository" "ansible_runner" {
-  name                  = "clutter-ansible-runner"
-  image_tag_mutability  = "IMMUTABLE"
+  name                 = "clutter-ansible-runner"
+  image_tag_mutability = "IMMUTABLE"
 }
 
 resource "aws_cloudwatch_log_group" "ansible_runner" {
