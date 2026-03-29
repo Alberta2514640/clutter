@@ -156,20 +156,6 @@ resource "aws_s3_bucket_policy" "templates_policy" {
 }
 
 
-# Object - Client-side Ansible Runner Role Template
-resource "aws_s3_object" "ansible_runner_role_template" {
-
-  bucket = aws_s3_bucket.templates.id
-
-  key    = "templates/cloudformation/client_side_ansible_runner_role.yaml"
-  source = "${path.module}/uploads/client_side_ansible_runner_role.yaml"
-
-  server_side_encryption = "AES256"
-
-  etag = filemd5("${path.module}/uploads/client_side_ansible_runner_role.yaml")
-
-}
-
 # Object - Client-side Terraform Deployer Role Template
 resource "aws_s3_object" "terraform_deployer_role_template" {
 

@@ -20,7 +20,7 @@ func TestBuildLogObjectKey_ProducesExpectedFormat(t *testing.T) {
 		{
 			name:      "standard IDs",
 			orgID:     "org-123", projectID: "proj-456", diagramID: "diag-789", jobID: "job-abc",
-			want: "org-123/proj-456/diag-789/logs/job-abc/ansible.log",
+			want: "org-123/proj-456/diag-789/playbooks/logs/job-abc.log",
 		},
 		{
 			name:      "uuid-style IDs",
@@ -28,7 +28,7 @@ func TestBuildLogObjectKey_ProducesExpectedFormat(t *testing.T) {
 			projectID: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
 			diagramID: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
 			jobID:     "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-			want:      "550e8400-e29b-41d4-a716-446655440000/6ba7b810-9dad-11d1-80b4-00c04fd430c8/f47ac10b-58cc-4372-a567-0e02b2c3d479/logs/7c9e6679-7425-40de-944b-e07fc1f90ae7/ansible.log",
+			want:      "550e8400-e29b-41d4-a716-446655440000/6ba7b810-9dad-11d1-80b4-00c04fd430c8/f47ac10b-58cc-4372-a567-0e02b2c3d479/playbooks/logs/7c9e6679-7425-40de-944b-e07fc1f90ae7.log",
 		},
 	}
 	for _, tc := range cases {
@@ -44,7 +44,7 @@ func TestBuildLogObjectKey_ProducesExpectedFormat(t *testing.T) {
 // ── uploadutils.ExtractOrgIDFromLogKey ─────────────────────────────────────────
 
 func TestExtractOrgIDFromLogKey_ValidKey(t *testing.T) {
-	key := "org-123/proj-456/diag-789/logs/job-abc/ansible.log"
+	key := "org-123/proj-456/diag-789/playbooks/logs/job-abc.log"
 	got, err := uploadutils.ExtractOrgIDFromLogKey(key)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -58,7 +58,7 @@ func TestExtractOrgIDFromLogKey_InvalidKeys(t *testing.T) {
 	cases := []string{
 		"",
 		"no-slash-at-all",
-		"/proj-456/diag-789/logs/job-abc/ansible.log",
+		"/proj-456/diag-789/playbooks/logs/job-abc.log",
 		"just-a-filename.log",
 	}
 	for _, key := range cases {
@@ -73,7 +73,7 @@ func TestExtractOrgIDFromLogKey_InvalidKeys(t *testing.T) {
 // ── uploadutils.ExtractPathComponentsFromLogKey ────────────────────────────────
 
 func TestExtractPathComponentsFromLogKey_ValidKey(t *testing.T) {
-	key := "org-123/proj-456/diag-789/logs/job-abc/ansible.log"
+	key := "org-123/proj-456/diag-789/playbooks/logs/job-abc.log"
 	orgID, projectID, diagramID, err := uploadutils.ExtractPathComponentsFromLogKey(key)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -98,9 +98,9 @@ func TestExtractPathComponentsFromLogKey_InvalidKeys(t *testing.T) {
 		{"no slashes", "no-slash-at-all"},
 		{"only two parts", "org-123/proj-456"},
 		{"only three parts", "org-123/proj-456/diag-789"},
-		{"empty org", "/proj-456/diag-789/logs/job-abc/ansible.log"},
-		{"empty project", "org-123//diag-789/logs/job-abc/ansible.log"},
-		{"empty diagram", "org-123/proj-456//logs/job-abc/ansible.log"},
+		{"empty org", "/proj-456/diag-789/playbooks/logs/job-abc.log"},
+		{"empty project", "org-123//diag-789/playbooks/logs/job-abc.log"},
+		{"empty diagram", "org-123/proj-456//playbooks/logs/job-abc.log"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

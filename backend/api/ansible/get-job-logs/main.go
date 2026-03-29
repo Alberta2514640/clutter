@@ -104,6 +104,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusNotFound, resp)
 	}
 
+	if _, _, _, err := uploadutils.ExtractPathComponentsFromLogKey(*logS3Key); err != nil {
+		log.Printf("ERROR: invalid log_s3_key format for job %s: %s", jobID, *logS3Key)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to retrieve log file",
+		})
+	}
+
 	bucketName := os.Getenv("S3_BUCKET_NAME")
 	if bucketName == "" {
 		return generic.Response(http.StatusInternalServerError, generic.Json{

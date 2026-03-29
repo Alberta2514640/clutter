@@ -23,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var ec2IDPattern = regexp.MustCompile(`^i-[0-9a-f]{8,17}$`)
+
 type SubmitJobRequest struct {
 	ConfigID            string            `json:"config_id"`
 	AccountAccessRoleId string            `json:"account_access_role_id"`
@@ -82,14 +84,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate playbook_s3_key to prevent path traversal (only when provided directly)
+	// Validate playbook_s3_key matches expected format {uuid}/{uuid}/{uuid}/playbooks/{filename}
 	if body.PlaybookS3Key != "" {
-		if strings.Contains(body.PlaybookS3Key, "..") ||
-			strings.Contains(body.PlaybookS3Key, "~") ||
-			strings.HasPrefix(body.PlaybookS3Key, "/") ||
-			strings.HasPrefix(body.PlaybookS3Key, "\\") {
+		if _, _, _, err := uploadutils.ExtractPathComponentsFromPlaybookKey(body.PlaybookS3Key); err != nil {
 			return generic.Response(http.StatusBadRequest, generic.Json{
-				"message": "playbook_s3_key contains invalid path",
+				"message": "playbook_s3_key has invalid format",
 			})
 		}
 	}
@@ -107,7 +106,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	var playbookDiagramID string
 
 	// Validate target_instance_ids are valid EC2 instance ID format
-	ec2IDPattern := regexp.MustCompile(`^i-[0-9a-f]{8,17}$`)
 	for _, id := range body.TargetInstanceIDs {
 		if !ec2IDPattern.MatchString(id) {
 			return generic.Response(http.StatusBadRequest, generic.Json{

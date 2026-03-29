@@ -8,6 +8,11 @@ import (
 
 var invalidPlaybookChars = regexp.MustCompile(`[^a-z0-9._-]+`)
 var repeatedDash = regexp.MustCompile(`-+`)
+var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func isValidUUID(s string) bool {
+	return uuidPattern.MatchString(strings.ToLower(s))
+}
 
 func ValidatePlaybookFileName(fileName string) (string, error) {
 	trimmed := strings.TrimSpace(fileName)
@@ -43,8 +48,8 @@ func ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory *string) (string
 		return "", fmt.Errorf("no S3 path available")
 	}
 	parts := strings.SplitN(s3Path, "/", 2)
-	if parts[0] == "" {
-		return "", fmt.Errorf("empty org ID in S3 path")
+	if parts[0] == "" || !isValidUUID(parts[0]) {
+		return "", fmt.Errorf("invalid org ID in S3 path")
 	}
 	return parts[0], nil
 }
@@ -53,7 +58,7 @@ func ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory *string) (string
 // from a key of the form {orgID}/{projectID}/{diagramID}/playbooks/{filename}
 func ExtractPathComponentsFromPlaybookKey(key string) (orgID, projectID, diagramID string, err error) {
 	parts := strings.Split(key, "/")
-	if len(parts) < 5 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+	if len(parts) < 5 || !isValidUUID(parts[0]) || !isValidUUID(parts[1]) || !isValidUUID(parts[2]) {
 		return "", "", "", fmt.Errorf("invalid playbook key format: expected {orgID}/{projectID}/{diagramID}/playbooks/{filename}")
 	}
 	return parts[0], parts[1], parts[2], nil
@@ -78,13 +83,13 @@ func BuildPlaybookObjectKey(orgID, projectID, diagramID, fileName, uploadID stri
 }
 
 // BuildLogObjectKey builds the S3 object key for job logs
-// Format: {orgID}/{projectID}/{diagramID}/logs/{job_id}/ansible.log
+// Format: {orgID}/{projectID}/{diagramID}/playbooks/logs/{job_id}.log
 func BuildLogObjectKey(orgID, projectID, diagramID, jobID string) string {
-	return fmt.Sprintf("%s/%s/%s/logs/%s/ansible.log", orgID, projectID, diagramID, jobID)
+	return fmt.Sprintf("%s/%s/%s/playbooks/logs/%s.log", orgID, projectID, diagramID, jobID)
 }
 
 // ExtractOrgIDFromLogKey parses the org ID from a log key of the form
-// {orgID}/{projectID}/{diagramID}/logs/{jobID}/ansible.log
+// {orgID}/{projectID}/{diagramID}/playbooks/logs/{jobID}.log
 func ExtractOrgIDFromLogKey(key string) (string, error) {
 	parts := strings.SplitN(key, "/", 2)
 	if len(parts) < 2 || parts[0] == "" {
@@ -94,11 +99,11 @@ func ExtractOrgIDFromLogKey(key string) (string, error) {
 }
 
 // ExtractPathComponentsFromLogKey parses org, project, and diagram IDs
-// from a key of the form {orgID}/{projectID}/{diagramID}/logs/{jobID}/ansible.log
+// from a key of the form {orgID}/{projectID}/{diagramID}/playbooks/logs/{jobID}.log
 func ExtractPathComponentsFromLogKey(key string) (orgID, projectID, diagramID string, err error) {
 	parts := strings.Split(key, "/")
-	if len(parts) < 6 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return "", "", "", fmt.Errorf("invalid log key format: expected {orgID}/{projectID}/{diagramID}/logs/{jobID}/ansible.log")
+	if len(parts) < 6 || !isValidUUID(parts[0]) || !isValidUUID(parts[1]) || !isValidUUID(parts[2]) {
+		return "", "", "", fmt.Errorf("invalid log key format: expected {orgID}/{projectID}/{diagramID}/playbooks/logs/{jobID}.log")
 	}
 	return parts[0], parts[1], parts[2], nil
 }

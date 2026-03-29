@@ -41,6 +41,11 @@ CLIENT_SESSION_TOKEN=""
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
 GENERATE_INVENTORY_MAX_RETRIES=3
 PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
+if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
+    echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
+    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
+    exit 1
+fi
 
 # Create log directory and file immediately so all output is captured,
 # even if Ansible never runs (e.g. early failures in inventory generation).
@@ -95,7 +100,7 @@ upload_logs() {
     local retry_delay=2
 
     if [ -f "$LOG_FILE" ]; then
-        local log_key="${ORG_ID:-unknown}/${PROJECT_ID:-unknown}/${DIAGRAM_ID:-unknown}/logs/${JOB_ID:-unknown}/ansible.log"
+        local log_key="${ORG_ID:-unknown}/${PROJECT_ID:-unknown}/${DIAGRAM_ID:-unknown}/playbooks/logs/${JOB_ID:-unknown}.log"
 
         # Retry loop for S3 upload with exponential backoff.
         # Use Fargate task role by unsetting assumed role credentials contextually using env.
@@ -172,22 +177,8 @@ PYEOF
 }
 
 # ---- Trap: Handle signals for graceful shutdown ----
-stop_ec2_instances() {
-    if [ -n "${TARGET_INSTANCE_IDS:-}" ] && [ -n "${CLIENT_ACCESS_KEY_ID:-}" ]; then
-        local id_array
-        IFS=',' read -r -a id_array <<< "$TARGET_INSTANCE_IDS"
-        echo "[entrypoint] Stopping EC2 instances: ${id_array[*]}"
-        AWS_ACCESS_KEY_ID="$CLIENT_ACCESS_KEY_ID" \
-        AWS_SECRET_ACCESS_KEY="$CLIENT_SECRET_ACCESS_KEY" \
-        AWS_SESSION_TOKEN="$CLIENT_SESSION_TOKEN" \
-        aws ec2 stop-instances --instance-ids "${id_array[@]}" --region "$AWS_DEFAULT_REGION" 2>&1 || \
-            echo "[entrypoint] WARNING: Failed to stop EC2 instances (non-fatal)"
-    fi
-}
-
 cleanup() {
-    echo "[entrypoint] Received shutdown signal. Stopping EC2 instances and uploading logs."
-    stop_ec2_instances
+    echo "[entrypoint] Received shutdown signal. Uploading logs."
     update_job_status "FAILED" "Task was terminated by signal"
     upload_logs || true
     exit 1
@@ -362,7 +353,6 @@ set -e
 # Handle timeout exit code (124)
 if [ $EXIT_CODE -eq 124 ]; then
     echo "[entrypoint] ERROR: Playbook execution timed out after ${PLAYBOOK_TIMEOUT}s"
-    stop_ec2_instances
     update_job_status "FAILED" "Playbook execution timeout after ${PLAYBOOK_TIMEOUT}s"
     upload_logs || true
     exit 1
@@ -370,13 +360,11 @@ fi
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo "[entrypoint] Ansible playbook completed successfully"
-    stop_ec2_instances
     update_job_status "COMPLETED"
     upload_logs || true
     exit 0
 else
     echo "[entrypoint] Ansible playbook failed with exit code: $EXIT_CODE"
-    stop_ec2_instances
     update_job_status "FAILED" "Ansible playbook exited with code $EXIT_CODE"
     upload_logs || true
     exit $EXIT_CODE
