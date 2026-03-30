@@ -46,7 +46,7 @@ resource "aws_lambda_function" "lambda" {
   function_name    = var.function_name
   role             = aws_iam_role.lambda-role.arn
   handler          = "main"
-  timeout          = 3
+  timeout          = var.timeout
   filename         = local.source_code_zip_dir
   source_code_hash = filebase64sha256(local.source_code_zip_dir)
   runtime          = "provided.al2"

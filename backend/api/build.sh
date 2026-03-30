@@ -69,9 +69,11 @@ get_latest_mod_time() {
   fi
 }
 
-# Compute latest modification time in generic folder
+# Compute latest modification time in generic and shared ansible folders
 GENERIC_DIR="${ROOT_DIR}/generic"
 GENERIC_MOD_TIME=$(get_latest_mod_time "$GENERIC_DIR")
+ANSIBLE_SHARED_DIR="${ROOT_DIR}/ansible/shared"
+ANSIBLE_SHARED_MOD_TIME=$(get_latest_mod_time "$ANSIBLE_SHARED_DIR")
 
 for dir in "${LAMBDA_DIRS[@]}"; do
   SRC_DIR="${ROOT_DIR}/${dir}"
@@ -96,7 +98,8 @@ for dir in "${LAMBDA_DIRS[@]}"; do
   # 3) any file in generic/ changed
   # 4) any file in internal/ changed
   if [[ ! -f "$BINARY" ]] || [[ "$MAIN_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || \
-     [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$INTERNAL_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then
+     [[ "$GENERIC_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || [[ "$INTERNAL_MOD_TIME" -gt "$BINARY_MOD_TIME" ]] || \
+     [[ "$ANSIBLE_SHARED_MOD_TIME" -gt "$BINARY_MOD_TIME" ]]; then
      
     echo "   → Compiling Go source..."
     GOOS=$GOOS GOARCH=$GOARCH go build -o "$BINARY" "$MAIN_GO"

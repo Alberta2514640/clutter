@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -61,15 +62,14 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	var taskArn, errorMessage *string
 	var playbookS3Key, terraformDirectory, roleArn, assumeRoleExternalId *string
 
-	// Query job filtered by user_id (ensures user can only access their own jobs)
 	err = conn.QueryRow(ctx, `
 		SELECT id, COALESCE(job_type, 'ansible') as job_type, status, created_at, updated_at,
 		       extra_vars, task_arn, error_message,
 		       target_instance_ids, playbook_s3_key,
 		       terraform_directory, role_arn, assume_role_external_id
 		FROM jobs
-		WHERE id = $1 AND created_by = $2
-	`, jobID, userID).Scan(
+		WHERE id = $1
+	`, jobID).Scan(
 		&id, &jobType, &status, &createdAt, &updatedAt,
 		&extraVars, &taskArn, &errorMessage,
 		&targetInstanceIDs, &playbookS3Key,
@@ -78,8 +78,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Return 404 whether job doesn't exist or belongs to another user
-			// This prevents user enumeration
 			return generic.Response(http.StatusNotFound, generic.Json{
 				"message": "job not found",
 			})
@@ -88,6 +86,20 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to retrieve job",
 		})
+	}
+
+	// Enforce Organization-Level Access
+	orgID, err := uploadutils.ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory)
+	if err != nil {
+		return generic.Response(http.StatusNotFound, generic.Json{"message": "job not found"})
+	}
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
+		var authErr *generic.AuthorizationError
+		if errors.As(err, &authErr) {
+			return generic.Response(http.StatusNotFound, generic.Json{"message": "job not found"})
+		}
+		log.Printf("ERROR: failed to check org membership for job %s: %v", jobID, err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "failed to retrieve job"})
 	}
 
 	job := generic.BuildJobResponse(
@@ -102,3 +114,4 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data": job,
 	})
 }
+

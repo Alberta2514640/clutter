@@ -15,8 +15,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/jackc/pgx/v5"
 )
@@ -34,7 +32,6 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 	}
 
 	ecsClient := ecs.NewFromConfig(awsCfg)
-	ec2Client := ec2.NewFromConfig(awsCfg)
 
 	conn, err := generic.PsqlConnect()
 	if err != nil {
@@ -71,7 +68,7 @@ func handler(ctx context.Context, sqsEvent events.SQSEvent) (events.SQSEventResp
 
 		log.Printf("Processing job %s (type: %s)", jobID, jobType)
 
-		if err := processJob(ctx, conn, ecsClient, ec2Client, msg, jobType, cfg); err != nil {
+		if err := processJob(ctx, conn, ecsClient, msg, jobType, cfg); err != nil {
 			log.Printf("ERROR: failed to process job %s: %v", jobID, err)
 			batchItemFailures = append(batchItemFailures, events.SQSBatchItemFailure{
 				ItemIdentifier: record.MessageId,
@@ -93,7 +90,7 @@ type jobConfig struct {
 }
 
 // processJob routes a job to the appropriate handler based on type
-func processJob(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, ec2Client *ec2.Client, msg map[string]string, jobType string, cfg runtaskutils.RuntimeConfig) error {
+func processJob(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, msg map[string]string, jobType string, cfg runtaskutils.RuntimeConfig) error {
 	var jobCfg jobConfig
 	var validateFn func(map[string]string) error
 	var logFn func()
@@ -159,20 +156,6 @@ func processJob(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, ec2C
 		log.Printf("ERROR: failed to update job status for %s: %v", jobID, err)
 	}
 
-	// For ansible jobs: start target EC2 instances and wait until running
-	if jobType != "terraform" {
-		rawIDs := msg["target_instance_ids"]
-		if rawIDs != "" {
-			var instanceIDs []string
-			if err := json.Unmarshal([]byte(rawIDs), &instanceIDs); err == nil && len(instanceIDs) > 0 {
-				if err := startAndWaitForEC2Instances(ctx, ec2Client, instanceIDs); err != nil {
-					updateJobStatus(ctx, conn, jobID, "FAILED", fmt.Sprintf("failed to start EC2 instances: %v", err))
-					return fmt.Errorf("failed to start EC2 instances: %w", err)
-				}
-			}
-		}
-	}
-
 	subnets := runtaskutils.FilterEmpty(strings.Split(jobCfg.subnetIDsRaw, ","))
 	if len(subnets) == 0 {
 		updateJobStatus(ctx, conn, jobID, "FAILED", "no valid subnet IDs configured")
@@ -219,30 +202,6 @@ func launchECSTask(ctx context.Context, conn *pgx.Conn, ecsClient *ecs.Client, j
 		}
 	}
 
-	return nil
-}
-
-// startAndWaitForEC2Instances starts the given instances and polls until all are running.
-func startAndWaitForEC2Instances(ctx context.Context, ec2Client *ec2.Client, instanceIDs []string) error {
-	_, err := ec2Client.StartInstances(ctx, &ec2.StartInstancesInput{
-		InstanceIds: instanceIDs,
-	})
-	if err != nil {
-		return fmt.Errorf("StartInstances: %w", err)
-	}
-
-	log.Printf("Started EC2 instances %v, waiting for running state...", instanceIDs)
-
-	waiter := ec2.NewInstanceRunningWaiter(ec2Client)
-	if err := waiter.Wait(ctx, &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{
-			{Name: aws.String("instance-id"), Values: instanceIDs},
-		},
-	}, 5*time.Minute); err != nil {
-		return fmt.Errorf("waiting for instances to be running: %w", err)
-	}
-
-	log.Printf("EC2 instances %v are running", instanceIDs)
 	return nil
 }
 

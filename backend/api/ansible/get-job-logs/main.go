@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -57,15 +58,17 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	var status string
 	var logS3Key *string
 	var errorMessage *string
+	var playbookS3Key *string
+	var terraformDirectory *string
 
 	err = conn.QueryRow(ctx, `
-		SELECT status, log_s3_key, error_message
+		SELECT status, log_s3_key, error_message, playbook_s3_key, terraform_directory
 		FROM jobs
-		WHERE id = $1 AND created_by = $2
-	`, jobID, userData.Id).Scan(&status, &logS3Key, &errorMessage)
+		WHERE id = $1
+	`, jobID).Scan(&status, &logS3Key, &errorMessage, &playbookS3Key, &terraformDirectory)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return generic.Response(http.StatusNotFound, generic.Json{
 				"message": "job not found",
 			})
@@ -74,6 +77,20 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to retrieve job",
 		})
+	}
+
+	// Enforce Organization-Level Access
+	orgID, err := uploadutils.ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory)
+	if err != nil {
+		return generic.Response(http.StatusNotFound, generic.Json{"message": "job not found"})
+	}
+	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
+		var authErr *generic.AuthorizationError
+		if errors.As(err, &authErr) {
+			return generic.Response(http.StatusNotFound, generic.Json{"message": "job not found"})
+		}
+		log.Printf("ERROR: failed to check org membership for job %s: %v", jobID, err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "failed to retrieve job"})
 	}
 
 	if logS3Key == nil || *logS3Key == "" {
@@ -85,6 +102,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			resp["error_message"] = *errorMessage
 		}
 		return generic.Response(http.StatusNotFound, resp)
+	}
+
+	if _, _, _, err := uploadutils.ExtractPathComponentsFromLogKey(*logS3Key); err != nil {
+		log.Printf("ERROR: invalid log_s3_key format for job %s: %s", jobID, *logS3Key)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to retrieve log file",
+		})
 	}
 
 	bucketName := os.Getenv("S3_BUCKET_NAME")
@@ -150,3 +174,4 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data": responseData,
 	})
 }
+

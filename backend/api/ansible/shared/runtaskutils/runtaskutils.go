@@ -72,8 +72,8 @@ func LoadRuntimeConfig() RuntimeConfig {
 }
 
 func ValidateAnsibleMessage(msg map[string]string) error {
-	if msg["playbook_s3_key"] == "" || msg["target_instance_ids"] == "" {
-		return fmt.Errorf("missing required Ansible fields: playbook_s3_key or target_instance_ids")
+	if msg["playbook_s3_key"] == "" || msg["target_instance_ids"] == "" || msg["role_arn"] == "" || msg["assume_role_external_id"] == "" {
+		return fmt.Errorf("missing required Ansible fields: playbook_s3_key, target_instance_ids, role_arn, or assume_role_external_id")
 	}
 	if strings.Contains(msg["playbook_s3_key"], "..") ||
 		strings.Contains(msg["playbook_s3_key"], "~") ||
@@ -144,6 +144,11 @@ func BuildAnsibleRunTaskInput(clusterARN, taskDefARN string, subnets []string, s
 						{Name: aws.String("TARGET_INSTANCE_IDS"), Value: aws.String(targetInstanceIDs)},
 						{Name: aws.String("EXTRA_VARS"), Value: aws.String(msg["extra_vars"])},
 						{Name: aws.String("S3_BUCKET_NAME"), Value: aws.String(s3BucketName)},
+						{Name: aws.String("ORG_ID"), Value: aws.String(msg["org_id"])},
+						{Name: aws.String("PROJECT_ID"), Value: aws.String(msg["project_id"])},
+						{Name: aws.String("DIAGRAM_ID"), Value: aws.String(msg["diagram_id"])},
+						{Name: aws.String("CLIENT_ROLE_ARN"), Value: aws.String(msg["role_arn"])},
+						{Name: aws.String("ASSUME_ROLE_EXTERNAL_ID"), Value: aws.String(msg["assume_role_external_id"])},
 					},
 				},
 			},

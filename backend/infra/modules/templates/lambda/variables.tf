@@ -19,3 +19,8 @@ variable "environment_variables" {
   description = "A map of environment variables to set for the Lambda function."
   default     = {}
 }
+variable "timeout" {
+  type        = number
+  description = "Lambda function timeout in seconds."
+  default     = 3
+}

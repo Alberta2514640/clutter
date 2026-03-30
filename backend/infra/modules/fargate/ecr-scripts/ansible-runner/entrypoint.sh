@@ -18,16 +18,34 @@ set -euo pipefail
 #   S3_BUCKET_NAME      - S3 bucket for playbooks and logs
 #   PSQL_CONNECTION_STRING - PostgreSQL connection string for job status updates
 #   AWS_DEFAULT_REGION  - AWS region
+#   ORG_ID              - Organization ID (for org-scoped log paths)
+#   PROJECT_ID          - Project ID (for org-scoped log paths)
+#   DIAGRAM_ID          - Diagram ID (for org-scoped log paths)
 #
 # Optional:
 #   EXTRA_VARS          - JSON string of extra variables for the playbook
+#   PLAYBOOK_TIMEOUT    - Maximum execution time in seconds (default: 3600)
 
 LOG_FILE="/var/log/ansible/ansible.log"
 INVENTORY_FILE="/playbooks/inventory.yml"
 
+# Client role credentials (populated after sts:AssumeRole — used only for
+# EC2 and SSM operations in the client account, NOT for S3 so that the
+# Fargate task role remains the S3 identity and the bucket SSE exemption
+# continues to apply).
+CLIENT_ACCESS_KEY_ID=""
+CLIENT_SECRET_ACCESS_KEY=""
+CLIENT_SESSION_TOKEN=""
+
 # Retry configuration constants (global scope for use in functions and error handlers)
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
 GENERATE_INVENTORY_MAX_RETRIES=3
+PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
+if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
+    echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
+    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
+    exit 1
+fi
 
 # Create log directory and file immediately so all output is captured,
 # even if Ansible never runs (e.g. early failures in inventory generation).
@@ -47,9 +65,13 @@ import os
 import psycopg2
 from datetime import datetime, timezone
 
-conn_string = os.environ['PSQL_CONNECTION_STRING']
 job_id, status, error_message = sys.argv[1], sys.argv[2], sys.argv[3]
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+conn_string = os.environ.get('PSQL_CONNECTION_STRING', '')
+
+if not conn_string:
+    print("[update_job_status] WARNING: PSQL_CONNECTION_STRING is missing", file=sys.stderr)
+    sys.exit(0)
 
 try:
     with psycopg2.connect(conn_string) as conn:
@@ -78,11 +100,13 @@ upload_logs() {
     local retry_delay=2
 
     if [ -f "$LOG_FILE" ]; then
-        local log_key="logs/${JOB_ID}/ansible.log"
+        local log_key="${ORG_ID:-unknown}/${PROJECT_ID:-unknown}/${DIAGRAM_ID:-unknown}/playbooks/logs/${JOB_ID:-unknown}.log"
 
-        # Retry loop for S3 upload with exponential backoff
+        # Retry loop for S3 upload with exponential backoff.
+        # Use Fargate task role by unsetting assumed role credentials contextually using env.
         while [ $retry_count -lt $max_retries ]; do
-            if aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME}/${log_key}" \
+            if env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+                aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME:-unknown}/${log_key}" \
                 --region "$AWS_DEFAULT_REGION" \
                 --sse AES256 2>&1; then
                 echo "[upload_logs] Log file uploaded successfully to s3://${S3_BUCKET_NAME}/${log_key}"
@@ -98,9 +122,13 @@ import os
 import psycopg2
 from datetime import datetime, timezone
 
-conn_string = os.environ['PSQL_CONNECTION_STRING']
 job_id, log_key = sys.argv[1], sys.argv[2]
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+conn_string = os.environ.get('PSQL_CONNECTION_STRING', '')
+
+if not conn_string:
+    print("[upload_logs] WARNING: PSQL_CONNECTION_STRING is missing", file=sys.stderr)
+    sys.exit(1)
 
 try:
     with psycopg2.connect(conn_string) as conn:
@@ -149,28 +177,17 @@ PYEOF
 }
 
 # ---- Trap: Handle signals for graceful shutdown ----
-stop_ec2_instances() {
-    if [ -n "${TARGET_INSTANCE_IDS:-}" ]; then
-        local ids
-        ids=$(echo "$TARGET_INSTANCE_IDS" | tr ',' ' ')
-        echo "[entrypoint] Stopping EC2 instances: $ids"
-        aws ec2 stop-instances --instance-ids $ids --region "$AWS_DEFAULT_REGION" 2>&1 || \
-            echo "[entrypoint] WARNING: Failed to stop EC2 instances (non-fatal)"
-    fi
-}
-
 cleanup() {
-    echo "[entrypoint] Received shutdown signal. Uploading logs and marking as FAILED."
-    upload_logs || true
+    echo "[entrypoint] Received shutdown signal. Uploading logs."
     update_job_status "FAILED" "Task was terminated by signal"
-    stop_ec2_instances
+    upload_logs || true
     exit 1
 }
 trap cleanup SIGTERM SIGINT
 
 # ---- Validate required env vars ----
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-}}"
-for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION; do
+for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION ORG_ID PROJECT_ID DIAGRAM_ID CLIENT_ROLE_ARN ASSUME_ROLE_EXTERNAL_ID; do
     if [ -z "${!var:-}" ]; then
         echo "[entrypoint] ERROR: Missing required environment variable: $var"
         upload_logs || true
@@ -178,6 +195,14 @@ for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNEC
         exit 1
     fi
 done
+
+# Validate TARGET_INSTANCE_IDS format to prevent injection attacks
+if [[ ! "$TARGET_INSTANCE_IDS" =~ ^i-[0-9a-fA-F]{8,17}(,i-[0-9a-fA-F]{8,17})*$ ]]; then
+    echo "[entrypoint] ERROR: Invalid instance ID format in TARGET_INSTANCE_IDS"
+    upload_logs || true
+    update_job_status "FAILED" "Invalid EC2 instance ID format"
+    exit 1
+fi
 
 echo "[entrypoint] Starting Ansible job: $JOB_ID"
 echo "[entrypoint] Playbook: s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}"
@@ -216,6 +241,34 @@ if ! download_playbook_with_retry; then
     exit 1
 fi
 
+# Assume customer role
+# Credentials are stored in variables — NOT exported to the environment so
+# that all S3 operations (playbook download, log upload, SSM plugin file
+# staging) continue to use the Fargate task-role identity, which is already
+# exempt from the bucket's SSE enforcement policy.
+echo "[entrypoint] Assuming customer role: $CLIENT_ROLE_ARN"
+if ! CREDS=$(aws sts assume-role \
+  --role-arn "$CLIENT_ROLE_ARN" \
+  --role-session-name "clutter-ansible-${JOB_ID}" \
+  --external-id "$ASSUME_ROLE_EXTERNAL_ID" 2>&1); then
+    echo "[entrypoint] ERROR: Failed to assume client role"
+    upload_logs || true
+    update_job_status "FAILED" "Failed to assume client AWS role"
+    exit 1
+fi
+
+# Validate credentials response before parsing to prevent exposure of error messages
+if ! echo "$CREDS" | python3 -c 'import sys, json; d=json.load(sys.stdin); sys.exit(0 if "Credentials" in d else 1)' 2>&1; then
+    echo "[entrypoint] ERROR: Invalid credentials response from STS"
+    upload_logs || true
+    update_job_status "FAILED" "Invalid STS credentials response"
+    exit 1
+fi
+
+CLIENT_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
+CLIENT_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
+CLIENT_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
+
 # 3. Generate ansible.cfg (configured for SSM, no SSH)
 cat > /playbooks/ansible.cfg << 'ANSIBLECFG'
 [defaults]
@@ -226,6 +279,7 @@ timeout = 60
 forks = 10
 stdout_callback = default
 remote_tmp = /tmp/.ansible/tmp
+allow_unsafe_lookups = False
 
 [privilege_escalation]
 become = True
@@ -244,8 +298,11 @@ generate_inventory_with_retry() {
         if python3 /usr/local/bin/generate_inventory.py \
             --instance-ids "$TARGET_INSTANCE_IDS" \
             --region "$AWS_DEFAULT_REGION" \
-            --s3-bucket "$S3_BUCKET_NAME" \
-            --output "$INVENTORY_FILE" 2>&1; then
+            --output "$INVENTORY_FILE" \
+            --aws-access-key-id "$CLIENT_ACCESS_KEY_ID" \
+            --aws-secret-access-key "$CLIENT_SECRET_ACCESS_KEY" \
+            --aws-session-token "$CLIENT_SESSION_TOKEN" \
+            --s3-bucket "$S3_BUCKET_NAME" 2>&1; then
             return 0
         else
             retry_count=$((retry_count + 1))
@@ -267,34 +324,48 @@ if ! generate_inventory_with_retry; then
     exit 1
 fi
 
-echo "[entrypoint] Generated inventory:"
-cat "$INVENTORY_FILE"
+echo "[entrypoint] Inventory generated at $INVENTORY_FILE"
 
 # 5. Build extra vars argument if provided
-EXTRA_VARS_ARGS=""
+EXTRA_VARS_ARGS=()
 if [ -n "${EXTRA_VARS:-}" ] && [ "$EXTRA_VARS" != "null" ] && [ "$EXTRA_VARS" != "{}" ]; then
     echo "$EXTRA_VARS" > /playbooks/extra_vars.json
-    EXTRA_VARS_ARGS="-e @/playbooks/extra_vars.json"
+    EXTRA_VARS_ARGS=("-e" "@/playbooks/extra_vars.json")
 fi
 
 # 6. Run Ansible playbook
 echo "[entrypoint] Executing ansible-playbook..."
 cd /playbooks
+
+# Verify ansible-playbook is available before execution
+if ! command -v ansible-playbook &>/dev/null; then
+    echo "[entrypoint] ERROR: ansible-playbook command not found"
+    update_job_status "FAILED" "ansible-playbook binary not available"
+    upload_logs || true
+    exit 1
+fi
+
 set +e
-ansible-playbook main.yml $EXTRA_VARS_ARGS -v
+timeout "$PLAYBOOK_TIMEOUT" ansible-playbook main.yml "${EXTRA_VARS_ARGS[@]}" -v
 EXIT_CODE=$?
 set -e
 
+# Handle timeout exit code (124)
+if [ $EXIT_CODE -eq 124 ]; then
+    echo "[entrypoint] ERROR: Playbook execution timed out after ${PLAYBOOK_TIMEOUT}s"
+    update_job_status "FAILED" "Playbook execution timeout after ${PLAYBOOK_TIMEOUT}s"
+    upload_logs || true
+    exit 1
+fi
+
 if [ $EXIT_CODE -eq 0 ]; then
     echo "[entrypoint] Ansible playbook completed successfully"
-    upload_logs || true
     update_job_status "COMPLETED"
-    stop_ec2_instances
+    upload_logs || true
     exit 0
 else
     echo "[entrypoint] Ansible playbook failed with exit code: $EXIT_CODE"
-    upload_logs || true
     update_job_status "FAILED" "Ansible playbook exited with code $EXIT_CODE"
-    stop_ec2_instances
+    upload_logs || true
     exit $EXIT_CODE
 fi

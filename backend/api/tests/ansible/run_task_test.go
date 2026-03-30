@@ -115,29 +115,36 @@ func TestValidateAnsibleMessage_AcceptsValidMessage(t *testing.T) {
 		"job_id":              "job-123",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": `["i-0abc123def456"]`,
+		"role_arn":            "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc12345",
+		"assume_role_external_id": "ext-id",
 	}
 	if err := runtaskutils.ValidateAnsibleMessage(msg); err != nil {
 		t.Fatalf("expected no error for valid message, got: %v", err)
 	}
 }
 
-func TestValidateAnsibleMessage_RejectsMissingPlaybookKey(t *testing.T) {
-	msg := map[string]string{
-		"job_id":              "job-123",
-		"target_instance_ids": `["i-0abc123def456"]`,
+func TestValidateAnsibleMessage_RejectsMissingRequiredFields(t *testing.T) {
+	base := map[string]string{
+		"playbook_s3_key":         "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
+		"target_instance_ids":     `["i-0abc123def456"]`,
+		"role_arn":                "arn:aws:iam::123:role/AnsibleClientRole",
+		"assume_role_external_id": "ext-id",
 	}
-	if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
-		t.Fatal("expected error for missing playbook_s3_key, got nil")
-	}
-}
 
-func TestValidateAnsibleMessage_RejectsMissingTargetInstanceIDs(t *testing.T) {
-	msg := map[string]string{
-		"job_id":          "job-123",
-		"playbook_s3_key": "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
-	}
-	if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
-		t.Fatal("expected error for missing target_instance_ids, got nil")
+	for _, field := range []string{"playbook_s3_key", "target_instance_ids", "role_arn", "assume_role_external_id"} {
+		t.Run("missing "+field, func(t *testing.T) {
+			msg := map[string]string{
+				"job_id":                  "job-123",
+				"playbook_s3_key":         base["playbook_s3_key"],
+				"target_instance_ids":     base["target_instance_ids"],
+				"role_arn":                base["role_arn"],
+				"assume_role_external_id": base["assume_role_external_id"],
+			}
+			delete(msg, field)
+			if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
+				t.Errorf("expected error when %q is absent, got nil", field)
+			}
+		})
 	}
 }
 
@@ -158,6 +165,8 @@ func TestValidateAnsibleMessage_RejectsPathTraversalInPlaybookKey(t *testing.T) 
 				"job_id":              "job-123",
 				"playbook_s3_key":     tc.key,
 				"target_instance_ids": `["i-0abc"]`,
+				"role_arn":            "arn",
+				"assume_role_external_id": "ext",
 			}
 			if err := runtaskutils.ValidateAnsibleMessage(msg); err == nil {
 				t.Errorf("expected path traversal error for key %q, got nil", tc.key)
@@ -235,6 +244,8 @@ func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": "i-0abc123",
 		"extra_vars":          "",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput(
@@ -259,6 +270,8 @@ func TestBuildAnsibleRunTaskInput_UsesLaunchTypeFargate(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
@@ -276,6 +289,8 @@ func TestBuildAnsibleRunTaskInput_ParsesSubnetIDs(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-aaa", "subnet-bbb", "subnet-ccc"}, "sg-1", "bucket", msg)
@@ -294,6 +309,8 @@ func TestBuildAnsibleRunTaskInput_AssignsPublicIP(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
@@ -309,6 +326,8 @@ func TestBuildAnsibleRunTaskInput_SetsContainerName(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0abc123",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
@@ -328,6 +347,11 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/upload-abc-site.yml",
 		"target_instance_ids": "i-0abc123",
 		"extra_vars":          `{"env":"prod"}`,
+		"org_id":              "org-1",
+		"project_id":          "proj-1",
+		"diagram_id":          "diag-1",
+		"role_arn":            "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-abc12345",
+		"assume_role_external_id": "ext-id",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput(
@@ -351,6 +375,21 @@ func TestBuildAnsibleRunTaskInput_PassesJobEnvVarsToContainer(t *testing.T) {
 	if envMap["S3_BUCKET_NAME"] != "my-bucket" {
 		t.Errorf("S3_BUCKET_NAME: got %q", envMap["S3_BUCKET_NAME"])
 	}
+	if envMap["ORG_ID"] != "org-1" {
+		t.Errorf("ORG_ID: got %q", envMap["ORG_ID"])
+	}
+	if envMap["PROJECT_ID"] != "proj-1" {
+		t.Errorf("PROJECT_ID: got %q", envMap["PROJECT_ID"])
+	}
+	if envMap["DIAGRAM_ID"] != "diag-1" {
+		t.Errorf("DIAGRAM_ID: got %q", envMap["DIAGRAM_ID"])
+	}
+	if envMap["CLIENT_ROLE_ARN"] != msg["role_arn"] {
+		t.Errorf("CLIENT_ROLE_ARN: got %q", envMap["CLIENT_ROLE_ARN"])
+	}
+	if envMap["ASSUME_ROLE_EXTERNAL_ID"] != msg["assume_role_external_id"] {
+		t.Errorf("ASSUME_ROLE_EXTERNAL_ID: got %q", envMap["ASSUME_ROLE_EXTERNAL_ID"])
+	}
 }
 
 func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
@@ -358,6 +397,8 @@ func TestBuildAnsibleRunTaskInput_NormalisesJSONArrayTargetIDs(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": `["i-0aaa","i-0bbb","i-0ccc"]`,
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
@@ -378,6 +419,8 @@ func TestBuildAnsibleRunTaskInput_PassesThroughRawTargetIDs(t *testing.T) {
 		"job_id":              "job-abc",
 		"playbook_s3_key":     "org-1/proj-1/diag-1/playbooks/site.yml",
 		"target_instance_ids": "i-0aaa,i-0bbb",
+		"role_arn":            "arn",
+		"assume_role_external_id": "ext",
 	}
 
 	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)

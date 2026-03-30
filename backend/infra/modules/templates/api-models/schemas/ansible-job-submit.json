@@ -1,9 +1,15 @@
 {
   "type": "object",
   "required": [
-    "target_instance_ids"
+    "target_instance_ids",
+    "account_access_role_id"
   ],
   "properties": {
+    "account_access_role_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "UUID of the AWS account access role to use for this job"
+    },
     "config_id": {
       "type": "string",
       "description": "Optional configuration ID for the job"

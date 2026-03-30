@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -22,12 +23,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var ec2IDPattern = regexp.MustCompile(`^i-[0-9a-f]{8,17}$`)
+
 type SubmitJobRequest struct {
-	ConfigID          string            `json:"config_id"`
-	TargetInstanceIDs []string          `json:"target_instance_ids"`
-	PlaybookID        string            `json:"playbook_id,omitempty"`
-	PlaybookS3Key     string            `json:"playbook_s3_key,omitempty"`
-	ExtraVars         map[string]string `json:"extra_vars,omitempty"`
+	ConfigID            string            `json:"config_id"`
+	AccountAccessRoleId string            `json:"account_access_role_id"`
+	TargetInstanceIDs   []string          `json:"target_instance_ids"`
+	PlaybookID          string            `json:"playbook_id,omitempty"`
+	PlaybookS3Key       string            `json:"playbook_s3_key,omitempty"`
+	ExtraVars           map[string]string `json:"extra_vars,omitempty"`
 }
 
 func main() {
@@ -59,6 +63,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "target_instance_ids is required and must not be empty",
 		})
 	}
+	if body.AccountAccessRoleId == "" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "account_access_role_id is required",
+		})
+	}
+	if !generic.IsValidUuid(body.AccountAccessRoleId) {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "account_access_role_id must be a valid UUID",
+		})
+	}
 	if body.PlaybookID == "" && body.PlaybookS3Key == "" {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "either playbook_id or playbook_s3_key is required",
@@ -70,14 +84,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// Validate playbook_s3_key to prevent path traversal (only when provided directly)
+	// Validate playbook_s3_key matches expected format {uuid}/{uuid}/{uuid}/playbooks/{filename}
 	if body.PlaybookS3Key != "" {
-		if strings.Contains(body.PlaybookS3Key, "..") ||
-			strings.Contains(body.PlaybookS3Key, "~") ||
-			strings.HasPrefix(body.PlaybookS3Key, "/") ||
-			strings.HasPrefix(body.PlaybookS3Key, "\\") {
+		if _, _, _, err := uploadutils.ExtractPathComponentsFromPlaybookKey(body.PlaybookS3Key); err != nil {
 			return generic.Response(http.StatusBadRequest, generic.Json{
-				"message": "playbook_s3_key contains invalid path",
+				"message": "playbook_s3_key has invalid format",
 			})
 		}
 	}
@@ -89,11 +100,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	// playbookOrgID is resolved below after DB connection (needed for membership check)
+	// playbookOrgID/ProjectID/DiagramID are resolved below after DB connection
 	var playbookOrgID string
+	var playbookProjectID string
+	var playbookDiagramID string
 
 	// Validate target_instance_ids are valid EC2 instance ID format
-	ec2IDPattern := regexp.MustCompile(`^i-[0-9a-fA-F]{8,17}$`)
 	for _, id := range body.TargetInstanceIDs {
 		if !ec2IDPattern.MatchString(id) {
 			return generic.Response(http.StatusBadRequest, generic.Json{
@@ -102,7 +114,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		}
 	}
 
-	// Validate extra_vars size (limit to 64KB)
+	// Validate extra_vars size (limit to 64KB) and reject Jinja2 template syntax
+	// to prevent template injection when Ansible evaluates --extra-vars values.
 	if body.ExtraVars != nil {
 		extraVarsJSON, err := json.Marshal(body.ExtraVars)
 		if err != nil {
@@ -115,6 +128,14 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			return generic.Response(http.StatusBadRequest, generic.Json{
 				"message": "extra_vars exceeds maximum size of 64KB",
 			})
+		}
+		for k, v := range body.ExtraVars {
+			if strings.Contains(k, "{{") || strings.Contains(k, "{%") ||
+				strings.Contains(v, "{{") || strings.Contains(v, "{%") {
+				return generic.Response(http.StatusBadRequest, generic.Json{
+					"message": "extra_vars keys and values must not contain template syntax",
+				})
+			}
 		}
 	}
 
@@ -172,13 +193,13 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Resolve playbook S3 key and org ID
 	if body.PlaybookID != "" {
-		// Look up s3_key and org_id from the playbooks table
+		// Look up s3_key, org_id, project_id, diagram_id from the playbooks table
 		err = conn.QueryRow(ctx,
-			`SELECT s3_key, org_id FROM playbooks WHERE id = $1`,
+			`SELECT s3_key, org_id, project_id, diagram_id FROM playbooks WHERE id = $1`,
 			body.PlaybookID,
-		).Scan(&body.PlaybookS3Key, &playbookOrgID)
+		).Scan(&body.PlaybookS3Key, &playbookOrgID, &playbookProjectID, &playbookDiagramID)
 		if err != nil {
-			if err == pgx.ErrNoRows {
+			if errors.Is(err, pgx.ErrNoRows) {
 				return generic.Response(http.StatusNotFound, generic.Json{
 					"message": "playbook not found",
 				})
@@ -187,8 +208,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
 		}
 	} else {
-		// Extract org ID from key prefix ({orgID}/{projectID}/...)
-		playbookOrgID, err = uploadutils.ExtractOrgIDFromPlaybookKey(body.PlaybookS3Key)
+		// Extract org/project/diagram IDs from key prefix ({orgID}/{projectID}/{diagramID}/...)
+		playbookOrgID, playbookProjectID, playbookDiagramID, err = uploadutils.ExtractPathComponentsFromPlaybookKey(body.PlaybookS3Key)
 		if err != nil {
 			return generic.Response(http.StatusBadRequest, generic.Json{
 				"message": "playbook_s3_key has invalid format",
@@ -210,11 +231,32 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Verify the authenticated user is a member of the org that owns the playbook
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, playbookOrgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
+		var authErr *generic.AuthorizationError
+		if errors.As(err, &authErr) {
 			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
 		}
 		log.Printf("ERROR: failed to check playbook org membership: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+
+	// Fetch Client Role ARN and External ID
+	var roleArn string
+	var externalId string
+	if err := conn.QueryRow(
+		ctx,
+		`SELECT role_arn, external_id FROM aws_account_access_roles WHERE id = $1 AND organization_id = $2 AND status = 'complete'`,
+		body.AccountAccessRoleId,
+		playbookOrgID,
+	).Scan(&roleArn, &externalId); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "invalid or incomplete account_access_role_id for organization",
+			})
+		}
+		log.Printf("ERROR: failed to retrieve role ARN: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to retrieve client role information",
+		})
 	}
 
 	// Marshal instance IDs and extra vars to JSON
@@ -266,11 +308,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// Prepare SQS message
 	sqsMessage := map[string]string{
-		"job_id":              jobID,
-		"job_type":            "ansible",
-		"playbook_s3_key":     body.PlaybookS3Key,
-		"target_instance_ids": string(instanceIDsJSON),
-		"extra_vars":          string(extraVarsJSON),
+		"job_id":                  jobID,
+		"job_type":                "ansible",
+		"playbook_s3_key":         body.PlaybookS3Key,
+		"target_instance_ids":     string(instanceIDsJSON),
+		"extra_vars":              string(extraVarsJSON),
+		"org_id":                  playbookOrgID,
+		"project_id":              playbookProjectID,
+		"diagram_id":              playbookDiagramID,
+		"role_arn":                roleArn,
+		"assume_role_external_id": externalId,
 	}
 	if body.ConfigID != "" {
 		sqsMessage["config_id"] = body.ConfigID

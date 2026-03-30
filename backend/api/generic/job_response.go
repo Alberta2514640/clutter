@@ -61,9 +61,6 @@ func BuildJobResponse(
 	if roleArn != nil && *roleArn != "" {
 		job["role_arn"] = *roleArn
 	}
-	if assumeRoleExternalId != nil && *assumeRoleExternalId != "" {
-		job["assume_role_external_id"] = *assumeRoleExternalId
-	}
 
 	return job
 }
