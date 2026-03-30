@@ -26,12 +26,14 @@ LAMBDA_DIRS=(
   "terraform-engine/create"
   "terraform-engine/logs/get"
   "terraform-engine/logs/url"
+  "terraform-engine/logs/live"
   "ansible/create-playbook-upload-url"
   "ansible/submit-job"
   "ansible/get-job"
   "ansible/get-job-logs"
   "ansible/list-jobs"
   "ansible/run-task"
+  "resources/get"
 )
 
 # Detect root directory of script

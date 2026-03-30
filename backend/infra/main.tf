@@ -534,6 +534,32 @@ module "terraform-engine-logs-url-lambda" {
   }
 }
 
+module "terraform-engine-logs-live-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-logs-live"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "ecs:DescribeTasks",
+    "logs:GetLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-live:*",
+    module.fargate.ecs_cluster_arn,
+    "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${module.fargate.ecs_cluster_name}/*",
+    "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/terraform-deployer:*"
+  ]
+  zip_dir_slice = "terraform-engine/logs/live"
+  environment_variables = {
+    PSQL_CONNECTION_STRING               = var.psql_connection_string
+    ECS_CLUSTER_NAME                     = module.fargate.ecs_cluster_name
+    TERRAFORM_DEPLOYER_LOG_GROUP         = "/ecs/terraform-deployer"
+    TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX = "ecs"
+    TERRAFORM_DEPLOYER_CONTAINER_NAME    = "terraform-deployer"
+  }
+}
+
 # ==================================
 # Ansible Engine Lambda Functions
 # ==================================
@@ -933,6 +959,20 @@ module "terraform-engine-logs-url-api-cors-compliance" {
   source       = "./modules/templates/api-path-cors-compliance"
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.terraform-engine-logs-url-api-path.resource_id
+  http_methods = ["GET"]
+}
+
+module "terraform-engine-logs-live-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-logs-api-path.resource_id
+  path_part   = "live"
+}
+
+module "terraform-engine-logs-live-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-logs-live-api-path.resource_id
   http_methods = ["GET"]
 }
 
@@ -1386,6 +1426,19 @@ module "terraform-engine-logs-url-api-integration" {
   path_part         = module.terraform-engine-logs-url-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-engine-logs-url-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+module "terraform-engine-logs-live-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-logs-live-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-engine-logs-live-lambda.invoke_arn
+  function_name     = module.terraform-engine-logs-live-lambda.function_name
+  path_part         = module.terraform-engine-logs-live-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-logs-live-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
