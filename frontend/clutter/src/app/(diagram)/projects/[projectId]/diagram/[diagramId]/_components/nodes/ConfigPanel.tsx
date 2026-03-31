@@ -6,24 +6,84 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { DiagramNode } from "@/lib/features/diagram/types";
-import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import {
+  useDiagramEditor,
+  useDiagramEditorActions,
+} from "@/lib/features/diagram/uiStore";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
-import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileToS3 } from "@/lib/features/runs/hooks";
+import {
+  useCreatePlaybookUploadUrl,
+  useSubmitAnsibleJob,
+  useUploadPlaybookFileToS3,
+} from "@/lib/features/runs/hooks";
 import { useMe } from "@/lib/features/user/hooks";
-import type { LogEntry } from "./LogsPanel";
 
+const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const HIDDEN_VARIABLE_NAMES = new Set([
+  "label",
+  "position",
+  "x",
+  "y",
+  "position_x",
+  "position_y",
+  "x_position",
+  "y_position",
+  "pos_x",
+  "pos_y",
+]);
 
-export default function ConfigPanel({
-  diagramId,
-  projectId,
-  onLog,
-}: {
+const formatVariableLabel = (name: string) => {
+  return name
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const getVariableError = (
+  name: string,
+  value: unknown,
+  required: boolean,
+) => {
+  const stringValue = typeof value === "string" ? value.trim() : "";
+
+  if (required) {
+    const isMissing =
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && stringValue === "");
+
+    if (isMissing) {
+      return "This field is required.";
+    }
+  }
+
+  if (
+    name === "resource_name" &&
+    stringValue &&
+    !RESOURCE_NAME_PATTERN.test(stringValue)
+  ) {
+    return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
+  }
+
+  return null;
+};
+
+type ConfigPanelProps = {
   diagramId: string;
   projectId: string;
-  onLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
-}) {
+  accountAccessRoleId: string | null;
+};
+
+export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId, }: ConfigPanelProps) {
   const editor = useDiagramEditor(diagramId);
   const { setNodes, setEdges } = useDiagramEditorActions();
   const meQ = useMe();
@@ -39,7 +99,10 @@ export default function ConfigPanel({
   const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
   const showContent = !!selectedNode;
   const isEc2Node = selectedNode?.data.img?.includes("ec2") ?? false;
-  const ansibleUploadInputId = selectedNode ? `ansible-playbook-upload-${selectedNode.id}` : "ansible-playbook-upload";
+  const ansibleUploadInputId = selectedNode
+    ? `ansible-playbook-upload-${selectedNode.id}`
+    : "ansible-playbook-upload";
+
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -50,10 +113,20 @@ export default function ConfigPanel({
     [supportedResources, selectedNode?.data.label],
   );
 
+  const visibleVariables = useMemo(
+    () =>
+      resourceDef?.variables.filter(
+        (variable) => !HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase()),
+      ) ?? [],
+    [resourceDef?.variables],
+  );
+
   const patchSelectedNode = useCallback(
     (patch: (node: DiagramNode) => DiagramNode) => {
       if (!selectedNode) return;
-      const next = nodes.map((n) => (n.id === selectedNode.id ? patch(n) : n));
+      const next = nodes.map((n) =>
+        n.id === selectedNode.id ? patch(n) : n,
+      );
       setNodes(diagramId, next);
     },
     [diagramId, nodes, selectedNode, setNodes],
@@ -93,9 +166,16 @@ export default function ConfigPanel({
           diagram_id: diagramId,
         });
 
-        const targetUrl = (typeof uploadTarget.upload_url === "string" && uploadTarget.upload_url) || (typeof uploadTarget.url === "string" && uploadTarget.url) || "";
+        const targetUrl =
+          (typeof uploadTarget.upload_url === "string" &&
+            uploadTarget.upload_url) ||
+          (typeof uploadTarget.url === "string" && uploadTarget.url) ||
+          "";
+
         if (!targetUrl) {
-          throw new Error("Upload URL response did not include a usable target URL.");
+          throw new Error(
+            "Upload URL response did not include a usable target URL.",
+          );
         }
 
         await uploadPlaybookFileToS3.mutateAsync({
@@ -109,28 +189,35 @@ export default function ConfigPanel({
             ...n.data,
             ansiblePlaybookName: file.name,
             ansiblePlaybookKey:
-              (typeof uploadTarget.playbook_s3_key === "string" && uploadTarget.playbook_s3_key) ||
+              (typeof uploadTarget.playbook_s3_key === "string" &&
+                uploadTarget.playbook_s3_key) ||
               (typeof uploadTarget.key === "string" && uploadTarget.key) ||
               n.data.ansiblePlaybookKey,
             ansiblePlaybookId:
-              (typeof uploadTarget.playbook_id === "string" && uploadTarget.playbook_id) ||
+              (typeof uploadTarget.playbook_id === "string" &&
+                uploadTarget.playbook_id) ||
               n.data.ansiblePlaybookId,
           },
         }));
 
         setUploadMessage(`Uploaded "${file.name}" for this EC2 container.`);
-        onLog({
-          message: `Uploaded Ansible playbook "${file.name}" for EC2 node "${selectedNode.data.label}".`,
-        });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to upload Ansible playbook.";
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to upload Ansible playbook.";
         setUploadError(message);
-        onLog({
-          message: `Playbook upload failed for EC2 node "${selectedNode.data.label}": ${message}`,
-        });
       }
     },
-    [createPlaybookUploadUrl, diagramId, onLog, patchSelectedNode, projectId, selectedNode, token, uploadPlaybookFileToS3],
+    [
+      createPlaybookUploadUrl,
+      diagramId,
+      patchSelectedNode,
+      projectId,
+      selectedNode,
+      token,
+      uploadPlaybookFileToS3,
+    ],
   );
 
   const handleTargetInstanceIdChange = useCallback(
@@ -157,12 +244,21 @@ export default function ConfigPanel({
     const targetInstanceId = selectedNode.data.ansibleTargetInstanceId?.trim();
 
     if (!playbookId) {
-      setRunError("Upload a playbook first so this EC2 container has a playbook ID.");
+      setRunError(
+        "Upload a playbook first so this EC2 container has a playbook ID.",
+      );
       return;
     }
 
     if (!targetInstanceId) {
-      setRunError("Enter the target EC2 instance ID before running the playbook.");
+      setRunError(
+        "Enter the target EC2 instance ID before running the playbook.",
+      );
+      return;
+    }
+
+    if (!accountAccessRoleId) {
+      setRunError("Connect an AWS account role before submitting an Ansible job.");
       return;
     }
 
@@ -171,6 +267,7 @@ export default function ConfigPanel({
 
     try {
       const response = await submitAnsibleJob.mutateAsync({
+        account_access_role_id: accountAccessRoleId,
         playbook_id: playbookId,
         target_instance_ids: [targetInstanceId],
       });
@@ -184,80 +281,130 @@ export default function ConfigPanel({
         },
       }));
 
-      setRunMessage(`Submitted Ansible job ${response.job_id} for this EC2 container.`);
-      onLog({
-        message: `Queued Ansible job ${response.job_id} for EC2 node "${selectedNode.data.label}" targeting ${targetInstanceId}.`,
-      });
+      setRunMessage(
+        `Submitted Ansible job ${response.job_id} for this EC2 container.`,
+      );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to submit the Ansible job.";
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to submit the Ansible job.";
       setRunError(message);
-      onLog({
-        message: `Ansible job submission failed for EC2 node "${selectedNode.data.label}": ${message}`,
-      });
     }
-  }, [onLog, patchSelectedNode, selectedNode, submitAnsibleJob, token]);
+  }, [
+    accountAccessRoleId,
+    patchSelectedNode,
+    selectedNode,
+    submitAnsibleJob,
+    token,
+  ]);
 
   const handleDeleteSelected = useCallback(() => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
     setNodes(diagramId, nodes.filter((n) => n.id !== nodeId));
-    setEdges(diagramId, edges.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setEdges(
+      diagramId,
+      edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+    );
   }, [diagramId, edges, nodes, selectedNode, setEdges, setNodes]);
 
   return (
-    <aside className={["relative h-full shrink-0 border-l border-slate-800 bg-slate-950/70 backdrop-blur", "transition-[width] duration-200", showContent ? "w-[250px]" : "w-[5px]"].join(" ")}>
+    <aside
+      className={[
+        "relative h-full shrink-0 border-l border-slate-800 bg-slate-950/70 backdrop-blur",
+        "transition-[width] duration-200",
+        showContent ? "w-[380px]" : "w-[5px]",
+      ].join(" ")}
+    >
       {!showContent ? null : (
         <>
-          {/* Header */}
           <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-800 px-3">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="grid h-8 w-8 place-items-center rounded-lg border border-slate-800 bg-slate-900">
                 <Settings className="h-4 w-4 text-slate-300" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-100">Config</div>
-                <div className="truncate text-[11px] text-slate-400">Node Inspector</div>
+                <div className="truncate text-sm font-semibold text-slate-100">
+                  {resourceDef?.displayName ?? selectedNode!.data.label}
+                </div>
+                <div className="truncate text-[11px] text-slate-400">
+                  Configuration
+                </div>
               </div>
             </div>
-            <button onClick={handleClose} className="grid h-8 w-8 place-items-center rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 transition" title="Deselect node" type="button">
+            <button
+              onClick={handleClose}
+              className="grid h-8 w-8 place-items-center rounded-md border border-slate-800 bg-slate-900 transition hover:bg-slate-800"
+              title="Deselect node"
+              type="button"
+            >
               <X className="h-4 w-4 text-slate-300" />
             </button>
           </div>
 
-          {/* Body */}
-          <div className="h-[calc(100%-3.5rem)] flex flex-col">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Node Type Badge */}
+          <div className="flex h-[calc(100%-3.5rem)] flex-col">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
               <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-slate-800 bg-slate-950">
-                  <Image src={selectedNode!.data.img as string} alt="" width={24} height={24} unoptimized />
+                  <Image
+                    src={selectedNode!.data.img as string}
+                    alt=""
+                    width={24}
+                    height={24}
+                    unoptimized
+                  />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs text-gray-400">Type</div>
-                  <div className="truncate text-sm font-medium text-white">{selectedNode!.data.label}</div>
+                  <div className="text-xs text-gray-400">Resource</div>
+                  <div className="truncate text-sm font-medium text-white">
+                    {resourceDef?.displayName ?? selectedNode!.data.label}
+                  </div>
                 </div>
               </div>
 
-              {/* Dynamic Variable Fields */}
-              {resourceDef && resourceDef.variables.length > 0 && (
+              {resourceDef && visibleVariables.length > 0 && (
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Configuration</label>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    Configuration
+                  </label>
                   <div className="space-y-3">
-                    {resourceDef.variables.map((v) => {
+                    {visibleVariables.map((v) => {
                       const val = selectedNode!.data.variables?.[v.name];
-                      const placeholder = v.default != null ? String(v.default) : "";
+                      const placeholder =
+                        v.default != null ? String(v.default) : "";
+                      const fieldError = getVariableError(
+                        v.name,
+                        val,
+                        v.required,
+                      );
+                      const labelText = formatVariableLabel(v.name);
+
                       return (
-                        <div key={v.name}>
-                          <Label className="mb-1 flex items-center gap-1 text-xs text-slate-400">
-                            {v.name}
-                            {v.required && <span className="text-red-400">*</span>}
-                          </Label>
+                        <div
+                          key={v.name}
+                          className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+                        >
+                          <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-slate-300">
+                            <Label>{labelText}</Label>
+                            {v.required ? <span className="text-red-400">*</span> : null}
+                          </div>
+
                           {v.type === "boolean" ? (
                             <Select
                               value={val === undefined ? "" : String(val)}
-                              onValueChange={(s) => handleVariableChange(v.name, s === "true")}
+                              onValueChange={(s) =>
+                                handleVariableChange(v.name, s === "true")
+                              }
                             >
-                              <SelectTrigger className="h-8 border-slate-800 bg-slate-900/40 text-sm text-white">
+                              <SelectTrigger
+                                className={[
+                                  "h-10 rounded-lg bg-slate-950/70 text-sm text-white",
+                                  fieldError
+                                    ? "border-red-500/50 focus:ring-red-500/40"
+                                    : "border-slate-700 focus:ring-teal-500/40",
+                                ].join(" ")}
+                              >
                                 <SelectValue placeholder="— default —" />
                               </SelectTrigger>
                               <SelectContent>
@@ -268,17 +415,38 @@ export default function ConfigPanel({
                           ) : (
                             <Input
                               type={v.type === "number" ? "number" : "text"}
-                              className="h-8 border-slate-800 bg-slate-900/40 text-sm text-white"
+                              className={[
+                                "h-10 rounded-lg bg-slate-950/70 text-sm text-white placeholder:text-slate-500",
+                                fieldError
+                                  ? "border-red-500/50 focus-visible:ring-red-500/40"
+                                  : "border-slate-700 focus-visible:ring-teal-500/40",
+                              ].join(" ")}
                               placeholder={placeholder || v.description}
                               value={val === undefined ? "" : String(val)}
                               onChange={(e) => {
                                 const raw = e.target.value;
-                                handleVariableChange(v.name, raw === "" ? undefined : v.type === "number" ? Number(raw) : raw);
+                                handleVariableChange(
+                                  v.name,
+                                  raw === ""
+                                    ? undefined
+                                    : v.type === "number"
+                                      ? Number(raw)
+                                      : raw,
+                                );
                               }}
                             />
                           )}
+
                           {v.description && (
-                            <p className="mt-1 text-[11px] text-slate-500">{v.description}</p>
+                            <p className="mt-2 text-[11px] text-slate-500">
+                              {v.description}
+                            </p>
+                          )}
+
+                          {fieldError && (
+                            <p className="mt-2 text-[11px] text-red-300">
+                              {fieldError}
+                            </p>
                           )}
                         </div>
                       );
@@ -287,36 +455,49 @@ export default function ConfigPanel({
                 </div>
               )}
 
-              {/* Ansible — EC2 only */}
               {isEc2Node && (
                 <div>
-                  <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Ansible Playbook</div>
+                  <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    Ansible Playbook
+                  </div>
                   <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
                     <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                      <div className="text-xs text-gray-400">Bound EC2 container</div>
-                      <div className="mt-1 text-sm font-medium text-white">{selectedNode!.data.label}</div>
+                      <div className="text-xs text-gray-400">
+                        Bound EC2 container
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-white">
+                        {selectedNode!.data.label}
+                      </div>
                     </div>
+
                     <label
                       htmlFor={ansibleUploadInputId}
                       className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-3 text-sm font-medium text-slate-200 transition hover:border-teal-500/60 hover:bg-slate-900"
                     >
                       <Upload className="h-4 w-4" />
-                      {selectedNode!.data.ansiblePlaybookName ? "Replace playbook for this EC2 container" : "Upload playbook for this EC2 container"}
+                      {selectedNode!.data.ansiblePlaybookName
+                        ? "Replace playbook for this EC2 container"
+                        : "Upload playbook for this EC2 container"}
                     </label>
+
                     <input
                       id={ansibleUploadInputId}
                       type="file"
                       accept=".yml,.yaml"
                       className="hidden"
                       onChange={async (e) => {
-                        await handleAnsiblePlaybookUpload(e.target.files?.[0] ?? null);
+                        await handleAnsiblePlaybookUpload(
+                          e.target.files?.[0] ?? null,
+                        );
                         e.currentTarget.value = "";
                       }}
                     />
+
                     <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
                       <div className="text-xs text-gray-400">Uploaded file</div>
                       <div className="mt-1 text-sm font-medium text-white">
-                        {selectedNode!.data.ansiblePlaybookName ?? "No playbook uploaded yet"}
+                        {selectedNode!.data.ansiblePlaybookName ??
+                          "No playbook uploaded yet"}
                       </div>
                     </div>
 
@@ -327,19 +508,23 @@ export default function ConfigPanel({
                       <input
                         type="text"
                         value={selectedNode!.data.ansibleTargetInstanceId ?? ""}
-                        onChange={(e) => handleTargetInstanceIdChange(e.target.value)}
+                        onChange={(e) =>
+                          handleTargetInstanceIdChange(e.target.value)
+                        }
                         placeholder="i-0a05920cb52c4555d"
                         className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-white transition-colors focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                       />
                       <div className="mt-1 text-xs text-slate-400">
-                        This instance ID is stored on this EC2 container node and used as the Ansible target.
+                        This instance ID is stored on this EC2 container node
+                        and used as the Ansible target.
                       </div>
                     </div>
 
                     <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
                       <div className="text-xs text-gray-400">Playbook ID</div>
                       <div className="mt-1 break-all text-sm font-medium text-white">
-                        {selectedNode!.data.ansiblePlaybookId ?? "Not available until upload succeeds"}
+                        {selectedNode!.data.ansiblePlaybookId ??
+                          "Not available until upload succeeds"}
                       </div>
                     </div>
 
@@ -347,6 +532,7 @@ export default function ConfigPanel({
                       type="button"
                       onClick={handleRunPlaybook}
                       disabled={
+                        !accountAccessRoleId ||
                         !selectedNode!.data.ansiblePlaybookId ||
                         !selectedNode!.data.ansibleTargetInstanceId?.trim() ||
                         createPlaybookUploadUrl.isPending ||
@@ -355,7 +541,8 @@ export default function ConfigPanel({
                       }
                       className={[
                         "flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition",
-                        selectedNode!.data.ansiblePlaybookId && selectedNode!.data.ansibleTargetInstanceId?.trim()
+                        selectedNode!.data.ansiblePlaybookId &&
+                        selectedNode!.data.ansibleTargetInstanceId?.trim()
                           ? "border-teal-500/40 bg-teal-500/10 text-teal-100 hover:bg-teal-500/20"
                           : "border-slate-800 bg-slate-950/80 text-slate-500",
                       ].join(" ")}
@@ -363,17 +550,24 @@ export default function ConfigPanel({
                       <Play className="h-4 w-4" />
                       {submitAnsibleJob.isPending
                         ? "Submitting Ansible job..."
-                        : selectedNode!.data.ansiblePlaybookId
-                          ? "Run playbook on this EC2 container"
-                          : "Upload a playbook to run"}
+                        : !accountAccessRoleId
+                          ? "Connect AWS account to run"
+                          : selectedNode!.data.ansiblePlaybookId
+                            ? "Run playbook on this EC2 container"
+                            : "Upload a playbook to run"}
                     </button>
 
-                    {(createPlaybookUploadUrl.isPending || uploadPlaybookFileToS3.isPending) && (
-                      <div className="text-xs text-slate-400">Uploading playbook…</div>
+                    {(createPlaybookUploadUrl.isPending ||
+                      uploadPlaybookFileToS3.isPending) && (
+                      <div className="text-xs text-slate-400">
+                        Uploading playbook…
+                      </div>
                     )}
 
                     {submitAnsibleJob.isPending && (
-                      <div className="text-xs text-slate-400">Submitting Ansible job…</div>
+                      <div className="text-xs text-slate-400">
+                        Submitting Ansible job…
+                      </div>
                     )}
 
                     {uploadMessage && (
@@ -402,13 +596,12 @@ export default function ConfigPanel({
                   </div>
                 </div>
               )}
-
-              
             </div>
 
-            {/* Danger Zone — pinned to bottom */}
             <div className="border-t border-slate-800 p-4">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Danger zone</div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Danger zone
+              </div>
               <button
                 type="button"
                 onClick={handleDeleteSelected}
@@ -423,7 +616,9 @@ export default function ConfigPanel({
                 <Trash2 className="h-4 w-4" />
                 Delete node
               </button>
-              <p className="mt-2 text-xs text-slate-400">This will also remove any connections to this node.</p>
+              <p className="mt-2 text-xs text-slate-400">
+                This will also remove any connections to this node.
+              </p>
             </div>
           </div>
         </>

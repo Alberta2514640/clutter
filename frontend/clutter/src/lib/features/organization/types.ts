@@ -15,11 +15,11 @@ export interface Organization {
 
 export type CreateOrganizationInput = {
   organizationName: string;
-  description: string;
+  description?: string;
 };
 
 export type UpdateOrganizationInput = {
-  description: string;
+  description?: string;
 };
 
 export type CreateCloudFormationStackUrlInput = {

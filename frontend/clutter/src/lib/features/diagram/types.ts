@@ -54,17 +54,26 @@ export type TerraformCommandInput = {
   command: "apply" | "destroy" | "plan";
 };
 
-export type TerraformLogApiItem = {
-  id?: string;
-  timestamp?: string;
-  createdAt?: string;
-  message: string;
+// ─── RunTerraform response ────────────────────────────────────────────────────
+// Only the fields we actually use; the full shape is much larger.
+export type EcsFargateTask = {
+  TaskArn: string;
+  LastStatus: string;
+  DesiredStatus: string;
+  CreatedAt: string | null;
 };
 
-export type TerraformLogEntry = {
-  id: string;
-  timestamp: Date;
-  message: string;
+export type RunTerraformResponseEnvelope = {
+  data: {
+    ecsFargateTaskOutput: EcsFargateTask[];
+  };
+  message?: string;
+};
+
+// Convenient, flattened result we expose to callers
+export type RunTerraformResult = {
+  taskArn: string;
+  lastStatus: string;
 };
 
 export type ApiEnvelope<T> = { data: T; message?: string };

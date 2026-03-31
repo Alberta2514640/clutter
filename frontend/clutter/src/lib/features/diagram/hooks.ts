@@ -6,7 +6,14 @@ import { VALID_LOADERS } from "next/dist/shared/lib/image-config";
 import { DiagramSummary, Project } from "../projects/types";
 import { diagramApi } from "./api";
 import { diagramKeys } from "./keys";
-import type { CreateDiagramInput, Diagram, DiagramEdge, DiagramNode, TerraformCommandInput } from "./types";
+import type {
+  CreateDiagramInput,
+  Diagram,
+  DiagramEdge,
+  DiagramNode,
+  RunTerraformResult,
+  TerraformCommandInput,
+} from "./types";
 
 export const useDiagrams = (token?: string | null, projectId?: string | null) => {
   return useQuery({
@@ -104,7 +111,7 @@ export const useDeleteDiagram = (token?: string | null) => {
 };
 
 export const useRunTerraform = (token?: string | null) => {
-  return useMutation({
+  return useMutation<RunTerraformResult, Error, TerraformCommandInput>({
     mutationFn: (input: TerraformCommandInput) => diagramApi.runTerraform(token as string, input),
   });
 };

@@ -1,4 +1,12 @@
-import type { ApiEnvelope, CreateDiagramInput, Diagram, DiagramApiItem, UpdateDiagramInput } from "./types";
+import type {
+  ApiEnvelope,
+  CreateDiagramInput,
+  Diagram,
+  DiagramApiItem,
+  RunTerraformResponseEnvelope,
+  RunTerraformResult,
+  UpdateDiagramInput,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
@@ -99,10 +107,20 @@ export const diagramApi = {
       accountAccessRoleId: string;
       command: "apply" | "destroy" | "plan";
     }
-  ): Promise<void> => {
-    await apiFetch<unknown>("/terraform-command-runner", token, {
+  ): Promise<RunTerraformResult> => {
+    const json = await apiFetch<RunTerraformResponseEnvelope>("/terraform-command-runner", token, {
       method: "POST",
       body: JSON.stringify(input),
     });
+
+    const task = json?.data?.ecsFargateTaskOutput?.[0];
+    if (!task?.TaskArn) {
+      throw new Error("runTerraform: response did not include a TaskArn");
+    }
+
+    return {
+      taskArn: task.TaskArn,
+      lastStatus: task.LastStatus ?? "UNKNOWN",
+    };
   },
 };
