@@ -116,9 +116,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	securityGroup := os.Getenv("SECURITY_GROUP_ID")
 	assignPublicIp := "ENABLED"
 
-	// Generate command ID for logs tracking
-	commandId := generic.RandomID(8)
-
 	// Create Terraform S3 key from given IDs
 	// S3 key structure: <organizationId>/<projectId>/<diagramId>/terraform
 	s3Key := fmt.Sprintf("%s/%s/%s/terraform", organizationId, projectId, diagramId)
@@ -127,6 +124,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	subnetSlice := []string{}
 	for _, s := range internal.SplitAndTrim(subnets) {
 		subnetSlice = append(subnetSlice, s)
+	}
+
+	// Create deployment log record in table and get unique command ID from the function
+	commandId, err := internal.InsertIntoLogTable(conn, ctx, diagramId, command)
+	if err != nil {
+		return generic.Response(http.StatusConflict, generic.Json{"message": "failed to insert into log table", "error": err.Error()})
 	}
 
 	// Build container overrides with dynamic environment variables
@@ -140,6 +143,8 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				{Name: aws.String("ASSUME_ROLE_EXTERNAL_ID"), Value: aws.String(externalId)},
 				{Name: aws.String("COMMAND"), Value: aws.String(command)},
 				{Name: aws.String("COMMAND_ID"), Value: aws.String(commandId)},
+				{Name: aws.String("PSQL_CONNECTION_STRING"), Value: aws.String(os.Getenv("PSQL_CONNECTION_STRING"))},
+				{Name: aws.String("DIAGRAM_ID"), Value: aws.String(diagramId)},
 			},
 		},
 	}
@@ -162,15 +167,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Run the task and get the task run request output
-	runTaskOutput, err := ecsClient.RunTask(ctx, runTaskInput)
+	RunTaskOutput, err := ecsClient.RunTask(ctx, runTaskInput)
 	if err != nil {
 		return generic.Response(500, generic.Json{"message": "failed to run ECS task", "error": err.Error()})
 	}
 
 	return generic.Response(200, generic.Json{
-		"message": "Terraform command fargate task submitted",
+		"message": "Terraform command fargate task started successfully",
 		"data": generic.Json{
-			"ecsFargateTaskOutput": runTaskOutput.Tasks,
+			"commandId": commandId,
+			"taskArn":   *RunTaskOutput.Tasks[0].TaskArn,
 		},
 	})
 }
