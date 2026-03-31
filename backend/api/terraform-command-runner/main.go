@@ -167,7 +167,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Run the task and get the task run request output
-	_, err = ecsClient.RunTask(ctx, runTaskInput)
+	RunTaskOutput, err := ecsClient.RunTask(ctx, runTaskInput)
 	if err != nil {
 		return generic.Response(500, generic.Json{"message": "failed to run ECS task", "error": err.Error()})
 	}
@@ -176,6 +176,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"message": "Terraform command fargate task started successfully",
 		"data": generic.Json{
 			"commandId": commandId,
+			"taskArn":   *RunTaskOutput.Tasks[0].TaskArn,
 		},
 	})
 }
