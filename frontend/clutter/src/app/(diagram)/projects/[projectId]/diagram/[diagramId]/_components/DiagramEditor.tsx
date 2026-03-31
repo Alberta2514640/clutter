@@ -377,7 +377,12 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           <LogsPanel logs={logs} />
         </div>
 
-        <ConfigPanel diagramId={diagramId} projectId={projectId} onLog={addLog} />
+        <ConfigPanel
+          diagramId={diagramId}
+          projectId={projectId}
+          accountAccessRoleId={awsId}
+          onLog={addLog}
+        />
       </div>
     </div>
   );

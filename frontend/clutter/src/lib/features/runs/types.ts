@@ -35,6 +35,7 @@ export type UploadPlaybookFileToS3Input = {
 };
 
 export type SubmitAnsibleJobInput = {
+  account_access_role_id: string;
   playbook_id: string;
   target_instance_ids: string[];
 };

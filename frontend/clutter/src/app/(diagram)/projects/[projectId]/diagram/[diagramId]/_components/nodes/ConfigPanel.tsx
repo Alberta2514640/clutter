@@ -59,10 +59,12 @@ const getVariableError = (name: string, value: unknown, required: boolean) => {
 export default function ConfigPanel({
   diagramId,
   projectId,
+  accountAccessRoleId,
   onLog,
 }: {
   diagramId: string;
   projectId: string;
+  accountAccessRoleId: string | null;
   onLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
 }) {
   const editor = useDiagramEditor(diagramId);
@@ -212,11 +214,17 @@ export default function ConfigPanel({
       return;
     }
 
+    if (!accountAccessRoleId) {
+      setRunError("Connect an AWS account role before submitting an Ansible job.");
+      return;
+    }
+
     setRunError(null);
     setRunMessage(null);
 
     try {
       const response = await submitAnsibleJob.mutateAsync({
+        account_access_role_id: accountAccessRoleId,
         playbook_id: playbookId,
         target_instance_ids: [targetInstanceId],
       });
@@ -241,7 +249,7 @@ export default function ConfigPanel({
         message: `Ansible job submission failed for EC2 node "${selectedNode.data.label}": ${message}`,
       });
     }
-  }, [onLog, patchSelectedNode, selectedNode, submitAnsibleJob, token]);
+  }, [accountAccessRoleId, onLog, patchSelectedNode, selectedNode, submitAnsibleJob, token]);
 
   const handleDeleteSelected = useCallback(() => {
     if (!selectedNode) return;
@@ -408,6 +416,7 @@ export default function ConfigPanel({
                       type="button"
                       onClick={handleRunPlaybook}
                       disabled={
+                        !accountAccessRoleId ||
                         !selectedNode!.data.ansiblePlaybookId ||
                         !selectedNode!.data.ansibleTargetInstanceId?.trim() ||
                         createPlaybookUploadUrl.isPending ||
@@ -424,7 +433,9 @@ export default function ConfigPanel({
                       <Play className="h-4 w-4" />
                       {submitAnsibleJob.isPending
                         ? "Submitting Ansible job..."
-                        : selectedNode!.data.ansiblePlaybookId
+                        : !accountAccessRoleId
+                          ? "Connect AWS account to run"
+                          : selectedNode!.data.ansiblePlaybookId
                           ? "Run playbook on this EC2 container"
                           : "Upload a playbook to run"}
                     </button>
