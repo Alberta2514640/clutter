@@ -363,7 +363,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       )}
 
       <div className="flex h-full w-full">
-        <Palette />
+        <Palette isReadOnly={isReadOnly} />
 
         <div className="relative flex-1">
           <ReactFlow
@@ -424,6 +424,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
               Saved
             </div>
           )}
+          
           <LogsPanel
             key={taskArn ?? "no-task"}
             token={token}
