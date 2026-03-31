@@ -84,12 +84,13 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
       <div className="flex items-center gap-4">
         <Button
           onClick={onBack}
+          disabled={isDeploying || isDestroying}
           className="h-10 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/10">
           ← Back
         </Button>
         <Button
           onClick={onSave}
-          disabled={!canSave}
+          disabled={!canSave || isDeploying || isDestroying}
           title={saveDisabledReason ?? undefined}
           className={["h-10 px-6 rounded-lg font-semibold shadow-lg text-white", canSave ? "bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90" : "bg-white/10 text-white/60 cursor-not-allowed"].join(" ")}>
           {isSaving ? "Saving…" : dirty ? "Save" : "Saved"}

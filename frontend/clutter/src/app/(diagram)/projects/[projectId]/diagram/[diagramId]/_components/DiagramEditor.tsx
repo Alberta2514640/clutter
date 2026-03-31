@@ -311,6 +311,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     (terraformM.isPending && currentAction === "destroy") ||
     (!!taskArn && currentAction === "destroy" && !isComplete);
 
+  const isReadOnly = isDeploying || isDestroying;
+
   return (
     <div className="h-screen w-screen overflow-hidden">
       {/* ── Destroy confirmation modal ── */}
@@ -376,7 +378,12 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
             nodeTypes={nodeTypes}
             snapToGrid
             snapGrid={[20, 20]}
-            isValidConnection={isValidConnection}>
+            isValidConnection={isValidConnection}
+
+            nodesDraggable={!isReadOnly} 
+            nodesConnectable={!isReadOnly} 
+            elementsSelectable={!isReadOnly} >
+
             <Panel position="top-left" className="w-full pr-5">
               <TopNav
                 diagramName={name}
