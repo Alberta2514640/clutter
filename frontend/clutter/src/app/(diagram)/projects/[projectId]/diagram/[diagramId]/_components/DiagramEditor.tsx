@@ -8,16 +8,17 @@ import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 import ConfigPanel from "./nodes/ConfigPanel";
-import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
 
 import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import { useLiveLogsAccumulated } from "@/lib/features/logs/hooks";
 import { useOrganizationAccounts, useOrganizations } from "@/lib/features/organization/hooks";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
+import { AlertTriangle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-;
+import LogsPanel from "./logs/LogsPanel";
 
 export type PaletteItem = {
   label: string;
@@ -78,13 +79,11 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const { screenToFlowPosition } = useReactFlow();
 
   const orgAWS = useOrganizationAccounts(token, orgId);
-  const connectedAwsAccount =
-    orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn) ?? null;
+  const connectedAwsAccount = orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn) ?? null;
   const awsId = connectedAwsAccount?.id ?? null;
 
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
-
 
   const saveM = useUpdateDiagramData(token);
   const terraformM = useRunTerraform(token);
@@ -92,33 +91,31 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const editor = useDiagramEditor(diagramId);
   const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
 
-  const [logs, setLogs] = useState<LogEntry[]>([]); //temp probably be changed after deploy flow
+  const [taskArn, setTaskArn] = useState<string | null>(null);
+  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(null);
+  const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
 
-  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
-    setLogs((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        timestamp: new Date(),
-        ...entry,
-      },
-    ]);
-  }, []);
+  const liveLogs = useLiveLogsAccumulated({
+    token,
+    orgId,
+    projId: projectId,
+    diagramId,
+    taskArn,
+    pollIntervalMs: 2000,
+  });
+
+  const { isComplete } = liveLogs;
 
   useEffect(() => {
     ensure(diagramId);
   }, [diagramId, ensure]);
 
   useEffect(() => {
-    console.log("Current diagram context", {
-      projectId,
-      diagramId,
-    });
+    console.log("Current diagram context", { projectId, diagramId });
   }, [projectId, diagramId]);
 
   useEffect(() => {
     if (!diagramQ.data) return;
-
     hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.data?.nodes ?? [], diagramQ.data.data?.edges ?? []);
   }, [diagramId, diagramQ.data, hydrateFromServer]);
 
@@ -173,31 +170,20 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   );
 
   const onBack = React.useCallback(() => {
-    // Optional: guard if you don't want accidental loss
     if (dirty && !confirm("You have unsaved changes. Leave without saving?")) return;
-
     reset(diagramId);
     router.back();
   }, [dirty, reset, diagramId, router]);
 
-  // React Flow registry
   const nodeTypes = useMemo<NodeTypes>(
-    () => ({
-      awsService: AwsServiceNode as React.ComponentType<NodeProps>,
-    }),
+    () => ({ awsService: AwsServiceNode as React.ComponentType<NodeProps> }),
     [],
   );
 
-  // ---------------------------
-  // ReactFlow change handlers
-  // ---------------------------
   const onNodesChange = useCallback(
     (changes: NodeChange<DiagramNode>[]) => {
-      // Only these change types require saving
       const requiresSave = changes.some((change) => change.type === "position" || change.type === "dimensions" || change.type === "add" || change.type === "remove" || change.type === "replace");
-
       const next = applyNodeChanges(changes, nodes);
-
       if (requiresSave) {
         setNodes(diagramId, next);
       } else {
@@ -209,11 +195,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange<DiagramEdge>[]) => {
-      // Only these change types require saving
       const requiresSave = changes.some((change) => change.type !== "select");
-
       const next = applyEdgeChanges(changes, edges);
-
       if (requiresSave) {
         setEdges(diagramId, next);
       } else {
@@ -245,7 +228,6 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       const item: PaletteItem = JSON.parse(raw);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
-      // Pre-populate variables with non-null defaults from the resource catalog
       const resourceDef = supportedResources?.find((r) => r.label === item.label);
       const defaultVariables: Record<string, unknown> = {};
       if (resourceDef) {
@@ -272,14 +254,10 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     [diagramId, nodes, screenToFlowPosition, setNodes, supportedResources],
   );
 
-  // ---------------------------
-  // Save handler (uses new hook signature)
-  // ---------------------------
   const [showSaved, setShowSaved] = useState(false);
 
   const onSave = useCallback(async () => {
     if (!token) return;
-
     await saveM.mutateAsync({
       projectId,
       diagramId,
@@ -287,36 +265,101 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       nodes,
       edges,
     });
-
     markClean(diagramId);
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
   }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
   const onDeploy = useCallback(async () => {
-    if (!orgId) return;
-    if (!awsId) return;
-    await terraformM.mutateAsync({ organizationId: orgId, projectId, diagramId, accountAccessRoleId: awsId, command: "apply" });
+    if (!orgId || !awsId) return;
+    setCurrentAction("deploy");
+    const result = await terraformM.mutateAsync({
+      organizationId: orgId,
+      projectId,
+      diagramId,
+      accountAccessRoleId: awsId,
+      command: "apply",
+    });
+    setTaskArn(result.taskArn);
   }, [orgId, projectId, diagramId, terraformM, awsId]);
 
-  const onDestroy = useCallback(async () => {
-    if (!orgId) return;
-    if (!awsId) return;
+  // Called by TopNav's Destroy button — opens the modal instead of running directly
+  const handleDestroyRequest = useCallback(() => {
+    setShowDestroyConfirm(true);
+  }, []);
 
-    const confirmed = window.confirm("Are you sure you want to destroy these resources?");
-    if (!confirmed) return;
-
-    await terraformM.mutateAsync({
+  // Called when the user confirms inside the modal
+  const handleDestroyConfirm = useCallback(async () => {
+    if (!orgId || !awsId) return;
+    setShowDestroyConfirm(false);
+    setCurrentAction("destroy");
+    const result = await terraformM.mutateAsync({
       organizationId: orgId,
       projectId,
       diagramId,
       accountAccessRoleId: awsId,
       command: "destroy",
     });
-  }, [orgId, projectId, diagramId, terraformM, awsId]);
+    setTaskArn(result.taskArn);
+  }, [orgId, awsId, terraformM, projectId, diagramId]);
+
+  const isDeploying =
+    (terraformM.isPending && currentAction === "deploy") ||
+    (!!taskArn && currentAction === "deploy" && !isComplete);
+
+  const isDestroying =
+    (terraformM.isPending && currentAction === "destroy") ||
+    (!!taskArn && currentAction === "destroy" && !isComplete);
 
   return (
     <div className="h-screen w-screen overflow-hidden">
+      {/* ── Destroy confirmation modal ── */}
+      {showDestroyConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowDestroyConfirm(false)}
+        >
+          <div
+            className="w-full max-w-md mx-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4 mb-6">
+              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-red-900/30 border border-red-800/50 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold text-base mb-1">Destroy deployment</h3>
+                <p className="text-slate-400 text-sm">
+                  Are you sure you want to destroy{" "}
+                  <span className="text-white font-medium">&quot;{name}&quot;</span>?
+                  This will tear down all deployed infrastructure and cannot be undone.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDestroyConfirm(false)}
+                className="ml-auto flex-shrink-0 text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDestroyConfirm(false)}
+                className="h-9 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDestroyConfirm}
+                className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                Destroy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex h-full w-full">
         <Palette />
 
@@ -339,10 +382,10 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
                 diagramName={name}
                 onNameChange={(n) => setName(diagramId, n)}
                 onSave={onSave}
-                onDeploy={awsId ? onDeploy : undefined}
-                onDestroy={onDestroy}
-                isDeploying={terraformM.isPending}
-                isDestroying={terraformM.isPending}
+                onDeploy={onDeploy}
+                onDestroy={handleDestroyRequest}
+                isDeploying={isDeploying}
+                isDestroying={isDestroying}
                 onBack={onBack}
                 dirty={dirty}
                 isSaving={isSaving}
@@ -374,14 +417,21 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
               Saved
             </div>
           )}
-          <LogsPanel logs={logs} />
+          <LogsPanel
+            key={taskArn ?? "no-task"}
+            token={token}
+            orgId={orgId}
+            projectId={projectId}
+            diagramId={diagramId}
+            taskArn={taskArn}
+            liveLogs={liveLogs}
+          />
         </div>
 
         <ConfigPanel
           diagramId={diagramId}
           projectId={projectId}
           accountAccessRoleId={awsId}
-          onLog={addLog}
         />
       </div>
     </div>

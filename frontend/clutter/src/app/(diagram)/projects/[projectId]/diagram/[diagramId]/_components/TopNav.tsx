@@ -94,22 +94,20 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
           className={["h-10 px-6 rounded-lg font-semibold shadow-lg text-white", canSave ? "bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90" : "bg-white/10 text-white/60 cursor-not-allowed"].join(" ")}>
           {isSaving ? "Saving…" : dirty ? "Save" : "Saved"}
         </Button>
-        {onDeploy && (
-          <Button
-            onClick={onDeploy}
-            disabled={isDeploying}
-            className={[
-              "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
-              isDeploying
-                ? "bg-white/10 text-white/60 cursor-not-allowed"
-                : "bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90",
-            ].join(" ")}>
-            {isDeploying ? "Deploying…" : "Deploy"}
-          </Button>
-        )}
+        <Button
+          onClick={onDeploy}
+          disabled={isDeploying || isDestroying}
+          className={[
+            "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
+            isDeploying
+              ? "bg-white/10 text-white/60 cursor-not-allowed"
+              : "bg-gradient-to-br from-emerald-600 to-green-600 hover:opacity-90",
+          ].join(" ")}>
+          {isDeploying ? "Deploying…" : "Deploy"}
+        </Button>
         <Button
           onClick={onDestroy}
-          disabled={isDestroying}
+          disabled={isDeploying || isDestroying}
           className={[
             "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
             isDestroying

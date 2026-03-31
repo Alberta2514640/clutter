@@ -12,7 +12,6 @@ import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagra
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileToS3 } from "@/lib/features/runs/hooks";
 import { useMe } from "@/lib/features/user/hooks";
-import type { LogEntry } from "./LogsPanel";
 
 const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HIDDEN_VARIABLE_NAMES = new Set([
@@ -66,6 +65,9 @@ export default function ConfigPanel({
   projectId: string;
   accountAccessRoleId: string | null;
   onLog: (entry: Omit<LogEntry, "id" | "timestamp">) => void;
+}: {
+  diagramId: string;
+  projectId: string;
 }) {
   const editor = useDiagramEditor(diagramId);
   const { setNodes, setEdges } = useDiagramEditorActions();
@@ -167,18 +169,12 @@ export default function ConfigPanel({
         }));
 
         setUploadMessage(`Uploaded "${file.name}" for this EC2 container.`);
-        onLog({
-          message: `Uploaded Ansible playbook "${file.name}" for EC2 node "${selectedNode.data.label}".`,
-        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to upload Ansible playbook.";
         setUploadError(message);
-        onLog({
-          message: `Playbook upload failed for EC2 node "${selectedNode.data.label}": ${message}`,
-        });
       }
     },
-    [createPlaybookUploadUrl, diagramId, onLog, patchSelectedNode, projectId, selectedNode, token, uploadPlaybookFileToS3],
+    [createPlaybookUploadUrl, diagramId, patchSelectedNode, projectId, selectedNode, token, uploadPlaybookFileToS3],
   );
 
   const handleTargetInstanceIdChange = useCallback(
@@ -239,17 +235,12 @@ export default function ConfigPanel({
       }));
 
       setRunMessage(`Submitted Ansible job ${response.job_id} for this EC2 container.`);
-      onLog({
-        message: `Queued Ansible job ${response.job_id} for EC2 node "${selectedNode.data.label}" targeting ${targetInstanceId}.`,
-      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to submit the Ansible job.";
       setRunError(message);
-      onLog({
-        message: `Ansible job submission failed for EC2 node "${selectedNode.data.label}": ${message}`,
-      });
     }
   }, [accountAccessRoleId, onLog, patchSelectedNode, selectedNode, submitAnsibleJob, token]);
+  }, [patchSelectedNode, selectedNode, submitAnsibleJob, token]);
 
   const handleDeleteSelected = useCallback(() => {
     if (!selectedNode) return;
