@@ -8,11 +8,12 @@ import Palette from "./Palette";
 import TopNav from "./TopNav";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 import ConfigPanel from "./nodes/ConfigPanel";
-import LogsPanel, { LogEntry } from "./nodes/LogsPanel";
+import LogsPanel from "./nodes/LogsPanel";
 
 import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
+import { useLiveLogsAccumulated } from "@/lib/features/logs/hooks";
 import { useOrganizationAccounts, useOrganizations } from "@/lib/features/organization/hooks";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
@@ -50,18 +51,19 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const editor = useDiagramEditor(diagramId);
   const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
 
-  const [logs, setLogs] = useState<LogEntry[]>([]); //temp probably be changed after deploy flow
+  const [taskArn, setTaskArn] = useState<string | null>(null);
+  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(null);
 
-  const addLog = useCallback((entry: Omit<LogEntry, "id" | "timestamp">) => {
-    setLogs((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        timestamp: new Date(),
-        ...entry,
-      },
-    ]);
-  }, []);
+  const liveLogs = useLiveLogsAccumulated({
+    token,
+    orgId,
+    projId: projectId,
+    diagramId,
+    taskArn,
+    pollIntervalMs: 2000,
+  });
+
+const { isComplete } = liveLogs;
 
   useEffect(() => {
     ensure(diagramId);
@@ -232,26 +234,40 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
   const onDeploy = useCallback(async () => {
-    if (!orgId) return;
-    if (!awsId) return;
-    await terraformM.mutateAsync({ organizationId: orgId, projectId, diagramId, accountAccessRoleId: awsId, command: "apply" });
+    if (!orgId || !awsId) return;
+    setCurrentAction("deploy");
+    const result = await terraformM.mutateAsync({
+      organizationId: orgId,
+      projectId,
+      diagramId,
+      accountAccessRoleId: awsId,
+      command: "apply",
+    });
+    setTaskArn(result.taskArn);
   }, [orgId, projectId, diagramId, terraformM, awsId]);
 
   const onDestroy = useCallback(async () => {
-    if (!orgId) return;
-    if (!awsId) return;
-
+    if (!orgId || !awsId) return;
     const confirmed = window.confirm("Are you sure you want to destroy these resources?");
     if (!confirmed) return;
-
-    await terraformM.mutateAsync({
+    setCurrentAction("destroy");
+    const result = await terraformM.mutateAsync({
       organizationId: orgId,
       projectId,
       diagramId,
       accountAccessRoleId: awsId,
       command: "destroy",
     });
+    setTaskArn(result.taskArn);
   }, [orgId, projectId, diagramId, terraformM, awsId]);
+
+  const isDeploying =
+  (terraformM.isPending && currentAction === "deploy") ||
+  (!!taskArn && currentAction === "deploy" && !isComplete);
+
+  const isDestroying =
+    (terraformM.isPending && currentAction === "destroy") ||
+    (!!taskArn && currentAction === "destroy" && !isComplete);
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -279,8 +295,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
                 onSave={onSave}
                 onDeploy={onDeploy}
                 onDestroy={onDestroy}
-                isDeploying={terraformM.isPending}
-                isDestroying={terraformM.isPending}
+                isDeploying={isDeploying}
+                isDestroying={isDestroying}
                 onBack={onBack}
                 dirty={dirty}
                 isSaving={isSaving}
@@ -311,10 +327,18 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
               Saved
             </div>
           )}
-          <LogsPanel logs={logs} />
+          <LogsPanel
+            key={taskArn ?? "no-task"}
+            token={token}
+            orgId={orgId}
+            projectId={projectId}
+            diagramId={diagramId}
+            taskArn={taskArn}
+            liveLogs={liveLogs}
+          />
         </div>
 
-        <ConfigPanel diagramId={diagramId} projectId={projectId} onLog={addLog} />
+        <ConfigPanel diagramId={diagramId} projectId={projectId} />
       </div>
     </div>
   );

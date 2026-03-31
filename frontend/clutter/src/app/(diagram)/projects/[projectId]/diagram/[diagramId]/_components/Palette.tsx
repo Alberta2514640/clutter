@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Layers } from "lucide-react";
-import { useMemo, useState } from "react";
 import Image from "next/image";
+import { useMemo, useState } from "react";
 
 const DND_MIME = "application/x-palette-item";
 
@@ -123,12 +123,6 @@ export default function Palette() {
                 </section>
               ))}
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="h-10 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-400">
-            <span>Canvas</span>
-            <span className="text-slate-500">v1</span>
           </div>
         </>
       )}

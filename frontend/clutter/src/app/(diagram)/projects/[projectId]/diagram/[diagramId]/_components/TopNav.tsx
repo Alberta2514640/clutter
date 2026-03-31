@@ -94,7 +94,7 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
         </Button>
         <Button
           onClick={onDeploy}
-          disabled={isDeploying}
+          disabled={isDeploying || isDestroying}
           className={[
             "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
             isDeploying
@@ -105,7 +105,7 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
         </Button>
         <Button
           onClick={onDestroy}
-          disabled={isDestroying}
+          disabled={isDeploying || isDestroying}
           className={[
             "h-10 px-6 rounded-lg font-semibold shadow-lg text-white",
             isDestroying
