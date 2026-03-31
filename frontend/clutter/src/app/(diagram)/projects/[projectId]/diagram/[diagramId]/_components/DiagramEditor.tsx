@@ -26,6 +26,46 @@ export type PaletteItem = {
 };
 
 const DND_MIME = "application/x-palette-item";
+const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const HIDDEN_VARIABLE_NAMES = new Set([
+  "label",
+  "position",
+  "x",
+  "y",
+  "position_x",
+  "position_y",
+  "x_position",
+  "y_position",
+  "pos_x",
+  "pos_y",
+]);
+const formatVariableLabel = (name: string) =>
+  name
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getVariableError = (name: string, value: unknown, required: boolean) => {
+  const stringValue = typeof value === "string" ? value.trim() : "";
+
+  if (required) {
+    const isMissing =
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && stringValue === "");
+
+    if (isMissing) {
+      return "This field is required.";
+    }
+  }
+
+  if (name === "resource_name" && stringValue && !RESOURCE_NAME_PATTERN.test(stringValue)) {
+    return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
+  }
+
+  return null;
+};
 
 export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
   const router = useRouter();
@@ -39,7 +79,8 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const { screenToFlowPosition } = useReactFlow();
 
   const orgAWS = useOrganizationAccounts(token, orgId);
-  const awsId = orgAWS.data?.[0].id;
+  const connectedAwsAccount = orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn) ?? null;
+  const awsId = connectedAwsAccount?.id ?? null;
 
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
@@ -82,6 +123,26 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const edges = useMemo(() => editor?.edges ?? [], [editor?.edges]);
   const name = editor?.name ?? "";
   const dirty = !!editor?.dirty;
+  const saveDisabledReason = useMemo(() => {
+    if (!supportedResources) return null;
+
+    for (const node of nodes) {
+      const resource = supportedResources.find((item) => item.label === node.data.label);
+      if (!resource) continue;
+
+      for (const variable of resource.variables) {
+        if (HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase())) continue;
+
+        const value = node.data.variables?.[variable.name];
+        const error = getVariableError(variable.name, value, variable.required);
+        if (error) {
+          return `${resource.displayName} · ${formatVariableLabel(variable.name)}: ${error}`;
+        }
+      }
+    }
+
+    return null;
+  }, [nodes, supportedResources]);
 
   const isLoading = diagramQ.isLoading;
   const isSaving = saveM.isPending;
@@ -328,6 +389,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
                 onBack={onBack}
                 dirty={dirty}
                 isSaving={isSaving}
+                saveDisabledReason={saveDisabledReason}
               />
             </Panel>
 
@@ -366,7 +428,11 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
           />
         </div>
 
-        <ConfigPanel diagramId={diagramId} projectId={projectId} />
+        <ConfigPanel
+          diagramId={diagramId}
+          projectId={projectId}
+          accountAccessRoleId={awsId}
+        />
       </div>
     </div>
   );

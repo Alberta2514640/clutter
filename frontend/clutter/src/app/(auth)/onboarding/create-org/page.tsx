@@ -26,6 +26,11 @@ export default function CreateOrgPage() {
   const [description, setDescription] = useState("");
 
   const hasOrg = useMemo(() => (orgsQ.data ?? []).length > 0, [orgsQ.data]);
+  const trimmedOrganizationName = organizationName.trim();
+  const trimmedDescription = description.trim();
+  const isDescriptionValid =
+    trimmedDescription.length === 0 ||
+    (trimmedDescription.length <= 300 && !description.startsWith(" ") && !description.endsWith(" ") && !description.includes("  "));
 
   useEffect(() => {
     if (meQ.isLoading) return;
@@ -42,16 +47,18 @@ export default function CreateOrgPage() {
     }
   }, [meQ.isLoading, token, hasOrg, orgsQ.isLoading, orgsQ.isError, router]);
   
-  const canSubmit = organizationName.trim().length >= 2 && !!token && !createOrg.isPending;
+  const canSubmit = trimmedOrganizationName.length >= 4 && isDescriptionValid && !!token && !createOrg.isPending;
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canSubmit) return;
 
-    await createOrg.mutateAsync({
-      organizationName: organizationName.trim(),
-      description: description.trim() || "", // backend can store "" or you can allow null if API supports it
-    });
+    const payload = {
+      organizationName: trimmedOrganizationName,
+      ...(trimmedDescription ? { description: trimmedDescription } : {}),
+    };
+
+    await createOrg.mutateAsync(payload);
 
     router.replace("/dashboard");
   };
@@ -110,7 +117,7 @@ export default function CreateOrgPage() {
                   autoFocus
                 />
                 <p className="text-xs text-gray-500">
-                  Stored in PostgreSQL and shown to members in the sidebar and invitations.
+                  Must be 4-32 characters to match the backend validation.
                 </p>
               </div>
 
@@ -122,7 +129,12 @@ export default function CreateOrgPage() {
                   placeholder="e.g., Infrastructure diagrams for my team"
                   className="bg-slate-900/40 border-slate-700 text-white placeholder:text-gray-500 focus-visible:ring-teal-500"
                 />
-                <p className="text-xs text-gray-500">Helps teammates understand what this org is for.</p>
+                <p className="text-xs text-gray-500">Optional. Up to 300 characters. Cannot start/end with spaces or contain double spaces.</p>
+                {!!description && !isDescriptionValid && (
+                  <p className="text-xs text-red-300">
+                    Description cannot start or end with spaces, contain double spaces, or exceed 300 characters.
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 pt-2">

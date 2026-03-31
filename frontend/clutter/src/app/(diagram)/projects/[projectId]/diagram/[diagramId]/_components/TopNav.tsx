@@ -14,10 +14,11 @@ type TopNavProps = {
   dirty: boolean;
   isSaving?: boolean;
   nameDisabled?: boolean;
+  saveDisabledReason?: string | null;
 };
 
-export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, onDestroy, isDeploying, isDestroying, dirty, isSaving, nameDisabled }: TopNavProps) {
-  const canSave = dirty && !isSaving;
+export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDeploy, onDestroy, isDeploying, isDestroying, dirty, isSaving, nameDisabled, saveDisabledReason }: TopNavProps) {
+  const canSave = dirty && !isSaving && !saveDisabledReason;
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -89,6 +90,7 @@ export default function TopNav({ diagramName, onNameChange, onSave, onBack, onDe
         <Button
           onClick={onSave}
           disabled={!canSave}
+          title={saveDisabledReason ?? undefined}
           className={["h-10 px-6 rounded-lg font-semibold shadow-lg text-white", canSave ? "bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90" : "bg-white/10 text-white/60 cursor-not-allowed"].join(" ")}>
           {isSaving ? "Saving…" : dirty ? "Save" : "Saved"}
         </Button>

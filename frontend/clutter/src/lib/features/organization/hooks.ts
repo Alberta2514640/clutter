@@ -95,26 +95,7 @@ export const useUpdateOrganizationAccount = (token?: string | null) => {
       accountId: string;
       data: UpdateOrganizationAwsAccountInput;
     }) => organizationApi.updateAccount(token as string, input.organizationId, input.accountId, input.data),
-    onSuccess: (updated, input) => {
-      qc.setQueryData<OrganizationAwsAccount[]>(
-        orgKeys.accounts(input.organizationId),
-        (prev) => {
-          const current = prev ?? [];
-          const existingIndex = current.findIndex((account) => account.id === updated.id);
-
-          if (existingIndex === -1) {
-            return [updated, ...current];
-          }
-
-          const next = [...current];
-          next[existingIndex] = {
-            ...next[existingIndex],
-            ...updated,
-          };
-          return next;
-        }
-      );
-
+    onSuccess: (_void, input) => {
       qc.invalidateQueries({ queryKey: orgKeys.accounts(input.organizationId) });
     },
   });
