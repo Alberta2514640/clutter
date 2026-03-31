@@ -114,16 +114,10 @@ export const organizationApi = {
     organizationId: string,
     accountId: string,
     input: UpdateOrganizationAwsAccountInput
-  ): Promise<OrganizationAwsAccount> => {
-    const json = await apiFetch<ApiEnvelope<OrganizationAwsAccount>>(
-      `/organization/${organizationId}/accounts/${accountId}`,
-      token,
-      {
-        method: "POST",
-        body: JSON.stringify(input),
-      }
-    );
-
-    return json.data;
+  ): Promise<void> => {
+    await apiFetch<ApiEnvelope<unknown>>(`/organization/${organizationId}/accounts/${accountId}`, token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 };

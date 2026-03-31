@@ -68,6 +68,7 @@ export default function ArnPage() {
 
     setError("");
     setStatus("creating-template-link");
+    const popup = typeof window !== "undefined" ? window.open("", "_blank") : null;
 
     try {
       const response = await createStackUrl.mutateAsync({
@@ -78,7 +79,13 @@ export default function ArnPage() {
 
       setStackData(response);
       setStatus("awaiting-role-arn");
+
+      if (popup) {
+        popup.location.href = response.url;
+        popup.focus();
+      }
     } catch (err) {
+      popup?.close();
       setStatus("error");
       setStackData(null);
       setError(err instanceof Error ? err.message : "Failed to generate CloudFormation launch URL.");
@@ -203,7 +210,7 @@ export default function ArnPage() {
 
   return (
     <main className="space-y-6">
-      <AwsAccountHeader />
+      {!completeAccount && <AwsAccountHeader />}
 
       {status === "error" && error && (
         <Alert className="border-red-500/30 bg-red-500/10 text-red-100">

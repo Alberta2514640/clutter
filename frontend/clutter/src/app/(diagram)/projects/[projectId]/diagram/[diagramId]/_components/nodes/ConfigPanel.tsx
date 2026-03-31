@@ -14,6 +14,47 @@ import { useCreatePlaybookUploadUrl, useSubmitAnsibleJob, useUploadPlaybookFileT
 import { useMe } from "@/lib/features/user/hooks";
 import type { LogEntry } from "./LogsPanel";
 
+const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const HIDDEN_VARIABLE_NAMES = new Set([
+  "label",
+  "position",
+  "x",
+  "y",
+  "position_x",
+  "position_y",
+  "x_position",
+  "y_position",
+  "pos_x",
+  "pos_y",
+]);
+
+const formatVariableLabel = (name: string) =>
+  name
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getVariableError = (name: string, value: unknown, required: boolean) => {
+  const stringValue = typeof value === "string" ? value.trim() : "";
+
+  if (required) {
+    const isMissing =
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && stringValue === "");
+
+    if (isMissing) {
+      return "This field is required.";
+    }
+  }
+
+  if (name === "resource_name" && stringValue && !RESOURCE_NAME_PATTERN.test(stringValue)) {
+    return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
+  }
+
+  return null;
+};
 
 export default function ConfigPanel({
   diagramId,
@@ -48,6 +89,11 @@ export default function ConfigPanel({
   const resourceDef = useMemo(
     () => supportedResources?.find((r) => r.label === selectedNode?.data.label),
     [supportedResources, selectedNode?.data.label],
+  );
+  const visibleVariables = useMemo(
+    () =>
+      resourceDef?.variables.filter((variable) => !HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase())) ?? [],
+    [resourceDef?.variables],
   );
 
   const patchSelectedNode = useCallback(
@@ -205,7 +251,7 @@ export default function ConfigPanel({
   }, [diagramId, edges, nodes, selectedNode, setEdges, setNodes]);
 
   return (
-    <aside className={["relative h-full shrink-0 border-l border-slate-800 bg-slate-950/70 backdrop-blur", "transition-[width] duration-200", showContent ? "w-[250px]" : "w-[5px]"].join(" ")}>
+    <aside className={["relative h-full shrink-0 border-l border-slate-800 bg-slate-950/70 backdrop-blur", "transition-[width] duration-200", showContent ? "w-[380px]" : "w-[5px]"].join(" ")}>
       {!showContent ? null : (
         <>
           {/* Header */}
@@ -215,8 +261,10 @@ export default function ConfigPanel({
                 <Settings className="h-4 w-4 text-slate-300" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-100">Config</div>
-                <div className="truncate text-[11px] text-slate-400">Node Inspector</div>
+                <div className="truncate text-sm font-semibold text-slate-100">
+                  {resourceDef?.displayName ?? selectedNode!.data.label}
+                </div>
+                <div className="truncate text-[11px] text-slate-400">Configuration</div>
               </div>
             </div>
             <button onClick={handleClose} className="grid h-8 w-8 place-items-center rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 transition" title="Deselect node" type="button">
@@ -233,23 +281,25 @@ export default function ConfigPanel({
                   <Image src={selectedNode!.data.img as string} alt="" width={24} height={24} unoptimized />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs text-gray-400">Type</div>
-                  <div className="truncate text-sm font-medium text-white">{selectedNode!.data.label}</div>
+                  <div className="text-xs text-gray-400">Resource</div>
+                  <div className="truncate text-sm font-medium text-white">{resourceDef?.displayName ?? selectedNode!.data.label}</div>
                 </div>
               </div>
 
               {/* Dynamic Variable Fields */}
-              {resourceDef && resourceDef.variables.length > 0 && (
+              {resourceDef && visibleVariables.length > 0 && (
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">Configuration</label>
                   <div className="space-y-3">
-                    {resourceDef.variables.map((v) => {
+                    {visibleVariables.map((v) => {
                       const val = selectedNode!.data.variables?.[v.name];
                       const placeholder = v.default != null ? String(v.default) : "";
+                      const fieldError = getVariableError(v.name, val, v.required);
+                      const labelText = formatVariableLabel(v.name);
                       return (
-                        <div key={v.name}>
-                          <Label className="mb-1 flex items-center gap-1 text-xs text-slate-400">
-                            {v.name}
+                        <div key={v.name} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                          <Label className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-slate-300">
+                            {labelText}
                             {v.required && <span className="text-red-400">*</span>}
                           </Label>
                           {v.type === "boolean" ? (
@@ -257,7 +307,12 @@ export default function ConfigPanel({
                               value={val === undefined ? "" : String(val)}
                               onValueChange={(s) => handleVariableChange(v.name, s === "true")}
                             >
-                              <SelectTrigger className="h-8 border-slate-800 bg-slate-900/40 text-sm text-white">
+                              <SelectTrigger
+                                className={[
+                                  "h-10 rounded-lg bg-slate-950/70 text-sm text-white",
+                                  fieldError ? "border-red-500/50 focus:ring-red-500/40" : "border-slate-700 focus:ring-teal-500/40",
+                                ].join(" ")}
+                              >
                                 <SelectValue placeholder="— default —" />
                               </SelectTrigger>
                               <SelectContent>
@@ -268,7 +323,10 @@ export default function ConfigPanel({
                           ) : (
                             <Input
                               type={v.type === "number" ? "number" : "text"}
-                              className="h-8 border-slate-800 bg-slate-900/40 text-sm text-white"
+                              className={[
+                                "h-10 rounded-lg bg-slate-950/70 text-sm text-white placeholder:text-slate-500",
+                                fieldError ? "border-red-500/50 focus-visible:ring-red-500/40" : "border-slate-700 focus-visible:ring-teal-500/40",
+                              ].join(" ")}
                               placeholder={placeholder || v.description}
                               value={val === undefined ? "" : String(val)}
                               onChange={(e) => {
@@ -278,7 +336,10 @@ export default function ConfigPanel({
                             />
                           )}
                           {v.description && (
-                            <p className="mt-1 text-[11px] text-slate-500">{v.description}</p>
+                            <p className="mt-2 text-[11px] text-slate-500">{v.description}</p>
+                          )}
+                          {fieldError && (
+                            <p className="mt-2 text-[11px] text-red-300">{fieldError}</p>
                           )}
                         </div>
                       );
