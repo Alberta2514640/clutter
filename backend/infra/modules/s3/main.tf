@@ -183,6 +183,19 @@ resource "aws_s3_object" "common_lambda_boostrap_zip" {
 
 }
 
+resource "aws_s3_object" "client_aws_account_link_steps_pdf" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key = "templates/pdf/AWS_Account_Link_Steps.pdf"
+  source = "${path.module}/uploads/AWS_Account_Link_Steps.pdf"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/AWS_Account_Link_Steps.pdf")
+
+}
+
 resource "aws_s3_object" "apigateway_maintf_template" {
 
   bucket = aws_s3_bucket.templates.id
