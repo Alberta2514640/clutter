@@ -672,10 +672,10 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                       accept=".yml,.yaml"
                       className="hidden"
                       onChange={async (e) => {
-                        await handleAnsiblePlaybookUpload(
-                          e.target.files?.[0] ?? null,
-                        );
-                        e.currentTarget.value = "";
+                        const input = e.currentTarget;
+                        const file = input.files?.[0] ?? null;
+                        await handleAnsiblePlaybookUpload(file);
+                        input.value = "";
                       }}
                     />
 
