@@ -22,15 +22,9 @@ resource "aws_lambda_function" "{{.ResourceName}}" {
   timeout       = {{.Timeout}}
   runtime       = "{{.Runtime}}"
   architectures = ["{{.Architecture}}"]
-  memory_size   = {{.MemorySize}}
-
-{{- if .S3Key}}
-  s3_bucket = "{{.S3Bucket}}"
-  s3_key    = "{{.S3Key}}"
-{{- else}}
-  s3_bucket = "{{.S3Bucket}}"
-  s3_key    = "templates/zip/bootstrap.zip"
-{{- end}}
+  memory_size      = {{.MemorySize}}
+  filename         = "{{.Filename}}"
+  source_code_hash = fileexists("{{.Filename}}") ? filebase64sha256("{{.Filename}}") : null
 
 {{- if .EnvironmentVariables}}
   environment {

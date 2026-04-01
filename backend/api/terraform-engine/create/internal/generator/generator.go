@@ -17,7 +17,6 @@ import (
 type TerraformGenerator struct {
 	iamGenerator   *iam.IAMPolicyGenerator
 	templateLoader *template.TemplateLoader
-	templateBucket string
 }
 
 func NewTerraformGenerator(ctx context.Context, templateBucket string) (*TerraformGenerator, error) {
@@ -29,7 +28,6 @@ func NewTerraformGenerator(ctx context.Context, templateBucket string) (*Terrafo
 	return &TerraformGenerator{
 		iamGenerator:   iam.NewIAMPolicyGenerator(),
 		templateLoader: loader,
-		templateBucket: templateBucket,
 	}, nil
 }
 
@@ -51,7 +49,7 @@ func (g *TerraformGenerator) Generate(ctx context.Context, diagramID string, lay
 
 	// Generate terraform for each resource
 	for _, res := range tfResources {
-		gen, err := resources.GetGenerator(ctx, res.Type, g.templateLoader, g.templateBucket)
+		gen, err := resources.GetGenerator(ctx, res.Type, g.templateLoader)
 		if err != nil {
 			errors = append(errors, internal.GenerationError{
 				NodeID:    res.SourceNodeID,
