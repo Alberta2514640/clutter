@@ -232,4 +232,3 @@ upload_logs
 update_status "SUCCESS"
 
 echo "Terraform command complete."
-echo "Total time taken: ${TOTAL_MIN}m ${TOTAL_SEC}s"
