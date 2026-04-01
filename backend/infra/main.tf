@@ -465,6 +465,26 @@ module "resources-get-lambda" {
 }
 
 # Terraform Engine
+module "terraform-engine-code-upload-presigned-url-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-code-upload-presigned-url"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents",
+    "s3:PutObject"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-code-upload-presigned-url:*",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/*/function.zip"
+  ]
+  zip_dir_slice = "terraform-engine/code-upload"
+  environment_variables = {
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
 module "terraform-engine-create-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "terraform-engine-create"
@@ -491,6 +511,12 @@ module "terraform-engine-create-lambda" {
 # ==================================
 # Deployment logs Lambda Functions
 # ==================================
+
+# TODO:
+# All log functions
+# ie. terraform-engine-logs-live-lambda, terraform-engine-logs-url-lambda, terraform-engine-logs-get-lambda
+# should have their prefix, namely "terraform-engine", changed to "terraform-command-runner"
+# for correctness
 
 module "terraform-engine-logs-get-lambda" {
   source        = "./modules/templates/lambda"
@@ -557,6 +583,24 @@ module "terraform-engine-logs-live-lambda" {
     TERRAFORM_DEPLOYER_LOG_GROUP         = "/ecs/terraform-deployer"
     TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX = "ecs"
     TERRAFORM_DEPLOYER_CONTAINER_NAME    = "terraform-deployer"
+  }
+}
+
+# The prefix for this Lambda has already been fixed to "terraform-command-runner"
+
+# Terraform Command Runner logs to populate "Recent Activity" table in frontend
+module "terraform-command-runner-logs-recent-activity-lambda" {
+  source = "./modules/templates/lambda"
+  function_name = "terraform-command-runner-logs-recent-activity"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/resources-get:*"]
+  zip_dir_slice = "terraform-engine/logs/recent-activity"
+  environment_variables = {
+    PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
 
@@ -974,6 +1018,42 @@ module "terraform-engine-logs-live-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.terraform-engine-logs-live-api-path.resource_id
   http_methods = ["GET"]
+}
+
+module "terraform-command-runner-logs-recent-activity-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-logs-api-path.resource_id
+  path_part   = "recent-activity"
+}
+
+module "terraform-command-runner-logs-recent-activity-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-command-runner-logs-recent-activity-api-path.resource_id
+  http_methods = ["GET"]
+}
+
+# Terraform Engine Code Upload
+module "terraform-engine-code-upload-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-api-path.resource_id
+  path_part   = "code-upload"
+}
+
+module "terraform-engine-code-upload-presigned-url-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-code-upload-api-path.resource_id
+  path_part   = "presigned-url"
+}
+
+module "terraform-engine-code-upload-presigned-url-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-code-upload-presigned-url-api-path.resource_id
+  http_methods = ["POST"]
 }
 
 # Ansible Engine
@@ -1442,6 +1522,19 @@ module "terraform-engine-logs-live-api-integration" {
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
+module "terraform-command-runner-logs-recent-activity-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-command-runner-logs-recent-activity-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-command-runner-logs-recent-activity-lambda.invoke_arn
+  function_name     = module.terraform-command-runner-logs-recent-activity-lambda.function_name
+  path_part         = module.terraform-command-runner-logs-recent-activity-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-command-runner-logs-recent-activity-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
 # Ansible Engine
 # POST ansible/jobs
 module "ansible-submit-job-api-integration" {
@@ -1556,4 +1649,17 @@ module "terraform-engine-create-api-integration" {
   path_part         = module.terraform-engine-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-engine-api-path.path
+}
+
+module "terraform-engine-code-upload-presigned-url-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-code-upload-presigned-url-api-path.resource_id
+  http_method       = "POST"
+  invoke_arn        = module.terraform-engine-code-upload-presigned-url-lambda.invoke_arn
+  function_name     = module.terraform-engine-code-upload-presigned-url-lambda.function_name
+  path_part         = module.terraform-engine-code-upload-presigned-url-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-code-upload-presigned-url-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }

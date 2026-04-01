@@ -240,7 +240,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
   container_definitions = jsonencode([
     {
       name  = "ansible-executor"
-      image = "${aws_ecr_repository.ansible_runner.repository_url}:${var.ansible_runner_image_tag}"
+      image = "${aws_ecr_repository.ansible_runner.repository_url}:latest"
 
       logConfiguration = {
         logDriver = "awslogs"

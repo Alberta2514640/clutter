@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS public.playbooks;
+DROP TABLE IF EXISTS public.jobs;
 DROP TABLE IF EXISTS public.diagram_history;
+DROP TABLE IF EXISTS public.diagram_deployment_logs;
 DROP TABLE IF EXISTS public.diagrams;
 DROP TABLE IF EXISTS public.projects;
 DROP TABLE IF EXISTS public.aws_account_access_roles;
@@ -103,50 +105,23 @@ CREATE TABLE public.diagram_history (
 );
 
 -- ============================
--- ROW LEVEL SECURITY
+-- DIAGRAM DEPLOYMENT LOGS
 -- ============================
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."users"
-AS PERMISSIVE
-TO anon
-USING (true);
+CREATE TYPE command_type AS ENUM ('apply', 'destroy');
+CREATE TYPE command_status AS ENUM ('RUNNING', 'SUCCESS', 'FAILED');
 
-ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."organizations"
-AS PERMISSIVE
-TO anon
-USING (true);
+CREATE TABLE public.diagram_deployment_logs (
+    diagram_id UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
+    command_id VARCHAR(8) NOT NULL,
 
-ALTER TABLE public.aws_account_access_roles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."aws_account_access_roles"
-AS PERMISSIVE
-TO anon
-USING (true);
+    command command_type NOT NULL,
+    status command_status NOT NULL DEFAULT 'RUNNING',
+    duration_seconds INT,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."organization_members"
-AS PERMISSIVE
-TO anon
-USING (true);
-
-ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."projects"
-AS PERMISSIVE TO anon USING (true);
-
-ALTER TABLE public.diagrams ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."diagrams"
-AS PERMISSIVE TO anon USING (true);
-
-ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."diagram_history"
-AS PERMISSIVE TO anon USING (true);
+    PRIMARY KEY (diagram_id, command_id)
+);
 
 -- ============================
 -- JOBS
@@ -187,10 +162,6 @@ CREATE INDEX idx_jobs_job_type ON public.jobs(job_type);
 -- ============================
 -- PLAYBOOKS
 -- ============================
--- Migration for existing DBs:
---   CREATE TABLE public.playbooks ( ... ) -- see below
---   ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
---   CREATE POLICY "anon_all_permissions" ON "public"."playbooks" AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
 CREATE TABLE public.playbooks (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     diagram_id  UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
@@ -205,11 +176,6 @@ CREATE TABLE public.playbooks (
 
 CREATE INDEX idx_playbooks_diagram_id ON public.playbooks(diagram_id);
 CREATE INDEX idx_playbooks_org_id ON public.playbooks(org_id);
-
-ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."playbooks"
-AS PERMISSIVE TO anon USING (true) WITH CHECK (true);
 
 -- Trigger function to auto-update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -231,11 +197,3 @@ CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON playbooks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
-
--- NOTE: The permissive "anon" RLS policy is intentional.
--- Access control is enforced at the application layer (Lambda authorizer + created_by filters).
--- The "anon" role is the Supabase service-key connection used by all Lambdas.
-ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
-ON "public"."jobs"
-AS PERMISSIVE TO anon USING (true) WITH CHECK (true);

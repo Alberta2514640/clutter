@@ -4,6 +4,7 @@ set -euo pipefail
 TOTAL_START_TIME=$(date +%s)
 
 echo "Starting Terraform deploy."
+psql --version
 
 # ENVIRONMENT VARIABLES (Required)
 # ===============================
@@ -44,6 +45,9 @@ on_error() {
     cat "$COMMAND_LOG"
     echo "-----------------------"
   fi
+
+  # Mark as FAILED in DB
+  update_status "FAILED" || true
 
   # Upload state even on failure if state exists
   # Unset assumed role credentials and go back to using Fargate's own role
@@ -89,6 +93,27 @@ upload_logs() {
 }
 
 # -------------------------------
+# Update Log DB Record Status
+# -------------------------------
+update_status() {
+  local status=$1
+
+  END_TIME=$(date +%s)
+  DURATION=$((END_TIME - TOTAL_START_TIME))
+
+  echo "Updating deployment status to $status..."
+
+  psql "$PSQL_CONNECTION_STRING" -v ON_ERROR_STOP=1 -c "
+  UPDATE public.diagram_deployment_logs
+  SET 
+    status = '$status',
+    duration_seconds = $DURATION
+  WHERE diagram_id = '$DIAGRAM_ID'
+    AND command_id = '$COMMAND_ID';
+  " || echo "Warning: failed to update deployment status"
+}
+
+# -------------------------------
 # Fetch Terraform code
 # -------------------------------
 echo "Downloading Terraform from S3."
@@ -97,7 +122,7 @@ aws s3 sync "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" /app
 # Check to see if Terraform file exists
 if [ -z "$(ls -A /app)" ]; then
   echo "ERROR: No Terraform files found in S3 path."
-  exit 1
+  false
 fi
 
 # -------------------------------
@@ -110,7 +135,7 @@ aws s3 cp "s3://$S3_TEMPLATES_NAME/templates/zip/bootstrap.zip" /app/bootstrap.z
 # Verify it exists
 if [ ! -f "/app/bootstrap.zip" ]; then
   echo "ERROR: Failed to download bootstrap.zip"
-  exit 1
+  false
 fi
 
 echo "bootstrap.zip downloaded successfully."
@@ -167,7 +192,7 @@ elif [ "$COMMAND" = "destroy" ]; then
   -var="aws_region=$AWS_REGION" >"$COMMAND_LOG" 2>&1
 else
   echo "Invalid COMMAND: $COMMAND"
-  exit 1
+  false
 fi
 
 COMMAND_END_TIME=$(date +%s)
@@ -202,12 +227,9 @@ aws s3 sync /app "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" \
 upload_logs
 
 # -------------------------------
-# Totals
+# Mark SUCCESS
 # -------------------------------
-TOTAL_END_TIME=$(date +%s)
-TOTAL_DURATION=$((TOTAL_END_TIME - TOTAL_START_TIME))
-TOTAL_MIN=$((TOTAL_DURATION / 60))
-TOTAL_SEC=$((TOTAL_DURATION % 60))
+update_status "SUCCESS"
 
 echo "Terraform command complete."
 echo "Total time taken: ${TOTAL_MIN}m ${TOTAL_SEC}s"

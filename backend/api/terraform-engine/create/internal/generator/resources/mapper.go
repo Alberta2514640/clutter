@@ -28,10 +28,10 @@ func ParseResourceType(label string) (internal.ResourceType, error) {
 }
 
 // GetGenerator returns the appropriate generator for a resource type
-func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loader *template.TemplateLoader) (internal.ResourceGenerator, error) {
+func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loader *template.TemplateLoader, templateBucket string) (internal.ResourceGenerator, error) {
 	switch resourceType {
 	case internal.ResourceTypeLambda:
-		return NewLambdaGenerator(ctx, loader), nil
+		return NewLambdaGenerator(ctx, loader, templateBucket), nil
 	case internal.ResourceTypeDynamoDB:
 		return NewDynamoDBGenerator(ctx, loader), nil
 	case internal.ResourceTypeS3:
