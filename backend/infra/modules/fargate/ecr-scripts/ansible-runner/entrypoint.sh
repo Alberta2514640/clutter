@@ -48,6 +48,61 @@ aws_client() {
     aws "$@"
 }
 
+log_task_role_identity() {
+    local caller_identity
+    if caller_identity=$(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+        aws sts get-caller-identity 2>&1); then
+        echo "[entrypoint] Task role caller identity: $caller_identity" >&2
+    else
+        echo "[entrypoint] WARNING: Failed to resolve task role caller identity: $caller_identity" >&2
+    fi
+}
+
+download_playbook_base64() {
+    local attempt=1
+    local max_attempts=3
+    local retry_delay=2
+    local download_stderr=""
+    local playbook_tmp=""
+    local exit_code=0
+
+    while [ $attempt -le $max_attempts ]; do
+        download_stderr=$(mktemp)
+        playbook_tmp=$(mktemp)
+
+        if env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+            aws s3 cp "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" - \
+            --region "$AWS_DEFAULT_REGION" >"$playbook_tmp" 2>"$download_stderr"; then
+            if [ -s "$playbook_tmp" ]; then
+                base64 < "$playbook_tmp" | tr -d '\n'
+                rm -f "$download_stderr" "$playbook_tmp"
+                return 0
+            fi
+            echo "[entrypoint] WARNING: Download attempt $attempt returned an empty playbook" >&2
+        else
+            exit_code=$?
+            echo "[entrypoint] WARNING: Playbook download attempt $attempt failed (exit=$exit_code)" >&2
+        fi
+
+        if [ -s "$download_stderr" ]; then
+            sed 's/^/[entrypoint] playbook download stderr: /' "$download_stderr" >&2
+        fi
+        rm -f "$download_stderr" "$playbook_tmp"
+
+        log_task_role_identity
+
+        if [ $attempt -lt $max_attempts ]; then
+            echo "[entrypoint] Retrying playbook download in ${retry_delay}s..." >&2
+            sleep $retry_delay
+            retry_delay=$((retry_delay * 2))
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
 # Redact likely secrets from output and cap size before writing to logs.
 sanitize_output() {
     python3 - <<'PYEOF'
@@ -61,11 +116,15 @@ max_len = 16000
 if len(data) > max_len:
     data = data[:max_len] + "\n...[truncated]"
 
+# More precise patterns to avoid over-redaction
 patterns = [
-    r'(?i)(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s"\']+',
+    # Match password/secret assignments but not in error messages
+    r'(?i)(?<![A-Za-z])(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s"\']+',
+    # AWS access keys
     r'AKIA[0-9A-Z]{16}',
     r'ASIA[0-9A-Z]{16}',
-    r'(?i)postgres(?:ql)?://[^\s]+'
+    # PostgreSQL connection strings with credentials
+    r'(?i)postgres(?:ql)?://[^:]+:[^@]+@[^\s]+'
 ]
 for p in patterns:
     data = re.sub(p, '***REDACTED***', data)
@@ -73,6 +132,7 @@ for p in patterns:
 sys.stdout.write(data)
 PYEOF
 }
+
 
 # Retry configuration constants (global scope for use in functions and error handlers)
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
@@ -279,23 +339,18 @@ CLIENT_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.
 CLIENT_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
 CLIENT_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
 
-# 3. Generate pre-signed URL for playbook (uses Fargate task role, NOT client creds)
-#    Pre-signed URLs embed the Fargate role's S3 credentials in the URL itself,
-#    so target instances can download the playbook without cross-account S3 access.
-echo "[entrypoint] Generating pre-signed URL for playbook..."
-PRESIGNED_URL=$(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
-    aws s3 presign "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" \
-    --region "$AWS_DEFAULT_REGION" \
-    --expires-in 3600 2>&1)
+# 3. Download playbook with the Fargate task role and inline it in the SSM payload
+#    so target instances do not need direct S3 access.
+echo "[entrypoint] Downloading playbook from S3..."
 
-if [ -z "$PRESIGNED_URL" ] || [[ "$PRESIGNED_URL" == *"error"* ]] || [[ "$PRESIGNED_URL" == *"Error"* ]]; then
-    echo "[entrypoint] ERROR: Failed to generate pre-signed URL: $PRESIGNED_URL"
-    update_job_status "FAILED" "Failed to generate pre-signed URL for playbook"
+if ! PLAYBOOK_B64=$(download_playbook_base64); then
+    echo "[entrypoint] ERROR: Failed to download playbook from S3 after retries"
+    update_job_status "FAILED" "Failed to download playbook from S3"
     upload_logs || true
     exit 1
 fi
 
-echo "[entrypoint] Pre-signed URL generated (expires in 3600s)"
+echo "[entrypoint] Playbook downloaded and encoded for transport"
 
 # 4. Prepare extra vars for remote execution without shell interpolation.
 #    We pass base64 and materialize a temp file on the target instance.
@@ -350,8 +405,8 @@ PYEOF
 fi
 
 # 5. Build the shell script that each target instance will execute via SSM Run Command.
-#    The script: installs Ansible if missing, downloads playbook via pre-signed URL,
-#    runs it locally with --connection=local (no cross-account S3 or SSM sessions needed).
+#    The script: installs Ansible if missing, materializes the playbook from an
+#    inline base64 payload, then runs it locally with --connection=local.
 read -r -d '' SSM_SCRIPT << 'SSMEOF' || true
 #!/bin/bash
 set -e
@@ -378,14 +433,19 @@ fi
 
 echo "Ansible version: $(ansible-playbook --version | head -1)"
 
-# Download playbook from pre-signed URL
+# Materialize playbook from inline base64 payload
 mkdir -p /tmp/clutter-ansible
-curl -sf -o /tmp/clutter-ansible/playbook.yml "PRESIGNED_URL_PLACEHOLDER"
-if [ ! -s /tmp/clutter-ansible/playbook.yml ]; then
-    echo "ERROR: Failed to download playbook or file is empty"
+echo "Writing playbook payload to local file..."
+if ! (printf '%s' "PLAYBOOK_B64_PLACEHOLDER" | base64 -d > /tmp/clutter-ansible/playbook.yml 2>/dev/null || \
+      printf '%s' "PLAYBOOK_B64_PLACEHOLDER" | base64 --decode > /tmp/clutter-ansible/playbook.yml 2>/dev/null); then
+    echo "ERROR: Failed to decode playbook payload"
     exit 1
 fi
-echo "Playbook downloaded successfully"
+if [ ! -s /tmp/clutter-ansible/playbook.yml ]; then
+    echo "ERROR: Playbook file is empty after decode"
+    exit 1
+fi
+echo "Playbook materialized successfully"
 
 # Create local inventory (playbooks must use hosts: all or hosts: localhost)
 echo "localhost ansible_connection=local" > /tmp/clutter-ansible/inventory
@@ -408,7 +468,7 @@ echo "=== Playbook execution complete ==="
 SSMEOF
 
 # Inject actual values into the script template
-SSM_SCRIPT="${SSM_SCRIPT//PRESIGNED_URL_PLACEHOLDER/$PRESIGNED_URL}"
+SSM_SCRIPT="${SSM_SCRIPT//PLAYBOOK_B64_PLACEHOLDER/$PLAYBOOK_B64}"
 SSM_SCRIPT="${SSM_SCRIPT//EXTRA_VARS_B64_PLACEHOLDER/$EXTRA_VARS_B64}"
 
 # 6. Send SSM Run Command to all target instances
