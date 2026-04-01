@@ -56,3 +56,38 @@ export type LiveLogsPage = {
   isComplete: boolean;
   taskStatus: string;
 };
+
+// ─── Recent activity ──────────────────────────────────────────────────────────
+
+export type RecentActivityItem = {
+  diagram_name: string;
+  command_id: string;
+  command: "apply" | "destroy" | "plan" | string;
+  status: string;
+  created_at: string;
+  duration_seconds: number | null;
+};
+
+export type RecentActivityEnvelope = {
+  data: RecentActivityItem[];
+  message?: string;
+};
+
+export type ProjectRecentActivityItem = {
+  projectId: string;
+  projectName: string;
+  diagramId: string;
+  diagramName: string;
+  commandId: string;
+  command: string;
+  status: string;
+  createdAt: string;
+  durationSeconds: number | null;
+};
+
+export type ProjectRecentActivityHookResult = {
+  data: ProjectRecentActivityItem[];
+  isLoading: boolean;
+  isError: boolean;
+  errors: unknown[];
+};

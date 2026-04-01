@@ -14,4 +14,6 @@ export const logKeys = {
   // live log stream for a running task
   live: (orgId: string, projId: string, diagramId: string, taskArn: string) =>
     [...logKeys.base, "live", orgId, projId, diagramId, taskArn] as const,
+
+  recentActivity: (orgId: string, diagramId: string) => ["logs", "recent-activity", orgId, diagramId] as const,
 };

@@ -1,10 +1,11 @@
 // lib/features/logs/hooks.ts
 
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { Project } from "../projects/types";
 import { logsApi } from "./api";
 import { logKeys } from "./keys";
-import type { LiveLogLine, LogFileItem } from "./types";
+import type { LiveLogLine, LogFileItem, ProjectRecentActivityItem, RecentActivityItem } from "./types";
 
 // ─── Log file list ────────────────────────────────────────────────────────────
 
@@ -20,6 +21,80 @@ export const useLogFiles = (
     enabled: !!token && !!orgId && !!projId && !!diagramId,
     staleTime: 30 * 1000,
   });
+};
+
+// ─── Recent activity ──────────────────────────────────────────────────────────
+
+export const useRecentActivity = (token?: string | null, orgId?: string | null, diagramId?: string | null) => {
+  return useQuery<RecentActivityItem[]>({
+    queryKey:
+      orgId && diagramId ? ["logs", "recent-activity", orgId, diagramId] : ["logs", "recent-activity", "disabled"],
+    queryFn: () => logsApi.getRecentActivity(token as string, orgId as string, diagramId as string),
+    enabled: !!token && !!orgId && !!diagramId,
+    staleTime: 10 * 1000,
+    refetchInterval: 10 * 1000,
+    refetchIntervalInBackground: true,
+  });
+};
+
+export const useProjectRecentActivity = (token?: string | null, orgId?: string | null, projects: Project[] = []) => {
+  const diagramTargets = projects.flatMap((project) =>
+    (project.diagrams ?? []).map((diagram) => ({
+      projectId: project.id,
+      projectName: project.name,
+      diagramId: diagram.id,
+      diagramName: diagram.name,
+    }))
+  );
+
+  const queries = useQueries({
+    queries: diagramTargets.map((target) => ({
+      queryKey: logKeys.recentActivity(orgId ?? "", target.diagramId),
+      queryFn: () => logsApi.getRecentActivity(token as string, orgId as string, target.diagramId),
+      enabled: !!token && !!orgId && !!target.diagramId,
+      staleTime: 10 * 1000,
+      refetchInterval: 10 * 1000,
+      refetchIntervalInBackground: true,
+    })),
+  });
+
+  const allActivity: ProjectRecentActivityItem[] = queries.flatMap((query, index) => {
+    const target = diagramTargets[index];
+    const items = (query.data ?? []) as RecentActivityItem[];
+
+    return items.map((item) => ({
+      projectId: target.projectId,
+      projectName: target.projectName,
+      diagramId: target.diagramId,
+      diagramName: target.diagramName,
+      commandId: item.command_id,
+      command: item.command,
+      status: item.status,
+      createdAt: item.created_at,
+      durationSeconds: item.duration_seconds,
+    }));
+  });
+
+  const latestByProject = new Map<string, ProjectRecentActivityItem>();
+
+  for (const item of allActivity) {
+    const existing = latestByProject.get(item.projectId);
+
+    if (!existing || new Date(item.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+      latestByProject.set(item.projectId, item);
+    }
+  }
+
+  const data = Array.from(latestByProject.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return {
+    data,
+    isLoading: queries.some((query) => query.isLoading),
+    isError: queries.some((query) => query.isError),
+    errors: queries.map((query) => query.error).filter(Boolean),
+  };
 };
 
 // ─── Log file URL ─────────────────────────────────────────────────────────────

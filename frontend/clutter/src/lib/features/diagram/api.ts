@@ -113,14 +113,20 @@ export const diagramApi = {
       body: JSON.stringify(input),
     });
 
-    const task = json?.data?.ecsFargateTaskOutput?.[0];
-    if (!task?.TaskArn) {
-      throw new Error("runTerraform: response did not include a TaskArn");
+    const commandId = json?.data?.commandId;
+    const taskArn = json?.data?.taskArn;
+
+    if (!taskArn) {
+      throw new Error("runTerraform: response did not include a taskArn");
+    }
+
+    if (!commandId) {
+      throw new Error("runTerraform: response did not include a commandId");
     }
 
     return {
-      taskArn: task.TaskArn,
-      lastStatus: task.LastStatus ?? "UNKNOWN",
+      commandId,
+      taskArn,
     };
   },
 };

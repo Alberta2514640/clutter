@@ -1,6 +1,14 @@
 // lib/features/logs/api.ts
 
-import type { LiveLogsEnvelope, LiveLogsPage, LogFileItem, LogFileUrlEnvelope, LogFilesEnvelope } from "./types";
+import type {
+  LiveLogsEnvelope,
+  LiveLogsPage,
+  LogFileItem,
+  LogFileUrlEnvelope,
+  LogFilesEnvelope,
+  RecentActivityEnvelope,
+  RecentActivityItem,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
@@ -73,5 +81,15 @@ export const logsApi = {
       isComplete: d.isComplete || (isTerminal && !d.nextToken),
       taskStatus: d.taskStatus ?? "",
     };
+  },
+
+  // GET /terraform-engine/logs/recent-activity
+  getRecentActivity: async (token: string, orgId: string, diagramId: string): Promise<RecentActivityItem[]> => {
+    const qs = new URLSearchParams({ orgId, diagramId });
+    const json = await apiFetch<RecentActivityEnvelope>(
+      `/terraform-engine/logs/recent-activity?${qs.toString()}`,
+      token
+    );
+    return json.data ?? [];
   },
 };
