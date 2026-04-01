@@ -3,12 +3,15 @@ set -euo pipefail
 
 # =============================================================================
 # Ansible Runner Entrypoint
-# Runs inside a Fargate task. Downloads playbook from S3, generates inventory,
-# executes ansible-playbook, uploads logs, and updates PostgreSQL job status.
+# Runs inside a Fargate task. Downloads playbook from S3, generates a
+# pre-signed URL, then pushes execution to target instances via SSM Run
+# Command. Each instance downloads the playbook and runs it locally.
+# Fargate polls for completion, collects output, uploads logs, and updates
+# PostgreSQL job status.
 #
-# Uses SSM Session Manager for connectivity — no SSH keys or port 22 needed.
-# Target EC2 instances must have SSM Agent running and an instance profile
-# with AmazonSSMManagedInstanceCore policy.
+# Uses SSM Run Command (not SSM Session Manager) — no S3 staging bucket,
+# no cross-account S3 access needed. Target EC2 instances must have SSM
+# Agent running and an instance profile with AmazonSSMManagedInstanceCore.
 # =============================================================================
 
 # Required environment variables (injected by ECS task definition / run-task Lambda):
@@ -27,7 +30,6 @@ set -euo pipefail
 #   PLAYBOOK_TIMEOUT    - Maximum execution time in seconds (default: 3600)
 
 LOG_FILE="/var/log/ansible/ansible.log"
-INVENTORY_FILE="/playbooks/inventory.yml"
 
 # Client role credentials (populated after sts:AssumeRole — used only for
 # EC2 and SSM operations in the client account, NOT for S3 so that the
@@ -37,9 +39,43 @@ CLIENT_ACCESS_KEY_ID=""
 CLIENT_SECRET_ACCESS_KEY=""
 CLIENT_SESSION_TOKEN=""
 
+# Run AWS CLI calls against the client account without exporting credentials
+# globally (prevents accidental reuse for S3 operations).
+aws_client() {
+    AWS_ACCESS_KEY_ID="$CLIENT_ACCESS_KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$CLIENT_SECRET_ACCESS_KEY" \
+    AWS_SESSION_TOKEN="$CLIENT_SESSION_TOKEN" \
+    aws "$@"
+}
+
+# Redact likely secrets from output and cap size before writing to logs.
+sanitize_output() {
+    python3 - <<'PYEOF'
+import re
+import sys
+
+data = sys.stdin.read()
+
+# Cap output size to reduce accidental large secret spill.
+max_len = 16000
+if len(data) > max_len:
+    data = data[:max_len] + "\n...[truncated]"
+
+patterns = [
+    r'(?i)(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*[^\s"\']+',
+    r'AKIA[0-9A-Z]{16}',
+    r'ASIA[0-9A-Z]{16}',
+    r'(?i)postgres(?:ql)?://[^\s]+'
+]
+for p in patterns:
+    data = re.sub(p, '***REDACTED***', data)
+
+sys.stdout.write(data)
+PYEOF
+}
+
 # Retry configuration constants (global scope for use in functions and error handlers)
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
-GENERATE_INVENTORY_MAX_RETRIES=3
 PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
 if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
     echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
@@ -207,41 +243,12 @@ fi
 echo "[entrypoint] Starting Ansible job: $JOB_ID"
 echo "[entrypoint] Playbook: s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}"
 echo "[entrypoint] Targets: $TARGET_INSTANCE_IDS"
-echo "[entrypoint] Connection: SSM Session Manager"
+echo "[entrypoint] Connection: SSM Run Command (local execution on targets)"
 
 # 1. Mark job as RUNNING
 update_job_status "RUNNING"
 
-# 2. Download playbook from S3
-echo "[entrypoint] Downloading playbook from S3..."
-download_playbook_with_retry() {
-    local retry_count=0
-    local retry_delay=5
-
-    while [ $retry_count -lt $DOWNLOAD_PLAYBOOK_MAX_RETRIES ]; do
-        if aws s3 cp "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" /playbooks/main.yml --region "$AWS_DEFAULT_REGION" 2>&1; then
-            return 0
-        else
-            retry_count=$((retry_count + 1))
-            if [ $retry_count -lt $DOWNLOAD_PLAYBOOK_MAX_RETRIES ]; then
-                echo "[entrypoint] WARNING: Playbook download failed, retrying in ${retry_delay}s (attempt $retry_count/$DOWNLOAD_PLAYBOOK_MAX_RETRIES)"
-                sleep $retry_delay
-                retry_delay=$((retry_delay * 2))
-            else
-                return 1
-            fi
-        fi
-    done
-}
-
-if ! download_playbook_with_retry; then
-    echo "[entrypoint] ERROR: Failed to download playbook after $DOWNLOAD_PLAYBOOK_MAX_RETRIES attempts"
-    upload_logs || true
-    update_job_status "FAILED" "Failed to download playbook from S3"
-    exit 1
-fi
-
-# Assume customer role
+# 2. Assume customer role
 # Credentials are stored in variables — NOT exported to the environment so
 # that all S3 operations (playbook download, log upload, SSM plugin file
 # staging) continue to use the Fargate task-role identity, which is already
@@ -269,103 +276,249 @@ CLIENT_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.
 CLIENT_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
 CLIENT_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
 
-# 3. Generate ansible.cfg (configured for SSM, no SSH)
-cat > /playbooks/ansible.cfg << 'ANSIBLECFG'
-[defaults]
-inventory = /playbooks/inventory.yml
-host_key_checking = False
-log_path = /var/log/ansible/ansible.log
-timeout = 60
-forks = 10
-stdout_callback = default
-remote_tmp = /tmp/.ansible/tmp
-allow_unsafe_lookups = False
+# 3. Generate pre-signed URL for playbook (uses Fargate task role, NOT client creds)
+#    Pre-signed URLs embed the Fargate role's S3 credentials in the URL itself,
+#    so target instances can download the playbook without cross-account S3 access.
+echo "[entrypoint] Generating pre-signed URL for playbook..."
+PRESIGNED_URL=$(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+    aws s3 presign "s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}" \
+    --region "$AWS_DEFAULT_REGION" \
+    --expires-in 3600 2>&1)
 
-[privilege_escalation]
-become = True
-become_method = sudo
-ANSIBLECFG
-
-export ANSIBLE_CONFIG=/playbooks/ansible.cfg
-
-# 4. Generate dynamic inventory from instance IDs (uses SSM connection)
-echo "[entrypoint] Generating inventory..."
-generate_inventory_with_retry() {
-    local retry_count=0
-    local retry_delay=5
-
-    while [ $retry_count -lt $GENERATE_INVENTORY_MAX_RETRIES ]; do
-        if python3 /usr/local/bin/generate_inventory.py \
-            --instance-ids "$TARGET_INSTANCE_IDS" \
-            --region "$AWS_DEFAULT_REGION" \
-            --output "$INVENTORY_FILE" \
-            --aws-access-key-id "$CLIENT_ACCESS_KEY_ID" \
-            --aws-secret-access-key "$CLIENT_SECRET_ACCESS_KEY" \
-            --aws-session-token "$CLIENT_SESSION_TOKEN" \
-            --s3-bucket "$S3_BUCKET_NAME" 2>&1; then
-            return 0
-        else
-            retry_count=$((retry_count + 1))
-            if [ $retry_count -lt $GENERATE_INVENTORY_MAX_RETRIES ]; then
-                echo "[entrypoint] WARNING: Inventory generation failed, retrying in ${retry_delay}s (attempt $retry_count/$GENERATE_INVENTORY_MAX_RETRIES)"
-                sleep $retry_delay
-                retry_delay=$((retry_delay * 2))
-            else
-                return 1
-            fi
-        fi
-    done
-}
-
-if ! generate_inventory_with_retry; then
-    echo "[entrypoint] ERROR: Failed to generate inventory after $GENERATE_INVENTORY_MAX_RETRIES attempts"
+if [ -z "$PRESIGNED_URL" ] || [[ "$PRESIGNED_URL" == *"error"* ]] || [[ "$PRESIGNED_URL" == *"Error"* ]]; then
+    echo "[entrypoint] ERROR: Failed to generate pre-signed URL: $PRESIGNED_URL"
+    update_job_status "FAILED" "Failed to generate pre-signed URL for playbook"
     upload_logs || true
-    update_job_status "FAILED" "Failed to generate inventory from instance IDs"
     exit 1
 fi
 
-echo "[entrypoint] Inventory generated at $INVENTORY_FILE"
+echo "[entrypoint] Pre-signed URL generated (expires in 3600s)"
 
-# 5. Build extra vars argument if provided
-EXTRA_VARS_ARGS=()
+# 4. Prepare extra vars for remote execution without shell interpolation.
+#    We pass base64 and materialize a temp file on the target instance.
+EXTRA_VARS_B64=""
 if [ -n "${EXTRA_VARS:-}" ] && [ "$EXTRA_VARS" != "null" ] && [ "$EXTRA_VARS" != "{}" ]; then
-    echo "$EXTRA_VARS" > /playbooks/extra_vars.json
-    EXTRA_VARS_ARGS=("-e" "@/playbooks/extra_vars.json")
+    if ! echo "$EXTRA_VARS" | python3 -c 'import sys,json; json.load(sys.stdin)' >/dev/null 2>&1; then
+        echo "[entrypoint] ERROR: EXTRA_VARS must be valid JSON"
+        update_job_status "FAILED" "Invalid EXTRA_VARS JSON"
+        upload_logs || true
+        exit 1
+    fi
+
+    # Block likely secret values from being sent in SSM command payload.
+    if ! echo "$EXTRA_VARS" | python3 - <<'PYEOF'
+import json
+import re
+import sys
+
+try:
+    obj = json.load(sys.stdin)
+except Exception:
+    print("invalid json")
+    sys.exit(1)
+
+secret_key_re = re.compile(r'(password|passwd|secret|token|api[_-]?key|access[_-]?key)', re.I)
+
+def has_sensitive(d):
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if secret_key_re.search(str(k)) and v not in (None, "", {}, []):
+                return True
+            if has_sensitive(v):
+                return True
+    elif isinstance(d, list):
+        return any(has_sensitive(x) for x in d)
+    return False
+
+if has_sensitive(obj):
+    print("sensitive keys present")
+    sys.exit(1)
+
+sys.exit(0)
+PYEOF
+    then
+        echo "[entrypoint] ERROR: EXTRA_VARS contains sensitive keys and cannot be sent via SSM command payload"
+        update_job_status "FAILED" "EXTRA_VARS contains sensitive keys; use non-sensitive vars only"
+        upload_logs || true
+        exit 1
+    fi
+
+    EXTRA_VARS_B64=$(printf '%s' "$EXTRA_VARS" | base64 | tr -d '\n')
 fi
 
-# 6. Run Ansible playbook
-echo "[entrypoint] Executing ansible-playbook..."
-cd /playbooks
-
-# Verify ansible-playbook is available before execution
-if ! command -v ansible-playbook &>/dev/null; then
-    echo "[entrypoint] ERROR: ansible-playbook command not found"
-    update_job_status "FAILED" "ansible-playbook binary not available"
-    upload_logs || true
-    exit 1
-fi
-
-set +e
-timeout "$PLAYBOOK_TIMEOUT" ansible-playbook main.yml "${EXTRA_VARS_ARGS[@]}" -v
-EXIT_CODE=$?
+# 5. Build the shell script that each target instance will execute via SSM Run Command.
+#    The script: installs Ansible if missing, downloads playbook via pre-signed URL,
+#    runs it locally with --connection=local (no cross-account S3 or SSM sessions needed).
+read -r -d '' SSM_SCRIPT << 'SSMEOF' || true
+#!/bin/bash
 set -e
 
-# Handle timeout exit code (124)
-if [ $EXIT_CODE -eq 124 ]; then
-    echo "[entrypoint] ERROR: Playbook execution timed out after ${PLAYBOOK_TIMEOUT}s"
-    update_job_status "FAILED" "Playbook execution timeout after ${PLAYBOOK_TIMEOUT}s"
+echo "=== Clutter Ansible Runner ==="
+echo "Instance: $(curl -sf http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || hostname)"
+echo "Date: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+# Install Ansible if not present
+if ! command -v ansible-playbook &>/dev/null; then
+    echo "Ansible not found, installing..."
+    if command -v pip3 &>/dev/null; then
+        pip3 install ansible --quiet 2>&1
+    elif command -v yum &>/dev/null; then
+        yum install -y ansible 2>&1
+    elif command -v apt-get &>/dev/null; then
+        apt-get update -qq && apt-get install -y ansible 2>&1
+    else
+        echo "ERROR: Cannot install Ansible - no supported package manager found"
+        exit 1
+    fi
+    echo "Ansible installed successfully"
+fi
+
+echo "Ansible version: $(ansible-playbook --version | head -1)"
+
+# Download playbook from pre-signed URL
+mkdir -p /tmp/clutter-ansible
+curl -sf -o /tmp/clutter-ansible/playbook.yml "PRESIGNED_URL_PLACEHOLDER"
+if [ ! -s /tmp/clutter-ansible/playbook.yml ]; then
+    echo "ERROR: Failed to download playbook or file is empty"
+    exit 1
+fi
+echo "Playbook downloaded successfully"
+
+# Create local inventory (playbooks must use hosts: all or hosts: localhost)
+echo "localhost ansible_connection=local" > /tmp/clutter-ansible/inventory
+
+# Run playbook locally
+cd /tmp/clutter-ansible
+if [ -n "EXTRA_VARS_B64_PLACEHOLDER" ]; then
+    if ! (printf '%s' "EXTRA_VARS_B64_PLACEHOLDER" | base64 -d > /tmp/clutter-ansible/extra_vars.json 2>/dev/null || \
+          printf '%s' "EXTRA_VARS_B64_PLACEHOLDER" | base64 --decode > /tmp/clutter-ansible/extra_vars.json 2>/dev/null); then
+        echo "ERROR: Failed to decode EXTRA_VARS payload"
+        exit 1
+    fi
+    chmod 600 /tmp/clutter-ansible/extra_vars.json
+    ansible-playbook -i inventory playbook.yml --extra-vars @/tmp/clutter-ansible/extra_vars.json -v
+else
+    ansible-playbook -i inventory playbook.yml -v
+fi
+
+echo "=== Playbook execution complete ==="
+SSMEOF
+
+# Inject actual values into the script template
+SSM_SCRIPT="${SSM_SCRIPT//PRESIGNED_URL_PLACEHOLDER/$PRESIGNED_URL}"
+SSM_SCRIPT="${SSM_SCRIPT//EXTRA_VARS_B64_PLACEHOLDER/$EXTRA_VARS_B64}"
+
+# 6. Send SSM Run Command to all target instances
+echo "[entrypoint] Sending SSM Run Command to instances: $TARGET_INSTANCE_IDS"
+
+# Parse comma-separated instance IDs into array for SSM CLI
+IFS=',' read -ra INSTANCE_ARRAY <<< "$TARGET_INSTANCE_IDS"
+
+# Convert the script to a JSON-safe string for the SSM commands parameter
+SSM_COMMANDS_JSON=$(echo "$SSM_SCRIPT" | python3 -c 'import sys,json; print(json.dumps([sys.stdin.read()]))')
+
+set +e
+COMMAND_ID=$(aws_client ssm send-command \
+    --document-name "AWS-RunShellScript" \
+    --instance-ids "${INSTANCE_ARRAY[@]}" \
+    --parameters "{\"commands\":$SSM_COMMANDS_JSON}" \
+    --timeout-seconds "$PLAYBOOK_TIMEOUT" \
+    --region "$AWS_DEFAULT_REGION" \
+    --query "Command.CommandId" \
+    --output text 2>&1)
+SEND_EXIT=$?
+set -e
+
+if [ $SEND_EXIT -ne 0 ] || [ -z "$COMMAND_ID" ]; then
+    echo "[entrypoint] ERROR: Failed to send SSM command (exit=$SEND_EXIT): $COMMAND_ID"
+    update_job_status "FAILED" "Failed to send SSM Run Command"
     upload_logs || true
     exit 1
 fi
 
-if [ $EXIT_CODE -eq 0 ]; then
-    echo "[entrypoint] Ansible playbook completed successfully"
+echo "[entrypoint] SSM Command ID: $COMMAND_ID"
+
+# 7. Poll for completion
+echo "[entrypoint] Waiting for command to complete on all instances..."
+POLL_INTERVAL=10
+MAX_WAIT="$PLAYBOOK_TIMEOUT"
+ELAPSED=0
+ALL_DONE=false
+
+while [ "$ELAPSED" -lt "$MAX_WAIT" ] && [ "$ALL_DONE" = "false" ]; do
+    sleep "$POLL_INTERVAL"
+    ELAPSED=$((ELAPSED + POLL_INTERVAL))
+
+    STATUS=$(aws_client ssm list-commands \
+        --command-id "$COMMAND_ID" \
+        --region "$AWS_DEFAULT_REGION" \
+        --query "Commands[0].Status" \
+        --output text 2>&1) || STATUS="Error"
+
+    echo "[entrypoint] Command status: $STATUS (${ELAPSED}s elapsed)"
+
+    case "$STATUS" in
+        Success|Failed|Cancelled|TimedOut)
+            ALL_DONE=true
+            ;;
+        Pending|InProgress)
+            ;;
+        *)
+            echo "[entrypoint] WARNING: Unexpected status: $STATUS"
+            ;;
+    esac
+done
+
+# 8. Collect output from each instance
+echo "[entrypoint] Collecting output from instances..."
+OVERALL_SUCCESS=true
+
+for INSTANCE_ID in "${INSTANCE_ARRAY[@]}"; do
+    echo ""
+    echo "========== Instance: $INSTANCE_ID =========="
+
+    set +e
+    INVOCATION=$(aws_client ssm get-command-invocation \
+        --command-id "$COMMAND_ID" \
+        --instance-id "$INSTANCE_ID" \
+        --region "$AWS_DEFAULT_REGION" \
+        --output json 2>&1)
+    set -e
+
+    INST_STATUS=$(echo "$INVOCATION" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("Status","Unknown"))' 2>/dev/null || echo "Unknown")
+    STDOUT=$(echo "$INVOCATION" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("StandardOutputContent",""))' 2>/dev/null || echo "")
+    STDERR=$(echo "$INVOCATION" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("StandardErrorContent",""))' 2>/dev/null || echo "")
+
+    echo "Status: $INST_STATUS"
+    if [ -n "$STDOUT" ]; then
+        echo "--- STDOUT ---"
+        echo "$STDOUT" | sanitize_output
+    fi
+    if [ -n "$STDERR" ]; then
+        echo "--- STDERR ---"
+        echo "$STDERR" | sanitize_output
+    fi
+    echo "========== End: $INSTANCE_ID =========="
+
+    if [ "$INST_STATUS" != "Success" ]; then
+        OVERALL_SUCCESS=false
+    fi
+done
+
+# 9. Final status
+if [ "$ALL_DONE" = "false" ]; then
+    echo "[entrypoint] ERROR: Command timed out after ${MAX_WAIT}s"
+    update_job_status "FAILED" "SSM command timed out after ${MAX_WAIT}s"
+    upload_logs || true
+    exit 1
+elif [ "$OVERALL_SUCCESS" = "true" ]; then
+    echo "[entrypoint] All instances completed successfully"
     update_job_status "COMPLETED"
     upload_logs || true
     exit 0
 else
-    echo "[entrypoint] Ansible playbook failed with exit code: $EXIT_CODE"
-    update_job_status "FAILED" "Ansible playbook exited with code $EXIT_CODE"
+    echo "[entrypoint] One or more instances failed"
+    update_job_status "FAILED" "Playbook failed on one or more instances"
     upload_logs || true
-    exit $EXIT_CODE
+    exit 1
 fi
