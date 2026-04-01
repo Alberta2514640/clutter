@@ -8,5 +8,5 @@ type DeploymentLog struct {
 	Command     string    `json:"command"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
-	Duration    int       `json:"duration_seconds"`
+	Duration    *int      `json:"duration_seconds"`
 }
