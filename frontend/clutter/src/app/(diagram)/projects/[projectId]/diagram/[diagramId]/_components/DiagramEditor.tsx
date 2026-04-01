@@ -452,6 +452,7 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
         <ConfigPanel
           diagramId={diagramId}
           projectId={projectId}
+          orgId={orgId}
           accountAccessRoleId={awsId}
         />
       </div>

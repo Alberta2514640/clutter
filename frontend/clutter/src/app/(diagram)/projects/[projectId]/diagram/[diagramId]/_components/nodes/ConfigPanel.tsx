@@ -21,6 +21,10 @@ import {
 } from "@/lib/features/diagram/uiStore";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import {
+  useCreateLambdaCodeUploadUrl,
+  useUploadLambdaCodeToS3,
+} from "@/lib/features/codeUpload/hooks";
+import {
   useCreatePlaybookUploadUrl,
   useSubmitAnsibleJob,
   useUploadPlaybookFileToS3,
@@ -146,10 +150,11 @@ const getVariableError = (
 type ConfigPanelProps = {
   diagramId: string;
   projectId: string;
+  orgId: string | null;
   accountAccessRoleId: string | null;
 };
 
-export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId, }: ConfigPanelProps) {
+export default function ConfigPanel({ diagramId, projectId, orgId, accountAccessRoleId, }: ConfigPanelProps) {
   const editor = useDiagramEditor(diagramId);
   const { markClean, setNodes, setEdges } = useDiagramEditorActions();
   const meQ = useMe();
@@ -158,6 +163,8 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
   const createPlaybookUploadUrl = useCreatePlaybookUploadUrl(token);
   const uploadPlaybookFileToS3 = useUploadPlaybookFileToS3();
   const submitAnsibleJob = useSubmitAnsibleJob(token);
+  const createLambdaCodeUploadUrl = useCreateLambdaCodeUploadUrl(token);
+  const uploadLambdaCodeToS3 = useUploadLambdaCodeToS3();
   const { data: supportedResources } = useSupportedResources();
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
@@ -166,14 +173,20 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
   const selectedNode = useMemo(() => nodes.find((n) => n.selected), [nodes]);
   const showContent = !!selectedNode;
   const isEc2Node = selectedNode?.data.img?.includes("ec2") ?? false;
+  const isLambdaNode = selectedNode?.data.img?.includes("lambda") ?? false;
   const ansibleUploadInputId = selectedNode
     ? `ansible-playbook-upload-${selectedNode.id}`
     : "ansible-playbook-upload";
+  const lambdaUploadInputId = selectedNode
+    ? `lambda-code-upload-${selectedNode.id}`
+    : "lambda-code-upload";
 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [lambdaUploadError, setLambdaUploadError] = useState<string | null>(null);
+  const [lambdaUploadMessage, setLambdaUploadMessage] = useState<string | null>(null);
 
   const resourceDef = useMemo(
     () => supportedResources?.find((r) => r.label === selectedNode?.data.label),
@@ -311,6 +324,73 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
       setNodes,
       token,
       uploadPlaybookFileToS3,
+    ],
+  );
+
+  const handleLambdaCodeUpload = useCallback(
+    async (file: File | null) => {
+      if (!file || !selectedNode) return;
+      if (!token) {
+        setLambdaUploadError("You must be signed in before uploading code.");
+        return;
+      }
+
+      setLambdaUploadError(null);
+      setLambdaUploadMessage(null);
+
+      const resourceName = String(selectedNode.data.variables?.resource_name ?? "");
+      const runtime = String(selectedNode.data.variables?.runtime ?? "");
+
+      if (!resourceName) {
+        setLambdaUploadError("Set a resource_name on this Lambda node before uploading code.");
+        return;
+      }
+
+      try {
+        const result = await createLambdaCodeUploadUrl.mutateAsync({
+          org_id: orgId ?? "",
+          project_id: projectId,
+          diagram_id: diagramId,
+          lambda_resource_name: resourceName,
+          runtime,
+        });
+
+        await uploadLambdaCodeToS3.mutateAsync({
+          upload_url: result.upload_url,
+          file,
+        });
+
+        patchSelectedNode((n) => ({
+          ...n,
+          data: {
+            ...n.data,
+            lambdaCodeZipName: file.name,
+            lambdaCodeS3Key: result.s3_key,
+            lambdaCodeS3Bucket: result.s3_bucket,
+            variables: {
+              ...(n.data.variables ?? {}),
+              s3_key: result.s3_key,
+              s3_bucket: result.s3_bucket,
+            },
+          },
+        }));
+
+        setLambdaUploadMessage(`Uploaded "${file.name}" for this Lambda function.`);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to upload Lambda code.";
+        setLambdaUploadError(message);
+      }
+    },
+    [
+      createLambdaCodeUploadUrl,
+      diagramId,
+      orgId,
+      patchSelectedNode,
+      projectId,
+      selectedNode,
+      token,
+      uploadLambdaCodeToS3,
     ],
   );
 
@@ -806,6 +886,66 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                     {runError && (
                       <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
                         {runError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {isLambdaNode && (
+                <div>
+                  <div className="mb-4 border-t border-slate-800/80" />
+                  <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    Function Code
+                  </div>
+                  <div className="space-y-3 rounded-lg border border-cyan-900/40 bg-cyan-950/20 p-3">
+                    <label
+                      htmlFor={lambdaUploadInputId}
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-cyan-800/60 bg-slate-950/65 px-3 py-3 text-sm font-medium text-cyan-50 transition hover:border-cyan-500/60 hover:bg-cyan-950/30"
+                    >
+                      <Upload className="h-4 w-4" />
+                      {selectedNode!.data.lambdaCodeZipName
+                        ? "Replace function code (.zip)"
+                        : "Upload function code (.zip)"}
+                    </label>
+
+                    <input
+                      id={lambdaUploadInputId}
+                      type="file"
+                      accept=".zip"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const input = e.currentTarget;
+                        await handleLambdaCodeUpload(
+                          e.target.files?.[0] ?? null,
+                        );
+                        input.value = "";
+                      }}
+                    />
+
+                    <div className="rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2">
+                      <div className="text-xs text-gray-400">Uploaded file</div>
+                      <div className="mt-1 text-sm font-medium text-white">
+                        {selectedNode!.data.lambdaCodeZipName ?? "No file uploaded yet"}
+                      </div>
+                    </div>
+
+                    {(createLambdaCodeUploadUrl.isPending ||
+                      uploadLambdaCodeToS3.isPending) && (
+                      <div className="text-xs text-slate-400">
+                        Uploading function code…
+                      </div>
+                    )}
+
+                    {lambdaUploadMessage && (
+                      <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                        {lambdaUploadMessage}
+                      </div>
+                    )}
+
+                    {lambdaUploadError && (
+                      <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        {lambdaUploadError}
                       </div>
                     )}
                   </div>
