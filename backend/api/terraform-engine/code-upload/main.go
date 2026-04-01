@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 var runtimeHandlers = map[string]string{
@@ -110,8 +111,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	presigner := s3.NewPresignClient(s3.NewFromConfig(cfg))
 
 	presigned, err := presigner.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(s3Key),
+		Bucket:               aws.String(bucket),
+		Key:                  aws.String(s3Key),
+		ServerSideEncryption: types.ServerSideEncryptionAes256,
 	}, s3.WithPresignExpires(15*time.Minute))
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{

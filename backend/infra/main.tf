@@ -476,7 +476,7 @@ module "terraform-engine-code-upload-presigned-url-lambda" {
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-code-upload-presigned-url:*",
-    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/*/function.zip"
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/code/*/bootstrap.zip"
   ]
   zip_dir_slice = "terraform-engine/code-upload"
   environment_variables = {
