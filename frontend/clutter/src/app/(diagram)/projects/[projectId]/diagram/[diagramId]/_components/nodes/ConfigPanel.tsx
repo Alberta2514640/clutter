@@ -486,13 +486,13 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                       accept=".yml,.yaml"
                       className="hidden"
                       onChange={async (e) => {
-                        await handleAnsiblePlaybookUpload(
-                          e.target.files?.[0] ?? null,
-                        );
-                        e.currentTarget.value = "";
+                        const input = e.currentTarget;
+                        const file = input.files?.[0] ?? null;
+                        await handleAnsiblePlaybookUpload(file);
+                        input.value = "";
                       }}
                     />
-
+                    
                     <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
                       <div className="text-xs text-gray-400">Uploaded file</div>
                       <div className="mt-1 text-sm font-medium text-white">

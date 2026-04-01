@@ -1,13 +1,17 @@
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProjectRecentActivityItem } from "@/lib/features/logs/types";
 import { Activity } from "lucide-react";
+import Link from "next/link";
 
 interface ActivitySectionProps {
   activity?: ProjectRecentActivityItem[];
   isLoading?: boolean;
 }
 
-export default function ActivitySection({ activity = [], isLoading = false, }: ActivitySectionProps) {
+export default function ActivitySection({
+  activity = [],
+  isLoading = false,
+}: ActivitySectionProps) {
   const getStatusDotColor = (status: string) => {
     switch (status.toUpperCase()) {
       case "SUCCESS":
@@ -61,13 +65,16 @@ export default function ActivitySection({ activity = [], isLoading = false, }: A
           <CardContent className="p-0">
             <div className="divide-y divide-slate-800">
               {activity.map((item) => (
-                <div
+                <Link
                   key={`${item.diagramId}-${item.commandId}`}
+                  href={`/projects/${item.projectId}/diagram/${item.diagramId}`}
                   className="block p-4 transition-colors hover:bg-slate-800/30"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(item.status)}`} />
+                      <div
+                        className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(item.status)}`}
+                      />
 
                       <div className="min-w-0">
                         <p className="truncate font-medium text-white">
@@ -76,17 +83,15 @@ export default function ActivitySection({ activity = [], isLoading = false, }: A
                         <p className="truncate text-sm text-gray-400">
                           {item.command.toUpperCase()} • {item.diagramName}
                         </p>
-                        <p className=" text-xs text-gray-500">
-                        {formatDate(item.createdAt)}
+                        <p className="text-xs text-gray-500">
+                          {formatDate(item.createdAt)}
                         </p>
                       </div>
                     </div>
 
-                    <div className="shrink-0 text-right">
-                      
-                    </div>
+                    <div className="shrink-0 text-right" />
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </CardContent>
