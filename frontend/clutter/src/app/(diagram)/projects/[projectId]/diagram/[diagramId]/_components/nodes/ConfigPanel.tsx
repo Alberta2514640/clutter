@@ -48,6 +48,71 @@ const formatVariableLabel = (name: string) => {
     .join(" ");
 };
 
+const getVariableSelectOptions = (
+  resourceLabel: string | undefined,
+  variableName: string,
+) => {
+  if (resourceLabel === "DynamoDB") {
+    if (variableName === "billing_mode") {
+      return ["PAY_PER_REQUEST", "PROVISIONED"];
+    }
+
+    if (variableName === "hash_key_type") {
+      return ["S", "N", "B"];
+    }
+  }
+
+  if (resourceLabel === "Lambda" && variableName === "architecture") {
+    return ["arm64", "x86_64"];
+  }
+
+  if (resourceLabel === "Lambda" && variableName === "memory_size") {
+    return ["128", "256", "512", "1024", "1769"];
+  }
+
+  if (resourceLabel === "Lambda" && variableName === "runtime") {
+    return [
+      "nodejs24.x",
+      "nodejs22.x",
+      "python3.14",
+      "python3.13",
+      "python3.12",
+      "provided.al2023",
+    ];
+  }
+
+  return null;
+};
+
+const getVariableChecklistOptions = (
+  resourceLabel: string | undefined,
+  variableName: string,
+) => {
+  if (resourceLabel === "API Gateway" && variableName === "http_methods") {
+    return [
+      { label: "GET", value: "GET" },
+      { label: "POST", value: "POST" },
+      { label: "PUT", value: "PUT" },
+      { label: "PATCH", value: "PATCH" },
+      { label: "DELETE", value: "DELETE" },
+    ];
+  }
+
+  return null;
+};
+
+const getVariablePlaceholder = (
+  resourceLabel: string | undefined,
+  variableName: string,
+  fallback: string,
+) => {
+  if (resourceLabel === "S3" && variableName === "resource_name") {
+    return "e.g. test-bucket";
+  }
+
+  return fallback;
+};
+
 const getVariableError = (
   name: string,
   value: unknown,
@@ -371,14 +436,34 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                   <div className="space-y-3">
                     {visibleVariables.map((v) => {
                       const val = selectedNode!.data.variables?.[v.name];
-                      const placeholder =
-                        v.default != null ? String(v.default) : "";
+                      const placeholder = getVariablePlaceholder(
+                        resourceDef?.label,
+                        v.name,
+                        v.default != null ? String(v.default) : "",
+                      );
                       const fieldError = getVariableError(
                         v.name,
                         val,
                         v.required,
                       );
                       const labelText = formatVariableLabel(v.name);
+                      const selectOptions = getVariableSelectOptions(
+                        resourceDef?.label,
+                        v.name,
+                      );
+                      const checklistOptions = getVariableChecklistOptions(
+                        resourceDef?.label,
+                        v.name,
+                      );
+                      const selectedChecklistValues = new Set(
+                        String(
+                          val ??
+                            (typeof v.default === "string" ? v.default : ""),
+                        )
+                          .split(",")
+                          .map((item) => item.trim())
+                          .filter(Boolean),
+                      );
 
                       return (
                         <div
@@ -390,26 +475,116 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                             {v.required ? <span className="text-red-400">*</span> : null}
                           </div>
 
-                          {v.type === "boolean" ? (
+                          {checklistOptions ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              {checklistOptions.map((option) => {
+                                const checked = selectedChecklistValues.has(option.value);
+
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => {
+                                      const nextValues = new Set(selectedChecklistValues);
+                                      if (checked) nextValues.delete(option.value);
+                                      else nextValues.add(option.value);
+
+                                      handleVariableChange(
+                                        v.name,
+                                        Array.from(nextValues).join(","),
+                                      );
+                                    }}
+                                    className={[
+                                      "flex h-10 items-center gap-2 rounded-lg border px-3 text-sm transition",
+                                      checked
+                                        ? "border-teal-500/50 bg-teal-500/10 text-teal-100"
+                                        : "border-slate-700 bg-slate-950/70 text-slate-300 hover:bg-slate-900/80",
+                                    ].join(" ")}
+                                  >
+                                    <span
+                                      className={[
+                                        "grid h-4 w-4 place-items-center rounded border text-[10px] font-bold",
+                                        checked
+                                          ? "border-teal-400 bg-teal-500 text-slate-950"
+                                          : "border-slate-600 bg-slate-900 text-transparent",
+                                      ].join(" ")}
+                                    >
+                                      ✓
+                                    </span>
+                                    <span className="font-medium">{option.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : v.type === "boolean" ? (
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={Boolean(val)}
+                              onClick={() =>
+                                handleVariableChange(v.name, !Boolean(val))
+                              }
+                              className={[
+                                (
+                                  (resourceDef?.label === "API Gateway" &&
+                                    v.name === "enable_cors") ||
+                                  (resourceDef?.label === "S3" &&
+                                    (v.name === "enable_versioning" ||
+                                      v.name === "block_public_access")) ||
+                                  (resourceDef?.label === "DynamoDB" &&
+                                    v.name === "enable_ttl")
+                                )
+                                  ? "flex h-10 w-full items-center justify-between rounded-lg border px-3 text-sm transition"
+                                  : "inline-flex h-10 min-w-[148px] items-center justify-between rounded-lg border px-3 text-sm transition",
+                                fieldError
+                                  ? "border-red-500/50 bg-slate-950/70 text-red-100"
+                                  : "border-slate-700 bg-slate-950/70 text-white",
+                              ].join(" ")}
+                            >
+                              <span className="font-medium">
+                                {Boolean(val) ? "True" : "False"}
+                              </span>
+                              <span
+                                className={[
+                                  "relative h-5 w-10 rounded-full transition-colors",
+                                  Boolean(val)
+                                    ? "bg-teal-500/80"
+                                    : "bg-slate-700",
+                                ].join(" ")}
+                              >
+                                <span
+                                  className={[
+                                    "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                                    Boolean(val) ? "translate-x-[20px]" : "translate-x-0",
+                                  ].join(" ")}
+                                />
+                              </span>
+                            </button>
+                          ) : selectOptions ? (
                             <Select
                               value={val === undefined ? "" : String(val)}
-                              onValueChange={(s) =>
-                                handleVariableChange(v.name, s === "true")
+                              onValueChange={(nextValue) =>
+                                handleVariableChange(v.name, nextValue)
                               }
                             >
                               <SelectTrigger
                                 className={[
-                                  "h-10 rounded-lg bg-slate-950/70 text-sm text-white",
+                                  "h-10 w-full rounded-lg bg-slate-950/70 text-sm text-white",
                                   fieldError
                                     ? "border-red-500/50 focus:ring-red-500/40"
                                     : "border-slate-700 focus:ring-teal-500/40",
                                 ].join(" ")}
                               >
-                                <SelectValue placeholder="— default —" />
+                                <SelectValue
+                                  placeholder={placeholder || "Select an option"}
+                                />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="true">true</SelectItem>
-                                <SelectItem value="false">false</SelectItem>
+                                {selectOptions.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           ) : (
@@ -437,7 +612,17 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                             />
                           )}
 
-                          {v.description && (
+                          {v.description &&
+                            !(
+                              (resourceDef?.label === "DynamoDB" &&
+                                (
+                                  v.name === "billing_mode" ||
+                                  v.name === "hash_key_type" ||
+                                  v.name === "enable_ttl"
+                                )) ||
+                              (resourceDef?.label === "API Gateway" &&
+                                v.name === "http_methods")
+                            ) && (
                             <p className="mt-2 text-[11px] text-slate-500">
                               {v.description}
                             </p>
@@ -457,11 +642,12 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
 
               {isEc2Node && (
                 <div>
+                  <div className="mb-4 border-t border-slate-800/80" />
                   <div className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-500">
                     Ansible Playbook
                   </div>
-                  <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                  <div className="space-y-3 rounded-lg border border-cyan-900/40 bg-cyan-950/20 p-3">
+                    <div className="rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2">
                       <div className="text-xs text-gray-400">
                         Bound EC2 container
                       </div>
@@ -472,7 +658,7 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
 
                     <label
                       htmlFor={ansibleUploadInputId}
-                      className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-3 text-sm font-medium text-slate-200 transition hover:border-teal-500/60 hover:bg-slate-900"
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-cyan-800/60 bg-slate-950/65 px-3 py-3 text-sm font-medium text-cyan-50 transition hover:border-cyan-500/60 hover:bg-cyan-950/30"
                     >
                       <Upload className="h-4 w-4" />
                       {selectedNode!.data.ansiblePlaybookName
@@ -493,7 +679,7 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                       }}
                     />
 
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                    <div className="rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2">
                       <div className="text-xs text-gray-400">Uploaded file</div>
                       <div className="mt-1 text-sm font-medium text-white">
                         {selectedNode!.data.ansiblePlaybookName ??
@@ -512,7 +698,7 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                           handleTargetInstanceIdChange(e.target.value)
                         }
                         placeholder="i-0a05920cb52c4555d"
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-white transition-colors focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        className="w-full rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2 text-sm text-white transition-colors focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                       />
                       <div className="mt-1 text-xs text-slate-400">
                         This instance ID is stored on this EC2 container node
@@ -520,7 +706,7 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+                    <div className="rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2">
                       <div className="text-xs text-gray-400">Playbook ID</div>
                       <div className="mt-1 break-all text-sm font-medium text-white">
                         {selectedNode!.data.ansiblePlaybookId ??
