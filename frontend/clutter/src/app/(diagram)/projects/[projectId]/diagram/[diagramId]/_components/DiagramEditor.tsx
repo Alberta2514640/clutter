@@ -67,13 +67,7 @@ const getVariableError = (name: string, value: unknown, required: boolean) => {
   return null;
 };
 
-export default function DiagramEditor({
-  projectId,
-  diagramId,
-}: {
-  projectId: string;
-  diagramId: string;
-}) {
+export default function DiagramEditor({ projectId, diagramId, }: { projectId: string; diagramId: string; }) {
   const router = useRouter();
 
   const meQ = useMe();
@@ -149,26 +143,6 @@ export default function DiagramEditor({
   const edges = useMemo(() => editor?.edges ?? [], [editor?.edges]);
   const name = editor?.name ?? "";
   const dirty = !!editor?.dirty;
-  const saveDisabledReason = useMemo(() => {
-    if (!supportedResources) return null;
-
-    for (const node of nodes) {
-      const resource = supportedResources.find((item) => item.label === node.data.label);
-      if (!resource) continue;
-
-      for (const variable of resource.variables) {
-        if (HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase())) continue;
-
-        const value = node.data.variables?.[variable.name];
-        const error = getVariableError(variable.name, value, variable.required);
-        if (error) {
-          return `${resource.displayName} · ${formatVariableLabel(variable.name)}: ${error}`;
-        }
-      }
-    }
-
-    return null;
-  }, [nodes, supportedResources]);
 
   const saveDisabledReason = useMemo(() => {
     if (!supportedResources) return null;
@@ -231,7 +205,9 @@ export default function DiagramEditor({
   }, [reset, diagramId, router]);
 
   const nodeTypes = useMemo<NodeTypes>(
-    () => ({ awsService: AwsServiceNode as React.ComponentType<NodeProps> }),
+    () => ({
+      awsService: AwsServiceNode as React.ComponentType<NodeProps>,
+    }),
     [],
   );
 
@@ -324,6 +300,7 @@ export default function DiagramEditor({
 
   const onSave = useCallback(async () => {
     if (!token) return;
+
     await saveM.mutateAsync({
       projectId,
       diagramId,
@@ -331,6 +308,7 @@ export default function DiagramEditor({
       nodes,
       edges,
     });
+
     markClean(diagramId);
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
@@ -376,53 +354,6 @@ export default function DiagramEditor({
 
   return (
     <div className="h-screen w-screen overflow-hidden">
-      {/* ── Destroy confirmation modal ── */}
-      {showDestroyConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowDestroyConfirm(false)}
-        >
-          <div
-            className="w-full max-w-md mx-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-red-900/30 border border-red-800/50 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
-              </div>
-              <div>
-                <h3 className="text-white font-semibold text-base mb-1">Destroy deployment</h3>
-                <p className="text-slate-400 text-sm">
-                  Are you sure you want to destroy{" "}
-                  <span className="text-white font-medium">&quot;{name}&quot;</span>?
-                  This will tear down all deployed infrastructure and cannot be undone.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowDestroyConfirm(false)}
-                className="ml-auto flex-shrink-0 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowDestroyConfirm(false)}
-                className="h-9 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDestroyConfirm}
-                className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-              >
-                Destroy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex h-full w-full">
         <Palette isReadOnly={isReadOnly} />
 
