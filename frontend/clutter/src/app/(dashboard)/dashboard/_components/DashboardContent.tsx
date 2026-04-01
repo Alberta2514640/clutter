@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useProjectRecentActivity } from "@/lib/features/logs/hooks";
 import { Organization } from "@/lib/features/organization/types";
 import { useProjects } from "@/lib/features/projects/hooks";
-import type { Run } from "@/lib/features/runs/types";
 import { useMe } from "@/lib/features/user/hooks";
 import type { UserData } from "@/lib/features/user/types";
 import { AlertCircle } from "lucide-react";
@@ -11,21 +11,22 @@ import ProjectsSection from "./ProjectSection";
 import StatsCards from "./StatsCards";
 
 
-//runs is a placeholder for now it should be changed in the near future
+
 interface DashboardContentProps {
   userData: UserData | null;
   organization: Organization | null;
-  recentRuns: Run[];
   error: string | null;
 }
 
-export default function DashboardContent({ userData, organization, recentRuns, error }: DashboardContentProps) {
+export default function DashboardContent({ userData, organization, error }: DashboardContentProps) {
   const meQ = useMe();
 
   const token = meQ.data?.token ?? null;
 
   const projectsQ = useProjects(token, organization?.id);
   const projects = projectsQ.data ?? [];
+
+  const { data: recentActivity = [], isLoading } = useProjectRecentActivity(token, organization?.id, projects);
 
   return (
     <div className="px-6 py-12">
@@ -47,7 +48,7 @@ export default function DashboardContent({ userData, organization, recentRuns, e
       />
 
       <ProjectsSection projects={projects} />
-      <ActivitySection runs={recentRuns} />
+      <ActivitySection activity={recentActivity} isLoading={isLoading} />
     </div>
   );
 }

@@ -67,7 +67,13 @@ const getVariableError = (name: string, value: unknown, required: boolean) => {
   return null;
 };
 
-export default function DiagramEditor({ projectId, diagramId }: { projectId: string; diagramId: string }) {
+export default function DiagramEditor({
+  projectId,
+  diagramId,
+}: {
+  projectId: string;
+  diagramId: string;
+}) {
   const router = useRouter();
 
   const meQ = useMe();
@@ -79,7 +85,10 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const { screenToFlowPosition } = useReactFlow();
 
   const orgAWS = useOrganizationAccounts(token, orgId);
-  const connectedAwsAccount = orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn) ?? null;
+  const connectedAwsAccount =
+    orgAWS.data?.find(
+      (account) => account.status === "complete" && !!account.role_arn,
+    ) ?? null;
   const awsId = connectedAwsAccount?.id ?? null;
 
   const { data: supportedResources } = useSupportedResources();
@@ -89,11 +98,23 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   const terraformM = useRunTerraform(token);
 
   const editor = useDiagramEditor(diagramId);
-  const { ensure, reset, hydrateFromServer, setNodes, setEdges, setNodesWithoutDirty, setEdgesWithoutDirty, setName, markClean } = useDiagramEditorActions();
+  const {
+    ensure,
+    reset,
+    hydrateFromServer,
+    setNodes,
+    setEdges,
+    setNodesWithoutDirty,
+    setEdgesWithoutDirty,
+    setName,
+    markClean,
+  } = useDiagramEditorActions();
 
   const [taskArn, setTaskArn] = useState<string | null>(null);
-  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(null);
-  const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
+  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(
+    null,
+  );
+  const [showSaved, setShowSaved] = useState(false);
 
   const liveLogs = useLiveLogsAccumulated({
     token,
@@ -116,7 +137,12 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   useEffect(() => {
     if (!diagramQ.data) return;
-    hydrateFromServer(diagramId, diagramQ.data.name ?? "", diagramQ.data.data?.nodes ?? [], diagramQ.data.data?.edges ?? []);
+    hydrateFromServer(
+      diagramId,
+      diagramQ.data.name ?? "",
+      diagramQ.data.data?.nodes ?? [],
+      diagramQ.data.data?.edges ?? [],
+    );
   }, [diagramId, diagramQ.data, hydrateFromServer]);
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
@@ -144,6 +170,31 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     return null;
   }, [nodes, supportedResources]);
 
+  const saveDisabledReason = useMemo(() => {
+    if (!supportedResources) return null;
+
+    for (const node of nodes) {
+      const resource = supportedResources.find(
+        (item) => item.label === node.data.label,
+      );
+      if (!resource) continue;
+
+      for (const variable of resource.variables) {
+        if (HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase())) continue;
+
+        const value = node.data.variables?.[variable.name];
+        const error = getVariableError(variable.name, value, variable.required);
+        if (error) {
+          return `${resource.displayName} · ${formatVariableLabel(
+            variable.name,
+          )}: ${error}`;
+        }
+      }
+    }
+
+    return null;
+  }, [nodes, supportedResources]);
+
   const isLoading = diagramQ.isLoading;
   const isSaving = saveM.isPending;
 
@@ -160,8 +211,13 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       if (targetLabel.includes("api gateway")) return false;
       if (sourceLabel.includes("dynamodb")) return false;
       if (sourceLabel.includes("s3")) return false;
-      if (sourceLabel.includes("lambda") && targetLabel.includes("api gateway")) return false;
-      if (sourceLabel.includes("ec2") && targetLabel.includes("api gateway")) return false;
+      if (
+        sourceLabel.includes("lambda") &&
+        targetLabel.includes("api gateway")
+      )
+        return false;
+      if (sourceLabel.includes("ec2") && targetLabel.includes("api gateway"))
+        return false;
       if (connection.source === connection.target) return false;
 
       return true;
@@ -170,10 +226,9 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
   );
 
   const onBack = React.useCallback(() => {
-    if (dirty && !confirm("You have unsaved changes. Leave without saving?")) return;
     reset(diagramId);
     router.back();
-  }, [dirty, reset, diagramId, router]);
+  }, [reset, diagramId, router]);
 
   const nodeTypes = useMemo<NodeTypes>(
     () => ({ awsService: AwsServiceNode as React.ComponentType<NodeProps> }),
@@ -182,7 +237,15 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const onNodesChange = useCallback(
     (changes: NodeChange<DiagramNode>[]) => {
-      const requiresSave = changes.some((change) => change.type === "position" || change.type === "dimensions" || change.type === "add" || change.type === "remove" || change.type === "replace");
+      const requiresSave = changes.some(
+        (change) =>
+          change.type === "position" ||
+          change.type === "dimensions" ||
+          change.type === "add" ||
+          change.type === "remove" ||
+          change.type === "replace",
+      );
+
       const next = applyNodeChanges(changes, nodes);
       if (requiresSave) {
         setNodes(diagramId, next);
@@ -228,8 +291,11 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
       const item: PaletteItem = JSON.parse(raw);
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 
-      const resourceDef = supportedResources?.find((r) => r.label === item.label);
+      const resourceDef = supportedResources?.find(
+        (r) => r.label === item.label,
+      );
       const defaultVariables: Record<string, unknown> = {};
+
       if (resourceDef) {
         for (const v of resourceDef.variables) {
           if (v.default !== null) {
@@ -245,7 +311,9 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
         data: {
           label: item.label,
           img: item.img,
-          ...(Object.keys(defaultVariables).length > 0 && { variables: defaultVariables }),
+          ...(Object.keys(defaultVariables).length > 0 && {
+            variables: defaultVariables,
+          }),
         },
       };
 
@@ -253,8 +321,6 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     },
     [diagramId, nodes, screenToFlowPosition, setNodes, supportedResources],
   );
-
-  const [showSaved, setShowSaved] = useState(false);
 
   const onSave = useCallback(async () => {
     if (!token) return;
@@ -272,6 +338,7 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
 
   const onDeploy = useCallback(async () => {
     if (!orgId || !awsId) return;
+
     setCurrentAction("deploy");
     const result = await terraformM.mutateAsync({
       organizationId: orgId,
@@ -283,15 +350,9 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
     setTaskArn(result.taskArn);
   }, [orgId, projectId, diagramId, terraformM, awsId]);
 
-  // Called by TopNav's Destroy button — opens the modal instead of running directly
-  const handleDestroyRequest = useCallback(() => {
-    setShowDestroyConfirm(true);
-  }, []);
-
-  // Called when the user confirms inside the modal
-  const handleDestroyConfirm = useCallback(async () => {
+  const onDestroy = useCallback(async () => {
     if (!orgId || !awsId) return;
-    setShowDestroyConfirm(false);
+
     setCurrentAction("destroy");
     const result = await terraformM.mutateAsync({
       organizationId: orgId,
@@ -379,18 +440,17 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
             snapToGrid
             snapGrid={[20, 20]}
             isValidConnection={isValidConnection}
-
-            nodesDraggable={!isReadOnly} 
-            nodesConnectable={!isReadOnly} 
-            elementsSelectable={!isReadOnly} >
-
+            nodesDraggable={!isReadOnly}
+            nodesConnectable={!isReadOnly}
+            elementsSelectable={!isReadOnly}
+          >
             <Panel position="top-left" className="w-full pr-5">
               <TopNav
                 diagramName={name}
                 onNameChange={(n) => setName(diagramId, n)}
                 onSave={onSave}
                 onDeploy={onDeploy}
-                onDestroy={handleDestroyRequest}
+                onDestroy={onDestroy}
                 isDeploying={isDeploying}
                 isDestroying={isDestroying}
                 onBack={onBack}
@@ -400,31 +460,53 @@ export default function DiagramEditor({ projectId, diagramId }: { projectId: str
               />
             </Panel>
 
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1.5}
+            />
 
-            <Controls orientation="horizontal" className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10" showInteractive={false} />
+            <Controls
+              orientation="horizontal"
+              className="[&_button]:!w-10 [&_button]:!h-10 [&_button]:!min-w-10 [&_button]:!min-h-10"
+              showInteractive={false}
+            />
           </ReactFlow>
 
           {isLoading && (
             <div className="absolute inset-0 grid place-items-center bg-black/40">
-              <div className="rounded-lg bg-neutral-900 px-4 py-2 text-sm">Loading diagram…</div>
+              <div className="rounded-lg bg-neutral-900 px-4 py-2 text-sm">
+                Loading diagram…
+              </div>
             </div>
           )}
+
           {isSaving && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-white shadow-lg flex items-center gap-2">
+            <div className="absolute bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
               <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
               Saving…
             </div>
           )}
+
           {showSaved && !isSaving && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-emerald-900/80 border border-emerald-700 px-4 py-2 text-sm text-emerald-100 shadow-lg flex items-center gap-2">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            <div className="absolute bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-emerald-700 bg-emerald-900/80 px-4 py-2 text-sm text-emerald-100 shadow-lg">
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
               Saved
             </div>
           )}
-          
+
           <LogsPanel
             key={taskArn ?? "no-task"}
             token={token}

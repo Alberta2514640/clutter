@@ -1,25 +1,29 @@
 import { Card, CardContent } from "@/components/ui/card";
-import type { Run } from "@/lib/features/runs/types";
+import type { ProjectRecentActivityItem } from "@/lib/features/logs/types";
 import { Activity } from "lucide-react";
 import Link from "next/link";
 
 interface ActivitySectionProps {
-  runs: Run[];
+  activity?: ProjectRecentActivityItem[];
+  isLoading?: boolean;
 }
 
-export default function ActivitySection({ runs }: ActivitySectionProps) {
-  const getStatusColor = (status: Run["status"]) => {
-    switch (status) {
+export default function ActivitySection({
+  activity = [],
+  isLoading = false,
+}: ActivitySectionProps) {
+  const getStatusDotColor = (status: string) => {
+    switch (status.toUpperCase()) {
       case "SUCCESS":
-        return "text-green-500";
+        return "bg-green-500";
       case "FAILED":
-        return "text-red-500";
+        return "bg-red-500";
       case "RUNNING":
-        return "text-blue-500";
+        return "bg-blue-500 animate-pulse";
       case "QUEUED":
-        return "text-yellow-500";
+        return "bg-yellow-500";
       default:
-        return "text-gray-500";
+        return "bg-gray-500";
     }
   };
 
@@ -35,39 +39,57 @@ export default function ActivitySection({ runs }: ActivitySectionProps) {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-        <Activity className="w-6 h-6 text-teal-400" />
+      <h2 className="mb-4 flex items-center gap-2 text-2xl font-bold">
+        <Activity className="h-6 w-6 text-teal-400" />
         Recent Activity
       </h2>
 
-      {runs.length === 0 ? (
-        <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
+      {isLoading ? (
+        <Card className="border-slate-800/50 bg-slate-900/50 backdrop-blur-xl">
+          <CardContent className="py-12 text-center text-gray-400">
+            Loading activity...
+          </CardContent>
+        </Card>
+      ) : activity.length === 0 ? (
+        <Card className="border-slate-800/50 bg-slate-900/50 backdrop-blur-xl">
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <Activity className="w-16 h-16 text-gray-600 mb-4" />
-            <h3 className="text-xl font-semibold text-white mb-2">No activity yet</h3>
-            <p className="text-gray-400 text-center">Deploy your first workspace to see activity here</p>
+            <Activity className="mb-4 h-16 w-16 text-gray-600" />
+            <h3 className="mb-2 text-xl font-semibold text-white">No activity yet</h3>
+            <p className="text-center text-gray-400">
+              Run your first terraform command to see activity here
+            </p>
           </CardContent>
         </Card>
       ) : (
-        <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
+        <Card className="border-slate-800/50 bg-slate-900/50 backdrop-blur-xl">
           <CardContent className="p-0">
             <div className="divide-y divide-slate-800">
-              {runs.map((run) => (
-                <Link key={run.runId} href={`/projects/${run.projectId}/runs/${run.runId}`} className="block p-4 hover:bg-slate-800/30 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${run.status === "SUCCESS" ? "bg-green-500" : run.status === "FAILED" ? "bg-red-500" : run.status === "RUNNING" ? "bg-blue-500 animate-pulse" : "bg-yellow-500"}`} />
-                      <div>
-                        <p className="text-white font-medium">{run.projectName}</p>
-                        <p className="text-sm text-gray-400">
-                          {run.action.toUpperCase()} • {run.workspaceId}
+              {activity.map((item) => (
+                <Link
+                  key={`${item.diagramId}-${item.commandId}`}
+                  href={`/projects/${item.projectId}/diagram/${item.diagramId}`}
+                  className="block p-4 transition-colors hover:bg-slate-800/30"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(item.status)}`}
+                      />
+
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-white">
+                          {item.projectName}
+                        </p>
+                        <p className="truncate text-sm text-gray-400">
+                          {item.command.toUpperCase()} • {item.diagramName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatDate(item.createdAt)}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`text-sm font-medium ${getStatusColor(run.status)}`}>{run.status}</p>
-                      <p className="text-xs text-gray-500">{formatDate(run.startedAt)}</p>
-                    </div>
+
+                    <div className="shrink-0 text-right" />
                   </div>
                 </Link>
               ))}

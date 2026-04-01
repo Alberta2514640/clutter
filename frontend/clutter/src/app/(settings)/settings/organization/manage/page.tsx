@@ -1,11 +1,22 @@
 "use client";
 
-import { useAddMember, useAvailableUsers, useMembers } from "@/lib/features/members/hooks";
-import { useDeleteOrganization, useOrganizations, useUpdateOrganization } from "@/lib/features/organization/hooks";
+import {
+  useAddMember,
+  useAvailableUsers,
+  useMembers,
+} from "@/lib/features/members/hooks";
+import {
+  useDeleteOrganization,
+  useOrganizations,
+  useUpdateOrganization,
+} from "@/lib/features/organization/hooks";
 import { useLogout, useMe } from "@/lib/features/user/hooks";
+import { AlertTriangle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
-import AddUsersDropdown, { type MemberOption } from "./_components/AddUsersDropdown";
+import { useMemo, useState } from "react";
+import AddUsersDropdown, {
+  type MemberOption,
+} from "./_components/AddUsersDropdown";
 import ManageForm, { type ManageFormValues } from "./_components/ManageForm";
 import Members from "./_components/Members";
 
@@ -25,6 +36,8 @@ export default function OrganizationManagePage() {
   const deleteOrg = useDeleteOrganization(token);
   const addMember = useAddMember();
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const organizations = orgQ.data ?? [];
   const organization = organizations[0] ?? null;
 
@@ -34,7 +47,8 @@ export default function OrganizationManagePage() {
   const isLoading =
     meQ.isLoading || orgQ.isLoading || membersQ.isLoading || usersQ.isLoading;
 
-  const isSaving = updateOrg.isPending || deleteOrg.isPending || addMember.isPending;
+  const isSaving =
+    updateOrg.isPending || deleteOrg.isPending || addMember.isPending;
 
   const userOptions: MemberOption[] = useMemo(
     () =>
@@ -43,13 +57,15 @@ export default function OrganizationManagePage() {
         name: user.name,
         email: user.email,
       })),
-    [availableUsers]
+    [availableUsers],
   );
 
   if (!isLoading && !token) {
     return (
       <main className="flex items-center justify-center py-12">
-        <div className="text-gray-400">Please sign in to manage your organization.</div>
+        <div className="text-gray-400">
+          Please sign in to manage your organization.
+        </div>
       </main>
     );
   }
@@ -63,63 +79,130 @@ export default function OrganizationManagePage() {
   }
 
   return (
-    <main>
-      <section className="bg-slate-900/70 border border-slate-800 rounded-2xl shadow-xl">
-        <div className="border-b border-slate-800 px-6 py-4">
-          <h2 className="text-lg font-semibold">Workspace settings</h2>
-          <p className="text-sm text-slate-400 mt-1 max-w-xl">
-            Update the core details for this organization. Changes may take a few seconds to propagate.
-          </p>
-        </div>
+    <>
+      <main>
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
+          <div className="border-b border-slate-800 px-6 py-4">
+            <h2 className="text-lg font-semibold">Workspace settings</h2>
+            <p className="mt-1 max-w-xl text-sm text-slate-400">
+              Update the core details for this organization. Changes may take a
+              few seconds to propagate.
+            </p>
+          </div>
 
-        <div className="px-6 py-6">
-          <div className="grid items-start gap-6 lg:grid-cols-2">
-            <ManageForm
-              initialValues={{
-                orgName: organization?.name ?? "",
-                orgId: organization?.id ?? "",
-                description: organization?.description ?? "",
-              }}
-              onSubmit={async (values: ManageFormValues) => {
-                if (!token || !organization?.id) return;
-
-                await updateOrg.mutateAsync({
-                  organizationId: organization.id,
-                  data: { description: values.description },
-                });
-              }}
-              onDelete={async () => {
-                if (!token || !organization?.id) return;
-
-                const confirmed = window.confirm(
-                  "Are you sure you want to delete this organization? This action cannot be undone."
-                );
-                if (!confirmed) return;
-
-                await deleteOrg.mutateAsync(organization.id);
-
-                logout();
-                router.replace("/"); // replace avoids back button going to deleted org page
-                router.refresh();    // optional: revalidate server components if any
-              }}
-              isSaving={isSaving}
-              isDeleting={deleteOrg.isPending}
-            />
-
-            <div className="lg:border-l border-t lg:border-t-0 border-slate-800 lg:pl-6">
-              <AddUsersDropdown
-                options={userOptions}
-                onPick={async (member) => {
-                  await addMember.mutateAsync({ userId: member.id, role: "Member" });
+          <div className="px-6 py-6">
+            <div className="grid items-start gap-6 lg:grid-cols-2">
+              <ManageForm
+                initialValues={{
+                  orgName: organization?.name ?? "",
+                  orgId: organization?.id ?? "",
+                  description: organization?.description ?? "",
                 }}
-                placeholder="Add users..."
-                disabled={isSaving}
+                onSubmit={async (values: ManageFormValues) => {
+                  if (!token || !organization?.id) return;
+
+                  await updateOrg.mutateAsync({
+                    organizationId: organization.id,
+                    data: { description: values.description },
+                  });
+                }}
+                onDelete={async () => {
+                  if (!token || !organization?.id) return;
+                  setShowDeleteConfirm(true);
+                }}
+                isSaving={isSaving}
+                isDeleting={deleteOrg.isPending}
               />
-              <Members members={members} />
+
+              <div className="border-slate-800 lg:border-l lg:pl-6 border-t lg:border-t-0">
+                <AddUsersDropdown
+                  options={userOptions}
+                  onPick={async (member) => {
+                    await addMember.mutateAsync({
+                      userId: member.id,
+                      role: "Member",
+                    });
+                  }}
+                  placeholder="Add users..."
+                  disabled={isSaving}
+                />
+                <Members members={members} />
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            if (!deleteOrg.isPending) setShowDeleteConfirm(false);
+          }}
+        >
+          <div
+            className="mx-4 w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6 flex items-start gap-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-red-800/50 bg-red-900/30">
+                <AlertTriangle className="h-5 w-5 text-red-400" />
+              </div>
+
+              <div>
+                <h3 className="mb-1 text-base font-semibold text-white">
+                  Delete organization
+                </h3>
+                <p className="text-sm text-slate-400">
+                  Are you sure you want to delete{" "}
+                  <span className="font-medium text-white">
+                    &quot;{organization?.name || "this organization"}&quot;
+                  </span>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteOrg.isPending}
+                className="ml-auto flex-shrink-0 text-slate-500 transition-colors hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteOrg.isPending}
+                className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={deleteOrg.isPending}
+                onClick={async () => {
+                  if (!token || !organization?.id) return;
+
+                  await deleteOrg.mutateAsync(organization.id);
+                  setShowDeleteConfirm(false);
+
+                  logout();
+                  router.replace("/");
+                  router.refresh();
+                }}
+                className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleteOrg.isPending ? "Deleting..." : "Delete"}
+              </button>
             </div>
           </div>
         </div>
-      </section>
-    </main>
+      )}
+    </>
   );
 }

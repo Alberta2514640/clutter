@@ -65,15 +65,16 @@ export type EcsFargateTask = {
 
 export type RunTerraformResponseEnvelope = {
   data: {
-    ecsFargateTaskOutput: EcsFargateTask[];
+    commandId: string;
+    taskArn: string;
   };
   message?: string;
 };
 
 // Convenient, flattened result we expose to callers
 export type RunTerraformResult = {
+  commandId: string;
   taskArn: string;
-  lastStatus: string;
 };
 
 export type ApiEnvelope<T> = { data: T; message?: string };
