@@ -77,11 +77,6 @@ PYEOF
 # Retry configuration constants (global scope for use in functions and error handlers)
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
 PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
-if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
-    echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
-    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
-    exit 1
-fi
 
 # Create log directory and file immediately so all output is captured,
 # even if Ansible never runs (e.g. early failures in inventory generation).
@@ -232,6 +227,14 @@ for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNEC
     fi
 done
 
+# Validate timeout after required env vars and helper functions are available.
+if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
+    echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
+    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
+    upload_logs || true
+    exit 1
+fi
+
 # Validate TARGET_INSTANCE_IDS format to prevent injection attacks
 if [[ ! "$TARGET_INSTANCE_IDS" =~ ^i-[0-9a-fA-F]{8,17}(,i-[0-9a-fA-F]{8,17})*$ ]]; then
     echo "[entrypoint] ERROR: Invalid instance ID format in TARGET_INSTANCE_IDS"
@@ -306,13 +309,13 @@ if [ -n "${EXTRA_VARS:-}" ] && [ "$EXTRA_VARS" != "null" ] && [ "$EXTRA_VARS" !=
     fi
 
     # Block likely secret values from being sent in SSM command payload.
-    if ! echo "$EXTRA_VARS" | python3 - <<'PYEOF'
+    if ! python3 - "$EXTRA_VARS" <<'PYEOF'
 import json
 import re
 import sys
 
 try:
-    obj = json.load(sys.stdin)
+    obj = json.loads(sys.argv[1])
 except Exception:
     print("invalid json")
     sys.exit(1)
