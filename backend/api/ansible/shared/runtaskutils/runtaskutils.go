@@ -72,8 +72,14 @@ func LoadRuntimeConfig() RuntimeConfig {
 }
 
 func ValidateAnsibleMessage(msg map[string]string) error {
-	if msg["playbook_s3_key"] == "" || msg["target_instance_ids"] == "" || msg["role_arn"] == "" || msg["assume_role_external_id"] == "" {
-		return fmt.Errorf("missing required Ansible fields: playbook_s3_key, target_instance_ids, role_arn, or assume_role_external_id")
+	if msg["playbook_s3_key"] == "" ||
+		msg["target_instance_ids"] == "" ||
+		msg["role_arn"] == "" ||
+		msg["assume_role_external_id"] == "" ||
+		msg["org_id"] == "" ||
+		msg["project_id"] == "" ||
+		msg["diagram_id"] == "" {
+		return fmt.Errorf("missing required Ansible fields: playbook_s3_key, target_instance_ids, role_arn, assume_role_external_id, org_id, project_id, diagram_id")
 	}
 	if strings.Contains(msg["playbook_s3_key"], "..") ||
 		strings.Contains(msg["playbook_s3_key"], "~") ||

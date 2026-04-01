@@ -18,8 +18,8 @@ func TestBuildLogObjectKey_ProducesExpectedFormat(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "standard IDs",
-			orgID:     "org-123", projectID: "proj-456", diagramID: "diag-789", jobID: "job-abc",
+			name:  "standard IDs",
+			orgID: "org-123", projectID: "proj-456", diagramID: "diag-789", jobID: "job-abc",
 			want: "org-123/proj-456/diag-789/playbooks/logs/job-abc.log",
 		},
 		{
@@ -73,19 +73,19 @@ func TestExtractOrgIDFromLogKey_InvalidKeys(t *testing.T) {
 // ── uploadutils.ExtractPathComponentsFromLogKey ────────────────────────────────
 
 func TestExtractPathComponentsFromLogKey_ValidKey(t *testing.T) {
-	key := "org-123/proj-456/diag-789/playbooks/logs/job-abc.log"
+	key := "11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/33333333-3333-3333-3333-333333333333/playbooks/logs/job-abc.log"
 	orgID, projectID, diagramID, err := uploadutils.ExtractPathComponentsFromLogKey(key)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	if orgID != "org-123" {
-		t.Fatalf("expected orgID org-123, got %q", orgID)
+	if orgID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("expected orgID 11111111-1111-1111-1111-111111111111, got %q", orgID)
 	}
-	if projectID != "proj-456" {
-		t.Fatalf("expected projectID proj-456, got %q", projectID)
+	if projectID != "22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("expected projectID 22222222-2222-2222-2222-222222222222, got %q", projectID)
 	}
-	if diagramID != "diag-789" {
-		t.Fatalf("expected diagramID diag-789, got %q", diagramID)
+	if diagramID != "33333333-3333-3333-3333-333333333333" {
+		t.Fatalf("expected diagramID 33333333-3333-3333-3333-333333333333, got %q", diagramID)
 	}
 }
 
@@ -96,11 +96,11 @@ func TestExtractPathComponentsFromLogKey_InvalidKeys(t *testing.T) {
 	}{
 		{"empty", ""},
 		{"no slashes", "no-slash-at-all"},
-		{"only two parts", "org-123/proj-456"},
-		{"only three parts", "org-123/proj-456/diag-789"},
-		{"empty org", "/proj-456/diag-789/playbooks/logs/job-abc.log"},
-		{"empty project", "org-123//diag-789/playbooks/logs/job-abc.log"},
-		{"empty diagram", "org-123/proj-456//playbooks/logs/job-abc.log"},
+		{"only two parts", "11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222"},
+		{"only three parts", "11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222/33333333-3333-3333-3333-333333333333"},
+		{"empty org", "/22222222-2222-2222-2222-222222222222/33333333-3333-3333-3333-333333333333/playbooks/logs/job-abc.log"},
+		{"empty project", "11111111-1111-1111-1111-111111111111//33333333-3333-3333-3333-333333333333/playbooks/logs/job-abc.log"},
+		{"empty diagram", "11111111-1111-1111-1111-111111111111/22222222-2222-2222-2222-222222222222//playbooks/logs/job-abc.log"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
