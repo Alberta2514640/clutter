@@ -18,6 +18,7 @@ import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { AlertTriangle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import AwsAccountRequiredModal from "./AwsAccountRequiredModal";
 import LogsPanel from "./logs/LogsPanel";
 
 export type PaletteItem = {
@@ -79,11 +80,9 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   const { screenToFlowPosition } = useReactFlow();
 
   const orgAWS = useOrganizationAccounts(token, orgId);
-  const connectedAwsAccount =
-    orgAWS.data?.find(
-      (account) => account.status === "complete" && !!account.role_arn,
-    ) ?? null;
+  const connectedAwsAccount = orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn, ) ?? null;
   const awsId = connectedAwsAccount?.id ?? null;
+  const isAwsBlocked = !awsId;
 
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
@@ -350,7 +349,7 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
     (terraformM.isPending && currentAction === "destroy") ||
     (!!taskArn && currentAction === "destroy" && !isComplete);
 
-  const isReadOnly = isDeploying || isDestroying;
+  const isReadOnly = isDeploying || isDestroying || isAwsBlocked;
 
   return (
     <div className="h-screen w-screen overflow-hidden">
@@ -446,6 +445,14 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
             diagramId={diagramId}
             taskArn={taskArn}
             liveLogs={liveLogs}
+          />
+
+          <AwsAccountRequiredModal
+            open={isAwsBlocked}
+            onBack={onBack}
+            onGoToSettings={() =>
+              router.push("/settings/organization/aws-account")
+            }
           />
         </div>
 
