@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { DiagramNode } from "@/lib/features/diagram/types";
+import { useUpdateDiagramData } from "@/lib/features/diagram/hooks";
 import {
   useDiagramEditor,
   useDiagramEditorActions,
@@ -150,9 +151,10 @@ type ConfigPanelProps = {
 
 export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId, }: ConfigPanelProps) {
   const editor = useDiagramEditor(diagramId);
-  const { setNodes, setEdges } = useDiagramEditorActions();
+  const { markClean, setNodes, setEdges } = useDiagramEditorActions();
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
+  const saveDiagram = useUpdateDiagramData(token);
   const createPlaybookUploadUrl = useCreatePlaybookUploadUrl(token);
   const uploadPlaybookFileToS3 = useUploadPlaybookFileToS3();
   const submitAnsibleJob = useSubmitAnsibleJob(token);
@@ -211,6 +213,23 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
     }));
   };
 
+  const persistDiagram = useCallback(
+    async (nextNodes: DiagramNode[]) => {
+      if (!token) return;
+
+      await saveDiagram.mutateAsync({
+        projectId,
+        diagramId,
+        name: editor?.name?.trim() || "Untitled diagram",
+        nodes: nextNodes,
+        edges,
+      });
+
+      markClean(diagramId);
+    },
+    [diagramId, editor?.name, edges, markClean, projectId, saveDiagram, token],
+  );
+
   const handleAnsiblePlaybookUpload = useCallback(
     async (file: File | null) => {
       if (!file || !selectedNode) return;
@@ -248,22 +267,29 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
           file,
         });
 
-        patchSelectedNode((n) => ({
-          ...n,
-          data: {
-            ...n.data,
-            ansiblePlaybookName: file.name,
-            ansiblePlaybookKey:
-              (typeof uploadTarget.playbook_s3_key === "string" &&
-                uploadTarget.playbook_s3_key) ||
-              (typeof uploadTarget.key === "string" && uploadTarget.key) ||
-              n.data.ansiblePlaybookKey,
-            ansiblePlaybookId:
-              (typeof uploadTarget.playbook_id === "string" &&
-                uploadTarget.playbook_id) ||
-              n.data.ansiblePlaybookId,
-          },
-        }));
+        const nextNodes = nodes.map((node) =>
+          node.id !== selectedNode.id
+            ? node
+            : {
+                ...node,
+                data: {
+                  ...node.data,
+                  ansiblePlaybookName: file.name,
+                  ansiblePlaybookKey:
+                    (typeof uploadTarget.playbook_s3_key === "string" &&
+                      uploadTarget.playbook_s3_key) ||
+                    (typeof uploadTarget.key === "string" && uploadTarget.key) ||
+                    node.data.ansiblePlaybookKey,
+                  ansiblePlaybookId:
+                    (typeof uploadTarget.playbook_id === "string" &&
+                      uploadTarget.playbook_id) ||
+                    node.data.ansiblePlaybookId,
+                },
+              },
+        );
+
+        setNodes(diagramId, nextNodes);
+        await persistDiagram(nextNodes);
 
         setUploadMessage(`Uploaded "${file.name}" for this EC2 container.`);
       } catch (err) {
@@ -277,9 +303,12 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
     [
       createPlaybookUploadUrl,
       diagramId,
+      nodes,
+      persistDiagram,
       patchSelectedNode,
       projectId,
       selectedNode,
+      setNodes,
       token,
       uploadPlaybookFileToS3,
     ],
@@ -672,10 +701,10 @@ export default function ConfigPanel({ diagramId, projectId, accountAccessRoleId,
                       accept=".yml,.yaml"
                       className="hidden"
                       onChange={async (e) => {
-                        await handleAnsiblePlaybookUpload(
-                          e.target.files?.[0] ?? null,
-                        );
-                        e.currentTarget.value = "";
+                        const input = e.currentTarget;
+                        const file = input.files?.[0] ?? null;
+                        await handleAnsiblePlaybookUpload(file);
+                        input.value = "";
                       }}
                     />
 
