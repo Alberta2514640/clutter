@@ -26,13 +26,15 @@ variable "ansible_runner_image_tag" {
   description = "Docker image tag for the Ansible runner container (avoid using 'latest' in production)"
   type        = string
 }
-variable "ansible_ssh_private_key_secret_arn" {
-  description = "Secrets Manager ARN containing SSH private key PEM for Ansible direct SSH transport"
+variable "ansible_ssh_private_key" {
+  description = "SSH private key PEM content for Ansible direct SSH transport"
   type        = string
+  sensitive   = true
 }
-variable "ansible_ssh_known_hosts_secret_arn" {
-  description = "Secrets Manager ARN containing known_hosts entries for strict SSH host verification"
+variable "ansible_ssh_known_hosts" {
+  description = "known_hosts entries for strict SSH host verification"
   type        = string
+  sensitive   = true
 }
 variable "ansible_target_ssh_cidrs" {
   description = "CIDR blocks that the Ansible runner may reach over SSH (port 22)"

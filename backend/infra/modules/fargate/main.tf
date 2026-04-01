@@ -23,27 +23,6 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_attach" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-resource "aws_iam_role_policy" "ecs_execution_secrets_access" {
-  name = "ecsExecutionSecretsAccess"
-  role = aws_iam_role.ecs_execution.name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = [
-          var.ansible_ssh_private_key_secret_arn,
-          var.ansible_ssh_known_hosts_secret_arn
-        ]
-      }
-    ]
-  })
-}
-
 
 resource "aws_iam_role" "terraform_deployer_task" {
   name = "TerraformDeployerFargateTaskRole"
@@ -224,13 +203,10 @@ resource "aws_ecs_task_definition" "ansible_runner" {
         { name = "S3_BUCKET_NAME", value = var.s3_clutter_name },
         { name = "AWS_DEFAULT_REGION", value = var.aws_region },
         { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string },
+        { name = "SSH_PRIVATE_KEY", value = var.ansible_ssh_private_key },
+        { name = "SSH_KNOWN_HOSTS", value = var.ansible_ssh_known_hosts },
         { name = "ANSIBLE_REMOTE_USER", value = var.ansible_remote_user },
         { name = "SSH_HOST_ADDRESS_SOURCE", value = var.ansible_ssh_host_address_source }
-      ]
-
-      secrets = [
-        { name = "SSH_PRIVATE_KEY", valueFrom = var.ansible_ssh_private_key_secret_arn },
-        { name = "SSH_KNOWN_HOSTS", valueFrom = var.ansible_ssh_known_hosts_secret_arn }
       ]
 
       essential = true

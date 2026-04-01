@@ -24,14 +24,14 @@ module "fargate" {
   s3_templates_arn  = module.s3.clutter_templates_bucket_arn
   s3_templates_name = module.s3.clutter_templates_bucket_name
 
-  aws_region                         = var.aws_region
-  psql_connection_string             = var.psql_connection_string
-  ansible_runner_image_tag           = var.ansible_runner_image_tag
-  ansible_ssh_private_key_secret_arn = var.ansible_ssh_private_key_secret_arn
-  ansible_ssh_known_hosts_secret_arn = var.ansible_ssh_known_hosts_secret_arn
-  ansible_target_ssh_cidrs           = var.ansible_target_ssh_cidrs
-  ansible_remote_user                = var.ansible_remote_user
-  ansible_ssh_host_address_source    = var.ansible_ssh_host_address_source
+  aws_region                      = var.aws_region
+  psql_connection_string          = var.psql_connection_string
+  ansible_runner_image_tag        = var.ansible_runner_image_tag
+  ansible_ssh_private_key         = var.ansible_ssh_private_key
+  ansible_ssh_known_hosts         = var.ansible_ssh_known_hosts
+  ansible_target_ssh_cidrs        = var.ansible_target_ssh_cidrs
+  ansible_remote_user             = var.ansible_remote_user
+  ansible_ssh_host_address_source = var.ansible_ssh_host_address_source
 }
 
 # ========================
