@@ -9,6 +9,9 @@ export type NodeData = {
   ansibleTargetInstanceId?: string;
   lastAnsibleJobId?: string;
   lastAnsibleJobStatus?: string;
+  lambdaCodeZipName?: string;
+  lambdaCodeS3Key?: string;
+  lambdaCodeS3Bucket?: string;
   variables?: Record<string, unknown>;
 };
 export type DiagramNode = Node<NodeData>;
