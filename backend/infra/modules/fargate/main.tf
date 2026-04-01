@@ -23,6 +23,27 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_attach" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy" "ecs_execution_secrets_access" {
+  name = "ecsExecutionSecretsAccess"
+  role = aws_iam_role.ecs_execution.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          var.ansible_ssh_private_key_secret_arn,
+          var.ansible_ssh_known_hosts_secret_arn
+        ]
+      }
+    ]
+  })
+}
+
 
 resource "aws_iam_role" "terraform_deployer_task" {
   name = "TerraformDeployerFargateTaskRole"
@@ -80,58 +101,6 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
         Effect   = "Allow"
         Action   = "s3:GetObject"
         Resource = "${var.s3_templates_arn}/zip/*"
-      },
-      # ----------- EC2 (Ansible runner) -----------
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeInstances",
-          "ec2:StopInstances"
-        ]
-        Resource = "*"
-      },
-      # ----------- SSM Session Manager (Ansible runner) -----------
-      {
-        Effect   = "Allow"
-        Action   = "ssm:StartSession"
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:document/SSM-SessionManagerRunShell"
-      },
-      {
-        Effect   = "Allow"
-        Action   = "ssm:StartSession"
-        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
-        Condition = {
-          StringEquals = {
-            "ssm:resourceTag/ManagedBy" = "Ansible"
-          }
-        }
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:TerminateSession",
-          "ssm:ResumeSession"
-        ]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:session/*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:DescribeSessions",
-          "ssm:DescribeInstanceInformation",
-          "ssm:GetConnectionStatus"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssmmessages:CreateControlChannel",
-          "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel",
-          "ssmmessages:OpenDataChannel"
-        ]
-        Resource = "*"
       },
       # ----------- PostgreSQL (Ansible runner - Supabase job status updates) -----------
       {
@@ -240,7 +209,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
   container_definitions = jsonencode([
     {
       name  = "ansible-executor"
-      image = "${aws_ecr_repository.ansible_runner.repository_url}:latest"
+      image = "${aws_ecr_repository.ansible_runner.repository_url}:${var.ansible_runner_image_tag}"
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -254,7 +223,14 @@ resource "aws_ecs_task_definition" "ansible_runner" {
       environment = [
         { name = "S3_BUCKET_NAME", value = var.s3_clutter_name },
         { name = "AWS_DEFAULT_REGION", value = var.aws_region },
-        { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string }
+        { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string },
+        { name = "ANSIBLE_REMOTE_USER", value = var.ansible_remote_user },
+        { name = "SSH_HOST_ADDRESS_SOURCE", value = var.ansible_ssh_host_address_source }
+      ]
+
+      secrets = [
+        { name = "SSH_PRIVATE_KEY", valueFrom = var.ansible_ssh_private_key_secret_arn },
+        { name = "SSH_KNOWN_HOSTS", valueFrom = var.ansible_ssh_known_hosts_secret_arn }
       ]
 
       essential = true
@@ -281,12 +257,20 @@ resource "aws_security_group" "ansible_runner" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # HTTPS egress for AWS API calls (S3, SSM Session Manager, CloudWatch)
+  # HTTPS egress for AWS API calls (S3, STS, CloudWatch)
   egress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH egress to target instances for direct Ansible transport.
+  egress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.ansible_target_ssh_cidrs
   }
 
   # PostgreSQL egress for job status updates (Supabase)

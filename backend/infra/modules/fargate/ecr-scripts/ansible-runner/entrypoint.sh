@@ -6,9 +6,7 @@ set -euo pipefail
 # Runs inside a Fargate task. Downloads playbook from S3, generates inventory,
 # executes ansible-playbook, uploads logs, and updates PostgreSQL job status.
 #
-# Uses SSM Session Manager for connectivity — no SSH keys or port 22 needed.
-# Target EC2 instances must have SSM Agent running and an instance profile
-# with AmazonSSMManagedInstanceCore policy.
+# Uses direct SSH connectivity to target instances.
 # =============================================================================
 
 # Required environment variables (injected by ECS task definition / run-task Lambda):
@@ -21,18 +19,23 @@ set -euo pipefail
 #   ORG_ID              - Organization ID (for org-scoped log paths)
 #   PROJECT_ID          - Project ID (for org-scoped log paths)
 #   DIAGRAM_ID          - Diagram ID (for org-scoped log paths)
+#   SSH_PRIVATE_KEY     - SSH private key PEM used for Ansible transport
+#   SSH_KNOWN_HOSTS     - Known hosts entries used for strict host verification
 #
 # Optional:
 #   EXTRA_VARS          - JSON string of extra variables for the playbook
 #   PLAYBOOK_TIMEOUT    - Maximum execution time in seconds (default: 3600)
+#   ANSIBLE_REMOTE_USER - SSH user for remote hosts (default: ec2-user)
+#   SSH_HOST_ADDRESS_SOURCE - One of: public, private, public_or_private, private_or_public
 
 LOG_FILE="/var/log/ansible/ansible.log"
 INVENTORY_FILE="/playbooks/inventory.yml"
+SSH_KEY_FILE="/playbooks/id_rsa"
+KNOWN_HOSTS_FILE="/playbooks/known_hosts"
 
 # Client role credentials (populated after sts:AssumeRole — used only for
-# EC2 and SSM operations in the client account, NOT for S3 so that the
-# Fargate task role remains the S3 identity and the bucket SSE exemption
-# continues to apply).
+# EC2 DescribeInstances lookups in the client account, NOT for S3 so that the
+# Fargate task role remains the S3 identity for playbook download/log upload).
 CLIENT_ACCESS_KEY_ID=""
 CLIENT_SECRET_ACCESS_KEY=""
 CLIENT_SESSION_TOKEN=""
@@ -41,9 +44,10 @@ CLIENT_SESSION_TOKEN=""
 DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
 GENERATE_INVENTORY_MAX_RETRIES=3
 PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
+ANSIBLE_REMOTE_USER="${ANSIBLE_REMOTE_USER:-ec2-user}"
+SSH_HOST_ADDRESS_SOURCE="${SSH_HOST_ADDRESS_SOURCE:-private_or_public}"
 if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
     echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
-    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
     exit 1
 fi
 
@@ -196,6 +200,29 @@ for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNEC
     fi
 done
 
+if [ -z "${SSH_PRIVATE_KEY:-}" ] && [ -z "${SSH_PRIVATE_KEY_B64:-}" ]; then
+    echo "[entrypoint] ERROR: Missing SSH private key. Set SSH_PRIVATE_KEY or SSH_PRIVATE_KEY_B64."
+    upload_logs || true
+    update_job_status "FAILED" "Missing SSH private key"
+    exit 1
+fi
+if [ -z "${SSH_KNOWN_HOSTS:-}" ] && [ -z "${SSH_KNOWN_HOSTS_B64:-}" ]; then
+    echo "[entrypoint] ERROR: Missing SSH known hosts. Set SSH_KNOWN_HOSTS or SSH_KNOWN_HOSTS_B64."
+    upload_logs || true
+    update_job_status "FAILED" "Missing SSH known hosts"
+    exit 1
+fi
+
+case "$SSH_HOST_ADDRESS_SOURCE" in
+    public|private|public_or_private|private_or_public) ;;
+    *)
+        echo "[entrypoint] ERROR: SSH_HOST_ADDRESS_SOURCE must be one of public, private, public_or_private, private_or_public"
+        upload_logs || true
+        update_job_status "FAILED" "Invalid SSH_HOST_ADDRESS_SOURCE"
+        exit 1
+        ;;
+esac
+
 # Validate TARGET_INSTANCE_IDS format to prevent injection attacks
 if [[ ! "$TARGET_INSTANCE_IDS" =~ ^i-[0-9a-fA-F]{8,17}(,i-[0-9a-fA-F]{8,17})*$ ]]; then
     echo "[entrypoint] ERROR: Invalid instance ID format in TARGET_INSTANCE_IDS"
@@ -207,7 +234,7 @@ fi
 echo "[entrypoint] Starting Ansible job: $JOB_ID"
 echo "[entrypoint] Playbook: s3://${S3_BUCKET_NAME}/${PLAYBOOK_S3_KEY}"
 echo "[entrypoint] Targets: $TARGET_INSTANCE_IDS"
-echo "[entrypoint] Connection: SSM Session Manager"
+echo "[entrypoint] Connection: Direct SSH"
 
 # 1. Mark job as RUNNING
 update_job_status "RUNNING"
@@ -242,10 +269,8 @@ if ! download_playbook_with_retry; then
 fi
 
 # Assume customer role
-# Credentials are stored in variables — NOT exported to the environment so
-# that all S3 operations (playbook download, log upload, SSM plugin file
-# staging) continue to use the Fargate task-role identity, which is already
-# exempt from the bucket's SSE enforcement policy.
+# Credentials are stored in variables (not exported globally) and are used only
+# for client-account EC2 API queries during inventory generation.
 echo "[entrypoint] Assuming customer role: $CLIENT_ROLE_ARN"
 if ! CREDS=$(aws sts assume-role \
   --role-arn "$CLIENT_ROLE_ARN" \
@@ -269,11 +294,57 @@ CLIENT_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.
 CLIENT_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SecretAccessKey"])')
 CLIENT_SESSION_TOKEN=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["SessionToken"])')
 
-# 3. Generate ansible.cfg (configured for SSM, no SSH)
+# Materialize SSH private key for Ansible.
+echo "[entrypoint] Preparing SSH private key..."
+if [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
+    if ! printf '%s' "$SSH_PRIVATE_KEY_B64" | base64 --decode > "$SSH_KEY_FILE" 2>/dev/null; then
+        echo "[entrypoint] ERROR: Failed to decode SSH_PRIVATE_KEY_B64"
+        upload_logs || true
+        update_job_status "FAILED" "Invalid SSH private key encoding"
+        exit 1
+    fi
+else
+    printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+fi
+
+# Remove any CRLF line endings and lock down key permissions.
+sed -i 's/\r$//' "$SSH_KEY_FILE"
+chmod 600 "$SSH_KEY_FILE"
+
+if ! grep -Eq "BEGIN [A-Z ]*PRIVATE KEY" "$SSH_KEY_FILE"; then
+    echo "[entrypoint] ERROR: SSH private key does not look like PEM content"
+    upload_logs || true
+    update_job_status "FAILED" "Invalid SSH private key format"
+    exit 1
+fi
+
+echo "[entrypoint] Preparing SSH known_hosts..."
+if [ -n "${SSH_KNOWN_HOSTS_B64:-}" ]; then
+    if ! printf '%s' "$SSH_KNOWN_HOSTS_B64" | base64 --decode > "$KNOWN_HOSTS_FILE" 2>/dev/null; then
+        echo "[entrypoint] ERROR: Failed to decode SSH_KNOWN_HOSTS_B64"
+        upload_logs || true
+        update_job_status "FAILED" "Invalid SSH known_hosts encoding"
+        exit 1
+    fi
+else
+    printf '%s\n' "$SSH_KNOWN_HOSTS" > "$KNOWN_HOSTS_FILE"
+fi
+
+sed -i 's/\r$//' "$KNOWN_HOSTS_FILE"
+chmod 600 "$KNOWN_HOSTS_FILE"
+
+if [ ! -s "$KNOWN_HOSTS_FILE" ]; then
+    echo "[entrypoint] ERROR: SSH known_hosts content is empty"
+    upload_logs || true
+    update_job_status "FAILED" "Empty SSH known_hosts content"
+    exit 1
+fi
+
+# 3. Generate ansible.cfg for SSH transport.
 cat > /playbooks/ansible.cfg << 'ANSIBLECFG'
 [defaults]
 inventory = /playbooks/inventory.yml
-host_key_checking = False
+host_key_checking = True
 log_path = /var/log/ansible/ansible.log
 timeout = 60
 forks = 10
@@ -284,11 +355,15 @@ allow_unsafe_lookups = False
 [privilege_escalation]
 become = True
 become_method = sudo
+
+[ssh_connection]
+pipelining = True
+ssh_args = -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/playbooks/known_hosts -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ConnectTimeout=20
 ANSIBLECFG
 
 export ANSIBLE_CONFIG=/playbooks/ansible.cfg
 
-# 4. Generate dynamic inventory from instance IDs (uses SSM connection)
+# 4. Generate dynamic inventory from instance IDs (uses direct SSH)
 echo "[entrypoint] Generating inventory..."
 generate_inventory_with_retry() {
     local retry_count=0
@@ -302,7 +377,9 @@ generate_inventory_with_retry() {
             --aws-access-key-id "$CLIENT_ACCESS_KEY_ID" \
             --aws-secret-access-key "$CLIENT_SECRET_ACCESS_KEY" \
             --aws-session-token "$CLIENT_SESSION_TOKEN" \
-            --s3-bucket "$S3_BUCKET_NAME" 2>&1; then
+            --remote-user "$ANSIBLE_REMOTE_USER" \
+            --ssh-private-key-file "$SSH_KEY_FILE" \
+            --host-address-source "$SSH_HOST_ADDRESS_SOURCE" 2>&1; then
             return 0
         else
             retry_count=$((retry_count + 1))
@@ -341,6 +418,12 @@ cd /playbooks
 if ! command -v ansible-playbook &>/dev/null; then
     echo "[entrypoint] ERROR: ansible-playbook command not found"
     update_job_status "FAILED" "ansible-playbook binary not available"
+    upload_logs || true
+    exit 1
+fi
+if ! command -v ssh &>/dev/null; then
+    echo "[entrypoint] ERROR: ssh client binary not found"
+    update_job_status "FAILED" "ssh binary not available"
     upload_logs || true
     exit 1
 fi

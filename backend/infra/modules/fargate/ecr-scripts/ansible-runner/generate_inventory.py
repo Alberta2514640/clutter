@@ -3,7 +3,7 @@
 Generate an Ansible inventory YAML file from EC2 instance IDs.
 
 Queries the EC2 API for instance details and writes a YAML inventory
-that uses the aws_ssm connection plugin (SSM Session Manager) instead of SSH.
+that uses direct SSH transport.
 
 Usage:
     python3 generate_inventory.py \
@@ -13,7 +13,8 @@ Usage:
         --aws-access-key-id AKIA... \
         --aws-secret-access-key ... \
         --aws-session-token ... \
-        --s3-bucket my-ssm-bucket
+        --ssh-private-key-file /playbooks/id_rsa \
+        --host-address-source private_or_public
 """
 
 import argparse
@@ -25,10 +26,14 @@ from botocore.exceptions import ClientError
 
 def get_instance_details(instance_ids: list[str], region: str, session: boto3.Session) -> dict[str, dict]:
     """
-    Query EC2 for instance details (ID, private IP, state).
+    Query EC2 for instance details (ID, private/public IP, state).
 
     Returns:
-        dict mapping instance_id -> { 'private_ip': str, 'state': str }
+        dict mapping instance_id -> {
+            'private_ip': str,
+            'public_ip': str,
+            'state': str
+        }
     """
     ec2 = session.client('ec2', region_name=region)
 
@@ -51,6 +56,7 @@ def get_instance_details(instance_ids: list[str], region: str, session: boto3.Se
 
                     instances[instance_id] = {
                         'private_ip': instance.get('PrivateIpAddress', ''),
+                        'public_ip': instance.get('PublicIpAddress', ''),
                         'state': state,
                     }
     except ClientError as e:
@@ -60,54 +66,55 @@ def get_instance_details(instance_ids: list[str], region: str, session: boto3.Se
     return instances
 
 
+def _select_host_address(details: dict, address_source: str) -> str:
+    private_ip = details.get('private_ip', '')
+    public_ip = details.get('public_ip', '')
+
+    if address_source == 'public':
+        return public_ip
+    if address_source == 'private':
+        return private_ip
+    if address_source == 'private_or_public':
+        return private_ip or public_ip
+    # public_or_private
+    return public_ip or private_ip
+
+
 def generate_inventory(
     instances: dict[str, dict],
-    region: str,
-    s3_bucket: str,
-    access_key_id: str,
-    secret_access_key: str,
-    session_token: str,
-    remote_user: str = 'ec2-user',
+    remote_user: str,
+    ssh_private_key_file: str,
+    address_source: str,
 ) -> dict:
     """
-    Build an Ansible inventory structure using the aws_ssm connection plugin.
-
-    SSM Session Manager does not require SSH keys or open inbound ports.
-    The target EC2 instances only need the SSM Agent running and an
-    instance profile with AmazonSSMManagedInstanceCore policy.
-
-    Client credentials are injected as ansible_aws_ssm_* vars. The SSM
-    connection plugin uses these credentials for BOTH SSM StartSession AND
-    S3 file staging. The client role must therefore have S3 permissions on
-    the Clutter bucket (GetBucketLocation, PutObject, GetObject, DeleteObject).
+    Build an Ansible inventory structure using direct SSH.
     """
     hosts = {}
     for instance_id, details in instances.items():
+        ansible_host = _select_host_address(details, address_source)
+        if not ansible_host:
+            print(
+                f"[generate_inventory] WARNING: Skipping {instance_id}; "
+                f"no usable host address for source={address_source}",
+                file=sys.stderr,
+            )
+            continue
+
         host_vars = {
-            'ansible_host': instance_id,  # SSM uses instance ID, not IP
-            'ansible_connection': 'community.aws.aws_ssm',
-            'ansible_aws_ssm_region': region,
+            'ansible_host': ansible_host,
+            'ansible_connection': 'ssh',
             'ansible_user': remote_user,
-            # S3 bucket the SSM plugin uses for module file staging.
-            # S3 ops from the plugin run via the per-host client credentials below.
-            'ansible_aws_ssm_bucket_name': s3_bucket,
-            # Per-host SSM credentials (client assumed role) — used for both
-            # SSM StartSession AND S3 file staging by the connection plugin.
-            # The client role must have s3:GetBucketLocation, s3:PutObject,
-            # s3:GetObject, s3:DeleteObject on the Clutter S3 bucket.
-            'ansible_aws_ssm_access_key_id': access_key_id,
-            'ansible_aws_ssm_secret_access_key': secret_access_key,
-            'ansible_aws_ssm_session_token': session_token,
-            # Bucket policy enforces SSE on all PutObject requests.
-            # The SSM plugin uploads module files using the client role, so
-            # it must include the SSE header or the policy will deny the upload.
-            'ansible_aws_ssm_bucket_sse_mode': 'AES256',
+            'ansible_ssh_private_key_file': ssh_private_key_file,
+            'ansible_ssh_common_args': (
+                '-o IdentitiesOnly=yes '
+                '-o ServerAliveInterval=30 '
+                '-o ConnectTimeout=20'
+            ),
         }
         hosts[instance_id] = host_vars
 
     group_vars = {
-        'ansible_connection': 'community.aws.aws_ssm',
-        'ansible_aws_ssm_region': region,
+        'ansible_connection': 'ssh',
         'ansible_user': remote_user,
     }
     inventory = {
@@ -140,7 +147,7 @@ def main():
     parser.add_argument(
         '--remote-user',
         default='ec2-user',
-        help='SSM user for Ansible (default: ec2-user)',
+        help='SSH user for Ansible (default: ec2-user)',
     )
     parser.add_argument(
         '--aws-access-key-id',
@@ -158,9 +165,15 @@ def main():
         help='AWS session token for the client role',
     )
     parser.add_argument(
-        '--s3-bucket',
+        '--ssh-private-key-file',
         required=True,
-        help='S3 bucket name for Ansible SSM plugin file staging',
+        help='Path to SSH private key file used by Ansible',
+    )
+    parser.add_argument(
+        '--host-address-source',
+        choices=['public', 'private', 'public_or_private', 'private_or_public'],
+        default='private_or_public',
+        help='How to pick ansible_host from EC2 metadata (default: private_or_public)',
     )
     args = parser.parse_args()
 
@@ -191,13 +204,24 @@ def main():
     # Generate and write inventory
     inventory = generate_inventory(
         instances,
-        args.region,
-        args.s3_bucket,
-        args.aws_access_key_id,
-        args.aws_secret_access_key,
-        args.aws_session_token,
         args.remote_user,
+        args.ssh_private_key_file,
+        args.host_address_source,
     )
+
+    host_count = len(inventory.get('all', {}).get('hosts', {}))
+    if host_count == 0:
+        print('[generate_inventory] ERROR: No hosts with usable network addresses for SSH', file=sys.stderr)
+        sys.exit(1)
+
+    missing_hosts = sorted(set(instances.keys()) - set(inventory['all']['hosts'].keys()))
+    if missing_hosts:
+        print(
+            '[generate_inventory] ERROR: Missing usable SSH address for instance(s): '
+            + ','.join(missing_hosts),
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     try:
         with open(args.output, 'w') as f:

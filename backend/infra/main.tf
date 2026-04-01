@@ -5,11 +5,11 @@
 module "s3" {
   source = "./modules/s3"
 
-  aws_region              = var.aws_region
-  enable_versioning       = true
-  enable_cors             = true
-  cors_allowed_origins    = ["*"]
-  ansible_runner_role_id  = module.fargate.ansible_task_role_unique_id
+  aws_region             = var.aws_region
+  enable_versioning      = true
+  enable_cors            = true
+  cors_allowed_origins   = ["*"]
+  ansible_runner_role_id = module.fargate.ansible_task_role_unique_id
 }
 
 # ================
@@ -19,14 +19,19 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter_arn            = module.s3.clutter_bucket_arn
-  s3_clutter_name           = module.s3.clutter_bucket_name
-  s3_templates_arn          = module.s3.clutter_templates_bucket_arn 
-  s3_templates_name         = module.s3.clutter_templates_bucket_name
+  s3_clutter_arn    = module.s3.clutter_bucket_arn
+  s3_clutter_name   = module.s3.clutter_bucket_name
+  s3_templates_arn  = module.s3.clutter_templates_bucket_arn
+  s3_templates_name = module.s3.clutter_templates_bucket_name
 
-  aws_region                = var.aws_region
-  psql_connection_string    = var.psql_connection_string
-  ansible_runner_image_tag  = var.ansible_runner_image_tag
+  aws_region                         = var.aws_region
+  psql_connection_string             = var.psql_connection_string
+  ansible_runner_image_tag           = var.ansible_runner_image_tag
+  ansible_ssh_private_key_secret_arn = var.ansible_ssh_private_key_secret_arn
+  ansible_ssh_known_hosts_secret_arn = var.ansible_ssh_known_hosts_secret_arn
+  ansible_target_ssh_cidrs           = var.ansible_target_ssh_cidrs
+  ansible_remote_user                = var.ansible_remote_user
+  ansible_ssh_host_address_source    = var.ansible_ssh_host_address_source
 }
 
 # ========================
@@ -119,7 +124,7 @@ module "cloudformation-stack-url-generator-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING      = var.psql_connection_string
     CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
   }
 }
 
@@ -141,12 +146,12 @@ module "terraform-command-runner-lambda" {
   zip_dir_slice = "terraform-command-runner"
 
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
-    ECS_CLUSTER_NAME        = module.fargate.ecs_cluster_name
-    TASK_DEFINITION_ARN     = module.fargate.terraform_task_definition_arn
-    CONTAINER_NAME          = module.fargate.terraform_container_name
-    SUBNET_IDS              = join(",", module.fargate.subnet_ids)
-    SECURITY_GROUP_ID       = module.fargate.terraform_security_group_id
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    ECS_CLUSTER_NAME       = module.fargate.ecs_cluster_name
+    TASK_DEFINITION_ARN    = module.fargate.terraform_task_definition_arn
+    CONTAINER_NAME         = module.fargate.terraform_container_name
+    SUBNET_IDS             = join(",", module.fargate.subnet_ids)
+    SECURITY_GROUP_ID      = module.fargate.terraform_security_group_id
   }
 }
 
@@ -590,7 +595,7 @@ module "terraform-engine-logs-live-lambda" {
 
 # Terraform Command Runner logs to populate "Recent Activity" table in frontend
 module "terraform-command-runner-logs-recent-activity-lambda" {
-  source = "./modules/templates/lambda"
+  source        = "./modules/templates/lambda"
   function_name = "terraform-command-runner-logs-recent-activity"
   actions = [
     "logs:CreateLogGroup",
@@ -1469,18 +1474,18 @@ module "diagram-delete-api-integration" {
 # Terraform Command
 # POST terraform-command-runner
 module "terraform-command-runner-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.terraform-command-runner-api-path.resource_id
-  http_method       = "POST"
-  invoke_arn        = module.terraform-command-runner-lambda.invoke_arn
-  function_name     = module.terraform-command-runner-lambda.function_name
-  path_part         = module.terraform-command-runner-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.terraform-command-runner-api-path.path
+  source               = "./modules/templates/api-lambda-integration"
+  rest_api_id          = module.clutter-api-gateway.rest_api_id
+  resource_id          = module.terraform-command-runner-api-path.resource_id
+  http_method          = "POST"
+  invoke_arn           = module.terraform-command-runner-lambda.invoke_arn
+  function_name        = module.terraform-command-runner-lambda.function_name
+  path_part            = module.terraform-command-runner-api-path.path_part
+  execution_arn        = module.clutter-api-gateway.execution_arn
+  path                 = module.terraform-command-runner-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.terraform-command-runner-model.model_name
-  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
 }
 
 module "terraform-engine-logs-get-api-integration" {
@@ -1640,15 +1645,15 @@ module "resources-get-api-integration" {
 # Terraform Engine
 # POST terraform-engine
 module "terraform-engine-create-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.terraform-engine-api-path.resource_id
-  http_method       = "POST"
-  invoke_arn        = module.terraform-engine-create-lambda.invoke_arn
-  function_name     = module.terraform-engine-create-lambda.function_name
-  path_part         = module.terraform-engine-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.terraform-engine-api-path.path
+  source        = "./modules/templates/api-lambda-integration"
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  resource_id   = module.terraform-engine-api-path.resource_id
+  http_method   = "POST"
+  invoke_arn    = module.terraform-engine-create-lambda.invoke_arn
+  function_name = module.terraform-engine-create-lambda.function_name
+  path_part     = module.terraform-engine-api-path.path_part
+  execution_arn = module.clutter-api-gateway.execution_arn
+  path          = module.terraform-engine-api-path.path
 }
 
 module "terraform-engine-code-upload-presigned-url-api-integration" {
