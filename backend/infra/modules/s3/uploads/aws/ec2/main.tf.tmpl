@@ -2,14 +2,43 @@ data "aws_ssm_parameter" "{{.ResourceName}}_ami" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
+resource "aws_iam_role" "{{.ResourceName}}_ssm_role" {
+  name = "{{.ResourceName}}-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    ManagedBy = "Ansible"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "{{.ResourceName}}_ssm_policy" {
+  role       = aws_iam_role.{{.ResourceName}}_ssm_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "{{.ResourceName}}_ssm_profile" {
+  name = "{{.ResourceName}}-ssm-profile"
+  role = aws_iam_role.{{.ResourceName}}_ssm_role.name
+}
+
 resource "aws_instance" "{{.ResourceName}}" {
-  ami           = data.aws_ssm_parameter.{{.ResourceName}}_ami.value
-  instance_type = "{{.InstanceType}}"
+  ami                  = data.aws_ssm_parameter.{{.ResourceName}}_ami.value
+  instance_type        = "{{.InstanceType}}"
+  iam_instance_profile = aws_iam_instance_profile.{{.ResourceName}}_ssm_profile.name
 {{- if .KeyName}}
   key_name = "{{.KeyName}}"
 {{- end}}
 
   tags = {
-    Name = "{{.ResourceName}}"
+    Name      = "{{.ResourceName}}"
+    ManagedBy = "Ansible"
   }
 }
