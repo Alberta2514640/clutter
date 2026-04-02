@@ -21,7 +21,7 @@ import AwsExistingAccountCard from "./AwsExistingAccountCard";
 import AwsRoleSetupCard from "./AwsRoleSetupCard";
 import AwsRoleVerificationForm from "./AwsRoleVerificationForm";
 
-export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "error";
+export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "submitted" | "error";
 
 const roleArnPattern = /^arn:aws:iam::\d{12}:role\/[\w+=,.@\-_/]+$/;
 export default function ArnPage() {
@@ -37,7 +37,6 @@ export default function ArnPage() {
   const [accountName, setAccountName] = useState("");
   const [roleArn, setRoleArn] = useState("");
   const [defaultRegion, setDefaultRegion] = useState("us-west-2");
-  const [notes, setNotes] = useState("");
   const [status, setStatus] = useState<LinkStatus>("idle");
   const [error, setError] = useState("");
   const [stackData, setStackData] = useState<CloudFormationStackUrlResponse | null>(null);
@@ -120,12 +119,6 @@ export default function ArnPage() {
   };
 
   const handleSave = async () => {
-    if (status !== "verified") {
-      setStatus("error");
-      setError("Verify the role before saving the account link.");
-      return;
-    }
-
     if (!organizationId || !activePendingAccountId) {
       setStatus("error");
       setError("The pending account record is missing. Generate the setup link again.");
@@ -150,7 +143,7 @@ export default function ArnPage() {
         },
       });
 
-      setStatus("verified");
+      setStatus("submitted");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to save the AWS account role ARN.");
@@ -173,7 +166,6 @@ export default function ArnPage() {
     setAccountName("");
     setRoleArn("");
     setDefaultRegion("us-west-2");
-    setNotes("");
     setStatus("idle");
     setError("");
     setStackData(null);
@@ -195,7 +187,6 @@ export default function ArnPage() {
     setAccountName("");
     setRoleArn("");
     setDefaultRegion("us-west-2");
-    setNotes("");
     setStatus("idle");
     setError("");
     setStackData(null);
@@ -224,7 +215,15 @@ export default function ArnPage() {
         <Alert className="border-teal-500/30 bg-teal-500/10 text-teal-50">
           <CheckCircle2 className="h-4 w-4 text-teal-300" />
           <AlertTitle>ARN format validated</AlertTitle>
-          <AlertDescription>The ARN format looks valid locally. Save the account link to submit it to the backend.</AlertDescription>
+          <AlertDescription>The ARN format looks valid locally. You can submit it when ready.</AlertDescription>
+        </Alert>
+      )}
+
+      {status === "submitted" && (
+        <Alert className="border-teal-500/30 bg-teal-500/10 text-teal-50">
+          <CheckCircle2 className="h-4 w-4 text-teal-300" />
+          <AlertTitle>Role ARN submitted</AlertTitle>
+          <AlertDescription>The ARN was sent to the backend for this organization account link.</AlertDescription>
         </Alert>
       )}
 
@@ -239,8 +238,8 @@ export default function ArnPage() {
         </div>
       ) : (
         <Card className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
-          <CardContent className="grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <section className="space-y-6">
+          <CardContent className="grid gap-6 px-6 py-6 lg:grid-cols-2">
+            <div className="h-full">
               <AwsRoleSetupCard
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
@@ -251,31 +250,23 @@ export default function ArnPage() {
                 onDefaultRegionChange={setDefaultRegion}
                 onGenerateStackUrl={handleGenerateStackUrl}
               />
+            </div>
 
-              {pendingAccount && (
-                <AwsAccountDangerZone
-                  accountName={pendingAccount.account_name}
-                  isDeleting={deleteAccount.isPending}
-                  onDelete={handleDeletePendingAccount}
-                />
-              )}
-            </section>
-
-            <section className="space-y-6">
+            <div className="h-full">
               <AwsRoleVerificationForm
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
                 isReadyForArn={hasPendingFlow}
-                notes={notes}
                 roleArn={currentRoleArn}
                 status={currentStatus}
                 onDefaultRegionChange={setDefaultRegion}
-                onNotesChange={setNotes}
                 onRoleArnChange={setRoleArn}
                 onSave={handleSave}
                 onVerify={handleVerify}
               />
+            </div>
 
+            <div className="lg:col-span-2">
               <AwsConnectionPreview
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
@@ -283,7 +274,17 @@ export default function ArnPage() {
                 linkedAccountId={activePendingAccountId}
                 status={currentStatus}
               />
-            </section>
+            </div>
+
+            {pendingAccount && (
+              <div className="lg:col-span-2">
+                <AwsAccountDangerZone
+                  accountName={pendingAccount.account_name}
+                  isDeleting={deleteAccount.isPending}
+                  onDelete={handleDeletePendingAccount}
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
