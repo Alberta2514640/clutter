@@ -81,7 +81,7 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   const orgAWS = useOrganizationAccounts(token, orgId);
   const connectedAwsAccount = orgAWS.data?.find((account) => account.status === "complete" && !!account.role_arn, ) ?? null;
   const awsId = connectedAwsAccount?.id ?? null;
-  const isAwsBlocked = !awsId;
+  const isAwsBlocked = !orgAWS.isLoading && !!orgId && !awsId;
 
   const { data: supportedResources } = useSupportedResources();
   const diagramQ = useDiagram(token, projectId, diagramId);
