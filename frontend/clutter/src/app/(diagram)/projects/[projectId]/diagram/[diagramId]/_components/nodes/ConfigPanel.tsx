@@ -13,17 +13,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { DiagramNode } from "@/lib/features/diagram/types";
+import {
+  useCreateLambdaCodeUploadUrl,
+  useUploadLambdaCodeToS3,
+} from "@/lib/features/codeUpload/hooks";
 import { useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import type { DiagramNode } from "@/lib/features/diagram/types";
 import {
   useDiagramEditor,
   useDiagramEditorActions,
 } from "@/lib/features/diagram/uiStore";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
-import {
-  useCreateLambdaCodeUploadUrl,
-  useUploadLambdaCodeToS3,
-} from "@/lib/features/codeUpload/hooks";
 import {
   useCreatePlaybookUploadUrl,
   useSubmitAnsibleJob,
@@ -699,6 +699,7 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                           ) : (
                             <Input
                               type={v.type === "number" ? "number" : "text"}
+                              maxLength={v.name === "resource_name" ? 32 : undefined}
                               className={[
                                 "h-10 rounded-lg bg-slate-950/70 text-sm text-white placeholder:text-slate-500",
                                 fieldError

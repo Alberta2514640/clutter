@@ -35,20 +35,6 @@ export default function LiveLogsTab({
 
   return (
     <div className="h-full overflow-y-auto p-4 font-mono text-xs text-slate-300 space-y-0.5">
-      <div className="flex items-center gap-2 mb-3">
-        {isComplete ? (
-          <span className="flex items-center gap-1.5 text-emerald-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            {taskStatus || "Complete"}
-          </span>
-        ) : (
-          <span className="flex items-center gap-1.5 text-amber-400">
-            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-            {taskStatus || "Running…"}
-          </span>
-        )}
-      </div>
-
       {lines.map((line, i) => {
         const display = line.message.split("\r").pop() ?? line.message;
         return (

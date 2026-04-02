@@ -103,17 +103,17 @@ export default function LogsPanel({
           </svg>
           Deploy Logs
           {taskArn &&
-            (isComplete ? (
-              <span className="flex items-center gap-1 text-emerald-400 text-xs">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Complete
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-amber-400 text-xs">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Live
-              </span>
-            ))}
+          (isComplete ? (
+            <span className="flex items-center gap-1 text-emerald-400 text-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              {taskStatus || "Complete"}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-amber-400 text-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+              {taskStatus || "Live"}
+            </span>
+          ))}
         </button>
       </div>
 
