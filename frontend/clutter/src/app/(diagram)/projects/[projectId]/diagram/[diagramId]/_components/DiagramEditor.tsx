@@ -16,7 +16,6 @@ import { useLiveLogsAccumulated } from "@/lib/features/logs/hooks";
 import { useOrganizationAccounts, useOrganizations } from "@/lib/features/organization/hooks";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
-import { AlertTriangle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AwsAccountRequiredModal from "./AwsAccountRequiredModal";
 import LogsPanel from "./logs/LogsPanel";
@@ -103,10 +102,16 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
     markClean,
   } = useDiagramEditorActions();
 
-  const [taskArn, setTaskArn] = useState<string | null>(null);
-  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(
-    null,
-  );
+  const [taskArn, setTaskArn] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return sessionStorage.getItem(`taskArn:${diagramId}`);
+  });
+
+  const [currentAction, setCurrentAction] = useState<"deploy" | "destroy" | null>(() => {
+    if (typeof window === "undefined") return null;
+    return sessionStorage.getItem(`currentAction:${diagramId}`) as "deploy" | "destroy" | null;
+  });
+
   const [showSaved, setShowSaved] = useState(false);
 
   const liveLogs = useLiveLogsAccumulated({
@@ -125,10 +130,6 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   }, [diagramId, ensure]);
 
   useEffect(() => {
-    console.log("Current diagram context", { projectId, diagramId });
-  }, [projectId, diagramId]);
-
-  useEffect(() => {
     if (!diagramQ.data) return;
     hydrateFromServer(
       diagramId,
@@ -137,6 +138,23 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
       diagramQ.data.data?.edges ?? [],
     );
   }, [diagramId, diagramQ.data, hydrateFromServer]);
+
+  useEffect(() => {
+    if (taskArn) sessionStorage.setItem(`taskArn:${diagramId}`, taskArn);
+    else sessionStorage.removeItem(`taskArn:${diagramId}`);
+  }, [taskArn, diagramId]);
+
+  useEffect(() => {
+    if (currentAction) sessionStorage.setItem(`currentAction:${diagramId}`, currentAction);
+    else sessionStorage.removeItem(`currentAction:${diagramId}`);
+  }, [currentAction, diagramId]);
+
+  useEffect(() => {
+    if (isComplete) {
+      sessionStorage.removeItem(`taskArn:${diagramId}`);
+      sessionStorage.removeItem(`currentAction:${diagramId}`);
+    }
+  }, [isComplete, diagramId]);
 
   const nodes = useMemo(() => editor?.nodes ?? [], [editor?.nodes]);
   const edges = useMemo(() => editor?.edges ?? [], [editor?.edges]);

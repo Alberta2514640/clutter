@@ -9,9 +9,9 @@ import { FilesTabProps } from "./types";
 type ActivityEntry = {
   diagram_name: string;
   command_id: string;
-  command: string;          // "destroy" | "deploy" | "apply" | ...
-  status: string;           // "SUCCESS" | "FAILED" | "RUNNING" | ...
-  created_at: string;       // ISO 8601
+  command: string;
+  status: string;
+  created_at: string;
   duration_seconds: number;
 };
 
@@ -27,6 +27,21 @@ function relativeTime(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  const dateStr = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timeStr = date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${dateStr} · ${timeStr}`;
+}
+
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
@@ -36,17 +51,17 @@ function formatDuration(seconds: number): string {
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; label: string }> = {
   SUCCESS: {
-    dot:   "bg-emerald-400",
+    dot: "bg-emerald-400",
     badge: "bg-emerald-500/10 text-emerald-400",
     label: "success",
   },
   FAILED: {
-    dot:   "bg-red-400",
+    dot: "bg-red-400",
     badge: "bg-red-500/10 text-red-400",
     label: "failed",
   },
   RUNNING: {
-    dot:   "bg-blue-400 animate-pulse",
+    dot: "bg-blue-400 animate-pulse",
     badge: "bg-blue-500/10 text-blue-400",
     label: "running",
   },
@@ -54,7 +69,7 @@ const STATUS_CONFIG: Record<string, { dot: string; badge: string; label: string 
 
 function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] ?? {
-    dot:   "bg-slate-500",
+    dot: "bg-slate-500",
     badge: "bg-white/5 text-slate-400",
     label: status.toLowerCase(),
   };
@@ -62,9 +77,9 @@ function getStatusConfig(status: string) {
 
 const COMMAND_ICONS: Record<string, string> = {
   destroy: "✕",
-  deploy:  "↑",
-  apply:   "✓",
-  plan:    "⋯",
+  deploy: "↑",
+  apply: "✓",
+  plan: "⋯",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -86,7 +101,6 @@ export default function FilesTab({
   const { data: rawActivity = [] } = useRecentActivity(token, orgId, diagramId);
   const activity = rawActivity as ActivityEntry[];
 
-  // Keyed by command_id (= deploymentId), latest entry wins
   const activityByDeployment = useMemo(() => {
     const map = new Map<string, ActivityEntry>();
     const sorted = [...activity].sort(
@@ -98,6 +112,22 @@ export default function FilesTab({
     return map;
   }, [activity]);
 
+  const grouped = useMemo(() =>
+    files?.reduce<Record<string, typeof files>>((acc, f) => {
+      if (!acc[f.deploymentId]) acc[f.deploymentId] = [];
+      acc[f.deploymentId].push(f);
+      return acc;
+    }, {}) ?? {}
+  , [files]);
+
+  const sortedGroupEntries = useMemo(() => {
+    return Object.entries(grouped).sort(([aId], [bId]) => {
+      const aTime = activityByDeployment.get(aId)?.created_at ?? "";
+      const bTime = activityByDeployment.get(bId)?.created_at ?? "";
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }, [grouped, activityByDeployment]);
+
   if (isLoading) {
     return <p className="text-slate-500 text-xs font-mono p-4">Loading log files…</p>;
   }
@@ -107,12 +137,6 @@ export default function FilesTab({
   if (!files?.length) {
     return <p className="text-slate-600 text-xs font-mono p-4">No log files found.</p>;
   }
-
-  const grouped = files.reduce<Record<string, typeof files>>((acc, f) => {
-    if (!acc[f.deploymentId]) acc[f.deploymentId] = [];
-    acc[f.deploymentId].push(f);
-    return acc;
-  }, {});
 
   const handleOpenViewer = async (args: {
     key: string;
@@ -142,7 +166,7 @@ export default function FilesTab({
   return (
     <>
       <div className="h-full overflow-y-auto p-4 space-y-4">
-        {Object.entries(grouped).map(([deploymentId, groupFiles]) => {
+        {sortedGroupEntries.map(([deploymentId, groupFiles]) => {
           const act = activityByDeployment.get(deploymentId);
           const cfg = act ? getStatusConfig(act.status) : null;
           const icon = act ? (COMMAND_ICONS[act.command] ?? "·") : null;
@@ -182,9 +206,11 @@ export default function FilesTab({
 
                 <div className="h-px flex-1 bg-white/10" />
 
-                {/* Relative time */}
+                {/* Date + relative time */}
                 {act && (
                   <span className="shrink-0 text-[10px] text-slate-600 tabular-nums">
+                    {formatDateTime(act.created_at)}
+                    <span className="mx-1 opacity-40">·</span>
                     {relativeTime(act.created_at)}
                   </span>
                 )}

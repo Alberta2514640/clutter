@@ -78,13 +78,12 @@ export default function TopNav({
   const cancel = useCallback(() => setIsEditing(false), []);
 
   const handleBackClick = useCallback(() => {
-    if (isDeploying || isDestroying) return;
     if (dirty) {
       setShowLeaveConfirm(true);
       return;
     }
     onBack?.();
-  }, [dirty, isDeploying, isDestroying, onBack]);
+  }, [dirty, onBack]);
 
   const handleConfirmLeave = useCallback(() => {
     setShowLeaveConfirm(false);
@@ -143,7 +142,6 @@ export default function TopNav({
         <div className="flex items-center gap-4">
           <Button
             onClick={handleBackClick}
-            disabled={isDeploying || isDestroying}
             className="h-10 rounded-lg border border-white/10 bg-white/5 px-5 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-white/10"
           >
             ← Back
