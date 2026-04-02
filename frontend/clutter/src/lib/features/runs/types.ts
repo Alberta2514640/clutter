@@ -35,6 +35,25 @@ export type SubmitAnsibleJobResponse = {
   [key: string]: unknown;
 };
 
+// ─── Ansible job status ───────────────────────────────────────────────────────
+
+export type AnsibleJobStatus = "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED" | string;
+
+export const ANSIBLE_TERMINAL_STATUSES = new Set<string>(["SUCCESS", "FAILED", "CANCELLED"]);
+
+export type AnsibleJob = {
+  id: string;
+  job_type: string;
+  status: AnsibleJobStatus;
+  playbook_s3_key: string;
+  target_instance_ids: string[];
+  extra_vars: Record<string, unknown>;
+  task_arn: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ApiEnvelope<T> = {
   data: T;
   message?: string;

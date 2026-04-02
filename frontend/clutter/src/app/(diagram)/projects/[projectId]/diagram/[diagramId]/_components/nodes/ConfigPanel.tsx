@@ -2,7 +2,7 @@
 
 import { Play, Settings, Trash2, Upload, X } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/features/diagram/uiStore";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import {
+  useAnsibleJob,
   useCreatePlaybookUploadUrl,
   useSubmitAnsibleJob,
   useUploadPlaybookFileToS3,
@@ -45,36 +46,26 @@ const HIDDEN_VARIABLE_NAMES = new Set([
   "pos_y",
 ]);
 
-const formatVariableLabel = (name: string) => {
-  return name
+const formatVariableLabel = (name: string) =>
+  name
     .split("_")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-};
 
 const getVariableSelectOptions = (
   resourceLabel: string | undefined,
-  variableName: string,
+  variableName: string
 ) => {
   if (resourceLabel === "DynamoDB") {
-    if (variableName === "billing_mode") {
+    if (variableName === "billing_mode")
       return ["PAY_PER_REQUEST", "PROVISIONED"];
-    }
-
-    if (variableName === "hash_key_type") {
-      return ["S", "N", "B"];
-    }
+    if (variableName === "hash_key_type") return ["S", "N", "B"];
   }
-
-  if (resourceLabel === "Lambda" && variableName === "architecture") {
+  if (resourceLabel === "Lambda" && variableName === "architecture")
     return ["arm64", "x86_64"];
-  }
-
-  if (resourceLabel === "Lambda" && variableName === "memory_size") {
+  if (resourceLabel === "Lambda" && variableName === "memory_size")
     return ["128", "256", "512", "1024", "1769"];
-  }
-
   if (resourceLabel === "Lambda" && variableName === "runtime") {
     return [
       "nodejs24.x",
@@ -85,13 +76,12 @@ const getVariableSelectOptions = (
       "provided.al2023",
     ];
   }
-
   return null;
 };
 
 const getVariableChecklistOptions = (
   resourceLabel: string | undefined,
-  variableName: string,
+  variableName: string
 ) => {
   if (resourceLabel === "API Gateway" && variableName === "http_methods") {
     return [
@@ -102,40 +92,28 @@ const getVariableChecklistOptions = (
       { label: "DELETE", value: "DELETE" },
     ];
   }
-
   return null;
 };
 
 const getVariablePlaceholder = (
   resourceLabel: string | undefined,
   variableName: string,
-  fallback: string,
+  fallback: string
 ) => {
-  if (resourceLabel === "S3" && variableName === "resource_name") {
+  if (resourceLabel === "S3" && variableName === "resource_name")
     return "e.g. test-bucket";
-  }
-
   return fallback;
 };
 
-const getVariableError = (
-  name: string,
-  value: unknown,
-  required: boolean,
-) => {
+const getVariableError = (name: string, value: unknown, required: boolean) => {
   const stringValue = typeof value === "string" ? value.trim() : "";
-
   if (required) {
     const isMissing =
       value === undefined ||
       value === null ||
       (typeof value === "string" && stringValue === "");
-
-    if (isMissing) {
-      return "This field is required.";
-    }
+    if (isMissing) return "This field is required.";
   }
-
   if (
     name === "resource_name" &&
     stringValue &&
@@ -143,8 +121,39 @@ const getVariableError = (
   ) {
     return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
   }
-
   return null;
+};
+
+const JOB_CARD_STYLES: Record<string, string> = {
+  QUEUED: "border-slate-700 bg-slate-900/60",
+  RUNNING: "border-amber-500/20 bg-amber-500/10",
+  SUCCESS: "border-emerald-500/20 bg-emerald-500/10",
+  FAILED: "border-red-500/20 bg-red-500/10",
+  CANCELLED: "border-slate-700 bg-slate-900/60",
+};
+
+const JOB_DOT_STYLES: Record<string, string> = {
+  QUEUED: "bg-slate-400 animate-pulse",
+  RUNNING: "bg-amber-400 animate-pulse",
+  SUCCESS: "bg-emerald-400",
+  FAILED: "bg-red-400",
+  CANCELLED: "bg-slate-500",
+};
+
+const JOB_TEXT_STYLES: Record<string, string> = {
+  QUEUED: "text-slate-200",
+  RUNNING: "text-amber-200",
+  SUCCESS: "text-emerald-200",
+  FAILED: "text-red-200",
+  CANCELLED: "text-slate-400",
+};
+
+type FinishedJobSnapshot = {
+  id: string;
+  status: string;
+  error_message?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type ConfigPanelProps = {
@@ -154,7 +163,12 @@ type ConfigPanelProps = {
   accountAccessRoleId: string | null;
 };
 
-export default function ConfigPanel({ diagramId, projectId, orgId, accountAccessRoleId, }: ConfigPanelProps) {
+export default function ConfigPanel({
+  diagramId,
+  projectId,
+  orgId,
+  accountAccessRoleId,
+}: ConfigPanelProps) {
   const editor = useDiagramEditor(diagramId);
   const { markClean, setNodes, setEdges } = useDiagramEditorActions();
   const meQ = useMe();
@@ -174,9 +188,11 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
   const showContent = !!selectedNode;
   const isEc2Node = selectedNode?.data.img?.includes("ec2") ?? false;
   const isLambdaNode = selectedNode?.data.img?.includes("lambda") ?? false;
+
   const ansibleUploadInputId = selectedNode
     ? `ansible-playbook-upload-${selectedNode.id}`
     : "ansible-playbook-upload";
+
   const lambdaUploadInputId = selectedNode
     ? `lambda-code-upload-${selectedNode.id}`
     : "lambda-code-upload";
@@ -184,37 +200,88 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [runMessage, setRunMessage] = useState<string | null>(null);
-  const [lambdaUploadError, setLambdaUploadError] = useState<string | null>(null);
-  const [lambdaUploadMessage, setLambdaUploadMessage] = useState<string | null>(null);
+  const [lambdaUploadError, setLambdaUploadError] = useState<string | null>(
+    null
+  );
+  const [lambdaUploadMessage, setLambdaUploadMessage] = useState<string | null>(
+    null
+  );
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [latestFinishedJob, setLatestFinishedJob] =
+    useState<FinishedJobSnapshot | null>(null);
+
+  const jobStatusQuery = useAnsibleJob(token, activeJobId);
+  const [lastSyncedJobStatus, setLastSyncedJobStatus] = useState<string | null>(
+    null
+  );
+  const polledStatus = jobStatusQuery.data?.status ?? null;
 
   const resourceDef = useMemo(
     () => supportedResources?.find((r) => r.label === selectedNode?.data.label),
-    [supportedResources, selectedNode?.data.label],
+    [supportedResources, selectedNode?.data.label]
   );
 
   const visibleVariables = useMemo(
     () =>
       resourceDef?.variables.filter(
-        (variable) => !HIDDEN_VARIABLE_NAMES.has(variable.name.toLowerCase()),
+        (v) => !HIDDEN_VARIABLE_NAMES.has(v.name.toLowerCase())
       ) ?? [],
-    [resourceDef?.variables],
+    [resourceDef?.variables]
   );
+
+  const formatDateTime = useCallback((value?: string | null) => {
+    if (!value) return "—";
+    return new Date(value).toLocaleString();
+  }, []);
 
   const patchSelectedNode = useCallback(
     (patch: (node: DiagramNode) => DiagramNode) => {
       if (!selectedNode) return;
-      const next = nodes.map((n) =>
-        n.id === selectedNode.id ? patch(n) : n,
-      );
+      const next = nodes.map((n) => (n.id === selectedNode.id ? patch(n) : n));
       setNodes(diagramId, next);
     },
-    [diagramId, nodes, selectedNode, setNodes],
+    [diagramId, nodes, selectedNode, setNodes]
   );
 
-  const handleClose = () => {
+  useEffect(() => {
+    if (!polledStatus || polledStatus === lastSyncedJobStatus || !activeJobId)
+      return;
+    if (!selectedNode || selectedNode.data.lastAnsibleJobId !== activeJobId)
+      return;
+
+    setLastSyncedJobStatus(polledStatus);
+
+    patchSelectedNode((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        lastAnsibleJobStatus: polledStatus,
+      },
+    }));
+
+    if (jobStatusQuery.isDone && jobStatusQuery.data) {
+      setLatestFinishedJob({
+        id: jobStatusQuery.data.id,
+        status: jobStatusQuery.data.status,
+        error_message: jobStatusQuery.data.error_message ?? null,
+        created_at: jobStatusQuery.data.created_at ?? null,
+        updated_at: jobStatusQuery.data.updated_at ?? null,
+      });
+
+      setActiveJobId(null);
+    }
+  }, [
+    activeJobId,
+    jobStatusQuery.data,
+    jobStatusQuery.isDone,
+    lastSyncedJobStatus,
+    patchSelectedNode,
+    polledStatus,
+    selectedNode,
+  ]);
+
+  const handleClose = () =>
     patchSelectedNode((n) => ({ ...n, selected: false }));
-  };
 
   const handleVariableChange = (varName: string, value: unknown) => {
     patchSelectedNode((n) => ({
@@ -229,7 +296,6 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
   const persistDiagram = useCallback(
     async (nextNodes: DiagramNode[]) => {
       if (!token) return;
-
       await saveDiagram.mutateAsync({
         projectId,
         diagramId,
@@ -237,10 +303,9 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
         nodes: nextNodes,
         edges,
       });
-
       markClean(diagramId);
     },
-    [diagramId, editor?.name, edges, markClean, projectId, saveDiagram, token],
+    [diagramId, editor?.name, edges, markClean, projectId, saveDiagram, token]
   );
 
   const handleAnsiblePlaybookUpload = useCallback(
@@ -254,7 +319,6 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
       setUploadError(null);
       setUploadMessage(null);
       setRunError(null);
-      setRunMessage(null);
 
       try {
         const uploadTarget = await createPlaybookUploadUrl.mutateAsync({
@@ -271,7 +335,7 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
 
         if (!targetUrl) {
           throw new Error(
-            "Upload URL response did not include a usable target URL.",
+            "Upload URL response did not include a usable target URL."
           );
         }
 
@@ -298,19 +362,18 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       uploadTarget.playbook_id) ||
                     node.data.ansiblePlaybookId,
                 },
-              },
+              }
         );
 
         setNodes(diagramId, nextNodes);
         await persistDiagram(nextNodes);
-
         setUploadMessage(`Uploaded "${file.name}" for this EC2 container.`);
       } catch (err) {
-        const message =
+        setUploadError(
           err instanceof Error
             ? err.message
-            : "Failed to upload Ansible playbook.";
-        setUploadError(message);
+            : "Failed to upload Ansible playbook."
+        );
       }
     },
     [
@@ -318,13 +381,12 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
       diagramId,
       nodes,
       persistDiagram,
-      patchSelectedNode,
       projectId,
       selectedNode,
       setNodes,
       token,
       uploadPlaybookFileToS3,
-    ],
+    ]
   );
 
   const handleLambdaCodeUpload = useCallback(
@@ -338,11 +400,15 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
       setLambdaUploadError(null);
       setLambdaUploadMessage(null);
 
-      const resourceName = String(selectedNode.data.variables?.resource_name ?? "");
+      const resourceName = String(
+        selectedNode.data.variables?.resource_name ?? ""
+      );
       const runtime = String(selectedNode.data.variables?.runtime ?? "");
 
       if (!resourceName) {
-        setLambdaUploadError("Set a resource_name on this Lambda node before uploading code.");
+        setLambdaUploadError(
+          "Set a resource_name on this Lambda node before uploading code."
+        );
         return;
       }
 
@@ -375,11 +441,13 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
           },
         }));
 
-        setLambdaUploadMessage(`Uploaded "${file.name}" for this Lambda function.`);
+        setLambdaUploadMessage(
+          `Uploaded "${file.name}" for this Lambda function.`
+        );
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to upload Lambda code.";
-        setLambdaUploadError(message);
+        setLambdaUploadError(
+          err instanceof Error ? err.message : "Failed to upload Lambda code."
+        );
       }
     },
     [
@@ -391,20 +459,17 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
       selectedNode,
       token,
       uploadLambdaCodeToS3,
-    ],
+    ]
   );
 
   const handleTargetInstanceIdChange = useCallback(
     (targetInstanceId: string) => {
       patchSelectedNode((n) => ({
         ...n,
-        data: {
-          ...n.data,
-          ansibleTargetInstanceId: targetInstanceId,
-        },
+        data: { ...n.data, ansibleTargetInstanceId: targetInstanceId },
       }));
     },
-    [patchSelectedNode],
+    [patchSelectedNode]
   );
 
   const handleRunPlaybook = useCallback(async () => {
@@ -419,25 +484,25 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
 
     if (!playbookId) {
       setRunError(
-        "Upload a playbook first so this EC2 container has a playbook ID.",
+        "Upload a playbook first so this EC2 container has a playbook ID."
       );
       return;
     }
-
     if (!targetInstanceId) {
       setRunError(
-        "Enter the target EC2 instance ID before running the playbook.",
+        "Enter the target EC2 instance ID before running the playbook."
       );
       return;
     }
-
     if (!accountAccessRoleId) {
-      setRunError("Connect an AWS account role before submitting an Ansible job.");
+      setRunError(
+        "Connect an AWS account role before submitting an Ansible job."
+      );
       return;
     }
 
     setRunError(null);
-    setRunMessage(null);
+    setLatestFinishedJob(null);
 
     try {
       const response = await submitAnsibleJob.mutateAsync({
@@ -455,15 +520,12 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
         },
       }));
 
-      setRunMessage(
-        `Submitted Ansible job ${response.job_id} for this EC2 container.`,
-      );
+      setLastSyncedJobStatus(response.status);
+      setActiveJobId(response.job_id);
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to submit the Ansible job.";
-      setRunError(message);
+      setRunError(
+        err instanceof Error ? err.message : "Failed to submit the Ansible job."
+      );
     }
   }, [
     accountAccessRoleId,
@@ -476,12 +538,21 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
   const handleDeleteSelected = useCallback(() => {
     if (!selectedNode) return;
     const nodeId = selectedNode.id;
-    setNodes(diagramId, nodes.filter((n) => n.id !== nodeId));
+    setNodes(
+      diagramId,
+      nodes.filter((n) => n.id !== nodeId)
+    );
     setEdges(
       diagramId,
-      edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+      edges.filter((e) => e.source !== nodeId && e.target !== nodeId)
     );
   }, [diagramId, edges, nodes, selectedNode, setEdges, setNodes]);
+
+  const jobData = jobStatusQuery.data;
+  const jobStatus = jobData?.status ?? "";
+  const jobCardStyle = JOB_CARD_STYLES[jobStatus] ?? JOB_CARD_STYLES.QUEUED;
+  const jobDotStyle = JOB_DOT_STYLES[jobStatus] ?? JOB_DOT_STYLES.QUEUED;
+  const jobTextStyle = JOB_TEXT_STYLES[jobStatus] ?? JOB_TEXT_STYLES.QUEUED;
 
   return (
     <aside
@@ -548,30 +619,30 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       const placeholder = getVariablePlaceholder(
                         resourceDef?.label,
                         v.name,
-                        v.default != null ? String(v.default) : "",
+                        v.default != null ? String(v.default) : ""
                       );
                       const fieldError = getVariableError(
                         v.name,
                         val,
-                        v.required,
+                        v.required
                       );
                       const labelText = formatVariableLabel(v.name);
                       const selectOptions = getVariableSelectOptions(
                         resourceDef?.label,
-                        v.name,
+                        v.name
                       );
                       const checklistOptions = getVariableChecklistOptions(
                         resourceDef?.label,
-                        v.name,
+                        v.name
                       );
                       const selectedChecklistValues = new Set(
                         String(
                           val ??
-                            (typeof v.default === "string" ? v.default : ""),
+                            (typeof v.default === "string" ? v.default : "")
                         )
                           .split(",")
                           .map((item) => item.trim())
-                          .filter(Boolean),
+                          .filter(Boolean)
                       );
 
                       return (
@@ -581,26 +652,30 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                         >
                           <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-slate-300">
                             <Label>{labelText}</Label>
-                            {v.required ? <span className="text-red-400">*</span> : null}
+                            {v.required ? (
+                              <span className="text-red-400">*</span>
+                            ) : null}
                           </div>
 
                           {checklistOptions ? (
                             <div className="grid grid-cols-2 gap-2">
                               {checklistOptions.map((option) => {
-                                const checked = selectedChecklistValues.has(option.value);
-
+                                const checked = selectedChecklistValues.has(
+                                  option.value
+                                );
                                 return (
                                   <button
                                     key={option.value}
                                     type="button"
                                     onClick={() => {
-                                      const nextValues = new Set(selectedChecklistValues);
+                                      const nextValues = new Set(
+                                        selectedChecklistValues
+                                      );
                                       if (checked) nextValues.delete(option.value);
                                       else nextValues.add(option.value);
-
                                       handleVariableChange(
                                         v.name,
-                                        Array.from(nextValues).join(","),
+                                        Array.from(nextValues).join(",")
                                       );
                                     }}
                                     className={[
@@ -620,7 +695,9 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                                     >
                                       ✓
                                     </span>
-                                    <span className="font-medium">{option.label}</span>
+                                    <span className="font-medium">
+                                      {option.label}
+                                    </span>
                                   </button>
                                 );
                               })}
@@ -634,15 +711,15 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                                 handleVariableChange(v.name, !Boolean(val))
                               }
                               className={[
-                                (
-                                  (resourceDef?.label === "API Gateway" &&
-                                    v.name === "enable_cors") ||
-                                  (resourceDef?.label === "S3" &&
-                                    (v.name === "enable_versioning" ||
-                                      v.name === "block_public_access")) ||
-                                  (resourceDef?.label === "DynamoDB" &&
-                                    v.name === "enable_ttl")
-                                )
+                                ((
+                                  resourceDef?.label === "API Gateway" &&
+                                  v.name === "enable_cors"
+                                ) ||
+                                (resourceDef?.label === "S3" &&
+                                  (v.name === "enable_versioning" ||
+                                    v.name === "block_public_access")) ||
+                                (resourceDef?.label === "DynamoDB" &&
+                                  v.name === "enable_ttl"))
                                   ? "flex h-10 w-full items-center justify-between rounded-lg border px-3 text-sm transition"
                                   : "inline-flex h-10 min-w-[148px] items-center justify-between rounded-lg border px-3 text-sm transition",
                                 fieldError
@@ -664,7 +741,9 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                                 <span
                                   className={[
                                     "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-                                    Boolean(val) ? "translate-x-[20px]" : "translate-x-0",
+                                    Boolean(val)
+                                      ? "translate-x-[20px]"
+                                      : "translate-x-0",
                                   ].join(" ")}
                                 />
                               </span>
@@ -699,7 +778,9 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                           ) : (
                             <Input
                               type={v.type === "number" ? "number" : "text"}
-                              maxLength={v.name === "resource_name" ? 32 : undefined}
+                              maxLength={
+                                v.name === "resource_name" ? 32 : undefined
+                              }
                               className={[
                                 "h-10 rounded-lg bg-slate-950/70 text-sm text-white placeholder:text-slate-500",
                                 fieldError
@@ -715,8 +796,8 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                                   raw === ""
                                     ? undefined
                                     : v.type === "number"
-                                      ? Number(raw)
-                                      : raw,
+                                    ? Number(raw)
+                                    : raw
                                 );
                               }}
                             />
@@ -725,18 +806,16 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                           {v.description &&
                             !(
                               (resourceDef?.label === "DynamoDB" &&
-                                (
-                                  v.name === "billing_mode" ||
+                                (v.name === "billing_mode" ||
                                   v.name === "hash_key_type" ||
-                                  v.name === "enable_ttl"
-                                )) ||
+                                  v.name === "enable_ttl")) ||
                               (resourceDef?.label === "API Gateway" &&
                                 v.name === "http_methods")
                             ) && (
-                            <p className="mt-2 text-[11px] text-slate-500">
-                              {v.description}
-                            </p>
-                          )}
+                              <p className="mt-2 text-[11px] text-slate-500">
+                                {v.description}
+                              </p>
+                            )}
 
                           {fieldError && (
                             <p className="mt-2 text-[11px] text-red-300">
@@ -775,7 +854,6 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                         ? "Replace playbook for this EC2 container"
                         : "Upload playbook for this EC2 container"}
                     </label>
-
                     <input
                       id={ansibleUploadInputId}
                       type="file"
@@ -783,8 +861,9 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       className="hidden"
                       onChange={async (e) => {
                         const input = e.currentTarget;
-                        const file = input.files?.[0] ?? null;
-                        await handleAnsiblePlaybookUpload(file);
+                        await handleAnsiblePlaybookUpload(
+                          input.files?.[0] ?? null
+                        );
                         input.value = "";
                       }}
                     />
@@ -811,8 +890,8 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                         className="w-full rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2 text-sm text-white transition-colors focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                       />
                       <div className="mt-1 text-xs text-slate-400">
-                        This instance ID is stored on this EC2 container node
-                        and used as the Ansible target.
+                        This instance ID is stored on this EC2 container node and
+                        used as the Ansible target.
                       </div>
                     </div>
 
@@ -847,10 +926,10 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       {submitAnsibleJob.isPending
                         ? "Submitting Ansible job..."
                         : !accountAccessRoleId
-                          ? "Connect AWS account to run"
-                          : selectedNode!.data.ansiblePlaybookId
-                            ? "Run playbook on this EC2 container"
-                            : "Upload a playbook to run"}
+                        ? "Connect AWS account to run"
+                        : selectedNode!.data.ansiblePlaybookId
+                        ? "Run playbook on this EC2 container"
+                        : "Upload a playbook to run"}
                     </button>
 
                     {(createPlaybookUploadUrl.isPending ||
@@ -878,10 +957,92 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       </div>
                     )}
 
-                    {runMessage && (
-                      <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-200">
-                        {runMessage}
+                    {jobData && (
+                      <div
+                        className={`rounded-lg border px-3 py-2 text-xs space-y-1.5 ${jobCardStyle}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2 w-2 rounded-full shrink-0 ${jobDotStyle}`}
+                          />
+                          <span className={`font-semibold ${jobTextStyle}`}>
+                            {jobData.status}
+                          </span>
+                          <span className="text-slate-500 font-mono ml-auto">
+                            {jobData.id.slice(0, 8)}
+                          </span>
+                        </div>
+
+                        {jobData.error_message && (
+                          <p className="text-red-300 pl-4 leading-snug">
+                            {jobData.error_message}
+                          </p>
+                        )}
+
+                        {jobStatusQuery.isDone && jobData.updated_at && (
+                          <p className="text-slate-500 pl-4">
+                            Completed{" "}
+                            {new Date(jobData.updated_at).toLocaleTimeString()}
+                          </p>
+                        )}
                       </div>
+                    )}
+
+                    {latestFinishedJob && !activeJobId && (
+                      <details className="rounded-lg border border-slate-800 bg-slate-950/70">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-slate-200">
+                          <span>Latest Ansible result</span>
+                          <span
+                            className={[
+                              "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                              latestFinishedJob.status === "SUCCESS"
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                                : latestFinishedJob.status === "FAILED"
+                                ? "border-red-500/30 bg-red-500/10 text-red-200"
+                                : latestFinishedJob.status === "RUNNING"
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                                : "border-slate-700 bg-slate-900 text-slate-300",
+                            ].join(" ")}
+                          >
+                            {latestFinishedJob.status}
+                          </span>
+                        </summary>
+
+                        <div className="space-y-2 border-t border-slate-800 px-3 py-3 text-xs text-slate-300">
+                          <div className="grid grid-cols-[90px_1fr] gap-2">
+                            <span className="text-slate-500">Status</span>
+                            <span>{latestFinishedJob.status}</span>
+                          </div>
+
+                          <div className="grid grid-cols-[90px_1fr] gap-2">
+                            <span className="text-slate-500">Message</span>
+                            <span>
+                              {latestFinishedJob.error_message || "No message"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-[90px_1fr] gap-2">
+                            <span className="text-slate-500">Created</span>
+                            <span>
+                              {formatDateTime(latestFinishedJob.created_at)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-[90px_1fr] gap-2">
+                            <span className="text-slate-500">Updated</span>
+                            <span>
+                              {formatDateTime(latestFinishedJob.updated_at)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-[90px_1fr] gap-2">
+                            <span className="text-slate-500">Job ID</span>
+                            <span className="break-all font-mono text-[11px]">
+                              {latestFinishedJob.id}
+                            </span>
+                          </div>
+                        </div>
+                      </details>
                     )}
 
                     {runError && (
@@ -909,7 +1070,6 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                         ? "Replace function code (.zip)"
                         : "Upload function code (.zip)"}
                     </label>
-
                     <input
                       id={lambdaUploadInputId}
                       type="file"
@@ -918,7 +1078,7 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                       onChange={async (e) => {
                         const input = e.currentTarget;
                         await handleLambdaCodeUpload(
-                          e.target.files?.[0] ?? null,
+                          e.target.files?.[0] ?? null
                         );
                         input.value = "";
                       }}
@@ -927,7 +1087,8 @@ export default function ConfigPanel({ diagramId, projectId, orgId, accountAccess
                     <div className="rounded-lg border border-cyan-900/40 bg-slate-950/75 px-3 py-2">
                       <div className="text-xs text-gray-400">Uploaded file</div>
                       <div className="mt-1 text-sm font-medium text-white">
-                        {selectedNode!.data.lambdaCodeZipName ?? "No file uploaded yet"}
+                        {selectedNode!.data.lambdaCodeZipName ??
+                          "No file uploaded yet"}
                       </div>
                     </div>
 
