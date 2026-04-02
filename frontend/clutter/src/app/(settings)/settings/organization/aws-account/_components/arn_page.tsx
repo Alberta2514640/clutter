@@ -15,6 +15,7 @@ import {
 import type { CloudFormationStackUrlResponse } from "@/lib/features/organization/types";
 import { useMe } from "@/lib/features/user/hooks";
 import AwsAccountDangerZone from "./AwsAccountDangerZone";
+import AwsDeleteConfirmModal from "./AwsDeleteConfirmModal";
 import AwsAccountHeader from "./AwsAccountHeader";
 import AwsConnectionPreview from "./AwsConnectionPreview";
 import AwsExistingAccountCard from "./AwsExistingAccountCard";
@@ -22,6 +23,11 @@ import AwsRoleSetupCard from "./AwsRoleSetupCard";
 import AwsRoleVerificationForm from "./AwsRoleVerificationForm";
 
 export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "submitted" | "error";
+
+type DeleteTarget = {
+  accountId: string;
+  accountName: string;
+};
 
 const roleArnPattern = /^arn:aws:iam::\d{12}:role\/[\w+=,.@\-_/]+$/;
 export default function ArnPage() {
@@ -40,6 +46,7 @@ export default function ArnPage() {
   const [status, setStatus] = useState<LinkStatus>("idle");
   const [error, setError] = useState("");
   const [stackData, setStackData] = useState<CloudFormationStackUrlResponse | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const completeAccount = accountsQ.data?.find((account) => account.status === "complete") ?? null;
   const pendingAccount = accountsQ.data?.find((account) => account.status === "incomplete") ?? null;
   const activePendingAccountId = stackData?.account_id ?? pendingAccount?.id ?? null;
@@ -150,19 +157,7 @@ export default function ArnPage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (!organizationId || !completeAccount) return;
-
-    const confirmed = window.confirm(
-      `Delete the AWS account link "${completeAccount.account_name}"? This will return the page to the creation flow.`
-    );
-    if (!confirmed) return;
-
-    await deleteAccount.mutateAsync({
-      organizationId,
-      accountId: completeAccount.id,
-    });
-
+  const resetCreationFlow = () => {
     setAccountName("");
     setRoleArn("");
     setDefaultRegion("us-west-2");
@@ -171,25 +166,21 @@ export default function ArnPage() {
     setStackData(null);
   };
 
-  const handleDeletePendingAccount = async () => {
-    if (!organizationId || !pendingAccount) return;
+  const handleDeleteAccount = async () => {
+    if (!organizationId || !deleteTarget) return;
 
-    const confirmed = window.confirm(
-      `Delete the pending AWS account link "${pendingAccount.account_name}"? This will return the page to the creation flow.`
-    );
-    if (!confirmed) return;
+    try {
+      await deleteAccount.mutateAsync({
+        organizationId,
+        accountId: deleteTarget.accountId,
+      });
 
-    await deleteAccount.mutateAsync({
-      organizationId,
-      accountId: pendingAccount.id,
-    });
-
-    setAccountName("");
-    setRoleArn("");
-    setDefaultRegion("us-west-2");
-    setStatus("idle");
-    setError("");
-    setStackData(null);
+      setDeleteTarget(null);
+      resetCreationFlow();
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Failed to delete the AWS account link.");
+    }
   };
 
   const currentAccountName = effectiveAccountName;
@@ -233,7 +224,12 @@ export default function ArnPage() {
           <AwsAccountDangerZone
             accountName={completeAccount.account_name}
             isDeleting={deleteAccount.isPending}
-            onDelete={handleDeleteAccount}
+            onRequestDelete={() =>
+              setDeleteTarget({
+                accountId: completeAccount.id,
+                accountName: completeAccount.account_name,
+              })
+            }
           />
         </div>
       ) : (
@@ -281,12 +277,26 @@ export default function ArnPage() {
                 <AwsAccountDangerZone
                   accountName={pendingAccount.account_name}
                   isDeleting={deleteAccount.isPending}
-                  onDelete={handleDeletePendingAccount}
+                  onRequestDelete={() =>
+                    setDeleteTarget({
+                      accountId: pendingAccount.id,
+                      accountName: pendingAccount.account_name,
+                    })
+                  }
                 />
               </div>
             )}
           </CardContent>
         </Card>
+      )}
+
+      {deleteTarget && (
+        <AwsDeleteConfirmModal
+          accountName={deleteTarget.accountName}
+          isDeleting={deleteAccount.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteAccount}
+        />
       )}
     </main>
   );
