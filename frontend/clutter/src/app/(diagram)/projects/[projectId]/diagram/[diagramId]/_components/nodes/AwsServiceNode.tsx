@@ -14,6 +14,22 @@ const HIDDEN_VARIABLE_NAMES = new Set([
   "pos_x", "pos_y",
 ]);
 
+const JOB_STATUS_STYLES: Record<string, string> = {
+  QUEUED:    "border-slate-500/40 bg-slate-500/10 text-slate-300",
+  RUNNING:   "border-amber-400/40 bg-amber-500/10 text-amber-200",
+  SUCCESS:   "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  FAILED:    "border-red-400/40 bg-red-500/10 text-red-300",
+  CANCELLED: "border-slate-500/40 bg-slate-500/10 text-slate-400",
+};
+
+const JOB_STATUS_DOT: Record<string, string> = {
+  QUEUED:    "bg-slate-400 animate-pulse",
+  RUNNING:   "bg-amber-400 animate-pulse",
+  SUCCESS:   "bg-emerald-400",
+  FAILED:    "bg-red-400",
+  CANCELLED: "bg-slate-500",
+};
+
 function getVariableError(name: string, value: unknown, required: boolean): string | null {
   const stringValue = typeof value === "string" ? value.trim() : "";
 
@@ -48,10 +64,13 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
   }, [data.label, data.variables, supportedResources]);
 
   const hasErrors = validationErrors.length > 0;
-
-  const hasAnsiblePlaybook = Boolean(data.ansiblePlaybookName);
   const isEc2Node = data.img.includes("ec2");
-  const hasQueuedAnsibleJob = isEc2Node && Boolean(data.lastAnsibleJobId);
+  const hasAnsiblePlaybook = Boolean(data.ansiblePlaybookName);
+  const hasJobStatus = isEc2Node && Boolean(data.lastAnsibleJobId);
+
+  const jobStatus = data.lastAnsibleJobStatus ?? "QUEUED";
+  const jobStatusStyle = JOB_STATUS_STYLES[jobStatus] ?? JOB_STATUS_STYLES.QUEUED;
+  const jobStatusDot = JOB_STATUS_DOT[jobStatus] ?? JOB_STATUS_DOT.QUEUED;
 
   return (
     <div
@@ -87,7 +106,7 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
             </div>
           )}
 
-          {/* Required field errors — shown when node is not selected */}
+          {/* Validation errors */}
           {hasErrors && !selected && (
             <div className="mt-1.5 space-y-0.5">
               {validationErrors.map(({ name }) => (
@@ -96,10 +115,7 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
                   className="inline-flex items-center gap-1 rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300"
                 >
                   <span className="font-medium">
-                    {name
-                      .split("_")
-                      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-                      .join(" ")}
+                    {name.split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ")}
                   </span>
                   <span className="opacity-60">required</span>
                 </div>
@@ -107,25 +123,32 @@ export default function AwsServiceNode({ data, selected }: NodeProps<Node<NodeDa
             </div>
           )}
 
-          {/* Existing EC2 / Ansible badges */}
+          {/* Playbook uploaded badge */}
           {isEc2Node && hasAnsiblePlaybook && (
             <div className="mt-1 inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">
               Playbook uploaded
             </div>
           )}
-          {hasQueuedAnsibleJob && (
-            <div className="mt-1 inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-200">
-              {data.lastAnsibleJobStatus ?? "QUEUED"}
+
+          {/* Job status badge — status-aware colors + dot */}
+          {hasJobStatus && (
+            <div className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${jobStatusStyle}`}>
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${jobStatusDot}`} />
+              {jobStatus}
             </div>
           )}
+
+          {/* Playbook name */}
           {isEc2Node && data.ansiblePlaybookName && (
             <div className="mt-1 max-w-[160px] truncate text-[11px] text-slate-300">
               {data.ansiblePlaybookName}
             </div>
           )}
-          {hasQueuedAnsibleJob && (
-            <div className="mt-1 max-w-[160px] truncate text-[11px] text-slate-300">
-              Job: {data.lastAnsibleJobId}
+
+          {/* Job ID */}
+          {hasJobStatus && (
+            <div className="mt-0.5 max-w-[160px] truncate text-[11px] text-slate-500 font-mono">
+              {data.lastAnsibleJobId}
             </div>
           )}
         </div>
