@@ -1,5 +1,6 @@
 // src/lib/features/runs/api.ts
 import type {
+  AnsibleJob,
   ApiEnvelope,
   CreatePlaybookUploadUrlInput,
   CreatePlaybookUploadUrlResponse,
@@ -68,6 +69,12 @@ export const runsApi = {
       body: JSON.stringify(input),
     });
 
+    return json.data;
+  },
+
+  // GET /ansible/jobs/:jobId
+  getAnsibleJob: async (token: string, jobId: string): Promise<AnsibleJob> => {
+    const json = await apiFetch<ApiEnvelope<AnsibleJob>>(`/ansible/jobs/${jobId}`, token);
     return json.data;
   },
 };

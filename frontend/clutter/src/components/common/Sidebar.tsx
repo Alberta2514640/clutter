@@ -5,7 +5,7 @@ import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjects } from "@/lib/features/projects/hooks";
 import { useLogout, useMe } from "@/lib/features/user/hooks";
 import { cn } from "@/lib/utils";
-import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, LayoutDashboard, LogOut, Plus, Settings, KeySquare } from "lucide-react";
+import { BarChart3, BookTemplate, ChevronLeft, ChevronRight, FolderOpen, HelpCircle, KeySquare, LayoutDashboard, LogOut, Plus, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -36,8 +36,8 @@ export default function DashboardSidebar({ className }: SidebarProps) {
     { icon: Settings, label: "Admin Panel", href: "/settings/organization/manage" },
     // { icon: KeySquare, label: "AWS Account", href: "/settings/organization/aws-account" },
     // { icon: BookTemplate, label: "Templates", href: "/templates" },
-    { icon: BarChart3, label: "Insights", href: "/insights" },
-    { icon: HelpCircle, label: "Help", href: "/help" },
+    // { icon: BarChart3, label: "Insights", href: "/insights" },
+    // { icon: HelpCircle, label: "Help", href: "/help" },
   ];
 
   const handleExpand = () => {

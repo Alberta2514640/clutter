@@ -6,8 +6,6 @@ import { useProjectContext } from "../_contexts/ProjectContext";
 
 const navigationItems = [
   { label: "Diagrams", href: "diagrams" },
-  { label: "Credentials", href: "credentials" },
-  { label: "Variables", href: "variables" },
   { label: "Settings", href: "settings" },
 ];
 
