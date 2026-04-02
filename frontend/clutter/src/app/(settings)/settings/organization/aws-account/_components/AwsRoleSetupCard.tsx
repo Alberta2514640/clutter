@@ -17,9 +17,6 @@ interface AwsRoleSetupCardProps {
   onGenerateStackUrl: () => Promise<void>;
 }
 
-const AWS_SETUP_GUIDE_URL =
-  "https://clutter-templates-us-west-2-446fe866.s3.us-west-2.amazonaws.com/templates/pdf/AWS_Account_Link_Steps.pdf";
-
 export default function AwsRoleSetupCard({ accountName, defaultRegion, isGenerating, launchUrl, linkedAccountId, onAccountNameChange, onDefaultRegionChange, onGenerateStackUrl }: AwsRoleSetupCardProps) {
   return (
     <Card className="h-full border-slate-800 bg-slate-950/40 shadow-none">
@@ -54,16 +51,6 @@ export default function AwsRoleSetupCard({ accountName, defaultRegion, isGenerat
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button type="button" className="bg-teal-500 font-semibold text-slate-950 hover:bg-teal-400" onClick={() => void onGenerateStackUrl()} disabled={isGenerating}>
               {isGenerating ? "Opening AWS setup..." : "Open AWS setup in CloudFormation"}
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
-            <span>Need a walkthrough? Open the step-by-step AWS account linking guide.</span>
-            <Button variant="ghost" size="sm" asChild className="text-slate-200 hover:bg-slate-800 hover:text-white">
-              <a href={AWS_SETUP_GUIDE_URL} target="_blank" rel="noreferrer">
-                View setup guide
-                <ExternalLink className="h-4 w-4" />
-              </a>
             </Button>
           </div>
 
