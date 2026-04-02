@@ -35,6 +35,86 @@ func ValidatePlaybookFileName(fileName string) (string, error) {
 	return trimmed, nil
 }
 
+// ValidatePlaybookHostsConstraint enforces the execution model used by the
+// Ansible runner: each play must target either localhost or all so the playbook
+// can be executed locally on the target instance via SSM Run Command.
+func ValidatePlaybookHostsConstraint(playbook string) error {
+	lines := strings.Split(playbook, "\n")
+
+	inPlay := false
+	playHasHosts := false
+	sawPlay := false
+
+	finalizePlay := func() error {
+		if inPlay && !playHasHosts {
+			return fmt.Errorf("each playbook play must declare hosts: all or hosts: localhost")
+		}
+		return nil
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "---" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+
+		if indent == 0 && strings.HasPrefix(trimmed, "-") {
+			if err := finalizePlay(); err != nil {
+				return err
+			}
+
+			inPlay = true
+			playHasHosts = false
+			sawPlay = true
+
+			if err, ok := validateHostsLine(strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))); ok {
+				playHasHosts = true
+				if err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		if !inPlay || indent > 2 {
+			continue
+		}
+
+		if err, ok := validateHostsLine(trimmed); ok {
+			playHasHosts = true
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if !sawPlay {
+		return fmt.Errorf("playbook must contain at least one play")
+	}
+
+	return finalizePlay()
+}
+
+func validateHostsLine(line string) (error, bool) {
+	if !strings.HasPrefix(line, "hosts:") {
+		return nil, false
+	}
+
+	value := strings.TrimSpace(strings.TrimPrefix(line, "hosts:"))
+	value = strings.Trim(value, `"'`)
+
+	switch value {
+	case "all", "localhost":
+		return nil, true
+	case "":
+		return fmt.Errorf("each playbook play must declare hosts: all or hosts: localhost"), true
+	default:
+		return fmt.Errorf("unsupported hosts value %q: use hosts: all or hosts: localhost", value), true
+	}
+}
+
 // ExtractOrgIDFromJobPaths returns the org ID from a job's S3 key fields.
 // It tries playbookS3Key first, then terraformDirectory.
 func ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory *string) (string, error) {
