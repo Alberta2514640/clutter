@@ -15,13 +15,19 @@ import {
 import type { CloudFormationStackUrlResponse } from "@/lib/features/organization/types";
 import { useMe } from "@/lib/features/user/hooks";
 import AwsAccountDangerZone from "./AwsAccountDangerZone";
+import AwsDeleteConfirmModal from "./AwsDeleteConfirmModal";
 import AwsAccountHeader from "./AwsAccountHeader";
 import AwsConnectionPreview from "./AwsConnectionPreview";
 import AwsExistingAccountCard from "./AwsExistingAccountCard";
 import AwsRoleSetupCard from "./AwsRoleSetupCard";
 import AwsRoleVerificationForm from "./AwsRoleVerificationForm";
 
-export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "error";
+export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "verifying" | "verified" | "saving" | "submitted" | "error";
+
+type DeleteTarget = {
+  accountId: string;
+  accountName: string;
+};
 
 const roleArnPattern = /^arn:aws:iam::\d{12}:role\/[\w+=,.@\-_/]+$/;
 export default function ArnPage() {
@@ -37,10 +43,10 @@ export default function ArnPage() {
   const [accountName, setAccountName] = useState("");
   const [roleArn, setRoleArn] = useState("");
   const [defaultRegion, setDefaultRegion] = useState("us-west-2");
-  const [notes, setNotes] = useState("");
   const [status, setStatus] = useState<LinkStatus>("idle");
   const [error, setError] = useState("");
   const [stackData, setStackData] = useState<CloudFormationStackUrlResponse | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const completeAccount = accountsQ.data?.find((account) => account.status === "complete") ?? null;
   const pendingAccount = accountsQ.data?.find((account) => account.status === "incomplete") ?? null;
   const activePendingAccountId = stackData?.account_id ?? pendingAccount?.id ?? null;
@@ -120,12 +126,6 @@ export default function ArnPage() {
   };
 
   const handleSave = async () => {
-    if (status !== "verified") {
-      setStatus("error");
-      setError("Verify the role before saving the account link.");
-      return;
-    }
-
     if (!organizationId || !activePendingAccountId) {
       setStatus("error");
       setError("The pending account record is missing. Generate the setup link again.");
@@ -150,55 +150,37 @@ export default function ArnPage() {
         },
       });
 
-      setStatus("verified");
+      setStatus("submitted");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to save the AWS account role ARN.");
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (!organizationId || !completeAccount) return;
-
-    const confirmed = window.confirm(
-      `Delete the AWS account link "${completeAccount.account_name}"? This will return the page to the creation flow.`
-    );
-    if (!confirmed) return;
-
-    await deleteAccount.mutateAsync({
-      organizationId,
-      accountId: completeAccount.id,
-    });
-
+  const resetCreationFlow = () => {
     setAccountName("");
     setRoleArn("");
     setDefaultRegion("us-west-2");
-    setNotes("");
     setStatus("idle");
     setError("");
     setStackData(null);
   };
 
-  const handleDeletePendingAccount = async () => {
-    if (!organizationId || !pendingAccount) return;
+  const handleDeleteAccount = async () => {
+    if (!organizationId || !deleteTarget) return;
 
-    const confirmed = window.confirm(
-      `Delete the pending AWS account link "${pendingAccount.account_name}"? This will return the page to the creation flow.`
-    );
-    if (!confirmed) return;
+    try {
+      await deleteAccount.mutateAsync({
+        organizationId,
+        accountId: deleteTarget.accountId,
+      });
 
-    await deleteAccount.mutateAsync({
-      organizationId,
-      accountId: pendingAccount.id,
-    });
-
-    setAccountName("");
-    setRoleArn("");
-    setDefaultRegion("us-west-2");
-    setNotes("");
-    setStatus("idle");
-    setError("");
-    setStackData(null);
+      setDeleteTarget(null);
+      resetCreationFlow();
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Failed to delete the AWS account link.");
+    }
   };
 
   const currentAccountName = effectiveAccountName;
@@ -224,7 +206,15 @@ export default function ArnPage() {
         <Alert className="border-teal-500/30 bg-teal-500/10 text-teal-50">
           <CheckCircle2 className="h-4 w-4 text-teal-300" />
           <AlertTitle>ARN format validated</AlertTitle>
-          <AlertDescription>The ARN format looks valid locally. Save the account link to submit it to the backend.</AlertDescription>
+          <AlertDescription>The ARN format looks valid locally. You can submit it when ready.</AlertDescription>
+        </Alert>
+      )}
+
+      {status === "submitted" && (
+        <Alert className="border-teal-500/30 bg-teal-500/10 text-teal-50">
+          <CheckCircle2 className="h-4 w-4 text-teal-300" />
+          <AlertTitle>Role ARN submitted</AlertTitle>
+          <AlertDescription>The ARN was sent to the backend for this organization account link.</AlertDescription>
         </Alert>
       )}
 
@@ -234,13 +224,18 @@ export default function ArnPage() {
           <AwsAccountDangerZone
             accountName={completeAccount.account_name}
             isDeleting={deleteAccount.isPending}
-            onDelete={handleDeleteAccount}
+            onRequestDelete={() =>
+              setDeleteTarget({
+                accountId: completeAccount.id,
+                accountName: completeAccount.account_name,
+              })
+            }
           />
         </div>
       ) : (
         <Card className="rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
-          <CardContent className="grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <section className="space-y-6">
+          <CardContent className="grid gap-6 px-6 py-6 lg:grid-cols-2">
+            <div className="h-full">
               <AwsRoleSetupCard
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
@@ -251,31 +246,23 @@ export default function ArnPage() {
                 onDefaultRegionChange={setDefaultRegion}
                 onGenerateStackUrl={handleGenerateStackUrl}
               />
+            </div>
 
-              {pendingAccount && (
-                <AwsAccountDangerZone
-                  accountName={pendingAccount.account_name}
-                  isDeleting={deleteAccount.isPending}
-                  onDelete={handleDeletePendingAccount}
-                />
-              )}
-            </section>
-
-            <section className="space-y-6">
+            <div className="h-full">
               <AwsRoleVerificationForm
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
                 isReadyForArn={hasPendingFlow}
-                notes={notes}
                 roleArn={currentRoleArn}
                 status={currentStatus}
                 onDefaultRegionChange={setDefaultRegion}
-                onNotesChange={setNotes}
                 onRoleArnChange={setRoleArn}
                 onSave={handleSave}
                 onVerify={handleVerify}
               />
+            </div>
 
+            <div className="lg:col-span-2">
               <AwsConnectionPreview
                 accountName={currentAccountName}
                 defaultRegion={defaultRegion}
@@ -283,9 +270,33 @@ export default function ArnPage() {
                 linkedAccountId={activePendingAccountId}
                 status={currentStatus}
               />
-            </section>
+            </div>
+
+            {pendingAccount && (
+              <div className="lg:col-span-2">
+                <AwsAccountDangerZone
+                  accountName={pendingAccount.account_name}
+                  isDeleting={deleteAccount.isPending}
+                  onRequestDelete={() =>
+                    setDeleteTarget({
+                      accountId: pendingAccount.id,
+                      accountName: pendingAccount.account_name,
+                    })
+                  }
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
+      )}
+
+      {deleteTarget && (
+        <AwsDeleteConfirmModal
+          accountName={deleteTarget.accountName}
+          isDeleting={deleteAccount.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteAccount}
+        />
       )}
     </main>
   );
