@@ -4,10 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 interface AwsAccountDangerZoneProps {
   accountName: string;
   isDeleting: boolean;
-  onDelete: () => Promise<void>;
+  onRequestDelete: () => void;
 }
 
-export default function AwsAccountDangerZone({ accountName, isDeleting, onDelete }: AwsAccountDangerZoneProps) {
+export default function AwsAccountDangerZone({ accountName, isDeleting, onRequestDelete }: AwsAccountDangerZoneProps) {
   return (
     <Card className="border-red-900/60 bg-red-950/20 shadow-none">
       <CardHeader>
@@ -22,7 +22,7 @@ export default function AwsAccountDangerZone({ accountName, isDeleting, onDelete
         </p>
         <Button
           type="button"
-          onClick={() => void onDelete()}
+          onClick={onRequestDelete}
           disabled={isDeleting}
           className="bg-red-600 text-white hover:bg-red-500"
         >
