@@ -2,57 +2,35 @@ FROM python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
-    git \
     unzip \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-    ansible-core==2.17.7 \
     awscli==1.33.44 \
-    boto3==1.34.162 \
-    botocore==1.34.162 \
-    psycopg2-binary==2.9.9 \
-    pyyaml==6.0.1 \
-    jinja2==3.1.2
-
-# Install the Ansible AWS collection (includes aws_ssm connection plugin)
-RUN ansible-galaxy collection install amazon.aws:==8.2.1 community.aws:==8.0.0
+    psycopg2-binary==2.9.9
 
 # -------------------------------------------------------------------
 FROM python:3.11-slim
 
-# Install only runtime dependencies (including postgresql-client for psql)
+# Install only runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     postgresql-client \
     curl \
-    libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
-
-# Install SSM Session Manager plugin in runtime stage
-RUN curl -o /tmp/session-manager-plugin.deb \
-    "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" \
-    && dpkg -i /tmp/session-manager-plugin.deb \
-    && test -f /usr/local/bin/session-manager-plugin \
-    && rm /tmp/session-manager-plugin.deb
 
 # Copy installed Python packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy Ansible collections from builder
-COPY --from=builder /root/.ansible /root/.ansible
-
 # Create working directories
-RUN mkdir -p /playbooks /tmp/ansible /var/log/ansible
+RUN mkdir -p /playbooks /var/log/ansible
 
-# Copy scripts
+# Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
-COPY generate_inventory.py /usr/local/bin/generate_inventory.py
-
-RUN chmod +x /entrypoint.sh /usr/local/bin/generate_inventory.py
+RUN chmod +x /entrypoint.sh
 
 WORKDIR /playbooks
 ENTRYPOINT ["/entrypoint.sh"]

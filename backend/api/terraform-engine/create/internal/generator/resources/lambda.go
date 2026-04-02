@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
@@ -11,14 +12,12 @@ import (
 type LambdaGenerator struct {
 	templateLoader *template.TemplateLoader
 	ctx            context.Context
-	templateBucket string
 }
 
-func NewLambdaGenerator(ctx context.Context, loader *template.TemplateLoader, templateBucket string) *LambdaGenerator {
+func NewLambdaGenerator(ctx context.Context, loader *template.TemplateLoader) *LambdaGenerator {
 	return &LambdaGenerator{
 		templateLoader: loader,
 		ctx:            ctx,
-		templateBucket: templateBucket,
 	}
 }
 
@@ -54,12 +53,17 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 		return "", fmt.Errorf("failed to load lambda template: %w", err)
 	}
 
-	// Map diagram variables to template variables
+	// If user has uploaded code, reference it by its S3 key path (downloaded
+	// by the entrypoint before the client role is assumed). Otherwise fall back
+	// to the default bootstrap.zip.
 	s3Key := generic.GetString(node.Variables, "s3_key", "")
-	s3Bucket := generic.GetString(node.Variables, "s3_bucket", "")
-	// Fall back to placeholder in templates bucket if no code has been uploaded
-	if s3Key == "" {
-		s3Bucket = g.templateBucket
+	var filename string
+	if s3Key != "" {
+		// Use the folder name from the S3 key so it matches what the sync downloaded.
+		// e.g. ".../terraform/code/my-lambda/bootstrap.zip" -> "code/my-lambda/bootstrap.zip"
+		filename = "code/" + path.Base(path.Dir(s3Key)) + "/bootstrap.zip"
+	} else {
+		filename = "bootstrap.zip"
 	}
 
 	vars := map[string]interface{}{
@@ -70,8 +74,7 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 		"Runtime":      generic.GetString(node.Variables, "runtime", "provided.al2023"),
 		"Architecture": generic.GetString(node.Variables, "architecture", "arm64"),
 		"MemorySize":   generic.GetInt(node.Variables, "memory_size", 128),
-		"S3Bucket":     s3Bucket,
-		"S3Key":        s3Key,
+		"Filename":     filename,
 	}
 
 	// Add environment variables if present

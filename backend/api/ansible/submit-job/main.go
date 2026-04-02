@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,8 @@ import (
 )
 
 var ec2IDPattern = regexp.MustCompile(`^i-[0-9a-f]{8,17}$`)
+
+const maxPlaybookValidationBytes int64 = 256 * 1024
 
 type SubmitJobRequest struct {
 	ConfigID            string            `json:"config_id"`
@@ -239,6 +242,38 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
 	}
 
+	// Validate playbook content against the local-execution model used by the
+	// Ansible runner before accepting the job into the queue.
+	playbookObject, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s3BucketName),
+		Key:    aws.String(body.PlaybookS3Key),
+	})
+	if err != nil {
+		log.Printf("ERROR: failed to fetch playbook %q for validation: %v", body.PlaybookS3Key, err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to validate playbook",
+		})
+	}
+	defer playbookObject.Body.Close()
+
+	playbookBytes, err := io.ReadAll(io.LimitReader(playbookObject.Body, maxPlaybookValidationBytes+1))
+	if err != nil {
+		log.Printf("ERROR: failed to read playbook %q for validation: %v", body.PlaybookS3Key, err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": "failed to validate playbook",
+		})
+	}
+	if int64(len(playbookBytes)) > maxPlaybookValidationBytes {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "playbook is too large to validate",
+		})
+	}
+	if err := uploadutils.ValidatePlaybookHostsConstraint(string(playbookBytes)); err != nil {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": err.Error(),
+		})
+	}
+
 	// Fetch Client Role ARN and External ID
 	var roleArn string
 	var externalId string
@@ -363,4 +398,3 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		},
 	})
 }
-
