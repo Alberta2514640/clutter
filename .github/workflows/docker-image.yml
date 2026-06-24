@@ -2,7 +2,7 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: ['main']  # Adjust to the branch you'd like to trigger this workflow
+    branches: ['main', 'dev']  # Adjust to the branch you'd like to trigger this workflow
 
 env:
   REGISTRY: ghcr.io
@@ -38,6 +38,7 @@ jobs:
       - name: Build and push frontend Docker image
         id: frontend-push
         uses: docker/build-push-action@v4
+        if: github.ref == 'refs/heads/main'
         with:
           context: ./frontend
           push: true
@@ -45,6 +46,17 @@ jobs:
           tags: |
             ${{ steps.frontend-meta.outputs.tags }}
             ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+          labels: ${{ steps.frontend-meta.outputs.labels }}
+
+      # When pushing to the dev branch, also tag the image with :dev
+      - name: Build and push frontend Docker image (dev tag)
+        if: github.ref == 'refs/heads/dev'
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          file: ./frontend/Dockerfile.frontend
+          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:dev
           labels: ${{ steps.frontend-meta.outputs.labels }}
 
       # - name: Generate artifact attestation for frontend
