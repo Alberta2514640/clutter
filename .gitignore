@@ -6,3 +6,8 @@ backend/infra/.deployment-outputs
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 .claude/settings.local.json
+
+# Claude Code: per-person settings and lane scratch (README and NOW.md are tracked)
+.claude/findings/*
+!.claude/findings/README.md
+!.claude/findings/NOW.md
