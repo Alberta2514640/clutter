@@ -15,7 +15,20 @@ backend/devserver/smoke.sh    # all 31 routes, one row per call
 backend/devserver/stop.sh     # add --wipe to delete the database
 ```
 
-You need Go, Docker, Node with npm (run `npm ci` in `frontend/clutter` once), openssl and curl.
+You need Go, Docker (running), Node with npm (run `npm ci` in `frontend/clutter` once), openssl, curl, and python3 for `link-fake-account.sh`.
+
+## If it does not start
+
+| You see | Do this |
+| --- | --- |
+| `Cannot connect to the Docker daemon` | open Docker Desktop and wait until it says it is running, then run `run.sh` again |
+| `something already listens on 127.0.0.1:8787` (or 3000) | `stop.sh`, or find the process with `lsof -nP -iTCP:3000 -sTCP:LISTEN` and stop it |
+| `The devserver is already running` | `stop.sh`, then `run.sh` |
+| the first `run.sh` takes a minute or two | normal: it builds all 33 Lambdas once |
+| the canvas says "AWS account required" | `link-fake-account.sh` |
+| the dashboard is empty after `/dev/login` | normal on a new database: create an organization at `http://localhost:3000/onboarding/create-org` |
+| odd data, or you changed `backend/storage-sql` | `stop.sh --wipe`, then `run.sh` reloads the schema |
+| anything else | read the end of `backend/devserver/.state/gateway.log` |
 
 ## What works locally, and what only works in AWS
 

@@ -4,14 +4,14 @@ Updated 2026-10-30.
 
 ## Goal
 
-Build System B, the adapter layer, beside System A (Clutter as built, AWS only), so a diagram can deploy to other targets through connectors: General first, then PatriCloud and TierHive. Design: `docs/architecture/provider-adapter.md`. What exists: `docs/architecture/system.md`. Decisions: ADR-001 to ADR-008.
+Build System B, the adapter layer, beside System A (Clutter as built, AWS only), so a diagram can deploy to other targets through connectors: General first, then PatriCloud and TierHive. Design: `docs/architecture/system-b-adapter-layer.md`. What exists: `docs/architecture/system-a-as-built.md`. Decisions: ADR-001 to ADR-009.
 
 ## Where it stands
 
-- The harness, the docs and the design are on branch `design/setup` of `origin` (`FayzanT/re-clutter`, a fork of the client's `Alberta2514640/clutter`, added as remote `upstream`). The first commit, `7b49222`, is pushed; the 2026-10-30 revisions are in the working tree.
-- The design now follows the team's plan (`research_notes/Re-Clutter Architecture/`): Option 1, build B next to A and touch A only at named seams (ADR-006); B1 first, B2 later (ADR-007); the General connector first (ADR-008).
-- Neither PatriCloud nor TierHive has a public API today. Patrii: REST API and Terraform provider "coming soon" (`docs/research/2026-10-26-patrii-cloud.md`). TierHive: an alpha NAT VPS host whose API ships with its beta, "later in 2026 or early 2027" (`docs/research/2026-10-30-tierhive.md`). Both connectors are blocked; General is not.
-- Every local check was run on 2026-10-30 (`docs/architecture/system.md` § Running it). Go build and vet, frontend types, lint and build, Terraform validate and the database schema pass. Go tests fail in the 2 known packages, and `terraform fmt` fails on 7 files.
+- The harness, the docs and the design are on branch `design/setup` of `origin` (`FayzanT/re-clutter`, a fork of the client's `Alberta2514640/clutter`, added as remote `upstream`). Committed so far: `7b49222` (harness and design), `96ec7e4` (the A/B plan and the onboarding README) and `14d53f2` (the devserver). The folder READMEs, the doc dedup and the move of all source material into `docs/` are in the working tree.
+- The design now follows the team's plan (`docs/architecture/system-b-team-plan/`): Option 1, build B next to A and touch A only at named seams (ADR-006); B1 first, B2 later (ADR-007); the General connector first (ADR-008).
+- Neither PatriCloud nor TierHive has a public API today. Patrii: REST API and Terraform provider "coming soon" (`docs/research/patricloud/2026-10-26-patricloud-research.md`). TierHive: an alpha NAT VPS host whose API ships with its beta, "later in 2026 or early 2027" (`docs/research/tierhive/2026-10-30-tierhive-research.md`). Both connectors are blocked; General is not.
+- Every local check was run on 2026-10-30 (results in `backend/README.md` and `frontend/clutter/README.md`). Go build and vet, frontend types, lint and build, Terraform validate and the database schema pass. Go tests fail in the 2 known packages, and `terraform fmt` fails on 7 files.
 - The capstone AWS deployment is gone (the API host is NXDOMAIN). A now runs locally through `backend/devserver` (ADR-009): every Postgres-only route works, and the smoke test of all 31 routes gives 27 pass, 6 need AWS, 1 expected, 0 fail. Generate, deploy, logs and Ansible need our own AWS account.
 - All 24 `upstream` branches are merged into `main` or stale, except `dev` (CI `actions/checkout` v6) and `database-seed` (an abandoned DynamoDB seed).
 - Waiting on: the team's answers to the questions below, and contacts at Patrii and TierHive.
@@ -26,6 +26,8 @@ Phase 0 (make the seams safe), in this order:
 4. Set `GOOGLE_CLIENT_ID` on the log-in Lambda and check `email_verified`.
 5. Ownership checks on every child id, swept across all handlers through one shared helper (recent-activity, terraform-command-runner, code-upload, logs/live, ansible list-jobs).
 6. Go tests green offline (build-tag the live-S3 test, fix the nil connection panic) and Go build, vet and test in CI.
+
+Good first task for someone new: item 6 (small, no security path, teaches the backend and its tests). Say in the team chat which item you take.
 
 Then phase 1: the connector interface, the B1 skeleton and the General connector.
 
@@ -45,7 +47,7 @@ Verified at the code by the lead:
 - The frontend `RunAction` type offers `plan`; the backend accepts only `apply` and `destroy`.
 - Nothing in the repo calls `POST /terraform-engine`; it depends on a Supabase webhook configured outside the repo.
 - The frontend proxy lets any `clutter_token` cookie value through; it never verifies the token. Low impact (page shells only, data needs a real JWT).
-- `frontend/clutter/init.bash` is a stale scaffold script that overwrites real source files, and the frontend README tells people to run it.
+- `frontend/clutter/init.bash` is a stale scaffold script that overwrites real source files. The frontend README now warns against it; the script itself is A's and is not deleted.
 - The Google OAuth client id is hard-coded in two frontend files and belongs to the capstone team's Google project.
 
 Found or confirmed by the 2026-10-30 code sweep (a reader lane; the first four re-checked at the source by the lead):
@@ -77,3 +79,4 @@ Closed: the audit suspected AWS keys were committed in `ac90930`. That commit ad
 5. Is Patrii a customer target, a host for Clutter itself, or both? Default: a customer target first.
 6. Does a diagram target exactly one target instance? Default: yes.
 7. Should our fork pick up `upstream/dev`'s CI fix (`actions/checkout` v6)? Default: yes, in phase 0's CI work.
+8. Where are instance credentials stored, and how are they secured per instance? Default: an encrypted secret store with only a reference in Postgres.

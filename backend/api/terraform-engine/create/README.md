@@ -2,6 +2,8 @@
 
 This Lambda function generates Terraform code from diagram data received via Supabase webhooks.
 
+> **Checked against the code on 2026-10-30.** The Supabase webhook that calls this route is configured in Supabase, not in this repo, and nothing in the repo calls the route. The route has no authorizer, so anyone who can reach it can trigger generation. Run locally through `backend/devserver`, it accepts the webhook body and then stops at its first S3 call (loading templates); generation cannot be tested without S3. Corrections to the capstone text below are marked "Now:".
+
 ## Architecture Overview
 
 ```
@@ -30,12 +32,13 @@ When a diagram is created/updated in Supabase, a webhook sends a POST request wi
 
 ### 2. Node Processing
 Each node in the diagram is parsed:
-- `data.label` → Determines resource type (Lambda, S3, DynamoDB, API-Gateway)
+- `data.label` → Determines resource type (Lambda, S3, DynamoDB, API Gateway, EC2 Container; see `internal/generator/resources/mapper.go`)
 - `variables.resource_name` → Used for Terraform resource naming and AWS resource names
 - `variables.*` → Mapped to template placeholders
 
 ### 3. Template Loading
-Templates are fetched from S3 and cached in memory:
+Templates are fetched from S3 and cached in memory. The bucket name below is the capstone account's. Now: the template files live in `backend/infra/modules/s3/uploads/aws/<type>/` for all five types (`apigateway`, `dynamodb`, `ec2`, `lambda`, `s3`), and the platform Terraform uploads each one with its own `aws_s3_object` in `backend/infra/modules/s3/main.tf`.
+
 ```
 s3://clutter-templates-us-west-2-b35a3c5c/
 └── templates/aws/
@@ -92,7 +95,7 @@ cd backend/api/terraform-engine/create
 go test -v -run TestHandler
 ```
 
-**Generation only (no S3 upload):**
+**Generation only (no S3 upload):** Now: this test also loads templates from live S3, so both tests fail without AWS credentials.
 ```bash
 cd backend/api/terraform-engine/create
 go test -v -run TestGenerateOnly
@@ -114,7 +117,7 @@ aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-dia
 
 ## Template Files
 
-### Lambda Template (`templates/aws/lambda/main.tf.tmpl`)
+### Lambda Template (`backend/infra/modules/s3/uploads/aws/lambda/main.tf.tmpl`)
 ```hcl
 resource "aws_iam_role" "{{.ResourceName}}_role" {
   name = "{{.FunctionName}}-lambda-role"
@@ -130,7 +133,7 @@ resource "aws_lambda_function" "{{.ResourceName}}" {
 }
 ```
 
-### S3 Template (`templates/aws/s3/main.tf.tmpl`)
+### S3 Template (`backend/infra/modules/s3/uploads/aws/s3/main.tf.tmpl`)
 ```hcl
 resource "aws_s3_bucket" "{{.ResourceName}}" {
   bucket = "{{.BucketName}}"
@@ -138,6 +141,9 @@ resource "aws_s3_bucket" "{{.ResourceName}}" {
 ```
 
 ### Upload Templates to S3
+
+Now: templates are uploaded by `terraform apply` in `backend/infra` (one `aws_s3_object` per file), not by hand. The capstone command, which points at a folder and a bucket that no longer exist:
+
 ```bash
 cd backend/api/terraform-engine/create
 aws s3 cp templates/aws/ s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
@@ -158,9 +164,9 @@ aws s3 ls s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
 | `resource_name` | `{{.ResourceName}}`, `{{.FunctionName}}` | Required |
 | `handler` | `{{.Handler}}` | `main` |
 | `timeout` | `{{.Timeout}}` | `3` |
-| `runtime` | `{{.Runtime}}` | `provided.al2` |
+| `runtime` | `{{.Runtime}}` | `provided.al2023` (Now: the generator's default; the seed SQL still says `provided.al2`) |
 | `architecture` | `{{.Architecture}}` | `arm64` |
-| `memory_size` | `{{.MemorySize}}` | `128` |
+| `memory_size` | `{{.MemorySize}}` | `128` (Now: always 128 in practice; the config panel sends a string and the generator reads only numbers) |
 
 ### S3 Node
 | Diagram Variable | Template Placeholder | Default |
@@ -172,6 +178,8 @@ aws s3 ls s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
 ---
 
 ## Code Structure
+
+Now: there is no local `templates/aws/` folder (see above), `resources/` holds a generator per type (`apigateway.go`, `dynamodb.go`, `ec2.go`, `lambda.go`, `s3.go`), and `data_clean.go`'s `HasDataChanged` is unused (its only call is commented out).
 
 ```
 terraform-engine/create/
@@ -208,8 +216,9 @@ terraform-engine/create/
 ## Troubleshooting
 
 ### "NoSuchKey" Error
-Template file doesn't exist in S3. Upload templates:
+
+Template file doesn't exist in S3. Now: re-apply `backend/infra`, which uploads every template. The capstone command:
+
 ```bash
 aws s3 cp templates/aws/ s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
-
 ```

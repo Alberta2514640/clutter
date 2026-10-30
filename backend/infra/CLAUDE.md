@@ -9,6 +9,7 @@ Traps:
 - **Each customer template is uploaded by its own `aws_s3_object` in `modules/s3/main.tf`.** A new template file needs a new object block.
 - **The customer role (`modules/s3/uploads/client_side_terraform_deployer_role.yaml`) is close to admin** (`iam:*`, `ec2:*`, `s3:*`, `ssm:*` on `*`). Narrowing it is planned work; widening it needs a reason in the PR.
 - **ECR repositories are immutable, but the deployer image is pushed as `:latest`.** A second push fails until the build script tags by version.
+- **A route change here is also a devserver change.** `go -C backend/devserver test ./...` parses `main.tf` and fails until `backend/devserver/internal/routes/routes.go` matches (paths, methods, authorizer, timeouts, environment keys).
 - **The AWS provider constraint is `>= 4.0.0` with no upper bound**, and no `required_version` is set. Pin both before the next apply.
 
 `backend/tfstate-infra` bootstraps the S3 bucket and DynamoDB lock table for this folder's own state.

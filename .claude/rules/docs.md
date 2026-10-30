@@ -14,4 +14,4 @@ paths:
 - **Research is dated.** A file in `docs/research/` starts with its date and its sources, and is superseded by a newer dated file, not edited into a different claim.
 - **Plain everyday English.** Short complete sentences, no em dashes in anything a person outside the team reads.
 - The root `README.md` is the onboarding page for new people: what Clutter is, how to set up, where everything lives. It links to the owner docs and does not restate their facts.
-- `docs/history/` holds the final course report (2026-06-08), PDF and markdown. Treat it as a historical record of the design, not as the current architecture; `docs/architecture/system.md` owns that. Never edit it.
+- `docs/old-capstone/` holds the final course report (2026-06-08), PDF and markdown. Treat it as a historical record of the design, not as the current architecture; `docs/architecture/system-a-as-built.md` owns that. Never edit it.

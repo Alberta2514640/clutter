@@ -2,7 +2,7 @@
 
 Clutter is a drag-and-drop canvas for cloud architecture. You draw a diagram (a Lambda, an S3 bucket, an EC2 server, with lines between them), and Clutter turns it into Terraform and Ansible and runs it inside your own cloud account.
 
-It began as a University of Calgary capstone (team 500-MM-3, 2025 to 2026) for Alberta 2514640 Inc. That version works with AWS only. We are now extending it so a diagram can deploy to other targets, such as PatriCloud and TierHive, through an adapter layer.
+It began as a University of Calgary capstone (team 500-MM-3, 2025 to 2026) for Alberta 2514640 Inc. That version works with AWS only. A previous capstone team built that version; we are the new team, extending it so a diagram can deploy to other targets, such as PatriCloud and TierHive, through an adapter layer.
 
 This page gets you from a fresh clone to a working setup, and shows where everything lives. Read it once, top to bottom.
 
@@ -17,14 +17,15 @@ This page gets you from a fresh clone to a working setup, and shows where everyt
 
 ## The two systems
 
-**A: Clutter today.** A Next.js canvas, about 31 Go Lambdas behind AWS API Gateway, Postgres on Supabase, S3, and two Fargate runners: one runs Terraform in the customer's AWS account, one runs Ansible on the customer's EC2 servers over SSM. Full description: `docs/architecture/system.md`.
+**A: Clutter today.** A Next.js canvas, 33 Go Lambdas (31 API routes, an authorizer and a queue consumer) behind AWS API Gateway, Postgres on Supabase, S3, and two Fargate runners: one runs Terraform in the customer's AWS account, one runs Ansible on the customer's EC2 servers over SSM. Full description: `docs/architecture/system-a-as-built.md`.
 
-**B: the adapter layer.** New code beside A, not a rewrite of A. B has its own API, a connector interface, and one connector per target: General (custom) first, then PatriCloud and TierHive. Full design: `docs/architecture/provider-adapter.md`. The team's original figures are in `research_notes/Re-Clutter Architecture/`.
+**B: the adapter layer.** New code beside A, not a rewrite of A. B has its own API, a connector interface, and one connector per target: General (custom) first, then PatriCloud and TierHive. Full design: `docs/architecture/system-b-adapter-layer.md`. The team's original figures are in `docs/architecture/system-b-team-plan/`.
 
 The names everyone uses:
 
 | Name | Means |
 | --- | --- |
+| C | the whole Clutter app (A and B together) |
 | A | Clutter as built (AWS). We change it only at four named seams. |
 | B | the adapter layer we are building |
 | B1 | B as a service anyone can run, with entity connectors (built first) |
@@ -32,6 +33,10 @@ The names everyone uses:
 | connector | the code for one target type (General, PatriCloud, TierHive) |
 | instance | one company's configured setup of a connector |
 | seam | one of the four places B touches A: the target choice screen, shared sign-in, the shared database, and security fixes |
+| phase 0 | the first work item: security fixes on the parts A and B share (listed in `.claude/findings/NOW.md`) |
+| ADR | architecture decision record: one entry in `docs/decisions.md` |
+
+The full definitions are in `docs/architecture/system-b-adapter-layer.md` § Names. AWS terms you will meet in A: Lambda (a function AWS runs on request), API Gateway (AWS's HTTP front door), Fargate (AWS running a container on demand), STS (AWS issuing short-lived credentials for another account's role), SSM (AWS running a command on a server without SSH), S3 (file storage), SQS (a queue). The Supabase webhook is a trigger configured in the database service, outside this repo.
 
 ## What is in the repo
 
@@ -49,16 +54,20 @@ frontend/
   clutter/          the Next.js app (canvas, dashboard, settings)
   Dockerfile.frontend
 docs/
-  architecture/     system.md (A as built), provider-adapter.md (B, planned)
-  decisions.md      every decision and why (ADR-001 onward)
-  research/         dated outside research (Patrii, TierHive)
-  history/          the capstone final report, PDF and markdown
-research_notes/, reports/   source material behind the design
-.claude/            the Claude Code setup: rules, agents, skills, hooks
-CLAUDE.md, AGENTS.md        instructions for AI coding agents (worth reading yourself)
+  README.md         the map: which file owns which fact
+  architecture/
+    system-a-as-built.md       A: what exists today
+    system-b-adapter-layer.md  B: what we are building, and in what order
+    system-b-team-plan/        the team's own B plan: figures, PDF and the written explanation
+  decisions.md      every decision and why (ADR-001 onward; ADR means architecture decision record)
+  research/
+    patricloud/     dated research on PatriCloud (and a second research run)
+    tierhive/       dated research on TierHive
+  old-capstone/  the previous capstone team's final report (PDF and markdown) and backend tutorial
+.claude/            the Claude Code setup (its README says what each part is)
+  findings/NOW.md   the status board: next tasks, open defects, open questions (everyone reads this)
+CLAUDE.md, AGENTS.md        rules for AI coding agents; skim them, they are written for agents
 ```
-
-About 20,000 lines of code: 97 Go files, 119 TypeScript files, 40 Terraform files.
 
 There are two kinds of Terraform here. `backend/infra` deploys Clutter itself. The `*.tf.tmpl` files are templates the generator fills in for a customer. They never stand in for each other.
 
@@ -68,6 +77,7 @@ There are two kinds of Terraform here. `backend/infra` deploys Clutter itself. T
 
 | Tool | Version | Needed for |
 | --- | --- | --- |
+| macOS (tested) or Linux; Windows only through WSL (untested) | | |
 | Git and GitHub CLI (`gh`) | any recent | everything |
 | Go | 1.25 or newer | the backend |
 | Node.js with npm | 22 or newer | the frontend (use npm; `pnpm-lock.yaml` is stale) |
@@ -75,7 +85,7 @@ There are two kinds of Terraform here. `backend/infra` deploys Clutter itself. T
 | Docker (running) | any recent | the local database |
 | curl, openssl, python3 | macOS has them | the local run scripts |
 | AWS CLI | v2 | only for deploying, which nobody does from a laptop yet |
-| Claude Code | optional | the AI setup in `.claude/` |
+| Claude Code, and `jq` | optional | the AI setup in `.claude/` (its hooks need `jq`: `brew install jq`) |
 
 ### 2. Clone
 
@@ -84,9 +94,12 @@ Our working repo is a fork. The client's original is `upstream`; never push to i
 ```bash
 git clone https://github.com/FayzanT/re-clutter
 cd re-clutter
+git checkout design/setup          # the docs, the devserver and this README live here until it is merged into main
 git remote add upstream https://github.com/Alberta2514640/clutter
 npm --prefix frontend/clutter ci
 ```
+
+The clone's `origin` is our fork; `upstream` is the client's repo, for reading only.
 
 ### 3. Check that everything builds
 
@@ -95,7 +108,7 @@ Run from the repo root.
 ```bash
 go -C backend/api build ./...
 go -C backend/api vet ./...
-go -C backend/api test ./...          # 2 packages fail today; see below
+go -C backend/api test ./...          # 2 packages fail today (one waits about 70 s first); see below
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
 npm --prefix frontend/clutter run lint
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build
@@ -103,7 +116,7 @@ terraform -chdir=backend/infra fmt -check -recursive    # 7 files fail today
 go -C backend/devserver test ./...     # the local run tool
 ```
 
-The two failing test packages are known: `terraform-engine/create` needs live S3 (it waits about 70 seconds, then fails), and `tests/generic` panics on a nil database connection. Every other package must pass. The expected result of each check is kept up to date in `docs/architecture/system.md` § Running it.
+The two failing test packages are known: `terraform-engine/create` needs live S3 (it waits about 70 seconds, then fails), and `tests/generic` panics on a nil database connection. Every other package must pass. The expected result of each check is kept in `backend/README.md` and `frontend/clutter/README.md`.
 
 ### 4. Run the app locally
 
@@ -115,7 +128,7 @@ Terminal 1, the database and backend:
 backend/devserver/run.sh                     # Postgres, then A's real Lambdas behind a local API Gateway
 ```
 
-Terminal 2, the frontend (it keeps running):
+Terminal 2, the frontend (it keeps running). It uses port 3100 because the devserver's front door holds 3000:
 
 ```bash
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 npm --prefix frontend/clutter run dev -- --hostname 127.0.0.1 --port 3100
@@ -142,7 +155,9 @@ backend/devserver/stop.sh                    # stops everything; add --wipe to d
 
 Organizations, projects, diagrams, the canvas and the resource palette work locally. Generating Terraform, deploying, logs and Ansible only work in AWS. The full table is in `backend/devserver/README.md`.
 
-### 5. Look at the UI without the backend
+Other ways to run it (a production build of the frontend, the Docker image, `docker-compose.yml`) and whether each works are in `frontend/clutter/README.md`. There is no npm or pnpm command for the backend: the Go code runs as Lambdas, locally through `backend/devserver`.
+
+### 5. Optional: look at the UI without the backend
 
 Stop the devserver first (`backend/devserver/stop.sh`); both use port 3000.
 
@@ -152,7 +167,7 @@ NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run
 
 Open <http://localhost:3000>. The home page and `/login` render. You cannot sign in this way; use step 4.
 
-### 6. Load the database by hand
+### 6. Optional: load the database by hand
 
 `run.sh` does this for you. To do it by hand:
 
@@ -170,7 +185,7 @@ You should see 11 tables. The roles exist because the schema was written for Sup
 
 ## What only works in AWS
 
-The Go code was built to run as AWS Lambdas; `backend/devserver` runs it locally, but anything that calls S3, ECS or SQS stops there. The capstone deployment is gone, and its AWS account is not ours. Running Clutter fully, including deploys, needs our own AWS account, a Postgres or Supabase database, a Google sign-in client, and a set of secrets. No extra tools are needed. The nine steps, and what must be fixed first, are in `docs/architecture/system.md` § Running it.
+The Go code was built to run as AWS Lambdas; `backend/devserver` runs it locally, but anything that calls S3, ECS or SQS stops there. The capstone deployment is gone, and its AWS account is not ours. Running Clutter fully, including deploys, needs our own AWS account, a Postgres or Supabase database, a Google sign-in client, and a set of secrets. No extra tools are needed. The nine steps, and what must be fixed first, are in `docs/architecture/system-a-as-built.md` § Deploying to AWS.
 
 Do not run:
 
@@ -182,13 +197,13 @@ Do not run:
 Read in this order:
 
 1. This page.
-2. `docs/architecture/system.md`: what A does, what the capstone delivered, and where the final report is wrong about the code.
-3. `docs/architecture/provider-adapter.md`: what we are building and in what order.
+2. `docs/architecture/system-a-as-built.md`: what A does, what the capstone delivered, and where the final report is wrong about the code.
+3. `docs/architecture/system-b-adapter-layer.md`: what we are building and in what order.
 4. `.claude/findings/NOW.md`: what is in progress, the open defects, the open questions.
 5. `docs/decisions.md`: why things are the way they are.
-6. `CLAUDE.md`: the traps people (and AI agents) fall into in this repo.
+6. `CLAUDE.md`: skim it. It is written for AI agents, but its "What you will get wrong" list is the fastest way to learn the traps.
 
-Then pick a phase 0 item from `NOW.md`.
+Then pick a task from `NOW.md` § Next. Tell the team which one you are taking, so two people do not take the same one. A good first task is the last phase 0 item (make the Go tests pass offline): it is small, it touches no security path, and it teaches you the backend and its tests.
 
 ## How we work
 
@@ -206,22 +221,26 @@ The `.claude/` folder sets up Claude Code for this repo. You do not need it, but
 - `CLAUDE.md` is read at the start of every session; folder `CLAUDE.md` files load when Claude works in that folder.
 - Agents: `reader` (reads and reports), `researcher` (outside facts with sources), `executor` (builds a planned change), `red-pill-reviewer` (tries to break finished work).
 - Skills: `engineering-conventions`, `add-cloud-resource`, `ground-before-building`, `lane-doctrine`.
-- Hooks block reading secrets (`.env`, Terraform state, tfvars, cloud credential files), ask before any deploy or cloud write, keep git read-only for sub-agents, and format Go and Terraform on save. After changing a hook, run `.claude/hooks/test-hooks.sh`.
+- Hooks block reading secrets, ask before any deploy or cloud write, keep git read-only for helper agents, and format Go and Terraform on save without reformatting A's untouched files.
+- What each file in `.claude/` does: `.claude/README.md`.
 
 ## Where to find things
 
 | Question | Look in |
 | --- | --- |
-| How does A work today? | `docs/architecture/system.md` |
-| What are we building next, and in what order? | `docs/architecture/provider-adapter.md` |
+| How does A work today? | `docs/architecture/system-a-as-built.md` |
+| What are we building next, and in what order? | `docs/architecture/system-b-adapter-layer.md` |
 | What is in progress, broken, or undecided? | `.claude/findings/NOW.md` |
 | Why was something decided? | `docs/decisions.md` |
-| What do we know about PatriCloud or TierHive? | `docs/research/` |
+| What do we know about PatriCloud or TierHive? | `docs/research/patricloud/`, `docs/research/tierhive/` |
+| How do I add an API route or a Lambda? | `backend/README.md` § Adding a Lambda or a route |
+| How do I add a canvas resource? | `.claude/skills/add-cloud-resource/SKILL.md` |
+| What works locally and what only in AWS? Why does `run.sh` fail? | `backend/devserver/README.md` |
 | Which doc owns which fact? | `docs/README.md` |
-| What did the capstone team deliver? | `docs/history/2026-06-08-final-report.pdf` |
+| What did the previous capstone team deliver? | `docs/old-capstone/final-report.pdf` |
 
 ## History and license
 
-The capstone team: Santiago Garza Fuentes (project manager), Hamza Amar, Maitra Patel, Nimna Wiedasa, Syril Jacob and Akshpreet Singh, advised by Lorenzo De Carli, for Devin Atkin at Alberta 2514640 Inc. Their final report is in `docs/history/`; its figures were never committed.
+The previous capstone team (500-MM-3, 2025 to 2026), who built A: Santiago Garza Fuentes (project manager), Hamza Amar, Maitra Patel, Nimna Wiedasa, Syril Jacob and Akshpreet Singh, advised by Lorenzo De Carli, for Devin Atkin at Alberta 2514640 Inc. Their final report is in `docs/old-capstone/`: the cover is dated 2026-04-12, and it was committed on 2026-06-08. Its figures were never committed.
 
 The capstone code is released under the MIT License, copyright 2026 Alberta 2514640 Inc. The full text is at the end of the final report.

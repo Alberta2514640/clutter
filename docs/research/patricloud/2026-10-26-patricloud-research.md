@@ -73,7 +73,7 @@ Reseller, Technology and Consulting partner types; benefits listed as revenue sh
 
 ## From the second research run (same date)
 
-A separate run wrote `reports/PatriCloud Clutter adapter layer.md` and notes in `research_notes/`. It adds these Patrii facts, which the lead has not re-probed:
+A separate run wrote `docs/research/patricloud/2026-10-26-second-research-run/report.md` with its notes beside it. It adds these Patrii facts, which the lead has not re-probed:
 
 - Terms updated 2026-09-07: sold by Patrii Québec inc. on technology owned and operated by Patrii Cloud inc., servers in Montreal. Billing is quota allocated in CAD, not hour-metered, with no proration on deletion ([terms](https://patrii.cloud/legal/terms)).
 - A live probe of `api.patrii.cloud` returned `{"message":"Patrii Cloud API is running","version":"1.0.0"}`; `/docs`, `/redoc` and `/openapi.json` returned 404. The console bundle contains no `/v1/` string, so the `/v1/instances` samples on the API page do not match the running API.

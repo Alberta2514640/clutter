@@ -6,11 +6,11 @@
     "MD041": false
   },
   "ignores": [
-    "docs/history/**",
-    "research_notes/**",
-    "reports/**",
+    "docs/old-capstone/**",
+    "docs/research/patricloud/2026-10-26-second-research-run/report.md",
+    "docs/research/patricloud/2026-10-26-second-research-run/c*.md",
+    "docs/research/patricloud/2026-10-26-second-research-run/p*.md",
     "**/node_modules/**",
-    "backend/README.md",
     "backend/api/**/README.md"
   ]
 }

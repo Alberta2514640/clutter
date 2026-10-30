@@ -13,4 +13,7 @@ Traps:
 
 Owners: Postgres access and queries in `generic/postgresql.go` and `generic/queries.go`; membership in `generic/membership.go`; responses in `generic/responses.go`; regions in `generic/regions.go`; the resource generator interface in `terraform-engine/create/internal/structs.go`.
 
-Checks: `go -C backend/api build ./...`, `vet`, `test`. Today `terraform-engine/create` (needs live S3) and `tests/generic` (nil connection panic) fail before any change.
+- **A new route is also a devserver route.** Add it to `backend/devserver/internal/routes/routes.go`; the devserver's test fails until it matches `backend/infra/main.tf`.
+- **52 Go files here use CRLF line endings.** Keep them; check `git diff --stat` before committing one.
+
+Checks: `go -C backend/api build ./...`, `vet`, `test` (expected results in `backend/README.md`), then `backend/devserver/run.sh` and `smoke.sh` for any handler change: the smoke test must stay at 0 fail.

@@ -1,6 +1,6 @@
-# System A: Clutter as built
+# System A: Clutter as built (exists today)
 
-As it stands on 2026-10-30, from a read of the code and the checks below. The final report (`docs/history/2026-06-08-final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `provider-adapter.md`.
+As it stands on 2026-10-30, from a read of the code and a local run of every route (`backend/devserver`). The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
 
 ## Parts
 
@@ -58,7 +58,7 @@ From a read of the code on 2026-10-30.
 
 ## Where AWS is assumed
 
-Everywhere a connector would need to reach. Behind a usable seam: the per-resource generators (`ResourceGenerator` interface) and the templates (keyed by a path prefix). Leaked into the core: the resource type constants and label switch, the emitted provider block, IAM from edges, the region list, the account-link handlers and table, the runner scripts' STS and SSM calls, the seed table (no provider column), and the frontend palette, node component and config panel. Under Option 1 (ADR-006) these stay in A; `provider-adapter.md` maps each to the connector part that replaces it if AWS later moves into B.
+Everywhere a connector would need to reach. Behind a usable seam: the per-resource generators (`ResourceGenerator` interface) and the templates (keyed by a path prefix). Leaked into the core: the resource type constants and label switch, the emitted provider block, IAM from edges, the region list, the account-link handlers and table, the runner scripts' STS and SSM calls, the seed table (no provider column), and the frontend palette, node component and config panel. Under Option 1 (ADR-006) these stay in A; `system-b-adapter-layer.md` maps each to the connector part that replaces it if AWS later moves into B.
 
 ## Load-bearing facts
 
@@ -77,41 +77,17 @@ Everywhere a connector would need to reach. Behind a usable seam: the per-resour
 - `upstream` has 24 branches. Every one is merged into `main` or holds an older copy of a file `main` rewrote later, with two exceptions: `dev` bumps `actions/checkout` to v6 in CI, and `database-seed` holds an abandoned DynamoDB seed script. One PR is open (#21, conflicting, from 2025-12).
 - CI (`.github/workflows/docker-image.yml`) builds the frontend image on pushes to `main` (tag `latest`) and `dev` (tag `dev`). Nothing else is checked on push.
 
-## Running it
+## Deploying to AWS
 
-### What you need installed
+Each fact about running Clutter has one owner; this section keeps only the AWS deployment.
 
-Go 1.25 or newer, Terraform, Node 22 or newer with npm, and Docker. The AWS CLI is only needed to deploy. That is all for local checks; nothing else needs installing. Checked on macOS arm64 with Go 1.26.4, Terraform 1.15.6, Node 24.17, npm 11.13, Docker 29.9, AWS CLI 2.35.
-
-### What runs locally, without any cloud account
-
-The capstone team ran everything in AWS and built no local setup (the report's "Local Dev Environment" section). `backend/devserver` is ours: dev-only tooling that runs A's real, unchanged Lambdas on one machine behind an API Gateway stand-in, with Postgres in Docker and a dev sign-in. Everything that needs only Postgres works locally; generating Terraform, deploying, logs and Ansible need AWS. The full list of what works locally and what only works in AWS is in `backend/devserver/README.md`, which owns it. The smoke test of all 31 routes on 2026-10-30: 27 pass, 6 need AWS, 1 expected failure (real Google sign-in), 0 fail.
-
-| Check | Result on 2026-10-30 |
+| Question | Owner |
 | --- | --- |
-| Go build and vet | pass |
-| Go tests | fail in 2 packages: `terraform-engine/create` `TestGenerateOnly` needs live S3 (about 70 s, then fails); `tests/generic` `TestCheckOrganizationMembershipPSQL_EmptyInputs` panics on a nil connection. `tests/ansible` and `tests/user-information` pass. |
-| Frontend `npm ci` | pass (npm audit reports advisories, not reviewed) |
-| Frontend type-check | pass, 0 errors |
-| Frontend lint | pass, 0 errors, 13 warnings |
-| Frontend build | pass, 16 routes |
-| Platform Terraform format | fail, 7 files need formatting |
-| Platform Terraform validate | pass (in a scratch copy, after `init -backend=false`) |
-| Database schema in Postgres 17 | pass: 11 tables, 5 seeded resources, once the Supabase roles exist |
-| Hooks | pass, 47 of 47 |
-| devserver (`go -C backend/devserver vet ./...`, `test ./...`) | pass; its route test fails if the route table drifts from `backend/infra/main.tf` |
-| devserver smoke test (`backend/devserver/smoke.sh`) | 31 of 31 routes exercised: 27 pass, 6 need AWS, 1 expected, 0 fail |
-| `gofmt -l backend/api` | 59 of 97 files flagged: 52 use CRLF line endings, 7 have a trailing blank line |
-| staticcheck (`go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` in `backend/api`) | 6 findings: 4 nil contexts in `tests/generic` (the package that panics), 2 simplifications in `terraform-command-runner` |
-| Frontend lint warnings | 13: 10 unused variables or imports, 3 React hook dependency warnings |
-| shellcheck on A's scripts | 6 warnings: unused variables in `build.sh`, `build_linux.sh` and the ansible runner, and `local x=$(...)` masking exit codes in the terraform deployer's entrypoint |
-| markdownlint on our docs | clean (config in `.markdownlint-cli2.jsonc`; A's own READMEs and the report are excluded) |
-
-These are A's lint results, recorded and not fixed: A is changed only at the seams (ADR-006).
-
-The commands are in the root `CLAUDE.md` § Commands.
-
-To run A locally: `backend/devserver/run.sh`, then the frontend on port 3100 as `run.sh` prints, then open `http://localhost:3000/dev/login`. Stop with `backend/devserver/stop.sh`. Without the devserver, the frontend alone renders `/` and `/login` only. The route guard (`src/proxy.ts`) checks only that a `clutter_token` cookie exists, not that it is valid. Google sign-in uses a client id hard-coded in the frontend that belongs to the capstone team's Google project, so real sign-in does not work locally.
+| What to install, and the setup sequence for a new person | root `README.md` § Set up |
+| Running A locally; what works locally and what only works in AWS | `backend/devserver/README.md` |
+| Backend checks, their results, and A's Go and shell lint results | `backend/README.md` |
+| Frontend run variants, checks, browser results and lint results | `frontend/clutter/README.md` |
+| Repo-wide checks (hooks, markdownlint) and the commands agents run | root `CLAUDE.md` § Commands |
 
 ### Why AWS-only features do not run today
 
@@ -131,9 +107,8 @@ None of this has been done. What is missing is accounts and secrets, not tools. 
 8. **The Supabase database webhook** that calls `POST /terraform-engine` when a diagram changes. It is configured in Supabase, not in this repo. Without it, saving a diagram never generates code.
 9. **The frontend** with `NEXT_PUBLIC_API_ENDPOINT` set to the new API stage URL.
 
-Phase 0 of `provider-adapter.md` should come before step 7 on any account reachable from the internet: today the generation endpoint needs no login.
+Phase 0 of `system-b-adapter-layer.md` should come before step 7 on any account reachable from the internet: today the generation endpoint needs no login.
 
 ### Do not run
 
-- `frontend/clutter/init.bash`. The frontend README tells you to, but it is an early scaffold script that overwrites `src/app/layout.tsx`, `src/app/page.tsx`, the providers and other real files with placeholders.
-- `terraform plan` or `apply` against the capstone backend in `backend/infra/backend.tf`. It is another team's account.
+The list is in the root `README.md` § Do not run.

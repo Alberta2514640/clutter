@@ -1,6 +1,6 @@
-# Adapter layer (System B)
+# System B: the adapter layer (planned)
 
-Status: proposed. First written 2026-10-26, revised 2026-10-30 to follow the team's architecture plan (the figures and write-up in `research_notes/Re-Clutter Architecture/`). Nothing here is built yet. The decisions it rests on are in `docs/decisions.md`; what exists today is `system.md`; the Patrii facts are in `docs/research/2026-10-26-patrii-cloud.md`.
+Status: proposed. First written 2026-10-26, revised 2026-10-30 to follow the team's architecture plan (the figures and write-up in `docs/architecture/system-b-team-plan/`). Nothing here is built yet. The decisions it rests on are in `docs/decisions.md`; what exists today is `system-a-as-built.md`; the Patrii facts are in `docs/research/patricloud/2026-10-26-patricloud-research.md`.
 
 ## The goal
 
@@ -11,7 +11,7 @@ The layer has two faces:
 - **Outbound:** connectors behind one interface. Adding a target means writing a connector, not editing the core.
 - **Inbound:** B's own API, versioned, that Clutter's UI calls and that people and other products can call to use Clutter without learning React Flow, Supabase webhooks or AWS role ARNs.
 
-The inbound half and its standard objects come from a second, independent research run on 2026-10-26 (`reports/PatriCloud Clutter adapter layer.md`, with notes in `research_notes/PatriCloud Clutter adapter layer/`), checked against the code by the lead. The outbound half's structure (A, B, connectors, instances) comes from the team's plan.
+The inbound half and its standard objects come from a second, independent research run on 2026-10-26 (`docs/research/patricloud/2026-10-26-second-research-run/`), checked against the code by the lead. The outbound half's structure (A, B, connectors, instances) comes from the team's plan.
 
 Clutter owns intent (what the customer wants); targets own resources. Callers talk to Clutter; Clutter talks to targets. A target such as Patrii is not a host for the standard and not a caller: it publishes no inbound plugin and has no diagram, plan or apply resource. A target-side integration that only wants inventory (as Patrii's Lynx DCIM connector sketches) is a read through the same connector.
 
@@ -20,7 +20,7 @@ Clutter owns intent (what the customer wants); targets own resources. Callers ta
 | Name | Means |
 | --- | --- |
 | **C** | the whole Clutter app |
-| **A** | Clutter as it exists today: the AWS system, complete and tested (`system.md`) |
+| **A** | Clutter as it exists today: the AWS system, complete and tested (`system-a-as-built.md`) |
 | **B** | the adapter layer we are building |
 | **B1** | B shipped as a self-hosted, separate service people can run and use. Its connectors are entity connectors. |
 | **B2** | B run internally inside a company's own setup, not hosted by us. Its connectors are instance connectors. |
@@ -201,7 +201,7 @@ First Patrii features, once there is an API: compute VM (server with keypair, se
 
 ### TierHive
 
-TierHive (KernelKeepers LTD) is an alpha hourly NAT VPS host with no public API, CLI or Terraform provider today; the operator says the API ships with its beta, "later in 2026 or early 2027" (`docs/research/2026-10-30-tierhive.md`). A TierHive connector waits for that API. Until then, a TierHive VPS the customer created by hand is reachable through the General connector as an existing host over SSH. Its manifest, when built: compute VM as-is, config runner over SSH, load balancer new, object storage and serverless removed.
+TierHive (KernelKeepers LTD) is an alpha hourly NAT VPS host with no public API, CLI or Terraform provider today; the operator says the API ships with its beta, "later in 2026 or early 2027" (`docs/research/tierhive/2026-10-30-tierhive-research.md`). A TierHive connector waits for that API. Until then, a TierHive VPS the customer created by hand is reachable through the General connector as an existing host over SSH. Its manifest, when built: compute VM as-is, config runner over SSH, load balancer new, object storage and serverless removed.
 
 ### AWS
 
@@ -220,9 +220,4 @@ Stays in A. It moves into B as a connector only later and piece by piece (Option
 
 ## Questions that block or shape the plan
 
-1. How do TierHive and PatriCloud expose their infrastructure (Terraform provider, API, other)? For Patrii, the five questions at the end of the research note. This decides how connectors are built and whether B2 is realistic.
-2. What does General (custom) mean concretely: plain Terraform with any provider (default), a generic API format, or SSH to existing hosts?
-3. Does B run as Lambdas like A, or as a long-running container (default, since self-hosters run it outside our AWS account)?
-4. Where are instance credentials stored, and how are they secured per instance? Default: an encrypted secret store with only a reference in Postgres.
-5. Is Patrii a customer target, a host for Clutter itself, or both? Default: a customer target first.
-6. Does a diagram target exactly one target instance? Default: yes.
+The open questions, each with its default, are kept in one list: `.claude/findings/NOW.md` § Open questions. Questions 1 to 6 and 8 there shape this design; for Patrii, also the five questions at the end of `docs/research/patricloud/2026-10-26-patricloud-research.md`.
