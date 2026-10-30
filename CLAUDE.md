@@ -44,6 +44,8 @@ Run from the repo root with absolute paths; no `cd dir && cmd`.
 | Is the platform Terraform valid? | `terraform -chdir=backend/infra fmt -check -recursive`, then `validate` after `init -backend=false` (in a scratch copy) | fmt fails on 7 files today; validate passes. The backend is the capstone team's AWS account: never `plan` or `apply` against it. |
 | Does the database schema load? | `docker run -d --rm --name clutter-pg -e POSTGRES_PASSWORD=local -e POSTGRES_DB=clutter postgres:17-alpine`, create roles `anon`, `authenticated`, `service_role`, then pipe `backend/storage-sql/application-tables.sql` and `seed-resources.sql` into `psql` | Loads 11 tables and 5 resources (2026-10-30). The seed needs the Supabase roles. Stop the container after. |
 | How do I run the whole thing? | `docs/architecture/system.md` § Running it | No local backend exists, and the capstone deployment is gone. |
+| Does A still run locally? | `backend/devserver/run.sh`, then `backend/devserver/smoke.sh`; stop with `backend/devserver/stop.sh` | 27 pass, 6 need AWS, 1 expected, 0 fail (2026-10-30). Any change on a seam must keep 0 fail. What works locally vs only in AWS: `backend/devserver/README.md`. |
+| Does the devserver itself pass? | `go -C backend/devserver vet ./...` and `go -C backend/devserver test ./...` | Green. Its route test fails if `backend/infra/main.tf` changes a route. |
 | Do our docs and scripts lint? | `npx -y markdownlint-cli2@0.18.1 "**/*.md"`, and `docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.10.0 -S warning .claude/hooks/*.sh` | Both clean on 2026-10-30. A's lint results are recorded in `docs/architecture/system.md`, not fixed. |
 | Do the hooks still work? | `.claude/hooks/test-hooks.sh` | Run after changing any hook. |
 

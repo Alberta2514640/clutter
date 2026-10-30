@@ -85,7 +85,7 @@ Go 1.25 or newer, Terraform, Node 22 or newer with npm, and Docker. The AWS CLI 
 
 ### What runs locally, without any cloud account
 
-There is no local backend. The capstone team ran everything in AWS (the report's "Local Dev Environment" section). The Go code only runs as Lambdas behind API Gateway, and the frontend calls the API at `NEXT_PUBLIC_API_ENDPOINT`. So locally you can run every check, load the database, and look at the UI's page shells; you cannot sign in or deploy.
+The capstone team ran everything in AWS and built no local setup (the report's "Local Dev Environment" section). `backend/devserver` is ours: dev-only tooling that runs A's real, unchanged Lambdas on one machine behind an API Gateway stand-in, with Postgres in Docker and a dev sign-in. Everything that needs only Postgres works locally; generating Terraform, deploying, logs and Ansible need AWS. The full list of what works locally and what only works in AWS is in `backend/devserver/README.md`, which owns it. The smoke test of all 31 routes on 2026-10-30: 27 pass, 6 need AWS, 1 expected failure (real Google sign-in), 0 fail.
 
 | Check | Result on 2026-10-30 |
 | --- | --- |
@@ -99,6 +99,8 @@ There is no local backend. The capstone team ran everything in AWS (the report's
 | Platform Terraform validate | pass (in a scratch copy, after `init -backend=false`) |
 | Database schema in Postgres 17 | pass: 11 tables, 5 seeded resources, once the Supabase roles exist |
 | Hooks | pass, 47 of 47 |
+| devserver (`go -C backend/devserver vet ./...`, `test ./...`) | pass; its route test fails if the route table drifts from `backend/infra/main.tf` |
+| devserver smoke test (`backend/devserver/smoke.sh`) | 31 of 31 routes exercised: 27 pass, 6 need AWS, 1 expected, 0 fail |
 | `gofmt -l backend/api` | 59 of 97 files flagged: 52 use CRLF line endings, 7 have a trailing blank line |
 | staticcheck (`go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` in `backend/api`) | 6 findings: 4 nil contexts in `tests/generic` (the package that panics), 2 simplifications in `terraform-command-runner` |
 | Frontend lint warnings | 13: 10 unused variables or imports, 3 React hook dependency warnings |
@@ -109,9 +111,9 @@ These are A's lint results, recorded and not fixed: A is changed only at the sea
 
 The commands are in the root `CLAUDE.md` § Commands.
 
-To look at the UI: `NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run dev`, then open `http://localhost:3000`. `/` and `/login` render. Every other route redirects to `/login` unless a `clutter_token` cookie exists. Data calls fail without the API. Google sign-in uses a client id hard-coded in the frontend that belongs to the capstone team's Google project, so it only accepts the origins registered there.
+To run A locally: `backend/devserver/run.sh`, then the frontend on port 3100 as `run.sh` prints, then open `http://localhost:3000/dev/login`. Stop with `backend/devserver/stop.sh`. Without the devserver, the frontend alone renders `/` and `/login` only. The route guard (`src/proxy.ts`) checks only that a `clutter_token` cookie exists, not that it is valid. Google sign-in uses a client id hard-coded in the frontend that belongs to the capstone team's Google project, so real sign-in does not work locally.
 
-### Why the full app does not run today
+### Why AWS-only features do not run today
 
 The capstone deployment is gone. The API host baked into `frontend/Dockerfile.frontend` (`7c1aawofvl.execute-api.us-west-2.amazonaws.com`) returns NXDOMAIN, and the platform state bucket in `backend/infra/backend.tf` belongs to the capstone AWS account, which we cannot reach.
 

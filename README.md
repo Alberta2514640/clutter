@@ -10,7 +10,7 @@ This page gets you from a fresh clone to a working setup, and shows where everyt
 
 | | |
 | --- | --- |
-| **System A** (Clutter as built, AWS only) | Complete and tested by the capstone team. Its AWS deployment has been torn down, so it does not run live today. |
+| **System A** (Clutter as built, AWS only) | Complete and tested by the capstone team. Its AWS deployment has been torn down. It runs locally through `backend/devserver`, except the parts that need AWS (generate, deploy, logs, Ansible). |
 | **System B** (the adapter layer) | Designed, not built. Phase 0 (security fixes A and B share) comes first. |
 | **Local checks** | Go build, frontend type-check, lint and build, Terraform validate and the database schema all pass. Two Go test packages fail (known). |
 | **Open defects** | Several security defects in A, some critical. Listed in `.claude/findings/NOW.md`. Read that before you build on any A code path. |
@@ -43,6 +43,7 @@ backend/
     modules/s3/uploads/        the customer Terraform templates (*.tf.tmpl)
     modules/fargate/ecr-scripts/   the two runner images
   storage-sql/      the Postgres schema and the resource seed
+  devserver/        dev-only: runs A's real Lambdas locally behind an API Gateway stand-in
   tfstate-infra/    bootstraps the remote state bucket for infra/
 frontend/
   clutter/          the Next.js app (canvas, dashboard, settings)
@@ -71,7 +72,8 @@ There are two kinds of Terraform here. `backend/infra` deploys Clutter itself. T
 | Go | 1.25 or newer | the backend |
 | Node.js with npm | 22 or newer | the frontend (use npm; `pnpm-lock.yaml` is stale) |
 | Terraform | 1.x | checking the infrastructure code |
-| Docker | any recent | loading the database locally |
+| Docker (running) | any recent | the local database |
+| curl, openssl, python3 | macOS has them | the local run scripts |
 | AWS CLI | v2 | only for deploying, which nobody does from a laptop yet |
 | Claude Code | optional | the AI setup in `.claude/` |
 
@@ -98,19 +100,61 @@ npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
 npm --prefix frontend/clutter run lint
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build
 terraform -chdir=backend/infra fmt -check -recursive    # 7 files fail today
+go -C backend/devserver test ./...     # the local run tool
 ```
 
 The two failing test packages are known: `terraform-engine/create` needs live S3 (it waits about 70 seconds, then fails), and `tests/generic` panics on a nil database connection. Every other package must pass. The expected result of each check is kept up to date in `docs/architecture/system.md` § Running it.
 
-### 4. Look at the UI
+### 4. Run the app locally
+
+You need two terminals. The first run takes a minute or two while it builds the 33 Lambdas.
+
+Terminal 1, the database and backend:
+
+```bash
+backend/devserver/run.sh                     # Postgres, then A's real Lambdas behind a local API Gateway
+```
+
+Terminal 2, the frontend (it keeps running):
+
+```bash
+NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 npm --prefix frontend/clutter run dev -- --hostname 127.0.0.1 --port 3100
+```
+
+Then:
+
+1. Open <http://localhost:3000/dev/login>. It signs you in as a local dev user. (Port 3000 is the devserver's front door; it passes pages through to the frontend on 3100.)
+2. The first time, the database is empty. Create an organization at <http://localhost:3000/onboarding/create-org>, then a project from the dashboard.
+3. The diagram editor stays locked until the organization has a linked AWS account. Link a fake one (it only writes to the local database):
+
+   ```bash
+   backend/devserver/link-fake-account.sh
+   ```
+
+4. Open a diagram and use the canvas. Deploy will fail at its AWS call; that is expected.
+
+Other commands:
+
+```bash
+backend/devserver/smoke.sh                   # calls all 31 routes and prints what passed
+backend/devserver/stop.sh                    # stops everything; add --wipe to delete the local database
+```
+
+Organizations, projects, diagrams, the canvas and the resource palette work locally. Generating Terraform, deploying, logs and Ansible only work in AWS. The full table is in `backend/devserver/README.md`.
+
+### 5. Look at the UI without the backend
+
+Stop the devserver first (`backend/devserver/stop.sh`); both use port 3000.
 
 ```bash
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run dev
 ```
 
-Open <http://localhost:3000>. The home page and `/login` render. You cannot sign in, because there is no backend running (next section).
+Open <http://localhost:3000>. The home page and `/login` render. You cannot sign in this way; use step 4.
 
-### 5. Load the database
+### 6. Load the database by hand
+
+`run.sh` does this for you. To do it by hand:
 
 ```bash
 docker run -d --rm --name clutter-pg -e POSTGRES_PASSWORD=local -e POSTGRES_DB=clutter postgres:17-alpine
@@ -124,9 +168,9 @@ docker stop clutter-pg
 
 You should see 11 tables. The roles exist because the schema was written for Supabase.
 
-## Why you cannot run the whole app yet
+## What only works in AWS
 
-There is no local backend: the Go code only runs as AWS Lambdas behind API Gateway. The capstone deployment is gone, and its AWS account is not ours. Running Clutter end to end needs our own AWS account, a Postgres or Supabase database, a Google sign-in client, and a set of secrets. No extra tools are needed. The nine steps, and what must be fixed first, are in `docs/architecture/system.md` § Running it.
+The Go code was built to run as AWS Lambdas; `backend/devserver` runs it locally, but anything that calls S3, ECS or SQS stops there. The capstone deployment is gone, and its AWS account is not ours. Running Clutter fully, including deploys, needs our own AWS account, a Postgres or Supabase database, a Google sign-in client, and a set of secrets. No extra tools are needed. The nine steps, and what must be fixed first, are in `docs/architecture/system.md` § Running it.
 
 Do not run:
 

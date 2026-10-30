@@ -1,0 +1,2 @@
+# Generated local secrets, built Lambda binaries, logs and pid files.
+.state/
