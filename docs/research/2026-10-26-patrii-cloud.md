@@ -9,7 +9,7 @@ Patrii does not publish a customer API today. Its REST API is "currently in deve
 ## Company
 
 - Founded 2025-07-11 in Greater Montreal; Guillaume Harvey is co-founder, CEO and CTO; the founders previously co-founded KeepSec Technologies ([about](https://patrii.cloud/about)).
-- Blog posts are signed "Patrii Quebec inc."; the legal page names no entity; contacts are legal@patrii.ca and privacy@patrii.ca ([blog](https://patrii.cloud/blog/why-i-started-patrii-cloud-6), [legal](https://patrii.cloud/legal)).
+- Blog posts are signed "Patrii Quebec inc."; the legal page names no entity; contacts are `legal@patrii.ca` and `privacy@patrii.ca` ([blog](https://patrii.cloud/blog/why-i-started-patrii-cloud-6), [legal](https://patrii.cloud/legal)).
 - In beta since 2026-06-18 ([services](https://patrii.cloud/services)). Changelog entries in the bundle go back to 2025-10-22, so the dates on Patrii's own pages do not fully agree.
 - Compliance: PIPEDA and provincial privacy compliance are "Planned" ([legal](https://patrii.cloud/legal)); ISO 27001 certification targeted Q1 2027 and SOC 2 Type II Q2 2027 ([services](https://patrii.cloud/services)).
 - No link found between Patrii and Alberta 2514640 Inc or Devin Atkin ([alberta2514640.ca](https://alberta2514640.ca/) describes a Calgary consultancy). This is absence of evidence only.
@@ -40,7 +40,7 @@ Patrii does not publish a customer API today. Its REST API is "currently in deve
 ## Mapping Clutter's AWS resources
 
 | Clutter today | Nearest Patrii or OpenStack equivalent |
-|---|---|
+| --- | --- |
 | EC2 | Nova server (Patrii VPS) with keypair, security group, floating IP; cloud-init supported. |
 | S3 | Ceph RGW S3 API with Patrii access keys. Terraform's S3 backend accepts a custom endpoint, but HashiCorp supports non-AWS S3 only on a best-effort basis ([docs](https://developer.hashicorp.com/terraform/language/backend/s3)). |
 | Lambda | None. Options: a container on Patrii Kubernetes, a Coolify app, or a VPS. |

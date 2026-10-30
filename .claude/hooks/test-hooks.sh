@@ -64,5 +64,25 @@ expect guard-git-writes.sh allow "$(bash_call 'git log --oneline -5 | head' lane
 expect guard-git-writes.sh allow "$(bash_call 'git branch' lane1)"
 expect guard-git-writes.sh allow "$(bash_call 'git commit -m x')"
 
+# format-on-write: formats new files and files already formatted at HEAD; leaves CRLF or unformatted files alone.
+# check <name> <condition>
+check() { if eval "$2"; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL format-on-write: $1"; fi; }
+write_call() { jq -cn --arg p "$1" '{tool_name:"Edit",tool_input:{file_path:$p}}'; }
+T="$(mktemp -d)"
+git -C "$T" init -q && git -C "$T" config core.autocrlf false && git -C "$T" config user.email t@t && git -C "$T" config user.name t
+printf 'package a\n\nfunc A() {}\n' > "$T/clean.go"
+printf 'package a\r\n\r\nfunc B() {}\r\n' > "$T/crlf.go"
+printf 'package a\n\nfunc  C() {}\n' > "$T/messy.go"
+git -C "$T" add . && git -C "$T" commit -qm init
+printf 'package a\n\nfunc  A() {}\n' > "$T/clean.go"
+printf 'package a\r\n\r\nfunc  B() {}\r\n' > "$T/crlf.go"
+printf 'package a\n\nfunc  D() {}\n' > "$T/new.go"
+for f in clean crlf messy new; do write_call "$T/$f.go" | "$H/format-on-write.sh"; done
+check "formats a file clean at HEAD" "grep -q '^func A' '$T/clean.go'"
+check "leaves a CRLF file alone" "grep -q \$'\\r' '$T/crlf.go' && grep -q 'func  B' '$T/crlf.go'"
+check "leaves a file unformatted at HEAD alone" "grep -q 'func  C' '$T/messy.go'"
+check "formats a new file" "grep -q '^func D' '$T/new.go'"
+rm -rf "$T"
+
 echo "hooks: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -14,6 +14,7 @@ There are two kinds of Terraform here, and they must never be confused.
 - **Customer templates** (`*.tf.tmpl` under `backend/infra/modules/s3/uploads/<provider>/<service>/`) are Go `text/template` files that the generator renders into the code Clutter runs inside a customer's account. They are uploaded to S3 by the platform Terraform, so a template change ships only on the next platform apply.
 
 Rules:
+
 - Run `terraform fmt` and `terraform validate` on platform modules you change (`terraform init -backend=false` first in a scratch copy if needed). Never run `plan` against the real backend from a session; it reads state that holds secrets.
 - A template is checked by rendering it: run the generator tests in `backend/api/terraform-engine/create` and read the rendered `.tf`. `terraform fmt` cannot parse template syntax.
 - Every value a user typed that reaches a template is escaped or validated before it is rendered. A diagram name, a tag or a bucket name in a template is an injection path into code that runs with the customer's credentials.

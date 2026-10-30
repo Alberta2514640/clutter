@@ -20,7 +20,7 @@ Every brief carries: the goal in one sentence, what is already ruled out, the fi
 2. **Plan.** Name the slice, its layers, its pass bar and the questions only the person can answer. Ask those in one batch, each with a default, and keep working on the defaults.
 3. **Build.** The lead or an `executor`.
 4. **Check.** Run the gates in root `CLAUDE.md` § Commands for every folder touched, and read the output.
-5. **Refute.** A `red-pill-reviewer` with the spec and the pass bar for anything touching auth, tenancy, customer credentials, the provider interface, or more than one layer.
+5. **Refute.** A `red-pill-reviewer` with the spec and the pass bar for anything touching auth, tenancy, customer credentials, the connector interface, a seam where B touches A, or more than one layer.
 6. **Record.** A decision goes to `docs/decisions.md` the turn it is made; a changed fact to its owner doc; where the work stands to `.claude/findings/NOW.md`.
 
 ## The start file

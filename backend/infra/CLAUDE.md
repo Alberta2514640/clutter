@@ -3,6 +3,7 @@
 Platform Terraform: deploys Clutter itself into Clutter's AWS account. Rules for Terraform here and for the customer templates under `modules/s3/uploads/` are in `.claude/rules/terraform.md`.
 
 Traps:
+
 - **Applied by a person, never from a session.** The `guard-cloud-writes` hook asks before any apply, destroy or state edit. Never run `plan` against the real backend from a session: it reads state that holds secrets.
 - **A Lambda route is public unless its integration module gets `jwt_authorizer_id`.** The integration template sets `authorization = "NONE"` when it is missing.
 - **Each customer template is uploaded by its own `aws_s3_object` in `modules/s3/main.tf`.** A new template file needs a new object block.

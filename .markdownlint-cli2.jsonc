@@ -1,0 +1,16 @@
+{
+  // Lint config for our own docs. Long lines are house style; agent and skill
+  // files open with frontmatter and prose, not a heading.
+  "config": {
+    "MD013": false,
+    "MD041": false
+  },
+  "ignores": [
+    "docs/history/**",
+    "research_notes/**",
+    "reports/**",
+    "**/node_modules/**",
+    "backend/README.md",
+    "backend/api/**/README.md"
+  ]
+}

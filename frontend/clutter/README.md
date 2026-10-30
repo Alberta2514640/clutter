@@ -1,52 +1,48 @@
-# Frontend README
+# Frontend
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+The Clutter web app: a Next.js 16 App Router project with React 19, React Flow (`@xyflow/react`) for the canvas, TanStack Query for server data, Zustand for UI state, Tailwind 4 and shadcn/ui components. It was bootstrapped with `create-next-app`.
 
-## Getting Started
+Setup and checks for the whole repo are in the root `README.md`. This page covers the frontend only.
 
-First, run the development server:
+## Run it
+
+Use npm. The Dockerfile runs `npm ci`, and `pnpm-lock.yaml` is stale.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>. `NEXT_PUBLIC_API_ENDPOINT` is the base URL of the Clutter API. No API is running today (the capstone deployment is gone), so only `/` and `/login` render; every other page redirects to `/login` without a `clutter_token` cookie.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Check it
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx tsc --noEmit
+npm run lint
+NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm run build
+```
 
-## Learn More
+There are no frontend tests yet.
 
-To learn more about Next.js, take a look at the following resources:
+## Where things are
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `src/app/`: routes, grouped as `(auth)`, `(dashboard)`, `(diagram)` and `(settings)`. The canvas is under `(diagram)/projects/[projectId]/diagram/[diagramId]/`.
+- `src/lib/features/<feature>/`: the API client and hooks for each feature (organization, projects, diagram, runs, logs, codeUpload, resources, members, user).
+- `src/providers/`: React Query, Google sign-in and other providers.
+- `src/proxy.ts`: the route guard (it checks only that the cookie exists, not that it is valid).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Known gaps: member management is a mock, `settings/organization/create-org` and the workspaces page are stubs, and `/register` posts to a dead host. The full list is in `.claude/findings/NOW.md`.
 
-## Deploy on Vercel
+## Adding UI components
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The capstone team added components with the shadcn CLI, for example:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## notes
-
-### initializations
-
-`chmod +x init.bash`
-to give the bash script permissions
-
-`./init.bash` to run it
-
-## requirements
-
+```bash
 npx shadcn@latest add https://21st.dev/r/kokonutd/shape-landing-hero
-npx shadcn-ui add input
+npx shadcn@latest add input
+```
+
+## Do not run `init.bash`
+
+`init.bash` is an early scaffold script from the start of the capstone. It overwrites `src/app/layout.tsx`, `src/app/page.tsx`, the providers and other real files with placeholders. It is kept only as history.

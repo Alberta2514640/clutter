@@ -3,6 +3,7 @@
 Go Lambdas, one per folder with its own `main.go`. Module `github.com/Alberta2514640/clutter/backend/api`. Code rules: `engineering-conventions`.
 
 Traps:
+
 - **A route is public unless the platform Terraform gives it the JWT authorizer.** `POST /terraform-engine` and `GET /resources` have none today. Never assume a handler is reached only by signed-in users; read its integration in `backend/infra/main.tf`.
 - **Membership is not ownership.** `generic` checks that the caller is in the org. Each handler must also check that the project, diagram, run or account id it takes belongs to that org. Several handlers stop at membership today.
 - **`ansible/run-task/main.go` is a hand copy of `ansible/shared/runtaskutils`.** The tests cover the shared package, not the deployed copy. Change both, or better, make the handler import the shared package.
