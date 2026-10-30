@@ -1,6 +1,6 @@
 # Decisions
 
-One entry per decision: the date, the status, what was decided, why, and what would change it. A superseded entry stays, marked with what replaced it.
+One entry per decision (an ADR, architecture decision record): the date, the status, what was decided, why, and what would change it. An entry is "proposed" until its pull request is approved by the team (and the client, for scope or hosting), then "accepted". A superseded entry stays, marked with what replaced it.
 
 ## ADR-001: Capability-based provider adapters, not a lowest common denominator (2026-10-26, proposed)
 
@@ -14,13 +14,13 @@ Adapters emit HCL for an existing Terraform provider; Clutter does not call clou
 
 Why: the standard OpenStack Terraform provider and Keystone application credentials are documented and portable to other OpenStack clouds; Patrii's own provider is not released; the console API is undocumented and changes with each build. Contested: the second research run on the same date recommends coding against the console's REST API now (Path C in `system-b-adapter-layer.md`), since it is the only surface that works today and Patrii's homepage never names OpenStack services. Would change if: Patrii states it will not expose OpenStack endpoints and no provider is planned, or publishes an OpenAPI file and calls its REST API the supported surface.
 
-## ADR-005: The central standard is a versioned inbound API over Clutter's own model (2026-10-26, proposed)
-
-Other products, and people, call one `/v1` API. It is B API (ADR-006): it sits beside A's handlers, reuses A's sign-in and organization model, and puts connectors behind it. Its objects, revised 2026-10-30 to follow the team's plan: organization, project, desired state, target, instance, workspace, run, catalog (`docs/architecture/system-b-adapter-layer.md`). The 2026-10-26 draft renamed project to workspace; that rename is dropped, because the plan uses workspace for an environment inside an instance. Why: the existing org, project and diagram path with its membership check is sound enough to wrap, while the internal routes are inconsistent (ids in paths and queries, mixed names, no error envelope, no idempotency). Freezing them as the public contract would freeze those gaps. Would change if: the only consumers are Clutter's own frontend, in which case the outbound adapters alone are enough.
-
 ## ADR-004: A stays SaaS on AWS; B is one container that we host or others self-host (2026-10-26, revised 2026-10-30, proposed)
 
 Why: moving A off Lambda and API Gateway is a separate project, and nothing about Patrii requires it before a Patrii connector works. B1 is by definition a service other people can run, which they cannot do with Clutter's API Gateway and Lambdas, so B is one Go service in a container plus a Terraform runner, hosted by us beside A or self-hosted. Keeping instance credentials and state behind the connector interface leaves room to run the runner inside a customer's cloud. The 2026-10-26 version kept the deployer BYOC-ready through `RunnerEnv` and `StateBackend` on a provider interface; those are now the instance credentials and the runner's state backend. Would change if: the client needs Canadian-only hosting of Clutter itself (data residency, CLOUD Act exposure), in which case hosting on Patrii or BYOC moves before phase 3.
+
+## ADR-005: The central standard is a versioned inbound API over Clutter's own model (2026-10-26, proposed)
+
+Other products, and people, call one `/v1` API. It is B API (ADR-006): it sits beside A's handlers, reuses A's sign-in and organization model, and puts connectors behind it. Its objects, revised 2026-10-30 to follow the team's plan: organization, project, desired state, target, instance, workspace, run, catalog (`docs/architecture/system-b-adapter-layer.md`). The 2026-10-26 draft renamed project to workspace; that rename is dropped, because the plan uses workspace for an environment inside an instance. Why: the existing org, project and diagram path with its membership check is sound enough to wrap, while the internal routes are inconsistent (ids in paths and queries, mixed names, no error envelope, no idempotency). Freezing them as the public contract would freeze those gaps. Would change if: the only consumers are Clutter's own frontend, in which case the outbound adapters alone are enough.
 
 ## ADR-006: Build B next to A (Option 1), reuse A only at named seams (2026-10-30, proposed by the team)
 

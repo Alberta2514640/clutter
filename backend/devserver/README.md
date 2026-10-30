@@ -74,6 +74,8 @@ Every Lambda gets fake credentials, no AWS config files, and `AWS_ENDPOINT_URL` 
 
 ## Guard rails
 
+One devserver runs per machine: its ports (3000, 8787, 54329) and its Docker database are fixed, so two clones on one laptop share them. Separate laptops never collide; each generates its own secrets.
+
 The gateway binds to loopback only. It refuses a JWT secret that `run.sh` did not generate (prefix `devserver-local-`). It refuses a Postgres that is not on loopback. Secrets, binaries and logs live in `.state/`, which git ignores.
 
 `go test ./...` here checks the route table, CORS methods, timeouts and environment keys against `backend/infra/main.tf`. It fails when they drift.

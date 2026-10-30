@@ -4,7 +4,7 @@ Status: proposed. First written 2026-10-26, revised 2026-10-30 to follow the tea
 
 ## The goal
 
-Expand the Clutter codebase so a diagram can deploy to targets other than AWS: PatriCloud first, a General (custom) target, TierHive, and whatever comes later. There is one standard way for Clutter to talk to any target (the **connector interface**), and one **connector** per target. The people who come after us add connectors without reworking what exists.
+Expand the Clutter codebase so a diagram can deploy to targets other than AWS: a General (custom) target first, then PatriCloud (our working name for Patrii Cloud) and TierHive, and whatever comes later. There is one standard way for Clutter to talk to any target (the **connector interface**), and one **connector** per target. The people who come after us add connectors without reworking what exists.
 
 The layer has two faces:
 

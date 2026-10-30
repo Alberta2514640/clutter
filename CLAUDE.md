@@ -48,7 +48,7 @@ Run from the repo root with absolute paths; no `cd dir && cmd`. The commands liv
 | Do the hooks still work? | `.claude/hooks/test-hooks.sh` | Run after changing any hook. |
 | How is it deployed to AWS? | `docs/architecture/system-a-as-built.md` § Deploying to AWS | Not done yet; needs our own account and phase 0 first. |
 
-CI (`.github/workflows/docker-image.yml`) only builds and pushes the frontend image. Nothing else is checked on push, so the commands above are the only gate.
+CI: `.github/workflows/checks.yml` runs the Go, devserver, frontend, markdown, shellcheck and hook checks on every pull request (the two known-failing Go packages are excluded until phase 0 item 6). The smoke test needs Docker, so it is run locally before a pull request. `.github/workflows/docker-image.yml` is A's image build, unchanged.
 
 ## When you are uncertain
 

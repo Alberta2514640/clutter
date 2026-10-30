@@ -16,5 +16,5 @@ if [ -f .claude/findings/NOW.md ]; then
   echo "NOW.md (head):"
   head -30 .claude/findings/NOW.md
 fi
-command -v jq >/dev/null 2>&1 || echo "Warning: jq is missing, so the guard hooks are off (brew install jq)."
+command -v jq >/dev/null 2>&1 || echo "Warning: jq is missing, so the guard hooks block every guarded call until it is installed (brew install jq)."
 exit 0

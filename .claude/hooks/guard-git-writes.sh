@@ -20,7 +20,7 @@ while IFS= read -r part; do
   done
   verb="${1:-}"
   case "$verb" in
-    ""|status|diff|log|show|blame|grep|ls-files|rev-parse|cat-file|merge-base|rev-list|ls-tree|describe|show-ref|for-each-ref|shortlog) ;;
+    ""|status|diff|log|show|blame|grep|ls-files|rev-parse|cat-file|merge-base|rev-list|ls-tree|describe|show-ref|for-each-ref|shortlog|check-ignore|ls-remote|whatchanged|name-rev) ;;
     stash)
       case "${2:-}" in list|show) ;; *) deny "git stash in a lane captures every lane's uncommitted work. Git writes are the lead's." ;; esac ;;
     branch|remote)

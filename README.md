@@ -30,7 +30,9 @@ The names everyone uses:
 | B | the adapter layer we are building |
 | B1 | B as a service anyone can run, with entity connectors (built first) |
 | B2 | B run inside a company, with instance connectors (later) |
-| connector | the code for one target type (General, PatriCloud, TierHive) |
+| connector | the code for one target type (General, PatriCloud, TierHive). An *entity connector* is one we write for a target type (B1); an *instance connector* is one a company builds for its own setup (B2). |
+| PatriCloud | our working name for Patrii Cloud (patrii.cloud), a Canadian cloud; the same thing |
+| General | the first connector: Terraform with any provider the customer names, or servers they already have over SSH (the exact scope is open question 1 in `NOW.md`) |
 | instance | one company's configured setup of a connector |
 | seam | one of the four places B touches A: the target choice screen, shared sign-in, the shared database, and security fixes |
 | phase 0 | the first work item: security fixes on the parts A and B share (listed in `.claude/findings/NOW.md`) |
@@ -94,7 +96,6 @@ Our working repo is a fork. The client's original is `upstream`; never push to i
 ```bash
 git clone https://github.com/FayzanT/re-clutter
 cd re-clutter
-git checkout design/setup          # the docs, the devserver and this README live here until it is merged into main
 git remote add upstream https://github.com/Alberta2514640/clutter
 npm --prefix frontend/clutter ci
 ```
@@ -120,15 +121,13 @@ The two failing test packages are known: `terraform-engine/create` needs live S3
 
 ### 4. Run the app locally
 
-You need two terminals. The first run takes a minute or two while it builds the 33 Lambdas.
-
-Terminal 1, the database and backend:
+The first run takes a minute or two while it builds the 33 Lambdas. Start the database and backend (`run.sh` starts them in the background and returns):
 
 ```bash
 backend/devserver/run.sh                     # Postgres, then A's real Lambdas behind a local API Gateway
 ```
 
-Terminal 2, the frontend (it keeps running). It uses port 3100 because the devserver's front door holds 3000:
+Then the frontend, which keeps running in its terminal. It uses port 3100 because the devserver's front door holds 3000:
 
 ```bash
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 npm --prefix frontend/clutter run dev -- --hostname 127.0.0.1 --port 3100
@@ -187,7 +186,7 @@ You should see 11 tables. The roles exist because the schema was written for Sup
 
 The Go code was built to run as AWS Lambdas; `backend/devserver` runs it locally, but anything that calls S3, ECS or SQS stops there. The capstone deployment is gone, and its AWS account is not ours. Running Clutter fully, including deploys, needs our own AWS account, a Postgres or Supabase database, a Google sign-in client, and a set of secrets. No extra tools are needed. The nine steps, and what must be fixed first, are in `docs/architecture/system-a-as-built.md` § Deploying to AWS.
 
-Do not run:
+### Do not run
 
 - `frontend/clutter/init.bash`. It is an old scaffold script that overwrites real source files.
 - `terraform plan` or `apply` in `backend/infra`. Its state backend is the capstone team's AWS account.
@@ -207,12 +206,20 @@ Then pick a task from `NOW.md` § Next. Tell the team which one you are taking, 
 
 ## How we work
 
-- **Branches.** Branch off `main`, never commit to it directly, and open a pull request against our fork (`origin`). Never push to `upstream`.
+- **Branches.** Branch off `main`. Never commit to `main` directly, open pull requests against our fork (`origin`), and never push to `upstream`.
+- **Taking a task.** The tasks are the tables in `.claude/findings/NOW.md` § Next. Put your name in a task's Owner cell in your branch's first commit and open a draft pull request at once, so two people never take the same task. The rules for editing `NOW.md` without merge conflicts are at the top of that section.
+- **Before you open a pull request:**
+  1. The checks in step 3 pass (the same ones run in GitHub on every pull request: `.github/workflows/checks.yml`).
+  2. If you touched `backend/`, `backend/devserver/run.sh` then `smoke.sh` still shows 0 fail.
+  3. Docs whose facts you changed are updated (`docs/README.md` says which file owns which fact).
+  4. A decision you made is in `docs/decisions.md`.
+- **Decisions.** An ADR starts as "proposed" and becomes "accepted" when its pull request is approved by the team (and the client, for scope or hosting). Write it before the change it decides.
 - **Commits.** Say what changed and why. One commit per finished change, after the checks pass.
 - **Changing A.** A changes only at the four seams. Any other change to A is a decision: write it in `docs/decisions.md` first.
 - **Security rules.** Every handler that takes an id checks that the caller belongs to the organization and that the thing belongs to that organization. No value from the canvas reaches generated code without validation or escaping. Credentials and Terraform state never go in logs, responses or docs.
 - **Docs.** Each fact has one owner doc (`docs/README.md` has the map). When code changes a fact, update its owner in the same pull request. When a doc and the code disagree, the code wins and the doc gets fixed.
 - **Adding a cloud resource.** Follow `.claude/skills/add-cloud-resource/SKILL.md`, even without Claude Code. It lists every place a resource is defined.
+- **One devserver per machine.** Its ports and database are fixed, so two clones on one laptop share them; separate laptops never collide.
 
 ### Claude Code
 

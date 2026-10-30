@@ -28,10 +28,14 @@ split_commands() {
 # Word splitting below must never expand a `*` in a command into file names.
 set -f
 
-# A hook that cannot parse its payload lets the call through rather than blocking all work.
+# Without jq a hook cannot read its payload. A guard then fails closed: exit 2 makes Claude Code
+# block the call and show the message. A hook that only tidies up (CLUTTER_HOOK_KIND=tidy) lets it pass.
 if ! command -v jq >/dev/null 2>&1; then
-  echo "clutter hooks: jq is not installed, so the guards are off. Install it with: brew install jq" >&2
-  exit 0
+  if [ "${CLUTTER_HOOK_KIND:-guard}" = "tidy" ]; then
+    exit 0
+  fi
+  echo "clutter hooks: jq is not installed, so this guard cannot check the call and blocks it. Install jq (brew install jq), then retry." >&2
+  exit 2
 fi
 
 HOOK_RAW="$(cat)"

@@ -84,5 +84,18 @@ check "leaves a file unformatted at HEAD alone" "grep -q 'func  C' '$T/messy.go'
 check "formats a new file" "grep -q '^func D' '$T/new.go'"
 rm -rf "$T"
 
+# guard-git-writes: read-only verbs a lane needs.
+expect guard-git-writes.sh allow "$(bash_call 'git check-ignore -v x' lane1)"
+expect guard-git-writes.sh allow "$(bash_call 'git ls-remote --heads origin' lane1)"
+
+# Without jq, a guard fails closed (exit 2) and the format hook still exits 0.
+NOJQ="$(mktemp -d)"
+for t in bash cat dirname awk printf; do p="$(command -v "$t")"; [ -n "$p" ] && ln -s "$p" "$NOJQ/$t"; done
+printf '%s' "$(read_call /repo/.env)" | PATH="$NOJQ" /bin/bash "$H/guard-secrets.sh" >/dev/null 2>&1; code=$?
+check "guard fails closed without jq" "[ $code -eq 2 ]"
+printf '%s' "$(write_call /tmp/x.go)" | PATH="$NOJQ" /bin/bash "$H/format-on-write.sh" >/dev/null 2>&1; code=$?
+check "format hook passes without jq" "[ $code -eq 0 ]"
+rm -rf "$NOJQ"
+
 echo "hooks: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

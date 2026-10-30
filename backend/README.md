@@ -22,7 +22,7 @@ Run from the repo root:
 | Unit tests | `go -C backend/api test ./...` | 2 packages fail, both before any change: `terraform-engine/create` (`TestHandler` and `TestGenerateOnly` need live S3) and `tests/generic` (a nil database connection panics). `tests/ansible` and `tests/user-information` pass. |
 | Run every route locally | `backend/devserver/run.sh`, then `backend/devserver/smoke.sh` | 0 fail; the full breakdown is in `devserver/README.md` |
 | Load the schema | `run.sh` does it; by hand, root `README.md` step 6 | 11 tables, 5 resources |
-| Validate the platform Terraform | `terraform -chdir=<a scratch copy of backend/infra> init -backend=false`, then `validate` | pass; `fmt -check` fails on 7 files |
+| Validate the platform Terraform | `cp -R backend/infra "$TMPDIR/infra"`, then `terraform -chdir="$TMPDIR/infra" init -backend=false` and `terraform -chdir="$TMPDIR/infra" validate` (a copy, so `init` never touches the real state backend) | pass; `fmt -check` fails on 7 files |
 | Build for AWS | `backend/api/build.sh` (all 33 Lambdas, linux/arm64 zips in each `deploy/`) | not run (nothing to deploy to) |
 
 A's lint results, recorded and not fixed (A changes only at the seams, ADR-006):

@@ -25,7 +25,7 @@ Every brief carries: the goal in one sentence, what is already ruled out, the fi
 
 ## The start file
 
-`.claude/findings/NOW.md` is where the work stands: the current goal, what is in flight, which lane holds which files, what is next, and the open questions. The lead writes it at four moments only: when a piece of work lands, when the plan changes, before a long-running lane starts, and before the session ends. It is overwritten, not appended; git keeps the history.
+`.claude/findings/NOW.md` is where the work stands: the current goal, what is in flight, which lane holds which files, what is next, and the open questions. The lead writes it at four moments only: when a piece of work lands, when the plan changes, before a long-running lane starts, and before the session ends. It is edited in place with the smallest diff: on a feature branch, only the rows of the task in hand and the "Where it stands" line that work changes, so several people's branches merge cleanly. Git keeps the history.
 
 ## Git
 

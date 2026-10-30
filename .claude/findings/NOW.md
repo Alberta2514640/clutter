@@ -8,7 +8,7 @@ Build System B, the adapter layer, beside System A (Clutter as built, AWS only),
 
 ## Where it stands
 
-- The harness, the docs and the design are on branch `design/setup` of `origin` (`FayzanT/re-clutter`, a fork of the client's `Alberta2514640/clutter`, added as remote `upstream`). Committed so far: `7b49222` (harness and design), `96ec7e4` (the A/B plan and the onboarding README) and `14d53f2` (the devserver). The folder READMEs, the doc dedup and the move of all source material into `docs/` are in the working tree.
+- The harness, the docs, the design and the devserver are on `main` of `origin` (`FayzanT/re-clutter`, a fork of the client's `Alberta2514640/clutter`, added as remote `upstream`).
 - The design now follows the team's plan (`docs/architecture/system-b-team-plan/`): Option 1, build B next to A and touch A only at named seams (ADR-006); B1 first, B2 later (ADR-007); the General connector first (ADR-008).
 - Neither PatriCloud nor TierHive has a public API today. Patrii: REST API and Terraform provider "coming soon" (`docs/research/patricloud/2026-10-26-patricloud-research.md`). TierHive: an alpha NAT VPS host whose API ships with its beta, "later in 2026 or early 2027" (`docs/research/tierhive/2026-10-30-tierhive-research.md`). Both connectors are blocked; General is not.
 - Every local check was run on 2026-10-30 (results in `backend/README.md` and `frontend/clutter/README.md`). Go build and vet, frontend types, lint and build, Terraform validate and the database schema pass. Go tests fail in the 2 known packages, and `terraform fmt` fails on 7 files.
@@ -18,18 +18,29 @@ Build System B, the adapter layer, beside System A (Clutter as built, AWS only),
 
 ## Next
 
-Phase 0 (make the seams safe), in this order:
+### How the team uses this file
 
-1. Authenticate `POST /terraform-engine` with a signed webhook secret, and decide whether `GET /resources` stays public.
-2. Turn on row-level security (or turn off the Supabase Data API) and fix the `anon` policy on `supported_resources`.
-3. Validate and escape every canvas value before it reaches a template (allow-lists for enumerated fields, a name pattern, HCL escaping for free text including `${` and `%{`), with rejection tests.
-4. Set `GOOGLE_CLIENT_ID` on the log-in Lambda and check `email_verified`.
-5. Ownership checks on every child id, swept across all handlers through one shared helper (recent-activity, terraform-command-runner, code-upload, logs/live, ansible list-jobs).
-6. Go tests green offline (build-tag the live-S3 test, fix the nil connection panic) and Go build, vet and test in CI.
+- **Claim a task** by putting your name in its Owner cell, in the first commit of your branch, and open a draft pull request right away so others see it. Unclaim the same way.
+- **Edit only your own rows**, plus the "Where it stands" line your merged work changes. Small edits to separate lines merge cleanly; never rewrite the whole file on a feature branch.
+- **Whoever merges a pull request** updates the task's Status to done and moves any new defect into "Open defects".
 
-Good first task for someone new: item 6 (small, no security path, teaches the backend and its tests). Say in the team chat which item you take.
+### Phase 0: make the seams safe
 
-Then phase 1: the connector interface, the B1 skeleton and the General connector.
+Do these before phase 1, in any order unless a row says otherwise. Items 1 to 6 can be finished and checked locally; items 7 to 9 change A's AWS behaviour and are finished in code locally, then confirmed on the first AWS deploy.
+
+| # | Task | Done when | Owner | Status |
+| --- | --- | --- | --- | --- |
+| 1 | Authenticate `POST /terraform-engine` (a signed webhook secret), make save and compile one authenticated sequence, and decide whether `GET /resources` stays public | the smoke test shows `POST /terraform-engine` refused without the secret; a handler test covers a bad signature | free | open |
+| 2 | Row-level security: enable it on every table in `backend/storage-sql`, with policies that keep each organization's rows to its members, and fix the `anon` policy on `supported_resources` | in the devserver's Postgres, the `anon` role can read no user, organization or account row; the smoke test stays at 0 fail | free | open |
+| 3 | Validate and escape every canvas value before it reaches a template: allow-lists for enumerated fields, a name pattern, HCL escaping for free text including `${` and `%{` | generator tests (reading templates from disk) reject a bad name, an out-of-list value, `"`, `${` and a newline; valid diagrams still render | free | open |
+| 4 | Set `GOOGLE_CLIENT_ID` on the log-in Lambda in `backend/infra/main.tf` and check `email_verified` in the handler | the devserver's route test passes with the new environment key; a handler test rejects a token with the wrong audience and an unverified email | free | open |
+| 5 | Ownership checks on every child id through one shared helper in `generic` (recent-activity, terraform-command-runner, code-upload, logs/live, ansible list-jobs) | a test per handler shows a member of organization X gets 403 or 404 for organization Y's project, diagram or run; the smoke test stays at 0 fail | free | open |
+| 6 | Go tests green offline (put the live-S3 tests behind a build tag, fix the nil-connection panic), and remove the package exclusion in `.github/workflows/checks.yml` | `go -C backend/api test ./...` exits 0 with no AWS credentials, and the checks workflow runs every package. **Good first task**: small, no security path, teaches the backend and its tests | free | open |
+| 7 | Narrow the customer role (`client_side_terraform_deployer_role.yaml`) to the actions the templates use | the policy lists named actions, no `*` on `iam`, `s3`, `ec2` or `ssm`; confirmed by a deploy in AWS later | free | open |
+| 8 | Verify a role ARN with STS before storing it in `submit-role-arn` | a handler test with a stubbed STS client rejects an ARN it cannot assume; confirmed in AWS later | free | open |
+| 9 | A lock on customer Terraform state (an S3 backend with locking instead of the synced local file) | the deployer's generated backend block has locking; two parallel runs on one diagram are refused, confirmed in AWS later | free | open |
+
+Then phase 1: the connector interface, the B1 skeleton and the General connector (`docs/architecture/system-b-adapter-layer.md` § Build order).
 
 ## Open defects in A
 

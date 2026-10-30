@@ -6,6 +6,8 @@
 # files are not (52 Go files use CRLF line endings, 7 Terraform files fail fmt), and formatting one
 # on a small edit would rewrite every line of it and bury the real change.
 set -uo pipefail
+CLUTTER_HOOK_KIND=tidy # read by lib.sh: without jq, this hook passes instead of blocking
+export CLUTTER_HOOK_KIND
 . "$(dirname "$0")/lib.sh"
 
 f="$(hook_field .tool_input.file_path)"
