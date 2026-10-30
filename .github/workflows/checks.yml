@@ -1,0 +1,67 @@
+name: Checks
+
+# The shared gate before merging: the same checks as root CLAUDE.md § Commands that run without
+# AWS or Docker. The devserver smoke test needs Docker and is run locally (see the PR checklist in
+# the root README).
+on:
+  pull_request:
+  push:
+    branches: ['main']
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/api/go.mod
+          cache-dependency-path: |
+            backend/api/go.sum
+            backend/devserver/go.sum
+      - name: Build and vet the Lambdas
+        run: |
+          go -C backend/api build ./...
+          go -C backend/api vet ./...
+      # Workaround: two packages fail before any change (one needs live S3, one panics on a nil
+      # connection). Phase 0 item 6 in .claude/findings/NOW.md fixes them and removes this filter.
+      - name: Test the Lambdas (known-failing packages excluded)
+        run: |
+          go -C backend/api test $(go -C backend/api list ./... | grep -v -e '/terraform-engine/create$' -e '/tests/generic$')
+      - name: Vet and test the devserver
+        run: |
+          go -C backend/devserver vet ./...
+          go -C backend/devserver test ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/clutter/package-lock.json
+      - run: npm --prefix frontend/clutter ci
+      - name: Type-check
+        run: npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
+      - name: Lint
+        run: npm --prefix frontend/clutter run lint
+      - name: Build
+        run: npm --prefix frontend/clutter run build
+        env:
+          NEXT_PUBLIC_API_ENDPOINT: http://localhost:8787
+
+  docs-and-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Markdown lint
+        run: npx -y markdownlint-cli2@0.18.1 "**/*.md"
+      - name: Shellcheck our scripts
+        run: shellcheck -S warning .claude/hooks/*.sh backend/devserver/*.sh
+      - name: Hook tests
+        run: .claude/hooks/test-hooks.sh

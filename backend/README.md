@@ -1,68 +1,54 @@
-# Introduction
+# Backend
 
-In this brief tutorial, you will learn how to deploy and modify the infrastructure for Clutter via Terraform.
+How the backend is laid out, and how to run, test and extend it.
 
-## What are you looking at?
+Setup for the whole repo is in the root `README.md`. Deploying to a new AWS account: `docs/architecture/system-a-as-built.md` § Deploying to AWS. The capstone team's original tutorial is kept in `docs/old-capstone/backend-tutorial.md`; do not run its deployment steps, which target their AWS account.
 
-The first thing to understand is what you are working with. In a nutshell, we have code, in this case Go code, that we want to deploy to AWS as a Lambda function. The code for this currently lives in the `clutter/backend/api` folder. Taking a quick look at this folder you will notice some folders and files.
-- `go.mod` is a module file which helps Go (and other developers) keep track of what packages your project depends on, the Go version you are using and the name of your module.
-- `go.sum` is a file that essentially performs a security check to make sure your project’s dependencies haven’t changed or been messed with (not too important to worry about as the developer)
-- `/generic` is a folder I have created to store generic functions we will be using accross our different Lambdas. Currently is has a file called `responses.go` and this contains a generic `Response()` function. This function is standard for all of our Lambdas and so to reduce repeated code, we define it here and use it wherever we need it. You can use this as an example to create other generic functions.
-- `/diagram` is a folder that will house each CRUD Lambda function related to the diagram (create-diagram, delete-diagram, etc.). Others will be created just like it for organization, project, and more that we may need down the line.
-- `/diagram/create` is the folder which has the source code for its associated lambda function (create-diagram). Its source code is found in `api/diagram/create/main.go`, and this is the file that gets built into a binary, zipped and uploaded to AWS Lambda. Similarly, a folder for each of the CRUD operations would be created to create a tree that would look like the following:
-<pre>
-backend/
-└── api/
-    ├── diagram/
-    │   ├── create/
-    │   ├── get/
-    │   ├── get-list/
-    │   ├── update/
-    │   └── delete/
-    └── project/
-        ├── create/
-        ├── get/
-        ├── get-list/
-        ├── update/
-        └── delete/
-</pre>
-- `build.sh` is a Bash script which will allow us to quickly build each of our `main.go` Lambda functions into binaries and zip them to be deployed to AWS (the resulting files are sent to `/deploy/` found in each Lambda's respective folder). This script finds a `main.go` in a list of Lambda directories we define (this needs to manually be updated for every new Lambda function we make), builds it into an executable binary (`bootstrap`) and zips it (`bootstrap.zip`). It makes this binary for a Linux OS and for an `arm64` architecture since we are deploying these Lambdas to arm64 Amazon Linux 2 machines.
+## Run and test the backend (tested 2026-10-30)
 
-Now that we have covered what the Go code structure looks like, I would like to quickly cover the `backend/infra` folder (ignore `backend/tfstate-infra`, however if you would like to learn why this exists feel free to ask me).
-- `/modules` contains IaC for the different AWS services we are going to deploy, organized into their own folders and further seperated within these folders by context (ex. in `/lambda` there will be IaC for each different function in its own folder as `lambda/create-diagram`)
-- `backend.tf` defines the remote storage for the terraform state and lock files (these files save the state of the infrastructure and lock updating to one person at a time)
-- `main.tf` contains the modules to deploy from the `/modules` folder
-- `providers.tf` defines the AWS version and other information regarding region
-- `terraform.tfvars` is a file where you can define variables to be used in the `main.tf` files
-- `variables.tf` lets the `main.tf` know which variables are defined in `terraform.tfvars`. Without this file, `main.tf` will not know what variables are stored in `terraform.tfvars`
+| Folder | What it is |
+| --- | --- |
+| `api/` | 33 Go Lambdas, one folder each (31 API routes, the authorizer, and `ansible/run-task`, an SQS consumer). Shared code in `generic/` and `ansible/shared/`. |
+| `infra/` | Terraform that deploys Clutter itself into Clutter's AWS account, plus the customer templates (`modules/s3/uploads/aws/`) and the two runner images (`modules/fargate/ecr-scripts/`) |
+| `storage-sql/` | the Postgres schema (`application-tables.sql`) and the resource seed (`seed-resources.sql`) |
+| `tfstate-infra/` | bootstraps the S3 bucket and DynamoDB lock table for `infra/`'s own state |
+| `devserver/` | dev-only: runs the real Lambdas locally behind an API Gateway stand-in (ours, not the capstone team's) |
 
-## Pre-requisites (in no particular order)
+Run from the repo root:
 
-1. Install the latest Go version (1.25.3 as of writing this) from https://go.dev/doc/install
-   - check by running `go version` in terminal
-2. Install Terraform CLI from https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli
-   - check by running `terraform -v` in terminal
-4. Install the official Go VS Code extension (https://marketplace.visualstudio.com/items?itemName=golang.Go)
-5. `git pull` this branch (Maitra-application-infra)
-6. run `git checkout Maitra-application-infra`
+| Do this | Command | Result on 2026-10-30 |
+| --- | --- | --- |
+| Compile and vet | `go -C backend/api build ./...` and `go -C backend/api vet ./...` | pass |
+| Unit tests | `go -C backend/api test ./...` | 2 packages fail, both before any change: `terraform-engine/create` (`TestHandler` and `TestGenerateOnly` need live S3) and `tests/generic` (a nil database connection panics). `tests/ansible` and `tests/user-information` pass. |
+| Run every route locally | `backend/devserver/run.sh`, then `backend/devserver/smoke.sh` | 0 fail; the full breakdown is in `devserver/README.md` |
+| Load the schema | `run.sh` does it; by hand, root `README.md` step 6 | 11 tables, 5 resources |
+| Validate the platform Terraform | `cp -R backend/infra "$TMPDIR/infra"`, then `terraform -chdir="$TMPDIR/infra" init -backend=false` and `terraform -chdir="$TMPDIR/infra" validate` (a copy, so `init` never touches the real state backend) | pass; `fmt -check` fails on 7 files |
+| Build for AWS | `backend/api/build.sh` (all 33 Lambdas, linux/arm64 zips in each `deploy/`) | not run (nothing to deploy to) |
 
-## Steps for Deployment
-1. `cd backend/api`
-2. `./build.sh`
-   - this will build all the `main.go` files into their respective `/deploy` folders
-   - has only been tested on my Windows x86 machine, not sure if this runs into any issues on Mac or Linux. Please post in the Discord if this does not work on your machine
-3. `cd ../infra`
-4. Navigate to [AWS Access Portal](https://d-9267ff1cd3.awsapps.com/start/) and log in
-5. Under `AWS Accounts` select the `Capstone` dropdown
-6. Select `Access Keys`
-7. Select the terminal you are using (MacOS, Windows, Powershell)
-8. Copy the text for `Option 1: Set AWS environment variables`
-9. Paste into your terminal and confirm the environment variables have been stored correctly by printing them out
-   - `echo $AWS_ACCESS_KEY_ID` as one example
-10. Navigate to the `Capstone` Discord server, then to the `Miscellaneous>important-links` channel where you will find `Terraform tfvars file needed to start deploying`. Download this file and paste it into the `/backend/infra` folder
-11. `terraform init`
-12. `terraform apply`
-    - you will be prompted to perform actions. You can type `yes` to continue
-13. If the output prints `Apply complete! Resources: 0 added, 1 changed, 0 destroyed.` you have successfully deployed AWS resources using Terraform!
-    - the reason it says `1 changed` is because you zipped the source code on your machine and Terraform keeps track of any changes to the "code" by using a source_code_hash comparison. If it detects a new hash, it will assume a change has been made, and since you ran `.build.sh` it is either creating a new zip file or overwriting the old zip file. This doesn't always mean something in your code or the functionality changed, just that you made a new zip file.
+A's lint results, recorded and not fixed (A changes only at the seams, ADR-006):
 
+| Linter | Result on 2026-10-30 |
+| --- | --- |
+| `gofmt -l backend/api` | 59 of 97 files: 52 because they use CRLF line endings (stored that way in git), 7 for a trailing blank line |
+| staticcheck (`go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` in `backend/api`) | 6: 4 nil contexts in `tests/generic` (the package that panics), 2 simplifications in `terraform-command-runner` |
+| shellcheck (`build.sh`, `build_linux.sh`, the two runner `entrypoint.sh` and `build-and-push.sh`) | 6 warnings: unused variables, and `local x=$(...)` masking exit codes in the terraform deployer's entrypoint |
+| devserver (`go -C backend/devserver vet ./...`, `test ./...`, shellcheck) | clean |
+
+What the backend does locally and what only works in AWS (generate, deploy, logs and Ansible need S3, ECS and SQS) is listed route by route in `devserver/README.md`.
+
+### Adding a Lambda or a route
+
+1. A folder under `api/` with a `main.go` that calls `lambda.Start`.
+2. Add it to `api/build.sh` and `api/build_linux.sh`.
+3. In `infra/main.tf`: a `lambda` module, an `api-path` module, an `api-lambda-integration` module (give it `jwt_authorizer_id` unless the route is meant to be public), the CORS module, and a request model under `modules/templates/api-models/schemas/` if it takes a body.
+4. Add it to `devserver/internal/routes/routes.go`. `go -C backend/devserver test ./...` fails until the table matches `main.tf`.
+5. If it takes an organization, project, diagram, run or account id: check membership and that the child belongs to the organization.
+6. Run the smoke test; it must stay at 0 fail.
+
+## Inside `api/` and `infra/`
+
+- Each Lambda is a folder with a `main.go` (and often an `internal/` package). `build.sh` compiles each into a `bootstrap` binary for linux/arm64 and zips it into the folder's `deploy/bootstrap.zip`, which the platform Terraform uploads. Its Lambda list is kept by hand.
+- `api/generic/` is the shared code: the `Response()` helper, Postgres access, the membership check (`CheckOrganizationMembershipPSQL`), the region list. `api/ansible/shared/` is shared by the Ansible Lambdas (but `ansible/run-task` holds its own copy).
+- `api/terraform-engine/create/` is the generator; its internals are in its own `README.md`.
+- In `infra/`: `main.tf` calls every module; `modules/` holds `api-gateway`, `fargate` (the ECS cluster, task definitions, ECR and the two runner images), `s3` (the buckets and every uploaded template) and `templates` (one `lambda`, `api-path`, `api-lambda-integration`, CORS and request-model module per route); `backend.tf` points at the remote state; `providers.tf` sets the AWS provider; `variables.tf` lists the inputs, whose values go in a `terraform.tfvars` file that holds secrets and is never committed.
+- After a rebuild, `terraform apply` reports Lambdas as changed even when the code did not change: Terraform compares the zip's hash, and a new zip has a new hash.

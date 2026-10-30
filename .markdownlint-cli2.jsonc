@@ -1,0 +1,16 @@
+{
+  // Lint config for our own docs. Long lines are house style; agent and skill
+  // files open with frontmatter and prose, not a heading.
+  "config": {
+    "MD013": false,
+    "MD041": false
+  },
+  "ignores": [
+    "docs/old-capstone/**",
+    "docs/research/patricloud/2026-10-26-second-research-run/report.md",
+    "docs/research/patricloud/2026-10-26-second-research-run/c*.md",
+    "docs/research/patricloud/2026-10-26-second-research-run/p*.md",
+    "**/node_modules/**",
+    "backend/api/**/README.md"
+  ]
+}

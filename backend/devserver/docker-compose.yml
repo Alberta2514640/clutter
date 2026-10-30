@@ -1,0 +1,32 @@
+# Local Postgres for the devserver. run.sh starts it; stop.sh stops it.
+# On first start the entrypoint loads, in order: the Supabase roles, the
+# application tables and the resource seed, straight from backend/storage-sql.
+name: clutter-devserver
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    container_name: clutter-devserver-postgres
+    environment:
+      POSTGRES_USER: clutter
+      POSTGRES_DB: clutter
+      POSTGRES_PASSWORD: ${CLUTTER_DEV_PG_PASSWORD:?run backend/devserver/run.sh, which sets this}
+      TZ: UTC
+    ports:
+      # Loopback only.
+      - "127.0.0.1:${CLUTTER_DEV_PG_PORT:-54329}:5432"
+    volumes:
+      - clutter-devserver-pg:/var/lib/postgresql/data
+      - ./sql/00-supabase-roles.sql:/docker-entrypoint-initdb.d/00-supabase-roles.sql:ro
+      - ../storage-sql/application-tables.sql:/docker-entrypoint-initdb.d/10-application-tables.sql:ro
+      - ../storage-sql/seed-resources.sql:/docker-entrypoint-initdb.d/20-seed-resources.sql:ro
+    healthcheck:
+      # TCP is closed while the init scripts run, so this passes only once
+      # the seed has loaded and the real server is up.
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U clutter -d clutter -tAc 'SELECT count(*) FROM supported_resources' | grep -q '^5$'"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  clutter-devserver-pg:
