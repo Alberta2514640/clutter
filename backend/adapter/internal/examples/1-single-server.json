@@ -1,0 +1,25 @@
+{
+  "id": "single-server",
+  "name": "Single server",
+  "level": "starter",
+  "description": "One server in its own private network.",
+  "clouds": ["aws", "general-openstack"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "server",
+        "type": "vm",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "server", "fields": { "size": "small", "public": false } }
+      },
+      {
+        "id": "private-net",
+        "type": "network",
+        "position": { "x": 320, "y": 0 },
+        "data": { "name": "private-net", "fields": { "cidr": "10.0.0.0/24" } }
+      }
+    ],
+    "edges": [{ "id": "server-on-net", "source": "server", "target": "private-net" }]
+  }
+}

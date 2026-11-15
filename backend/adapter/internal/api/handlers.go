@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/capability"
+	"github.com/Alberta2514640/clutter/backend/adapter/internal/examples"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/jobs"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/logstore"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/split"
@@ -38,6 +39,21 @@ func (a *API) catalog(w http.ResponseWriter, _ *http.Request) {
 		out = append(out, catalogEntry{Manifest: c.Manifest(), Credentials: c.Credentials(), HasLinkedAccounts: hasLinked})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// examples lists the built-in example diagrams this build can deploy: each
+// keeps only the clouds the registry offers.
+func (a *API) examples(w http.ResponseWriter, r *http.Request) {
+	all, err := examples.All()
+	if err != nil {
+		a.internal(w, r, "read the examples", err)
+		return
+	}
+	items := examples.Fitting(all, func(id string) bool {
+		_, ok := a.Registry.Get(id)
+		return ok
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // listLinkedAccounts lists the accounts the organization linked outside the

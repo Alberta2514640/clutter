@@ -5,7 +5,7 @@ import { usePreview } from "@/lib/features/deployments/hooks";
 import { joinAnd, previewGroups } from "@/lib/features/deployments/preview";
 import { Check, Copy, Download, Loader2, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { useDialogFocus } from "./useDialogFocus";
+import { useDialogFocus } from "@/components/common/useDialogFocus";
 
 // The Terraform one deployment would run, rendered by its cloud's connector
 // without credentials. A split deployment's files are grouped by the

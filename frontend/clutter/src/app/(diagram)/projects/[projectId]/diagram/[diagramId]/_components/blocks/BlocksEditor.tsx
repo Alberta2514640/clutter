@@ -14,6 +14,7 @@ import {
   type BlockNode as BlockNodeType,
   type BlocksDocument,
 } from "@/lib/features/diagram/blocksDocument";
+import { DIAGRAM_NAME_MAX } from "@/lib/features/diagram/diagramName";
 import { useSaveBlocksDiagram } from "@/lib/features/diagram/hooks";
 import { resourceNameError } from "@/lib/features/diagram/resourceName";
 import { saveStatus } from "@/lib/features/diagram/saveStatus";
@@ -81,9 +82,6 @@ function writeViewChoice(diagramId: string, view: string) {
     // Storage is blocked; the choice lasts this visit.
   }
 }
-
-// A diagram's name is capped by A's diagrams table.
-const DIAGRAM_NAME_MAX = 32;
 
 type Snapshot = { name: string; doc: BlocksDocument };
 const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b);

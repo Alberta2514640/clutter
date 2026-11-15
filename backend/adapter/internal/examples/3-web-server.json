@@ -1,0 +1,48 @@
+{
+  "id": "web-server",
+  "name": "Web server",
+  "level": "intermediate",
+  "description": "A public server with a firewall and a data disk.",
+  "clouds": ["aws", "general-openstack"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "web-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "web-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "web-data",
+        "type": "volume",
+        "position": { "x": 0, "y": 220 },
+        "data": { "name": "web-data", "fields": { "size_gb": 10 } }
+      },
+      {
+        "id": "web",
+        "type": "vm",
+        "position": { "x": 320, "y": 110 },
+        "data": {
+          "name": "web",
+          "fields": {
+            "size": "small",
+            "public": true,
+            "startup_script": "#!/bin/sh\n# Serve a small page on port 80 with the tools the image already has.\nmkdir -p /srv/www\necho '<h1>Hello from Clutter</h1>' > /srv/www/index.html\ncd /srv/www\nif command -v python3 >/dev/null 2>&1; then\n  nohup python3 -m http.server 80 >/var/log/web.log 2>&1 &\nfi\n"
+          }
+        }
+      },
+      {
+        "id": "web-net",
+        "type": "network",
+        "position": { "x": 640, "y": 110 },
+        "data": { "name": "web-net", "fields": { "cidr": "10.10.0.0/24" } }
+      }
+    ],
+    "edges": [
+      { "id": "web-on-net", "source": "web", "target": "web-net" },
+      { "id": "fw-on-web", "source": "web-fw", "target": "web" },
+      { "id": "data-on-web", "source": "web-data", "target": "web" }
+    ]
+  }
+}

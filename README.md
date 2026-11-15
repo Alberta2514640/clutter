@@ -233,7 +233,7 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 5. Open <http://localhost:3000/dev/login>: you are signed in as a local test user, on "Create your organization".
 6. Name the organization and press **Create organization**: the dashboard. Press **New Project**, name it, press **Create Project**: the project's page.
 7. **Connections** in the sidebar, then **Amazon Web Services**, then **Link fake account**: `localfake… is linked and chosen above`. Press **Check and connect**: `Connected localfake…. Clutter checked it and it works.`
-8. Open the project and press **New diagram**: the building-block editor.
+8. Open the project and press **New diagram**, then **Blank**: the building-block editor. (The other choices are seven built-in examples, from Starter to Advanced, which open with their blocks and links in place.)
 9. Click **VM** and **Network** in the palette, and drag them apart if they land together. Then drag from the VM's right dot to the network's left dot: a line joins them. Press **Save**: the top bar says `Saved`.
 10. The **Deploy** tab, **Add deployment**, the AWS connection, then **Add deployment to localfake…**: `Amazon Web Services: every block can be built here`.
 11. **Preview Terraform**: five files, `main.tf` among them.

@@ -73,20 +73,21 @@ export const useTerraformFiles = (token: string | null, projectId: string, diagr
 
 // A new diagram is a building-block diagram, which B's editor opens. A's create
 // route always starts a diagram empty and unmarked, so the marker is saved
-// next; if that fails, the unmarked diagram is removed again.
+// next, with the document to start from (an example's blocks) or an empty
+// one; if that fails, the unmarked diagram is removed again.
 export const useCreateDiagram = (token?: string | null) => {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: CreateDiagramInput & { organizationId: string }) => {
-      const { organizationId: _orgId, ...payload } = input;
+    mutationFn: async (input: CreateDiagramInput & { organizationId: string; document?: BlocksDocument }) => {
+      const { organizationId: _orgId, document, ...payload } = input;
       const created = await diagramApi.create(token as string, payload);
       try {
         return await diagramApi.update(token as string, {
           projectId: payload.projectId,
           diagramId: created.id,
           name: created.name,
-          data: emptyBlocksDocument(),
+          data: document ?? emptyBlocksDocument(),
         });
       } catch (err) {
         await diagramApi.delete(token as string, payload.projectId, created.id).catch(() => undefined);

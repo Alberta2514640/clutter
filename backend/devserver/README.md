@@ -51,7 +51,7 @@ Nothing to configure: no `.env` file, no API keys, no accounts. `dev.sh` generat
 
 ## What works locally, and what only works in AWS
 
-Checked on 2026-11-13 with `smoke.sh` (all 32 routes, 39 calls: 31 pass, 3 need AWS, 5 expected failures, 0 fail; then 32 B checks, 32 pass, 0 fail). Its checks outside the route rows include a member of another organization being refused. The smoke checks that refusal on generation, on the files route and on every route that takes a project, diagram or run id. Any fail, in A's rows or B's checks, makes the smoke exit with 1. Browser results are in `frontend/clutter/README.md`.
+Checked on 2026-11-14 with `smoke.sh` (all 32 routes, 39 calls: 31 pass, 3 need AWS, 5 expected failures, 0 fail; then 34 B checks, 34 pass, 0 fail). Its checks outside the route rows include a member of another organization being refused. The smoke checks that refusal on generation, on the files route and on every route that takes a project, diagram or run id. Any fail, in A's rows or B's checks, makes the smoke exit with 1. Browser results are in `frontend/clutter/README.md`.
 
 | Feature | Locally | Why |
 | --- | --- | --- |
@@ -100,13 +100,14 @@ The smoke's B section signs in as the smoke user and checks these, in order:
 1. `/healthz`.
 2. `/v1/catalog` with and without a token.
 3. The CORS preflight.
-4. A building-block diagram (`engine: "blocks"`) saved through A's `PUT /diagram`.
-5. A mock connection created and verified (a wrong token is refused).
-6. A deployment that leaves out the bucket, its compatibility, then plan and apply to `completed` with logs.
-7. A member of another organization refused on every connection, deployment and run path.
-8. The connection delete refused with 409 while the deployment is live.
-9. Destroy.
-10. The delete succeeding.
+4. `/v1/examples` with and without a token: each example is a building-block document.
+5. A building-block diagram (`engine: "blocks"`) saved through A's `PUT /diagram`.
+6. A mock connection created and verified (a wrong token is refused).
+7. A deployment that leaves out the bucket, its compatibility, then plan and apply to `completed` with logs.
+8. A member of another organization refused on every connection, deployment and run path.
+9. The connection delete refused with 409 while the deployment is live.
+10. Destroy.
+11. The delete succeeding.
 
 It cleans up through A's organization delete. None of these calls count in A's 32 route rows.
 

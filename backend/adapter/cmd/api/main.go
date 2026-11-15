@@ -24,6 +24,7 @@ import (
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/codestore"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/config"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/credentials"
+	"github.com/Alberta2514640/clutter/backend/adapter/internal/examples"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/jobs"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/logstore"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/runtask"
@@ -211,6 +212,11 @@ func run(log *slog.Logger) error {
 		if err := reg.Register(c); err != nil {
 			return err
 		}
+	}
+
+	// A broken example fails the start, not the first "New diagram".
+	if _, err := examples.All(); err != nil {
+		return err
 	}
 
 	runner := jobs.New(jobs.Config{

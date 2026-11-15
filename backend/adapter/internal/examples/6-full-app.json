@@ -1,0 +1,97 @@
+{
+  "id": "full-app",
+  "name": "Full app",
+  "level": "advanced",
+  "description": "A two-tier app with file storage and an API.",
+  "clouds": ["aws"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "web-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "web-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "web",
+        "type": "vm",
+        "position": { "x": 320, "y": 0 },
+        "data": {
+          "name": "web",
+          "fields": {
+            "size": "small",
+            "public": true,
+            "startup_script": "#!/bin/sh\n# Clutter puts the database address in CLUTTER_DB_ADDRESS, and the bucket's name and region in CLUTTER_FILES_*.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/app.env\necho \"FILES_BUCKET=$CLUTTER_FILES_BUCKET\" >> /etc/app/app.env\necho \"FILES_REGION=$CLUTTER_FILES_REGION\" >> /etc/app/app.env\n"
+          }
+        }
+      },
+      {
+        "id": "files",
+        "type": "bucket",
+        "position": { "x": 640, "y": -180 },
+        "data": { "name": "files", "fields": { "versioning": true } }
+      },
+      {
+        "id": "db-fw",
+        "type": "firewall",
+        "position": { "x": 320, "y": 200 },
+        "data": { "name": "db-fw", "fields": { "ingress": "tcp/22, tcp/5432, icmp", "source_cidr": "10.40.0.0/24" } }
+      },
+      {
+        "id": "db-data",
+        "type": "volume",
+        "position": { "x": 320, "y": 360 },
+        "data": { "name": "db-data", "fields": { "size_gb": 20 } }
+      },
+      {
+        "id": "db",
+        "type": "vm",
+        "position": { "x": 640, "y": 200 },
+        "data": {
+          "name": "db",
+          "fields": {
+            "size": "medium",
+            "public": false,
+            "startup_script": "#!/bin/sh\n# Install PostgreSQL where the image has a package manager for it.\nif command -v dnf >/dev/null 2>&1; then\n  dnf install -y postgresql15-server && postgresql-setup --initdb && systemctl enable --now postgresql\nelif command -v apt-get >/dev/null 2>&1; then\n  apt-get update && apt-get install -y postgresql\nfi\n"
+          }
+        }
+      },
+      {
+        "id": "app-net",
+        "type": "network",
+        "position": { "x": 960, "y": 100 },
+        "data": { "name": "app-net", "fields": { "cidr": "10.40.0.0/24" } }
+      },
+      {
+        "id": "orders-api",
+        "type": "http_api",
+        "position": { "x": 0, "y": 540 },
+        "data": { "name": "orders-api", "fields": { "description": "Orders API", "cors": true } }
+      },
+      {
+        "id": "orders",
+        "type": "function",
+        "position": { "x": 320, "y": 540 },
+        "data": { "name": "orders", "fields": { "memory_mb": 256, "timeout_s": 10 } }
+      },
+      {
+        "id": "orders-table",
+        "type": "table",
+        "position": { "x": 640, "y": 540 },
+        "data": { "name": "orders-table", "fields": { "key": "order_id", "key_type": "string" } }
+      }
+    ],
+    "edges": [
+      { "id": "web-on-net", "source": "web", "target": "app-net" },
+      { "id": "db-on-net", "source": "db", "target": "app-net" },
+      { "id": "web-fw-on-web", "source": "web-fw", "target": "web" },
+      { "id": "db-fw-on-db", "source": "db-fw", "target": "db" },
+      { "id": "data-on-db", "source": "db-data", "target": "db" },
+      { "id": "web-gets-db", "source": "web", "target": "db" },
+      { "id": "web-reads-files", "source": "web", "target": "files" },
+      { "id": "api-to-fn", "source": "orders-api", "target": "orders" },
+      { "id": "fn-reads-table", "source": "orders", "target": "orders-table" }
+    ]
+  }
+}

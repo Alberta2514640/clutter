@@ -58,6 +58,7 @@ func adapterSmoke(r *runner, adapterAPI, conn, jwtSecret, sfx string) {
 	add("GET /v1/catalog with the smoke user's token", cat.status == http.StatusOK && strings.Contains(string(cat.body), `"connector":"mock"`),
 		fmt.Sprintf("%d, mock listed: %v", cat.status, strings.Contains(string(cat.body), `"connector":"mock"`)))
 	adapterCORS(r, adapterAPI, add)
+	adapterExamples(b, r.token, add)
 
 	// An organization, project and building-block diagram, through A's API.
 	org := r.do("POST", "/organization", map[string]string{"organizationName": "Smoke B Org " + sfx, "description": "Created by the devserver smoke test for B"}, r.token)
@@ -251,6 +252,32 @@ func adapterCORS(r *runner, adapterAPI string, add func(string, bool, string) bo
 		fmt.Sprintf("%d, allow-origin %q, allow-headers %q", code, origin, headers))
 	code, origin, _ = preflight("http://evil.example")
 	add("OPTIONS /v1/catalog from another origin gets no CORS answer", code != http.StatusNoContent && origin == "", fmt.Sprintf("%d, allow-origin %q", code, origin))
+}
+
+// adapterExamples checks that B serves its built-in example diagrams to a
+// signed-in caller only, each a building-block document.
+func adapterExamples(b func(string, string, any, string) resp, token string, add func(string, bool, string) bool) {
+	anon := b("GET", "/v1/examples", nil, "")
+	add("GET /v1/examples with no token", anon.status == http.StatusUnauthorized, fmt.Sprintf("%d", anon.status))
+	got := b("GET", "/v1/examples", nil, token)
+	var body struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Clouds   []string
+			Document struct {
+				Engine string `json:"engine"`
+				Nodes  []any  `json:"nodes"`
+			} `json:"document"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(got.body, &body)
+	var ids []string
+	ok := got.status == http.StatusOK && len(body.Items) > 0
+	for _, e := range body.Items {
+		ids = append(ids, e.ID)
+		ok = ok && e.Document.Engine == "blocks" && len(e.Document.Nodes) > 0 && len(e.Clouds) > 0
+	}
+	add("GET /v1/examples lists building-block examples", ok, fmt.Sprintf("%d, %s", got.status, strings.Join(ids, ", ")))
 }
 
 // reportAdapter prints B's checks after A's route table.

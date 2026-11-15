@@ -1,0 +1,49 @@
+{
+  "id": "hybrid",
+  "name": "Hybrid",
+  "level": "advanced",
+  "description": "Server, network and firewall on OpenStack, reading a bucket on AWS.",
+  "clouds": ["general-openstack", "aws"],
+  "placements": [{ "connector": "aws", "node_ids": ["files"] }],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "app-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "app-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "app",
+        "type": "vm",
+        "position": { "x": 320, "y": 110 },
+        "data": {
+          "name": "app",
+          "fields": {
+            "size": "small",
+            "public": true,
+            "startup_script": "#!/bin/sh\n# Clutter puts the bucket's name and region, and a key that can only read it, in CLUTTER_FILES_*.\nmkdir -p /etc/app\necho \"FILES_BUCKET=$CLUTTER_FILES_BUCKET\" > /etc/app/files.env\necho \"FILES_REGION=$CLUTTER_FILES_REGION\" >> /etc/app/files.env\n"
+          }
+        }
+      },
+      {
+        "id": "app-net",
+        "type": "network",
+        "position": { "x": 640, "y": 0 },
+        "data": { "name": "app-net", "fields": { "cidr": "10.30.0.0/24" } }
+      },
+      {
+        "id": "files",
+        "type": "bucket",
+        "position": { "x": 640, "y": 220 },
+        "data": { "name": "files", "fields": { "versioning": false } }
+      }
+    ],
+    "edges": [
+      { "id": "app-on-net", "source": "app", "target": "app-net" },
+      { "id": "fw-on-app", "source": "app-fw", "target": "app" },
+      { "id": "app-reads-files", "source": "app", "target": "files" }
+    ]
+  }
+}

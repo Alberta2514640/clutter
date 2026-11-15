@@ -1,0 +1,19 @@
+{
+  "id": "file-storage",
+  "name": "File storage",
+  "level": "starter",
+  "description": "One bucket that keeps old versions of your files.",
+  "clouds": ["aws"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "files",
+        "type": "bucket",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "files", "fields": { "versioning": true } }
+      }
+    ],
+    "edges": []
+  }
+}

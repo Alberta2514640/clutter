@@ -5,22 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isBlocksDocument } from "@/lib/features/diagram/blocksDocument";
 import { editedLabel } from "@/lib/features/diagram/edited";
-import { useCreateDiagram, useDeleteDiagram, useDiagrams } from "@/lib/features/diagram/hooks";
+import { useDeleteDiagram, useDiagrams } from "@/lib/features/diagram/hooks";
 import { isConflict } from "@/lib/features/user/session";
-import { FileText, Loader2, Trash2 } from "lucide-react";
+import { FileText, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import NewDiagramDialog from "../_components/NewDiagramDialog";
 import { useProjectContext } from "../_contexts/ProjectContext";
 
 type DeleteTarget = { id: string; name: string } | null;
 
 export default function ProjectDiagramsPage() {
-  const router = useRouter();
   const { projectId, token, project } = useProjectContext();
 
-  const createDiagramM = useCreateDiagram(token);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState(false);
 
   // The project lists only ids and names; the diagrams themselves say which
   // editor each one uses, for the "AWS only" mark.
@@ -33,21 +31,6 @@ export default function ProjectDiagramsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-
-  const handleCreateFromScratch = async () => {
-    if (!token || !projectId || !project) return;
-    setCreateError(null);
-    try {
-      const created = await createDiagramM.mutateAsync({
-        organizationId: project.organizationId,
-        projectId,
-        name: "New Diagram",
-      });
-      router.push(`/projects/${projectId}/diagram/${created.id}`);
-    } catch {
-      setCreateError("Clutter could not create the diagram. Try again.");
-    }
-  };
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget || !project) return;
@@ -109,12 +92,7 @@ export default function ProjectDiagramsPage() {
         </div>
       )}
 
-      {/* ── Error banner ── */}
-      {createError && (
-        <div role="alert" className="mb-6 p-4 rounded-lg bg-red-900/20 border border-red-800">
-          <p className="text-sm text-red-400">{createError}</p>
-        </div>
-      )}
+      {choosing && <NewDiagramDialog onClose={() => setChoosing(false)} />}
 
       {/* ── Empty state ── */}
       {!hasDiagrams && (
@@ -127,17 +105,10 @@ export default function ProjectDiagramsPage() {
                 <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-xl bg-slate-700/50">
                   <FileText className="w-8 h-8 text-gray-400" aria-hidden="true" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Start from scratch</h3>
-                <p className="text-sm text-gray-400 mb-6">An empty canvas with the building blocks your clouds offer.</p>
-                <Button onClick={() => void handleCreateFromScratch()} disabled={createDiagramM.isPending} className="bg-teal-600 hover:bg-teal-500 text-white">
-                  {createDiagramM.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
-                      Creating...
-                    </>
-                  ) : (
-                    "New diagram"
-                  )}
+                <h3 className="text-lg font-semibold text-white mb-2">Start a diagram</h3>
+                <p className="text-sm text-gray-400 mb-6">Begin blank or from an example.</p>
+                <Button onClick={() => setChoosing(true)} className="bg-teal-600 hover:bg-teal-500 text-white">
+                  New diagram
                 </Button>
               </CardContent>
             </Card>

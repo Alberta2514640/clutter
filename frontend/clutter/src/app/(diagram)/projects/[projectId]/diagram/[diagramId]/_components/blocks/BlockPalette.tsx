@@ -60,6 +60,9 @@ export default function BlockPalette({ blocks, catalog, loading, error, onAdd, b
                     onDragStart={(e) => {
                       e.dataTransfer.setData(BLOCK_DND_MIME, b.kind);
                       e.dataTransfer.effectAllowed = "move";
+                      // Drag a card shaped like the block on the canvas, not this palette row.
+                      const preview = e.currentTarget.parentElement?.querySelector<HTMLElement>("[data-drag-preview]");
+                      if (preview) e.dataTransfer.setDragImage(preview, 20, 18);
                     }}
                     onClick={() => onAdd(b.kind)}
                     title={`Built by ${b.clouds.map((c) => c.title).join(", ")}`}
@@ -86,6 +89,14 @@ export default function BlockPalette({ blocks, catalog, loading, error, onAdd, b
                       <span className="sr-only">Built by {b.clouds.map((c) => c.title).join(", ")}</span>
                     </span>
                   </button>
+                  {/* The drag image: rendered off screen, because a browser can only draw a drag image from a rendered element. */}
+                  <div
+                    data-drag-preview
+                    aria-hidden
+                    className="pointer-events-none fixed -left-[9999px] top-0 flex min-w-[150px] items-center gap-2 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white shadow-md">
+                    <KindIcon kind={b.kind} className="h-5 w-5 shrink-0 text-teal-300" />
+                    <span className="text-sm font-semibold">{b.title}</span>
+                  </div>
                 </li>
               );
             })}

@@ -179,17 +179,24 @@ func (b lsBroker) Credentials(context.Context, string) (connectors.Secrets, erro
 	return b.secrets, nil
 }
 
-// TestEveryBlockAppliesOnLocalStack runs plan, apply and destroy for real,
-// against LocalStack (backend/devserver/localstack.sh), through B's job runner,
-// Terraform runner and a real terraform: a diagram with every AWS block and
-// edge, as the role Clutter's CloudFormation stack creates. The stack itself
-// is deployed into LocalStack first, from the repo's template. It checks that
-// every block's main resource is reported built, that every AWS resource
-// exists after apply, and that every one is gone after destroy. It runs only
-// with CLUTTER_LOCALSTACK=1. LocalStack 4.14.0 enforces no IAM and ignores the
-// external id, so this proves the call path, the rendered Terraform, ordering
-// and that each call is accepted, not that the customer role allows it.
-func TestEveryBlockAppliesOnLocalStack(t *testing.T) {
+// lsCloud is LocalStack as a user's AWS account: Clutter's role stack,
+// deployed from the repo's template, the AWS connector as A2 runs it, and B's
+// job runner over it.
+type lsCloud struct {
+	c                            *Connector
+	tf                           *terraform.Runner
+	tfBin, endpoint, pluginCache string
+	boundary, userBoundary       string
+	secrets                      connectors.Secrets
+	store                        *lsStore
+	logs                         *logstore.Memory
+	runner                       *jobs.Runner
+}
+
+// newLSCloud deploys the role stack into LocalStack and starts a job runner
+// with the AWS connector. It skips the test unless CLUTTER_LOCALSTACK=1.
+func newLSCloud(t *testing.T) *lsCloud {
+	t.Helper()
 	endpoint := localstackEndpoint(t)
 	tfBin, err := exec.LookPath("terraform")
 	if err != nil {
@@ -316,19 +323,7 @@ output "version" {
 	if err := reg.Register(c); err != nil {
 		t.Fatal(err)
 	}
-
-	d := testDeployment(lsRegion)
 	secrets := connectors.Secrets{CredRoleARN: roleARN, CredExternalID: externalID}
-	d.Connection.Credentials = nil
-
-	// LocalStack does not check the external id; record what it does.
-	wrong := d.Connection
-	wrong.Credentials = connectors.Secrets{CredRoleARN: roleARN, CredExternalID: "not-the-external-id"}
-	if err := c.VerifyConnection(context.Background(), wrong); err == nil {
-		t.Log("LocalStack let the role in with a wrong external id: it does not enforce sts:ExternalId")
-	} else {
-		t.Logf("LocalStack refused a wrong external id: %v", err)
-	}
 
 	store := &lsStore{runs: map[string]jobs.Status{}, failures: map[string]string{}, deployments: map[string]jobs.DeploymentStatus{}, done: make(chan string, 4)}
 	logs := logstore.NewMemory()
@@ -342,44 +337,98 @@ output "version" {
 		defer cancel()
 		_ = runner.Stop(ctx)
 	})
+	return &lsCloud{c: c, tf: tf, tfBin: tfBin, endpoint: endpoint, pluginCache: pluginCache, boundary: boundary, userBoundary: userBoundary,
+		secrets: secrets, store: store, logs: logs, runner: runner}
+}
+
+// run runs one action of g for d through the job runner, fails the test
+// unless the run completes, and returns its log.
+func (l *lsCloud) run(t *testing.T, action connectors.Action, g connectors.Graph, d connectors.Deployment) string {
+	t.Helper()
+	id := uuid.NewString()
+	key := logstore.KeyForRun(id)
+	if err := l.runner.Enqueue(jobs.Job{RunID: id, Action: action, Graph: g, Deployment: d, SecretRef: "localstack", LogKey: key}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-l.store.done:
+		if got != id {
+			t.Fatalf("run %s ended, want %s", got, id)
+		}
+	case <-time.After(25 * time.Minute):
+		t.Fatalf("%s did not end", action)
+	}
+	r, err := l.logs.Open(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	body, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(body)
+	for _, v := range l.secrets.Values() {
+		if strings.Contains(log, v) {
+			t.Errorf("the %s log holds a credential value", action)
+		}
+	}
+	l.store.mu.Lock()
+	status, failure := l.store.runs[id], l.store.failures[id]
+	l.store.mu.Unlock()
+	if status != jobs.StatusCompleted {
+		t.Fatalf("%s %s (%s); log:\n%s", action, status, failure, log)
+	}
+	return log
+}
+
+// destroyAtEnd destroys d when the test ends, unless done reports it was
+// destroyed already.
+func (l *lsCloud) destroyAtEnd(t *testing.T, g connectors.Graph, d connectors.Deployment, done func() bool) {
+	t.Cleanup(func() {
+		if done() {
+			return
+		}
+		id := uuid.NewString()
+		_ = l.runner.Enqueue(jobs.Job{RunID: id, Action: connectors.ActionDestroy, Graph: g, Deployment: d, SecretRef: "localstack", LogKey: logstore.KeyForRun(id)})
+		select {
+		case <-l.store.done:
+		case <-time.After(25 * time.Minute):
+		}
+	})
+}
+
+// TestEveryBlockAppliesOnLocalStack runs plan, apply and destroy for real,
+// against LocalStack (backend/devserver/localstack.sh), through B's job runner,
+// Terraform runner and a real terraform: a diagram with every AWS block and
+// edge, as the role Clutter's CloudFormation stack creates. The stack itself
+// is deployed into LocalStack first, from the repo's template. It checks that
+// every block's main resource is reported built, that every AWS resource
+// exists after apply, and that every one is gone after destroy. It runs only
+// with CLUTTER_LOCALSTACK=1. LocalStack 4.14.0 enforces no IAM and ignores the
+// external id, so this proves the call path, the rendered Terraform, ordering
+// and that each call is accepted, not that the customer role allows it.
+func TestEveryBlockAppliesOnLocalStack(t *testing.T) {
+	l := newLSCloud(t)
+	c, tf, tfBin, endpoint, pluginCache := l.c, l.tf, l.tfBin, l.endpoint, l.pluginCache
+	boundary, userBoundary, secrets, store := l.boundary, l.userBoundary, l.secrets, l.store
+
+	d := testDeployment(lsRegion)
+	d.Connection.Credentials = nil
+
+	// LocalStack does not check the external id; record what it does.
+	wrong := d.Connection
+	wrong.Credentials = connectors.Secrets{CredRoleARN: secrets[CredRoleARN], CredExternalID: "not-the-external-id"}
+	if err := c.VerifyConnection(context.Background(), wrong); err == nil {
+		t.Log("LocalStack let the role in with a wrong external id: it does not enforce sts:ExternalId")
+	} else {
+		t.Logf("LocalStack refused a wrong external id: %v", err)
+	}
+
 	g := fullGraph()
 	run := func(action connectors.Action) string {
 		t.Helper()
-		id := uuid.NewString()
-		key := logstore.KeyForRun(id)
-		if err := runner.Enqueue(jobs.Job{RunID: id, Action: action, Graph: g, Deployment: d, SecretRef: "localstack", LogKey: key}); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case got := <-store.done:
-			if got != id {
-				t.Fatalf("run %s ended, want %s", got, id)
-			}
-		case <-time.After(25 * time.Minute):
-			t.Fatalf("%s did not end", action)
-		}
-		r, err := logs.Open(key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
-		body, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		log := string(body)
-		for _, v := range secrets.Values() {
-			if strings.Contains(log, v) {
-				t.Errorf("the %s log holds a credential value", action)
-			}
-		}
-		store.mu.Lock()
-		status, failure := store.runs[id], store.failures[id]
-		store.mu.Unlock()
-		if status != jobs.StatusCompleted {
-			t.Fatalf("%s %s (%s); log:\n%s", action, status, failure, log)
-		}
-		return log
+		return l.run(t, action, g, d)
 	}
 
 	// The check folder reads the deployment's state with the same files a
@@ -409,16 +458,7 @@ output "version" {
 	}
 
 	destroyed := false
-	t.Cleanup(func() {
-		if !destroyed {
-			id := uuid.NewString()
-			_ = runner.Enqueue(jobs.Job{RunID: id, Action: connectors.ActionDestroy, Graph: g, Deployment: d, SecretRef: "localstack", LogKey: logstore.KeyForRun(id)})
-			select {
-			case <-store.done:
-			case <-time.After(25 * time.Minute):
-			}
-		}
-	})
+	l.destroyAtEnd(t, g, d, func() bool { return destroyed })
 	applyLog := run(connectors.ActionApply)
 	if want := fmt.Sprintf("Apply complete: %d blocks built.", len(g.Blocks)); !strings.Contains(applyLog, want) {
 		t.Errorf("not every block's main resource was reported built (want %q):\n%s", want, applyLog)
