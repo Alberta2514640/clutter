@@ -103,9 +103,9 @@ A's AWS-only machinery retires once B has proved itself on real AWS; what B shar
 `npm run dev` starts Postgres, A (through A2), B and the website; DevStack runs in its own VM. In the browser:
 
 1. Sign in.
-2. **Connections:** add the local fake AWS account and DevStack's OpenStack; both show as verified.
-3. **New diagram:** drag in a VM, network, firewall, volume, bucket and function, and connect them.
-4. **Deploy panel:** "AWS: ready"; "OpenStack: 2 blocks not supported (bucket, function)", which the user leaves out of that deployment.
+2. **Connections:** **Connect local AWS** (the fake account, on LocalStack) and **Connect local OpenStack** (this machine's DevStack); both show as verified.
+3. **New diagram:** drag in a VM, network, firewall, volume, bucket and function; drop the VM into the network's box, and link the rest with lines. Or start from one of the seven built-in examples.
+4. **Deploy panel:** "Amazon Web Services: every block can be built here"; "OpenStack: 2 blocks not supported (Bucket, Function)", which the user leaves out of that deployment.
 5. **Preview Terraform** for each deployment.
 6. **Deploy to OpenStack:** live status and logs; the VM, network and volume appear in DevStack; **Destroy** removes them.
 7. **Deploy to AWS:** valid Terraform is rendered, and the run stops at the AWS call with a clear "needs a real AWS account" message. With LocalStack running (`npm run localstack -- start`), the run applies and destroys on LocalStack instead.

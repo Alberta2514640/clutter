@@ -307,8 +307,9 @@ func (a *API) deleteConnection(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, "mark connection deleting", err)
 		return
 	}
-	// The connection is now hidden. If a step below fails, the tombstone keeps
-	// the secret reference so the clean-up can finish later.
+	// The connection is now hidden. If a step below fails, the row stays
+	// hidden in the deleting state with its secret reference; no job removes
+	// it yet (.claude/findings/NOW.md, stage 3).
 	ctx := context.WithoutCancel(r.Context())
 	if err := a.Credentials.Delete(ctx, row.SecretRef); err != nil {
 		a.internal(w, r, "delete connection credentials", err)
