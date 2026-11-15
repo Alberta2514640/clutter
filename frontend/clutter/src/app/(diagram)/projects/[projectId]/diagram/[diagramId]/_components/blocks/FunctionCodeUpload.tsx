@@ -100,7 +100,8 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
             <dd className="text-slate-400">{formatBytes(current.size)}</dd>
             <dt className="sr-only">SHA-256</dt>
             <dd className="font-mono text-slate-400" title={current.sha256}>
-              SHA-256 {shortHash(current.sha256)}…
+              <span aria-hidden="true">SHA-256 </span>
+              {shortHash(current.sha256)}…
             </dd>
           </dl>
         </div>
