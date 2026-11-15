@@ -176,9 +176,24 @@ run doctor.sh
 check "optional tools absent are notes" 0 "--    Lima: not found" "--    Playwright's Chromium: not installed" "--    LocalStack image: not pulled" \
   "OpenStack on this machine (DevStack)"
 
+# route_stubs: this machine's route for DevStack's public network. With
+# FAKE_ROUTE_VIA set, macOS's route and Linux's ip show a route through it;
+# otherwise the range goes to the default gateway.
+route_stubs() {
+  stub route '
+if [[ -n "${FAKE_ROUTE_VIA:-}" ]]; then
+  printf "   route to: 172.24.4.0\ndestination: 172.24.4.0\n       mask: 255.255.255.0\n    gateway: %s\n" "${FAKE_ROUTE_VIA}"
+else
+  printf "   route to: 172.24.4.0\ndestination: default\n       mask: default\n    gateway: 192.168.1.254\n"
+fi'
+  stub ip 'if [[ -n "${FAKE_ROUTE_VIA:-}" ]]; then echo "172.24.4.0/24 via ${FAKE_ROUTE_VIA} dev br0"; fi'
+}
+
 # A running devstack VM at 192.168.64.2. FAKE_KEYSTONE is curl's exit code for
-# the VM's address, FAKE_LOOPBACK for 127.0.0.1; everything else has nothing listening.
+# the VM's address, FAKE_LOOPBACK for 127.0.0.1, FAKE_GATEWAY for DevStack's
+# public gateway 172.24.4.1; everything else has nothing listening.
 fresh_stubs
+route_stubs
 stub limactl '
 case "$1" in
   --version) echo "limactl version 2.3.0" ;;
@@ -189,12 +204,28 @@ stub curl '
 case "$*" in
   *192.168.64.2/identity*) exit "${FAKE_KEYSTONE:-0}" ;;
   *127.0.0.1/identity*) exit "${FAKE_LOOPBACK:-0}" ;;
+  *172.24.4.1/*) exit "${FAKE_GATEWAY:-0}" ;;
   *) exit 7 ;;
 esac'
 run doctor.sh
 check "DevStack reachable" 0 "ok    Lima 2.3.0; VM devstack is Running" \
-  "ok    DevStack answers at http://192.168.64.2/identity/v3" "ok    DevStack answers at http://127.0.0.1/identity/v3 too"
+  "ok    DevStack answers at http://192.168.64.2/identity/v3" "ok    DevStack answers at http://127.0.0.1/identity/v3 too" \
+  "ok    this machine reaches DevStack's public network (172.24.4.0/24)"
 refute "DevStack reachable has no Local Network hint" "Local Network"
+refute "DevStack reachable has no route hint" "npm run devstack -- route"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Darwin
+check "DevStack public network not routed on macOS" 0 \
+  "warn  this machine does not reach DevStack's public network (172.24.4.0/24)" \
+  "Run npm run devstack -- route (asks for your password) so this machine can open DevStack servers." "Ready, with"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2
+check "DevStack public network routed but silent on macOS" 0 \
+  "warn  this machine sends 172.24.4.0/24 to the VM, but 172.24.4.1 does not answer" "npm run devstack -- start"
+refute "a routed machine gets no route hint" "Run npm run devstack -- route"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Linux FAKE_ROUTE_VIA=192.168.64.9
+check "DevStack public network routed elsewhere on Linux" 0 "Run npm run devstack -- route (asks for your password)"
 
 run doctor.sh FAKE_KEYSTONE=28 FAKE_OS=Darwin
 check "DevStack VM address blocked on macOS" 0 \
@@ -261,7 +292,8 @@ create_with() {
 }
 create_with "Apple M4 Pro"
 check "create makes, starts and installs on an M4" 0 "limactl create --tty=false --name devstack" "devstack/lima.yaml" \
-  "limactl start --tty=false devstack" "limactl shell --workdir / devstack bash -s" "npm run devstack -- credential"
+  "limactl start --tty=false devstack" "limactl shell --workdir / devstack bash -s" "npm run devstack -- credential" \
+  "limactl shell --workdir / devstack bash -s -- 172.24.4.0/24 172.24.4.1" "npm run devstack -- route"
 refute "an M4 keeps nested virtualization" "nestedVirtualization = false"
 
 create_with "Apple M1"
@@ -283,6 +315,110 @@ run_args devstack.sh dashboard
 check "dashboard prints the address and the user" 0 "Dashboard  http://192.168.64.2/dashboard" "User       demo (project demo)" \
   "shown only in a terminal"
 refute "dashboard keeps the password off a file" "UNEXPECTED"
+
+# route and start: a VM in state FAKE_VM (Running) at FAKE_VM_IP (192.168.64.2).
+# This limactl records its calls in calls.log, and this sudo only prints what it
+# was asked to run, so no test changes a real route.
+route_stubs
+stub limactl '
+echo "limactl $*" >>"'"${calls}"'"
+case "$*" in
+  *--format*) echo "${FAKE_VM:-Running}" ;;
+  *"ip -4 -o addr show dev lima0"*) echo "3: lima0    inet ${FAKE_VM_IP:-192.168.64.2}/24 metric 100 brd 192.168.64.255 scope global dynamic lima0" ;;
+  *"bash -s"*) cat >/dev/null; echo "network set in the VM" ;;
+esac'
+stub sudo '
+if [[ "$1" == -n && -n "${FAKE_SUDO_NEEDS_PASSWORD:-}" ]]; then exit 1; fi
+echo "FAKE-SUDO $*"'
+stub osascript 'echo "osascript $*" >>"'"${calls}"'"'
+# devstack_run [VAR=value ...] -- ARGS...: runs devstack.sh with those
+# variables and arguments, then adds limactl's calls to the output. Its input
+# is never a terminal, so a run from a terminal takes the same paths as CI.
+devstack_run() {
+  local -a vars=()
+  while [[ $# -gt 0 && "$1" != -- ]]; do
+    vars+=("$1")
+    shift
+  done
+  shift
+  rm -f "${calls}"
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" ${vars[@]+"${vars[@]}"} "${BASH_BIN}" "${DEVSERVER_DIR}/devstack.sh" "$@" </dev/null >"${out}" 2>&1 || rc=$?
+  if [[ -f "${calls}" ]]; then cat "${calls}" >>"${out}"; fi
+}
+
+devstack_run FAKE_OS=Darwin -- route --dry-run
+check "route --dry-run on macOS prints the add" 0 "Dry run: nothing is changed" \
+  "  sudo route -n add -net 172.24.4.0/24 192.168.64.2"
+refute "route --dry-run runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.9 -- route --dry-run
+check "route --dry-run replaces a route through the old address" 0 \
+  "  sudo route -n delete -net 172.24.4.0/24" "  sudo route -n add -net 172.24.4.0/24 192.168.64.2"
+
+devstack_run FAKE_OS=Linux -- route --dry-run
+check "route --dry-run on Linux prints the replace" 0 "  sudo ip route replace 172.24.4.0/24 via 192.168.64.2"
+refute "route --dry-run on Linux runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- route
+check "route through the VM already is left alone" 0 "already sends 172.24.4.0/24 to the devstack VM at 192.168.64.2"
+refute "route left alone runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin -- route
+check "route runs the add with sudo" 0 "FAKE-SUDO route -n add -net 172.24.4.0/24 192.168.64.2" \
+  "You are asked for your password, and nothing keeps it" "now sends 172.24.4.0/24 to the devstack VM at 192.168.64.2"
+refute "route with sudo open needs no password window" "osascript"
+
+devstack_run FAKE_OS=Darwin FAKE_SUDO_NEEDS_PASSWORD=1 -- route
+check "route with no terminal asks in the macOS password window" 0 "macOS asks for your password in a window" \
+  'osascript -e do shell script "route -n add -net 172.24.4.0/24 192.168.64.2"' "with administrator privileges"
+refute "route through the password window runs no sudo" "FAKE-SUDO route"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- route remove --dry-run
+check "route remove --dry-run on macOS" 0 "  sudo route -n delete -net 172.24.4.0/24"
+refute "route remove --dry-run runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Linux FAKE_ROUTE_VIA=192.168.64.2 -- route remove
+check "route remove on Linux" 0 "FAKE-SUDO ip route del 172.24.4.0/24" "Removed the route through 192.168.64.2"
+
+devstack_run FAKE_OS=Darwin FAKE_VM=Stopped -- route remove
+check "route remove with no route" 0 "nothing to remove"
+refute "route remove with no route runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_VM=Stopped -- route --dry-run
+check "route refuses a stopped VM" 1 "The devstack VM is Stopped. Start it first"
+refute "route on a stopped VM runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_VM_IP=bogus -- route
+check "route refuses a VM with no lima0 address" 1 "has no lima0 address"
+refute "route with no address runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=FreeBSD -- route --dry-run
+check "route refuses outside macOS and Linux" 1 "route works on macOS and Linux only (this is FreeBSD)"
+refute "route outside macOS and Linux asks Lima nothing" "limactl"
+
+devstack_run -- route sideways
+check "route refuses an unknown argument" 2 "usage: npm run devstack"
+
+devstack_run FAKE_OS=Darwin -- start
+check "start on a running VM sets up DevStack's public network" 0 "The devstack VM is already running." \
+  "limactl shell --workdir / devstack bash -s -- 172.24.4.0/24 172.24.4.1" "network set in the VM" \
+  "run npm run devstack -- route (asks for your password)"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- start
+check "start with the route in place" 0 "network set in the VM"
+refute "start with the route in place gives no route hint" "run npm run devstack -- route"
+
+# network.sh checks its arguments and the VM's mark before it changes anything.
+rc=0
+env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" "${DEVSERVER_DIR}/devstack/network.sh" '172.24.4.0/24;x' 172.24.4.1 >"${out}" 2>&1 || rc=$?
+check "network.sh refuses a bad range" 2 "usage: network.sh FLOATING_RANGE GATEWAY"
+if [[ ! -f /etc/clutter-devstack ]]; then
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" "${DEVSERVER_DIR}/devstack/network.sh" 172.24.4.0/24 172.24.4.1 >"${out}" 2>&1 || rc=$?
+  check "network.sh refuses a VM lima.yaml did not make" 1 "was not made from backend/devserver/devstack/lima.yaml"
+  refute "network.sh outside the VM runs no sudo" "FAKE-SUDO"
+fi
 
 run_args devstack.sh status extra
 check "devstack.sh refuses an extra argument" 2 "usage: npm run devstack"

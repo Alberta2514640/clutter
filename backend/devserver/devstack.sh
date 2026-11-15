@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Makes, starts, stops or reports on the Lima VM that runs DevStack, a small
 # OpenStack for B's OpenStack connector, makes the application credential
-# Clutter uses, and says how to sign in to DevStack's dashboard
-# (`npm run devstack -- create|credential|dashboard|start|stop|status`).
+# Clutter uses, says how to sign in to DevStack's dashboard, and routes
+# DevStack's public network to the VM so its servers open from this machine
+# (`npm run devstack -- create|credential|dashboard|start|stop|status|route`).
 # The VM's template and the scripts it runs inside the VM are in devstack/.
 # Development only. The guide is DEVSTACK_GUIDE (lib.sh).
 set -euo pipefail
@@ -11,6 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 usage() {
   cat <<EOF
 usage: npm run devstack -- create|credential|dashboard|start|stop|status
+       npm run devstack -- route [remove] [--dry-run]
 
 DevStack (OpenStack on this machine) runs in a Lima VM named ${DEVSTACK_VM}.
   create      makes the VM from backend/devserver/devstack/lima.yaml and
@@ -22,20 +24,38 @@ DevStack (OpenStack on this machine) runs in a Lima VM named ${DEVSTACK_VM}.
               secret is shown once, so it runs only in a terminal.
   dashboard   prints the address of DevStack's dashboard and the demo login.
               The password is printed only to a terminal.
-  start       starts the VM
+  start       starts the VM, and sets up DevStack's public network in it
+              (${DEVSTACK_PUBLIC_RANGE}, again at every boot)
   stop        stops the VM (its disk, and DevStack in it, are kept)
   status      shows the VM's state; exits with 1 when it is not running
+  route       sends ${DEVSTACK_PUBLIC_RANGE}, where DevStack's servers get their
+              addresses, to the VM, so they open from this machine. It changes
+              this machine's routes with sudo, which asks for your password;
+              nothing keeps it. Run it again after this machine restarts.
+              remove takes the route out; --dry-run prints the command only.
+              macOS and Linux.
 
 The guide is ${DEVSTACK_GUIDE}.
 EOF
 }
 
 case "${1:-}" in
-  create | credential | dashboard | start | stop | status) action="$1" ;;
+  create | credential | dashboard | start | stop | status | route) action="$1" ;;
   -h | --help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
-if [[ $# -gt 1 ]]; then
+shift
+route_remove=false
+dry_run=false
+if [[ "${action}" == route ]]; then
+  for arg in "$@"; do
+    case "${arg}" in
+      remove) route_remove=true ;;
+      --dry-run) dry_run=true ;;
+      *) usage >&2; exit 2 ;;
+    esac
+  done
+elif [[ $# -gt 0 ]]; then
   usage >&2
   exit 2
 fi
@@ -51,6 +71,92 @@ if [[ "${action}" == create && "$(uname -s)" != Darwin ]]; then
   echo "create needs macOS: the VM's address comes from Apple's virtualization network (vzNAT)." >&2
   echo "start, stop, status and credential work with a ${DEVSTACK_VM} VM made another way." >&2
   exit 1
+fi
+
+if [[ "${action}" == route && "$(uname -s)" != Darwin && "$(uname -s)" != Linux ]]; then
+  echo "route works on macOS and Linux only (this is $(uname -s))." >&2
+  exit 1
+fi
+
+# run_route ARGS...: prints one route command, then runs it with sudo, which
+# asks for the password itself. A dry run only prints it. With no terminal to
+# type into (an editor's or agent's shell), sudo cannot ask, so on macOS the
+# system password box asks instead. The arguments are fixed words and a
+# checked IPv4 address, so they hold no quote to break the AppleScript string.
+run_route() {
+  echo "  sudo $*"
+  if ${dry_run}; then return 0; fi
+  if [[ "$(uname -s)" == Darwin && ! -t 0 ]] && ! sudo -n true >/dev/null 2>&1; then
+    echo "  (no terminal here, so macOS asks for your password in a window)"
+    osascript -e "do shell script \"$*\" with prompt \"Clutter wants to change this Mac's routes so it can open the servers on local OpenStack.\" with administrator privileges" >/dev/null
+    return
+  fi
+  sudo "$@"
+}
+
+route_intro() {
+  if ${dry_run}; then
+    echo "Dry run: nothing is changed. This would run:"
+  else
+    echo "Changing this machine's routes. You are asked for your password, and nothing keeps it."
+  fi
+}
+
+# remove_route: takes out this machine's own route for DEVSTACK_PUBLIC_RANGE,
+# whatever it goes through. It needs neither Lima nor the VM.
+remove_route() {
+  local via
+  via="$(devstack_route_via)"
+  if [[ -z "${via}" ]]; then
+    echo "This machine has no route of its own for ${DEVSTACK_PUBLIC_RANGE}, so there is nothing to remove."
+    return 0
+  fi
+  route_intro
+  case "$(uname -s)" in
+    Darwin) run_route route -n delete -net "${DEVSTACK_PUBLIC_RANGE}" ;;
+    Linux) run_route ip route del "${DEVSTACK_PUBLIC_RANGE}" ;;
+  esac
+  if ! ${dry_run}; then
+    echo "Removed the route through ${via}. This machine sends ${DEVSTACK_PUBLIC_RANGE} to its default gateway again."
+  fi
+}
+
+# add_route: sends DEVSTACK_PUBLIC_RANGE to the VM's lima0 address, replacing
+# a route through another address (the VM's old one, for example).
+add_route() {
+  local via vm_ip
+  if [[ "${vm_status}" != Running ]]; then
+    echo "The ${DEVSTACK_VM} VM is ${vm_status}. Start it first: npm run devstack -- start" >&2
+    exit 1
+  fi
+  vm_ip="$(devstack_vm_address)"
+  if [[ ! "${vm_ip}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    echo "The ${DEVSTACK_VM} VM has no lima0 address (got: ${vm_ip:-nothing}), so there is nothing to route to. See ${DEVSTACK_GUIDE}." >&2
+    exit 1
+  fi
+  via="$(devstack_route_via)"
+  if [[ "${via}" == "${vm_ip}" ]]; then
+    echo "This machine already sends ${DEVSTACK_PUBLIC_RANGE} to the ${DEVSTACK_VM} VM at ${vm_ip}. Nothing to do."
+    return 0
+  fi
+  route_intro
+  case "$(uname -s)" in
+    Darwin)
+      if [[ -n "${via}" ]]; then run_route route -n delete -net "${DEVSTACK_PUBLIC_RANGE}"; fi
+      run_route route -n add -net "${DEVSTACK_PUBLIC_RANGE}" "${vm_ip}"
+      ;;
+    Linux) run_route ip route replace "${DEVSTACK_PUBLIC_RANGE}" via "${vm_ip}" ;;
+  esac
+  if ! ${dry_run}; then
+    if [[ -n "${via}" ]]; then echo "Replaced the old route through ${via}."; fi
+    echo "This machine now sends ${DEVSTACK_PUBLIC_RANGE} to the ${DEVSTACK_VM} VM at ${vm_ip}, so DevStack servers' addresses open here."
+    echo "The route lasts until this machine restarts; then run npm run devstack -- route again."
+  fi
+}
+
+if [[ "${action}" == route ]] && ${route_remove}; then
+  remove_route
+  exit 0
 fi
 
 if ! command -v limactl >/dev/null 2>&1; then
@@ -110,12 +216,32 @@ create_vm() {
     limactl start --tty=false "${DEVSTACK_VM}"
   fi
   in_vm bash -s <"${DEVSTACK_DIR}/install.sh"
+  apply_network
   cat <<EOF
 
 DevStack runs in the ${DEVSTACK_VM} VM. Next:
   npm run doctor                    checks that this machine reaches DevStack
   npm run devstack -- credential    makes the credential to paste into Clutter
+  npm run devstack -- route         lets this machine open DevStack servers' addresses
+                                    (asks for your password)
 EOF
+}
+
+# apply_network: sets up DevStack's public network in the VM, now and at every
+# boot (devstack/network.sh). Safe to run again.
+apply_network() {
+  in_vm bash -s -- "${DEVSTACK_PUBLIC_RANGE}" "${DEVSTACK_PUBLIC_GATEWAY}" <"${DEVSTACK_DIR}/network.sh"
+}
+
+# route_hint: says how to open DevStack servers from this machine when its
+# route for DevStack's public network does not go to the VM.
+route_hint() {
+  local vm_ip
+  [[ "$(uname -s)" == Darwin || "$(uname -s)" == Linux ]] || return 0
+  vm_ip="$(devstack_vm_address)"
+  if [[ -n "${vm_ip}" && "$(devstack_route_via)" != "${vm_ip}" ]]; then
+    echo "To open DevStack servers' addresses from this machine, run npm run devstack -- route (asks for your password)."
+  fi
 }
 
 make_credential() {
@@ -188,7 +314,10 @@ case "${action}" in
       limactl start "${DEVSTACK_VM}"
       echo "The ${DEVSTACK_VM} VM is running. Open a shell in it with: limactl shell ${DEVSTACK_VM}"
     fi
+    apply_network
+    route_hint
     ;;
+  route) add_route ;;
   stop)
     if [[ "${vm_status}" == Running ]]; then
       echo "Stopping the ${DEVSTACK_VM} VM (its disk is kept) ..."

@@ -26,6 +26,36 @@ LOCALSTACK_IMAGE="localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048
 DEVSTACK_VM="devstack"
 DEVSTACK_DIR="${DEVSERVER_DIR}/devstack"
 DEVSTACK_GUIDE="the \"OpenStack on this machine (DevStack)\" section of backend/devserver/README.md"
+# DevStack's public network, where its servers get their floating addresses,
+# and the gateway address on the VM's br-ex. These are DevStack's own defaults
+# (FLOATING_RANGE in its stackrc; the gateway is the range's first address),
+# which install.sh does not change. devstack/network.sh sets the gateway again
+# at every boot, and `npm run devstack -- route` sends this range to the VM.
+DEVSTACK_PUBLIC_RANGE="172.24.4.0/24"
+DEVSTACK_PUBLIC_GATEWAY="172.24.4.1"
+
+# devstack_vm_address: prints the VM's lima0 address, the one this machine
+# reaches it at (DevStack's HOST_IP), or nothing when it has none.
+devstack_vm_address() {
+  limactl shell --workdir / "${DEVSTACK_VM}" ip -4 -o addr show dev lima0 2>/dev/null |
+    awk '{ split($4, a, "/"); print a[1]; exit }' || true
+}
+
+# devstack_route_via: prints the address this machine's own route for
+# DEVSTACK_PUBLIC_RANGE goes through, or nothing when it has no such route
+# (then the range goes to the default gateway). macOS and Linux.
+devstack_route_via() {
+  case "$(uname -s)" in
+    Darwin)
+      route -n get -net "${DEVSTACK_PUBLIC_RANGE}" 2>/dev/null |
+        awk -v net="${DEVSTACK_PUBLIC_RANGE%/*}" '$1 == "destination:" { d = $2 } $1 == "gateway:" { g = $2 } END { if (d == net) print g }' || true
+      ;;
+    Linux)
+      ip route show exact "${DEVSTACK_PUBLIC_RANGE}" 2>/dev/null |
+        awk '{ for (i = 1; i < NF; i++) if ($i == "via") { print $(i + 1); exit } }' || true
+      ;;
+  esac
+}
 
 # Generates a secret once and keeps it in .state (mode 600).
 local_secret() {

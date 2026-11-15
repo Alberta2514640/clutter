@@ -18,9 +18,9 @@ It runs the real, unchanged Lambdas from `backend/api`. Each one is built for th
 | `generated.sh` | `generated` | lists and validates generated Terraform (see [Generating Terraform locally](#generating-terraform-locally)) |
 | `stop.sh` | `stop` | stops the website, the backend and Postgres, even when `dev.sh` runs in another terminal or a script; `--wipe` also deletes the database, the local S3 files and B's data |
 | `localstack.sh` | `localstack` | see [AWS on LocalStack](#aws-on-localstack) |
-| `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, and starts, stops or shows the VM (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
+| `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, starts, stops or shows the VM, and routes DevStack's public network to it (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
 
-The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, on macOS and Linux). It also runs every script's `--help`. CI runs it.
+The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack and DevStack's public network. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, the route's dry runs and refusals, on macOS and Linux). It also runs every script's `--help`. CI runs it.
 
 The gateway also serves `POST /dev/link-fake-account` for the local-only **Link fake account** button, on A's "AWS account required" popup and in the AWS link flow on Connections. It links one fake account per organization and answers with the linked account's name. The website's **Connect local AWS** calls it and then connects the account in B, in one step. Its twin, `POST /dev/link-devstack`, serves the **Connect local OpenStack** button on the OpenStack form (see [Add the connection in Clutter](#add-the-connection-in-clutter)). A production build shows neither button.
 
@@ -162,7 +162,7 @@ These stay on a real AWS test account. LocalStack is not in CI: it needs the Doc
 
 ## OpenStack on this machine (DevStack)
 
-DevStack is a small, real OpenStack. It runs in a Lima VM named `devstack`, so B's OpenStack connector builds real servers, networks, firewalls and volumes on this machine. The VM's template (`lima.yaml`) and the two scripts it runs inside the VM (`install.sh` and `credential.sh`) are in `devstack/`. They hold no secrets. DevStack's passwords are made at random inside the VM when it is installed, and stay there.
+DevStack is a small, real OpenStack. It runs in a Lima VM named `devstack`, so B's OpenStack connector builds real servers, networks, firewalls and volumes on this machine. The VM's template (`lima.yaml`) and the scripts it runs inside the VM (`install.sh`, `network.sh`, `credential.sh` and `dashboard.sh`) are in `devstack/`. They hold no secrets. DevStack's passwords are made at random inside the VM when it is installed, and stay there.
 
 ### What DevStack needs
 
@@ -189,9 +189,10 @@ npm run devstack -- credential   # makes the credential and prints the values fo
 | `npm run devstack -- create` | makes the VM from `devstack/lima.yaml`, starts it, and installs DevStack with `devstack/install.sh`. A second run does nothing when DevStack is installed. When the VM's address changed, it installs DevStack again for the new address. It refuses a VM named `devstack` that it did not make, and changes nothing in it. The install log is `/opt/stack/stack.log` inside the VM; follow it with `limactl shell devstack tail -f /opt/stack/stack.log` |
 | `npm run devstack -- credential` | makes an OpenStack application credential named `clutter`, for the `demo` user in the `demo` project, and prints the values Clutter's Connections page needs. When one exists, it asks before it replaces it; the old one then stops working |
 | `npm run devstack -- dashboard` | prints the address of DevStack's dashboard (`http://<the VM's address>/dashboard`), the `Default` domain and the `demo` user. The password, read inside the VM from `local.conf`, is printed only to a terminal, as `credential`'s secret is |
-| `npm run devstack -- start` | starts the VM |
+| `npm run devstack -- start` | starts the VM, and sets up DevStack's public network in it (see [Open DevStack's servers from this machine](#open-devstacks-servers-from-this-machine)) |
 | `npm run devstack -- stop` | stops the VM; its disk, and DevStack in it, are kept |
 | `npm run devstack -- status` | shows the VM's state, and exits with 1 when it is not running |
+| `npm run devstack -- route` | sends DevStack's public network to the VM, so its servers' addresses open from this machine. `route remove` takes the route out, and `--dry-run` prints the command without running it |
 
 `credential` prints the secret once, to the terminal. It is not saved in a file or a log, and `credential` runs only when its output is a terminal, so it never lands in a file by mistake. Copy the secret into Clutter straight away. If you lose it, run `credential` again.
 
@@ -204,6 +205,15 @@ macOS asks before an app may reach a device on a local network, and the VM's add
 3. Run `npm run doctor` again. It should print `ok    DevStack answers at http://<the VM's address>/identity/v3`.
 
 `npm run dev` and the tests reach DevStack through that same app, so start them from it.
+
+### Open DevStack's servers from this machine
+
+A server Clutter builds on DevStack gets its public address from DevStack's public network, `172.24.4.0/24` (DevStack's default; `lib.sh` owns the value). That network is inside the VM, behind its `br-ex` bridge, whose address `172.24.4.1` is the network's gateway. Two things must hold before **Your website** opens from this machine:
+
+- **Inside the VM**, `br-ex` is up with `172.24.4.1/24`, IPv4 forwarding is on, and DevStack's NAT rule for the range is in place. DevStack's install sets these, but a restart of the VM loses them. `devstack/network.sh` installs a systemd unit, `clutter-devstack-network`, that sets them again at every boot, after Open vSwitch starts. `create` installs it, and `start` installs it and runs it, so an older VM gets it on its next `start`.
+- **On this machine**, a route sends `172.24.4.0/24` to the VM's address. Without it, the traffic goes to the home router, and the address does not open. Run `npm run devstack -- route` once. It finds the VM's address, adds the route (`sudo route -n add -net` on macOS, `sudo ip route replace` on Linux), replaces a route through an old address of the VM, and prints the command it ran. sudo asks for your password; nothing keeps it. The route lasts until this machine restarts, so run it again then. `npm run doctor` says when it is missing.
+
+`npm run devstack -- route --dry-run` prints the command without running it. `npm run devstack -- route remove` takes the route out again.
 
 ### Add the connection in Clutter
 
