@@ -70,6 +70,26 @@ func TestCheckRefusesBadDisplay(t *testing.T) {
 			change: func(m *Manifest) { m.Display.ShortName = strings.Repeat("x", MaxShortName+1) },
 			want:   "short name is longer",
 		},
+		"note too long": {
+			change: func(m *Manifest) { m.Display.Note = strings.Repeat("x", MaxNote+1) },
+			want:   "note is longer",
+		},
+		"help line too long": {
+			change: func(m *Manifest) { m.Blocks[5] = m.Blocks[5].WithHelp(strings.Repeat("x", MaxHelpLine+1)) },
+			want:   "help line",
+		},
+		"empty help line": {
+			change: func(m *Manifest) { m.Blocks[5] = m.Blocks[5].WithHelp("") },
+			want:   "help line",
+		},
+		"too many help lines": {
+			change: func(m *Manifest) { m.Blocks[5] = m.Blocks[5].WithHelp("a", "b", "c", "d", "e") },
+			want:   "help lines",
+		},
+		"removed block with help": {
+			change: func(m *Manifest) { m.Blocks[4] = RemovedBlock(KindBucket).WithHelp("Stores files.") },
+			want:   `removed block "bucket" declares help`,
+		},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -24,6 +24,8 @@ export type Canvas = {
   problems: (id: string) => string[];
   // A block kind's fields, from the manifests.
   fieldsOf: (kind: string) => FieldSpec[];
+  // Whether a VM that is not public runs in this network.
+  hasPrivateVM: (id: string) => boolean;
   // Sets one field of a block, from the box's own switches.
   setField: (id: string, name: string, value: unknown) => void;
   edgeCard: (source: string, target: string) => EdgeCard | null;
@@ -35,6 +37,7 @@ export const CanvasContext = createContext<Canvas>({
   linkState: () => null,
   problems: () => [],
   fieldsOf: () => [],
+  hasPrivateVM: () => false,
   setField: () => {},
   edgeCard: () => null,
 });

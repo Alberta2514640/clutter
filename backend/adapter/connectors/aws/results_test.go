@@ -47,6 +47,14 @@ func TestResultsOutputs(t *testing.T) {
 		if strings.Contains(results, "result_public_address_worker") {
 			t.Errorf("a private VM has a public address output:\n%s", results)
 		}
+		// Only LocalStack's VMs are simulated, every one of them.
+		simulated := strings.Contains(results, `output "result_simulated_web"`) && strings.Contains(results, `output "result_simulated_worker"`)
+		if endpoint == "" && strings.Contains(results, "result_simulated_") {
+			t.Errorf("on AWS a VM is said to be simulated:\n%s", results)
+		}
+		if endpoint != "" && (!simulated || !strings.Contains(results, `value = "emulator"`)) {
+			t.Errorf("on LocalStack the VMs are not said to be simulated:\n%s", results)
+		}
 		aws := `invoke_url}/api_handler"`
 		local := `"http://127.0.0.1:4566/restapis/${aws_api_gateway_rest_api.`
 		if endpoint == "" && (!strings.Contains(results, aws) || strings.Contains(results, "restapis")) {

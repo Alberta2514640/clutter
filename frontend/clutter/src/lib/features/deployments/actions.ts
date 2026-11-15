@@ -13,7 +13,7 @@ export const ACTION_LABEL: Record<RowAction, string> = {
   plan: "Plan",
   apply: "Deploy",
   destroy: "Destroy",
-  remove: "Remove",
+  remove: "Remove from diagram",
 };
 
 export type RowState = {

@@ -48,13 +48,18 @@ export type BlockSpec = {
   fields?: FieldSpec[];
   // Set on every block the cloud builds, never on a removed one.
   display?: BlockDisplay;
+  // What this cloud adds about the block, one short line each.
+  help?: string[];
 };
 
 // connectors.Display: the cloud's short name and the key of its logo. Keys
 // resolve to files under public/clouds/<connector>/ (catalog/display.ts).
+// note says what the cloud is when its title does not ("for testing; builds
+// nothing").
 export type ConnectorDisplay = {
   short_name: string;
   logo?: string;
+  note?: string;
 };
 
 export type EdgeSpec = {

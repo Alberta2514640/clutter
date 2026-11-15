@@ -191,11 +191,14 @@ export default function DashboardSidebar({ className }: SidebarProps) {
             <div className="flex items-center justify-between px-3 pb-2">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Projects</span>
 
-              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-slate-800/50" asChild>
-                <Link href="/projects/new" aria-label="New project">
-                  <Plus className="w-4 h-4 text-gray-400" aria-hidden="true" />
-                </Link>
-              </Button>
+              {/* The dashboard has its own New project button; one is enough there. */}
+              {pathname !== "/dashboard" && (
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-slate-800/50" asChild>
+                  <Link href="/projects/new" aria-label="New project">
+                    <Plus className="w-4 h-4 text-gray-400" aria-hidden="true" />
+                  </Link>
+                </Button>
+              )}
             </div>
 
             <div className="space-y-1">

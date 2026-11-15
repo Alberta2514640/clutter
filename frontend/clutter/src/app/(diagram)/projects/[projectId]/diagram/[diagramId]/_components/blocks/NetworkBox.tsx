@@ -1,5 +1,6 @@
 "use client";
 
+import { fieldShown } from "@/lib/features/catalog/forms";
 import { BOX, type BlockNode as BlockNodeType } from "@/lib/features/diagram/blocksDocument";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useCanvas } from "./canvasContext";
@@ -14,7 +15,7 @@ export default function NetworkBox({ id, data, selected }: NodeProps<BlockNodeTy
   const fields = canvas.fieldsOf(data.kind);
   const cidrField = fields.find((f) => f.name === "cidr");
   const cidr = typeof data.fields.cidr === "string" ? data.fields.cidr : typeof cidrField?.default === "string" ? cidrField.default : "";
-  const switches = fields.filter((f) => f.type === "bool");
+  const switches = fields.filter((f) => f.type === "bool" && fieldShown(f, { hasPrivateVM: canvas.hasPrivateVM(id) }));
   const dropping = canvas.dropTarget === id;
   const problems = canvas.problems(id);
   const name = data.name || "(no name)";

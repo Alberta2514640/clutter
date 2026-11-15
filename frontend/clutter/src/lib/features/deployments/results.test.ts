@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leadLines, parseResults, resultRows, sampleNote, servesWeb } from "./results";
+import { leadLines, parseResults, resultRows, sampleNote, servesWeb, simulatedNote } from "./results";
 
 const log = [
   "Run r1: apply on deployment d1.",
@@ -132,8 +132,32 @@ describe("sampleNote", () => {
   });
 });
 
+describe("simulated servers", () => {
+  const blocks = [
+    { id: "web", kind: "vm", name: "web" },
+    { id: "db", kind: "vm", name: "db" },
+    { id: "api", kind: "http_api", name: "items-api" },
+  ];
+  const results = new Map([
+    ["web", [{ name: "public_address", value: "203.0.113.9" }, { name: "simulated", value: "emulator" }]],
+    ["db", [{ name: "private_address", value: "10.0.0.6" }, { name: "simulated", value: "emulator" }]],
+    ["api", [{ name: "url", value: "http://127.0.0.1:4566/restapis/a/v1/_user_request_/items" }]],
+  ]);
+
+  it("gives a simulated server no line to open, keeps the API's, and says once per cloud why", () => {
+    expect(leadLines(results, blocks, new Set(["web"])).map((l) => l.kind)).toEqual(["api"]);
+    expect(simulatedNote(results, blocks, () => "AWS")).toEqual(["VMs on local AWS are simulated; they do not boot."]);
+    expect(simulatedNote(results, blocks, () => "AWS", ["web", "db"])).toEqual([]);
+  });
+
+  it("still lists a simulated server's addresses in the details, without the marker", () => {
+    const rows = resultRows(results, blocks, () => "EC2");
+    expect(rows[0].items).toEqual([{ label: "Public address", value: "203.0.113.9", href: null }]);
+  });
+});
+
 describe("servesWeb", () => {
-  const vm = (id: string, pub: boolean) => ({ id, kind: "vm", fields: { public: pub } });
+  const vm = (id: string, pub: boolean, script = "#!/bin/sh\nserve") => ({ id, kind: "vm", fields: { public: pub, startup_script: script } });
   const fw = (id: string, ingress: string) => ({ id, kind: "firewall", fields: { ingress } });
 
   it("is a public server with a firewall that lets the web in on port 80", () => {
@@ -151,5 +175,9 @@ describe("servesWeb", () => {
     expect(servesWeb([vm("web", true), fw("f", "udp/80")], [{ source: "f", target: "web" }]).size).toBe(0);
     expect(servesWeb([vm("web", true), fw("f", "tcp/80")], [{ source: "web", target: "f" }]).size).toBe(0);
     expect(servesWeb([vm("web", true)], []).size).toBe(0);
+  });
+
+  it("does not count a server with no startup script: nothing starts a web server on it", () => {
+    expect(servesWeb([vm("web", true, "  \n"), fw("f", "tcp/80")], [{ source: "f", target: "web" }]).size).toBe(0);
   });
 });

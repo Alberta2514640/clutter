@@ -20,10 +20,18 @@ const (
 	// says the function still runs Clutter's sample code, which answers every
 	// request, because no code was uploaded for it.
 	ResultCode = "code"
+	// ResultSimulated says a VM was built on a cloud emulator (LocalStack): it
+	// has addresses but never boots, so nothing on it can be opened. Its one
+	// value is ResultSimulatedEmulator. A connector gives it only when it
+	// knows its cloud is an emulator.
+	ResultSimulated = "simulated"
 )
 
 // ResultCodeSample is ResultCode's value for a function that runs the sample.
 const ResultCodeSample = "sample"
+
+// ResultSimulatedEmulator is ResultSimulated's value.
+const ResultSimulatedEmulator = "emulator"
 
 // ResultNames are the results a block of a kind can have, in the order the
 // deploy panel lists them. A connector renders an output for each one it can
@@ -31,7 +39,7 @@ const ResultCodeSample = "sample"
 func ResultNames(kind BlockKind) []string {
 	switch kind {
 	case KindVM:
-		return []string{ResultPrivateAddress, ResultPublicAddress}
+		return []string{ResultPrivateAddress, ResultPublicAddress, ResultSimulated}
 	case KindHTTPAPI:
 		return []string{ResultURL}
 	case KindBucket:

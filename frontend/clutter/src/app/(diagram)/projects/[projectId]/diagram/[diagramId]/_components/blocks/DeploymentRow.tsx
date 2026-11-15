@@ -7,7 +7,7 @@ import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors }
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import { ACTION_LABEL, actionReasons, canOfferRemove, type RowAction } from "@/lib/features/deployments/actions";
-import { compatibilityLine, nextExclusions, unsupportedBlocks, type BlockRef, type CompatibilityLine } from "@/lib/features/deployments/compatibility";
+import { compatibilityLine, nextExclusions, splitReadyLine, unsupportedBlocks, type BlockRef, type CompatibilityLine } from "@/lib/features/deployments/compatibility";
 import { costLines, deployLine } from "@/lib/features/deployments/confirm";
 import { useCompatibility, useRemoveDeployment, useStartRun, useUpdateDeployment } from "@/lib/features/deployments/hooks";
 import {
@@ -23,7 +23,7 @@ import {
   placementSuggestions,
   splitOnly,
 } from "@/lib/features/deployments/placements";
-import { isActive, type DeploymentListItem, type DeploymentStatus, type RunAction, type RunStatus } from "@/lib/features/deployments/types";
+import { changesNotDeployed, isActive, type DeploymentListItem, type DeploymentStatus, type RunAction, type RunStatus } from "@/lib/features/deployments/types";
 import { CheckCircle2, ChevronDown, ChevronRight, FileCode2, KeyRound, Loader2, Play, Rocket, Trash2, TriangleAlert, X } from "lucide-react";
 import { useId, useState } from "react";
 import BlockPlacement from "./BlockPlacement";
@@ -109,15 +109,15 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
     ? []
     : clouds.length > 0
       ? clouds.map((c) =>
-          compatibilityLine(
-            `${c.connection_name} (${titleOf(c.connector)})`,
-            c,
-            cloudBlocks(item.connection_id, placements, blocks, c.connection_id),
-            exclusions,
-            blockTitle,
-          ),
+          compatibilityLine(c.connection_name, c, cloudBlocks(item.connection_id, placements, blocks, c.connection_id), exclusions, blockTitle, true),
         )
       : [compatibilityLine(cloud, report, blocks, exclusions, blockTitle)];
+  // A split deployment that every cloud can build says so once, for all of them.
+  const splitReady = splitReadyLine(
+    lines,
+    clouds.map((c) => c.connection_name),
+    exclusions.filter((id) => blocks.some((b) => b.id === id)).length,
+  );
   const extra = report && clouds.length > 0 ? splitOnly(report) : { problems: [], notes: [] };
   const cross = report ? crossNotes(report) : { keys: [], addresses: [] };
   const byId = new Map(blocks.map((b) => [b.id, b.name]));
@@ -192,7 +192,17 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
             </div>
           </div>
         </div>
-        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[11px] ${status.className}`}>{status.label}</span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className={`rounded border px-1.5 py-0.5 text-[11px] ${status.className}`}>{status.label}</span>
+          {changesNotDeployed(item) && (
+            <span
+              data-testid="changes-not-deployed"
+              title="The saved diagram has changes the last deploy did not build. Deploy again to build them."
+              className="whitespace-nowrap rounded border border-amber-700 px-1.5 py-0.5 text-[11px] text-amber-200">
+              Changes not deployed yet
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Compatibility */}
@@ -206,12 +216,20 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
           <p className="text-xs text-red-300">Could not check compatibility: {adapterErrorMessage(compatQ.error)}</p>
         ) : report ? (
           <div className="space-y-1.5">
+            {splitReady && (
+              <p className="flex items-start gap-1.5 text-xs text-emerald-300">
+                <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" />
+                {splitReady}
+              </p>
+            )}
             {lines.map((line) => (
               <div key={line.summary} className="space-y-1.5">
-                <p className={`flex items-start gap-1.5 text-xs ${line.ready ? "text-emerald-300" : "text-amber-300"}`}>
-                  {line.ready ? <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" /> : <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />}
-                  {line.summary}
-                </p>
+                {!splitReady && (
+                  <p className={`flex items-start gap-1.5 text-xs ${line.ready ? "text-emerald-300" : "text-amber-300"}`}>
+                    {line.ready ? <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" /> : <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />}
+                    {line.summary}
+                  </p>
+                )}
                 {line.choices.map((c) => {
                   const there = !c.supported && !moveReason ? suggestions.get(c.id) : undefined;
                   return (
@@ -430,12 +448,13 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
           )}
           {!isActive(run) && <RunHeadline token={token} organizationId={organizationId} run={run} blocks={blocks.filter((b) => !(item.exclusions ?? []).includes(b.id)).length} />}
           {run.failure && <p className="text-xs text-red-300">{run.failure}</p>}
-          {run.action === "apply" && run.status === "completed" && (
+          {/* What the last successful apply built, while the deployment still holds it. */}
+          {item.last_apply && (item.status === "live" || item.status === "failed") && (
             <WhatWasBuilt
               token={token}
               organizationId={organizationId}
               item={item}
-              run={run}
+              run={item.last_apply}
               catalog={catalog}
               blocks={blocks}
               blockTitle={blockTitle}

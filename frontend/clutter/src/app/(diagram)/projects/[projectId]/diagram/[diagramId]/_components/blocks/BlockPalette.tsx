@@ -14,6 +14,8 @@ type Props = {
   blocks: PaletteBlock[];
   loading: boolean;
   error: string | null;
+  // The connectors the organization has a connection to: the tooltip names only these.
+  connected: ReadonlySet<string>;
   onAdd: (kind: string) => void;
   // Called with the kind a drag starts with, and null when it ends.
   onDragKind: (kind: string | null) => void;
@@ -23,9 +25,9 @@ type Props = {
 
 // The palette lists the blocks the connected clouds can build, read from the
 // manifests: each with its icon, its name and one short line on what it is
-// for. Drag a block onto the canvas, or click it to add it. Which clouds build
-// it is in its tooltip.
-export default function BlockPalette({ blocks, loading, error, onAdd, onDragKind, links }: Props) {
+// for. Drag a block onto the canvas, or click it to add it. Which of the
+// organization's clouds build it is in its tooltip.
+export default function BlockPalette({ blocks, loading, error, connected, onAdd, onDragKind, links }: Props) {
   return (
     <aside aria-label="Building blocks" className="flex h-full w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950">
       {/* "How linking works" sits up here: the bottom left corner is where
@@ -51,7 +53,8 @@ export default function BlockPalette({ blocks, loading, error, onAdd, onDragKind
         ) : (
           <ul className="space-y-2">
             {blocks.map((b) => {
-              const builtBy = `Built by ${b.clouds.map((c) => c.title).join(", ")}`;
+              const mine = b.clouds.filter((c) => connected.has(c.connector));
+              const builtBy = mine.length > 0 ? `Built by ${mine.map((c) => c.title).join(", ")}` : "None of your connected clouds builds it";
               const box = b.kind === NETWORK_KIND;
               return (
                 <li key={b.kind}>

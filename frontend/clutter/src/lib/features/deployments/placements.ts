@@ -117,6 +117,58 @@ export function placementSuggestions(
   });
 }
 
+// An example's own split (examples.Example's clouds and placements): the
+// cloud that runs every block no placement names, and the cloud of each
+// placed block.
+export type ExampleSplit = { name: string; primary: string; placed: Map<string, string> };
+
+type ExampleLike = { name: string; clouds: string[]; placements?: { connector: string; node_ids: string[] }[]; document: unknown };
+
+// exampleSplitFor finds the split example this diagram came from: one whose
+// every placed block is in the diagram, under the same id and kind. Examples
+// keep their node ids when a diagram is made from one, and a block drawn by
+// hand gets a random id, so a diagram matches only the example it copies.
+export function exampleSplitFor(examples: ExampleLike[], blocks: BlockRef[]): ExampleSplit | null {
+  const kindOf = new Map(blocks.map((b) => [b.id, b.kind]));
+  for (const e of examples) {
+    if (!e.placements?.length || e.clouds.length < 2) continue;
+    const nodes = (e.document as { nodes?: { id?: unknown; type?: unknown }[] } | null)?.nodes ?? [];
+    const exampleKind = new Map(nodes.map((n) => [String(n.id), String(n.type)]));
+    const placed = new Map<string, string>();
+    let fits = true;
+    for (const p of e.placements) {
+      for (const id of p.node_ids) {
+        if (!kindOf.has(id) || kindOf.get(id) !== exampleKind.get(id)) fits = false;
+        placed.set(id, p.connector);
+      }
+    }
+    if (fits) return { name: e.name, primary: e.clouds[0], placed };
+  }
+  return null;
+}
+
+// examplePresets is where a new deployment of a split example's diagram puts
+// each placed block: on the first other working connection of that block's
+// cloud that can build it. Nothing is preset unless the deployment's own
+// connection is on the example's first cloud.
+export function examplePresets(
+  split: ExampleSplit | null,
+  primary: Connection,
+  connections: Connection[],
+  offers: (connector: string, kind: string) => boolean,
+  blocks: BlockRef[],
+): Map<string, Connection> {
+  const out = new Map<string, Connection>();
+  if (!split || primary.connector !== split.primary) return out;
+  for (const b of blocks) {
+    const cloud = split.placed.get(b.id);
+    if (!cloud) continue;
+    const there = connections.find((c) => c.id !== primary.id && c.status === "working" && c.connector === cloud && offers(c.connector, b.kind));
+    if (there) out.set(b.id, there);
+  }
+  return out;
+}
+
 // suggestedPlacements turns the blocks a new deployment runs on other
 // connections into what B's create takes, one placement per connection.
 export function suggestedPlacements(chosen: { blockId: string; connectionId: string }[]): PlacementInput[] {

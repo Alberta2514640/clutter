@@ -5,7 +5,7 @@ import { blockLook } from "@/lib/features/catalog/display";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
 import { useRunLogs } from "@/lib/features/deployments/hooks";
-import { leadLines, parseResults, resultRows, sampleNote, type LeadLine } from "@/lib/features/deployments/results";
+import { leadLines, parseResults, resultRows, sampleNote, simulatedNote, type LeadLine } from "@/lib/features/deployments/results";
 import type { DeploymentListItem, Run } from "@/lib/features/deployments/types";
 import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,7 +15,7 @@ type Props = {
   token: string | null;
   organizationId: string;
   item: DeploymentListItem;
-  // The deployment's successful apply.
+  // The deployment's last successful apply, which built what is listed.
   run: Run;
   catalog: CatalogEntry[];
   blocks: BlockRef[];
@@ -24,11 +24,13 @@ type Props = {
   webServers: ReadonlySet<string>;
 };
 
-// WhatWasBuilt leads, after a successful apply, with one plain line per
-// result a person can use: the website's address to open, the API's address
-// to copy or open, and whether the API still answers with Clutter's sample.
-// Each block, what it became on its cloud and every value the apply returned
-// sit behind Details. It reads them from the run's log, where B writes them
+// WhatWasBuilt shows what the last successful apply built, and says so. It
+// leads with one plain line per result a person can use: the website's
+// address to open, the API's address to copy or open, and whether the API
+// still answers with Clutter's sample. A VM a cloud emulator only recorded
+// gets no line to open, and one sentence says why. Each block, what it
+// became on its cloud and every value the apply returned sit behind Details.
+// It reads them from the run's log, where B writes them
 // (deployments/results.ts).
 export default function WhatWasBuilt({ token, organizationId, item, run, catalog, blocks, blockTitle, webServers }: Props) {
   const logQ = useRunLogs(token, organizationId, run.id, run.status);
@@ -56,11 +58,21 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
   const lead = leadLines(results, blocks, webServers, excluded);
   const sample = sampleNote(results, blocks, lead.some((l) => l.kind === "api"), excluded);
   const rows = resultRows(results, blocks, became, excluded);
+  const simulated = simulatedNote(results, blocks, (id) => manifestOf(cloudOf(id))?.display?.short_name || cloudOf(id), excluded);
   // With nothing to open, the details are the answer, so they show at once.
   const showDetails = detailsOpen || (lead.length === 0 && !sample);
+  const when = run.finished_at ? new Date(run.finished_at).toLocaleString() : null;
 
   return (
     <section aria-label="What was built" data-testid="what-was-built" className="space-y-2 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-2.5">
+      <p data-testid="built-by-last-deploy" className="text-[11px] text-slate-400">
+        From the last deploy{when ? `, ${when}` : ""}
+      </p>
+      {simulated.map((s) => (
+        <p key={s} data-testid="simulated-note" className="text-xs text-amber-200">
+          {s}
+        </p>
+      ))}
       {lead.length > 0 && (
         <ul className="space-y-1.5" aria-label="Ready to use">
           {lead.map((l) => (

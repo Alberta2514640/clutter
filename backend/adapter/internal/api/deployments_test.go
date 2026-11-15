@@ -68,6 +68,37 @@ func TestListADiagramsDeployments(t *testing.T) {
 		t.Fatalf("the list carries a credential or its reference: %s", body)
 	}
 
+	// A plan is no apply: no last apply yet. After an apply, the last apply
+	// names the diagram version it built, which is the saved one.
+	var versions struct {
+		Items []struct {
+			DiagramVersion *int `json:"diagram_version"`
+			LastApply      *struct {
+				ID             string `json:"id"`
+				DiagramVersion *int   `json:"diagram_version"`
+			} `json:"last_apply"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(body), &versions); err != nil || versions.Items[0].LastApply != nil || versions.Items[0].DiagramVersion == nil {
+		t.Fatalf("before an apply: %v %s", err, body)
+	}
+	applyID, _ := e.runAndWait(t, &a, depID, "apply")
+	e.runAndWait(t, &a, depID, "plan")
+	_, body = e.call(t, &a, "GET", path, nil)
+	if err := json.Unmarshal([]byte(body), &versions); err != nil {
+		t.Fatal(err)
+	}
+	last := versions.Items[0].LastApply
+	if last == nil || last.ID != applyID || last.DiagramVersion == nil || *last.DiagramVersion != *versions.Items[0].DiagramVersion {
+		t.Fatalf("after an apply and a plan: %s", body)
+	}
+
+	// The connection says how many diagrams deploy to it.
+	_, body = e.call(t, &a, "GET", "/v1/organizations/"+a.org+"/connections", nil)
+	if !strings.Contains(body, `"diagrams":1`) {
+		t.Fatalf("the connection does not count its diagram: %s", body)
+	}
+
 	// Another organization sees nothing of A's, through its own org or A's.
 	refused := func(code int) bool { return code == http.StatusForbidden || code == http.StatusNotFound }
 	for _, p := range []string{

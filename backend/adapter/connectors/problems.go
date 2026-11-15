@@ -28,6 +28,9 @@ const (
 	// CodeCost is a note (Advisor) naming what a deployment costs beyond its
 	// blocks, such as a gateway billed by the hour.
 	CodeCost = "cost"
+	// CodeClosedPublicVM is a note (Advisor) on a public VM that no firewall
+	// lets anything in to (ClosedPublicVMs).
+	CodeClosedPublicVM = "public_vm_closed"
 )
 
 // Messages every connector shows for the same event.

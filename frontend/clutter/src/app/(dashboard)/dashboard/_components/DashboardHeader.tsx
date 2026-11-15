@@ -23,7 +23,7 @@ export default function DashboardHeader({ organizationName }: DashboardHeaderPro
       </div>
       <Button onClick={() => router.push("/projects/new")} className="bg-teal-500 hover:bg-teal-600 flex items-center gap-2">
         <Plus className="w-4 h-4" aria-hidden="true" />
-        New Project
+        New project
       </Button>
     </div>
   );

@@ -315,11 +315,12 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 // source of the figure is connectors.privateInternetHelp.
 const natCost = "Internet access for private servers adds a NAT gateway on AWS: about $40 a month plus data."
 
-// Advice implements connectors.Advisor: each network that gets a NAT gateway
-// (a private server in it, with internet access for private servers on).
+// Advice implements connectors.Advisor: each public VM nothing can reach,
+// and each network that gets a NAT gateway (a private server in it, with
+// internet access for private servers on).
 func (c *Connector) Advice(g connectors.Graph, d connectors.Deployment) []connectors.Problem {
 	m := newModel(g, d)
-	var out []connectors.Problem
+	out := connectors.ClosedPublicVMs(g, d)
 	for _, id := range m.order {
 		if m.blocks[id].Kind == connectors.KindNetwork && m.networkNAT(id) {
 			out = append(out, connectors.Problem{NodeID: id, Code: connectors.CodeCost, Message: natCost})

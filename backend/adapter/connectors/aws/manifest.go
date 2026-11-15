@@ -1,7 +1,9 @@
 package aws
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -77,6 +79,33 @@ func runtimes() []string {
 	return out
 }
 
+// defaultRuntime is the function runtime a deployment gets unless it picks
+// another (settingRuntime).
+const defaultRuntime = "provided.al2023"
+
+// functionHelp is what the block panel says about a function on AWS: where
+// its runtime is chosen, the handler each runtime family takes (generic owns
+// the defaults), and the variables a linked table or bucket arrives in
+// (functionEnv, connectors.EnvName).
+func functionHelp() []string {
+	defaultFor := func(prefix string) string {
+		for _, r := range runtimes() {
+			if strings.HasPrefix(r, prefix) {
+				return generic.LambdaRuntimes[r]
+			}
+		}
+		return ""
+	}
+	env := func(v string) string { return connectors.EnvName("<name>", v) }
+	return []string{
+		"Runtime: chosen per deployment under Advanced; the default is " + defaultRuntime + ".",
+		fmt.Sprintf("Handler: file.function for Node.js (default %s) and Python (default %s); %s runs your %s file.",
+			defaultFor("nodejs"), defaultFor("python"), defaultRuntime, generic.LambdaRuntimes[defaultRuntime]),
+		fmt.Sprintf("A linked table or bucket arrives as %s or %s, its region as %s.",
+			env(connectors.ValueTable), env(connectors.ValueBucket), env(connectors.ValueRegion)),
+	}
+}
+
 func manifest() connectors.Manifest {
 	return connectors.Manifest{
 		Connector: ID,
@@ -94,7 +123,7 @@ func manifest() connectors.Manifest {
 			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
 			connectors.StandardBlock(connectors.KindVolume).WithDisplay("EBS", "ebs"),
 			connectors.StandardBlock(connectors.KindBucket).WithDisplay("S3", "s3"),
-			connectors.StandardBlock(connectors.KindFunction).WithDisplay("Lambda", "lambda"),
+			connectors.StandardBlock(connectors.KindFunction).WithDisplay("Lambda", "lambda").WithHelp(functionHelp()...),
 			connectors.StandardBlock(connectors.KindTable).WithDisplay("DynamoDB", "dynamodb"),
 			connectors.StandardBlock(connectors.KindHTTPAPI).WithDisplay("API Gateway", "api-gateway"),
 		},
@@ -126,7 +155,7 @@ func manifest() connectors.Manifest {
 		Settings: []connectors.FieldSpec{
 			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes,
 				AppliesTo: []connectors.BlockKind{connectors.KindVM}},
-			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: "provided.al2023", Allowed: runtimes(),
+			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: defaultRuntime, Allowed: runtimes(),
 				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},
 			{Name: settingArchitecture, Title: "Function processor", Type: connectors.FieldEnum, Default: "arm64", Allowed: []string{"arm64", "x86_64"},
 				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},

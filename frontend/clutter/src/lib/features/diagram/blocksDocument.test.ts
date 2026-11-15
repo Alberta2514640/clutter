@@ -11,11 +11,29 @@ import {
   emptyBlocksDocument,
   fromBlocksDocument,
   isBlocksDocument,
+  networksWithPrivateVM,
   newBlockId,
   NODE_ID_PATTERN,
   toBlocksDocument,
   type BlockNode,
 } from "./blocksDocument";
+
+describe("networksWithPrivateVM", () => {
+  it("names the networks a VM that is not public runs in", () => {
+    const n = (id: string, type: string, fields: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data: { name: id, fields } });
+    const doc = {
+      engine: "blocks" as const,
+      nodes: [n("net-a", "network"), n("net-b", "network"), n("pub", "vm", { public: true }), n("priv", "vm", { public: false }), n("bare", "vm")],
+      edges: [
+        { id: "e1", source: "pub", target: "net-a" },
+        { id: "e2", source: "priv", target: "net-b" },
+        { id: "e3", source: "bare", target: "net-b" },
+      ],
+    };
+    expect([...networksWithPrivateVM(doc)]).toEqual(["net-b"]);
+    expect(networksWithPrivateVM({ ...doc, edges: [doc.edges[0]] }).size).toBe(0);
+  });
+});
 
 const node = (id: string, kind: string, name: string, fields: Record<string, unknown> = {}): BlockNode => ({
   id,

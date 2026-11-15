@@ -16,15 +16,20 @@ export default function FieldInput({
   value,
   onChange,
   disabled,
+  invalid,
 }: {
   id: string;
   field: FieldSpec;
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
+  // Set when a check outside this field (B's compatibility check) refuses
+  // the value; the caller says why under the field.
+  invalid?: boolean;
 }) {
   const control = fieldControl(field);
-  const error = fieldError(field, value);
+  const ownError = fieldError(field, value);
+  const error = !!ownError || !!invalid;
   const hint = field.default !== undefined && field.default !== null ? `Default: ${String(field.default)}` : undefined;
   const help = field.help;
 
@@ -102,7 +107,7 @@ export default function FieldInput({
           )}
         </>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {ownError && <p className="text-xs text-red-400">{ownError}</p>}
     </div>
   );
 }

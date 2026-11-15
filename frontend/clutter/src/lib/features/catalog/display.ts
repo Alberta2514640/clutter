@@ -24,6 +24,8 @@ export type CloudLook = {
   title: string;
   shortName: string;
   logoSrc: string | null;
+  // What the cloud is when its title does not say, or "".
+  note?: string;
 };
 
 export function cloudLook(m: Manifest): CloudLook {
@@ -32,8 +34,13 @@ export function cloudLook(m: Manifest): CloudLook {
     title: m.title,
     shortName: m.display?.short_name || m.title,
     logoSrc: iconSrc(m.connector, m.display?.logo),
+    ...(m.display?.note ? { note: m.display.note } : {}),
   };
 }
+
+// cloudTitleWithNote is the title the Connections page shows: "Mock cloud
+// (for testing; builds nothing)".
+export const cloudTitleWithNote = (c: CloudLook) => (c.note ? `${c.title} (${c.note})` : c.title);
 
 // cloudLookFor names a connector from the catalog, or by its id when the
 // catalog no longer offers it.

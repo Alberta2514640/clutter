@@ -124,6 +124,13 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 	return nil
 }
 
+// Advice implements connectors.Advisor: each public VM nothing can reach.
+func (c *Connector) Advice(g connectors.Graph, d connectors.Deployment) []connectors.Problem {
+	return connectors.ClosedPublicVMs(g, d)
+}
+
+var _ connectors.Advisor = (*Connector)(nil)
+
 // Render returns the Terraform files for deployment d of graph g. It refuses
 // a graph Validate refuses, so it never renders a value that was not checked;
 // B's core runs the capability check before it calls Render through a run or

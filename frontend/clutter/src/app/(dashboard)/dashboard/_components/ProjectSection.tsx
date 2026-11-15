@@ -4,9 +4,8 @@ import FirstSteps from "@/components/common/FirstSteps";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Project } from "@/lib/features/projects/types";
-import { FolderOpen, Plus } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface ProjectsSectionProps {
   projects: Project[];
@@ -16,7 +15,6 @@ interface ProjectsSectionProps {
 }
 
 export default function ProjectsSection({ projects, isLoading, isError, onRetry }: ProjectsSectionProps) {
-  const router = useRouter();
 
   return (
     <div className="mb-8">
@@ -46,11 +44,7 @@ export default function ProjectsSection({ projects, isLoading, isError, onRetry 
             <div className="flex flex-col items-center text-center">
               <FolderOpen className="w-16 h-16 text-gray-600 mb-4" aria-hidden="true" />
               <h3 className="text-xl font-semibold text-white mb-2">No projects yet</h3>
-              <p className="text-gray-400 mb-6">Follow these steps to your first deploy.</p>
-              <Button onClick={() => router.push("/projects/new")} className="bg-teal-500 hover:bg-teal-600">
-                <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
-                Create Project
-              </Button>
+              <p className="text-gray-400">Follow these steps to your first deploy.</p>
             </div>
             <FirstSteps />
           </CardContent>

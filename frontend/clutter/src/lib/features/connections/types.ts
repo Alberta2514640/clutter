@@ -13,6 +13,8 @@ export type Connection = {
   created_at: string;
   updated_at: string;
   verified_at: string | null;
+  // How many diagrams deploy to it; deleting it removes those deployments.
+  diagrams?: number;
 };
 
 // Mirrors connectors.Choice and connectors.Options in

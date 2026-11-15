@@ -3,7 +3,7 @@
 import CloudMark from "@/components/clouds/CloudMark";
 import { Button } from "@/components/ui/button";
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { cloudLook } from "@/lib/features/catalog/display";
+import { cloudLook, cloudTitleWithNote } from "@/lib/features/catalog/display";
 import { useLinkedAccounts } from "@/lib/features/catalog/hooks";
 import type { CatalogEntry, LinkedAccount } from "@/lib/features/catalog/types";
 import { fitsCloudsYaml } from "@/lib/features/connections/cloudsYaml";
@@ -62,7 +62,7 @@ export default function AddConnection({ token, organizationId, catalog }: Props)
               }`}>
               <CloudMark cloud={cloudLook(c.manifest)} size={28} />
               <span>
-                <span className="block font-medium text-white">{c.manifest.title}</span>
+                <span className="block font-medium text-white">{cloudTitleWithNote(cloudLook(c.manifest))}</span>
                 <span className="block text-xs text-slate-400">
                   {c.credentials.linked_only
                     ? "Link your account, or use one you linked"
@@ -70,7 +70,7 @@ export default function AddConnection({ token, organizationId, catalog }: Props)
                       ? "Use an account you linked, or enter its details"
                       : c.credentials.kind === "borrowed"
                         ? "Borrowed access"
-                        : "A key Clutter stores, encrypted"}
+                        : "Credentials stored encrypted"}
                 </span>
               </span>
             </button>

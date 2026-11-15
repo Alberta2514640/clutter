@@ -7,6 +7,8 @@ import {
   cloudsLine,
   crossNotes,
   deploymentTitle,
+  examplePresets,
+  exampleSplitFor,
   movePlacement,
   needsTwoClouds,
   orderedClouds,
@@ -39,6 +41,34 @@ const conn = (id: string, connector: string, status: Connection["status"] = "wor
   created_at: "",
   updated_at: "",
   verified_at: null,
+});
+
+describe("example presets", () => {
+  const hybrid = {
+    name: "Hybrid",
+    clouds: ["general-openstack", "aws"],
+    placements: [{ connector: "aws", node_ids: ["files"] }],
+    document: { nodes: [{ id: "web", type: "vm" }, { id: "files", type: "bucket" }] },
+  };
+  const single = { name: "Web server", clouds: ["aws", "general-openstack"], document: { nodes: [{ id: "files", type: "bucket" }] } };
+  const offers = (connector: string, kind: string) => connector === "aws" || kind !== "bucket";
+
+  it("finds the split example a diagram came from by its placed blocks' ids and kinds", () => {
+    const split = exampleSplitFor([single, hybrid], blocks);
+    expect(split?.primary).toBe("general-openstack");
+    expect([...(split?.placed ?? [])]).toEqual([["files", "aws"]]);
+    expect(exampleSplitFor([hybrid], [{ id: "files", kind: "vm", name: "files" }])).toBeNull();
+    expect(exampleSplitFor([hybrid], [{ id: "x1", kind: "bucket", name: "files" }])).toBeNull();
+  });
+
+  it("puts each placed block on a working connection of its cloud, only when the deployment is on the first cloud", () => {
+    const split = exampleSplitFor([hybrid], blocks);
+    const connections = [conn("c-os", "general-openstack"), conn("c-broken", "aws", "failed"), conn("c-aws", "aws")];
+    const presets = examplePresets(split, connections[0], connections, offers, blocks);
+    expect([...presets].map(([id, c]) => [id, c.id])).toEqual([["files", "c-aws"]]);
+    expect(examplePresets(split, connections[2], connections, offers, blocks).size).toBe(0);
+    expect(examplePresets(null, connections[0], connections, offers, blocks).size).toBe(0);
+  });
 });
 
 describe("blockCloud", () => {

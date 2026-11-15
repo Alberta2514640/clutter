@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Manifest } from "../catalog/types";
-import { compatibilityLine, nextExclusions, problemsByBlock, unsupportedBlocks, type BlockRef } from "./compatibility";
+import { blockIssues, compatibilityLine, nextExclusions, problemsByBlock, splitReadyLine, unsupportedBlocks, type BlockRef } from "./compatibility";
 import type { Compatibility, Problem } from "./types";
 
 const blocks: BlockRef[] = [
@@ -23,6 +23,18 @@ describe("compatibilityLine", () => {
   it("says a cloud that builds everything can build every block, not that anything is deployed", () => {
     const line = compatibilityLine("AWS", { ready: true, problems: [], notes: [] }, blocks, [], kindTitle);
     expect(line).toEqual({ ready: true, summary: "AWS: every block can be built here", choices: [], problems: [], notes: [] });
+  });
+
+  it("on one cloud of a split, says only its placed blocks can be built, and one line says it for all clouds", () => {
+    const os = compatibilityLine("Local OpenStack", { ready: true, problems: [], notes: [] }, blocks.slice(0, 2), [], kindTitle, true);
+    const aws = compatibilityLine("Local AWS", { ready: true, problems: [], notes: [] }, blocks.slice(2, 3), [], kindTitle, true);
+    expect(os.summary).toBe("Local OpenStack: the 2 blocks placed here can be built");
+    expect(aws.summary).toBe("Local AWS: the 1 block placed here can be built");
+    expect(splitReadyLine([os, aws], ["Local OpenStack", "Local AWS"], 0)).toBe("Every block can be built across Local OpenStack and Local AWS");
+    expect(splitReadyLine([os, aws], ["Local OpenStack", "Local AWS"], 1)).toBe("The other blocks can be built across Local OpenStack and Local AWS, 1 block left out");
+    const broken = compatibilityLine("Local AWS", { ready: false, problems: [unsupported("n3", "Bucket")], notes: [] }, blocks.slice(2, 3), [], kindTitle, true);
+    expect(splitReadyLine([os, broken], ["Local OpenStack", "Local AWS"], 0)).toBeNull();
+    expect(splitReadyLine([os], ["Local OpenStack"], 0)).toBeNull();
   });
 
   it("names the unsupported blocks and offers to leave each out", () => {
@@ -121,5 +133,29 @@ describe("problemsByBlock", () => {
     expect(p.get("n3")).toHaveLength(1);
     expect(p.get("n1")).toEqual(["On AWS a VM runs in one network. Connect it to only one."]);
     expect(problemsByBlock(undefined).size).toBe(0);
+  });
+});
+
+describe("blockIssues", () => {
+  it("puts each problem under its field, keeps the block's others and its notes, and skips cost notes", () => {
+    const report: Compatibility = {
+      ready: false,
+      problems: [
+        { node_id: "fw", field: "ingress", code: "invalid_value", message: "Each allowed entry must look like tcp/22." },
+        { node_id: "fw", field: "ingress", code: "invalid_value", message: "Each allowed entry must look like tcp/22." },
+        { node_id: "fw", field: "unknown", code: "unknown_field", message: "This field is not used by this cloud." },
+        { edge_source: "fw", edge_target: "vm", code: "unsupported_edge", message: "This cloud cannot connect them." },
+        { node_id: "vm", field: "size", code: "invalid_value", message: "Not this one." },
+      ],
+      notes: [
+        { node_id: "vm", code: "public_vm_closed", message: "This VM is public but its firewall allows nothing in." },
+        { node_id: "vm", code: "cost", message: "Costs money." },
+      ],
+    };
+    const fw = blockIssues(report, "fw", new Set(["ingress", "source_cidr"]));
+    expect([...fw.fields]).toEqual([["ingress", ["Each allowed entry must look like tcp/22."]]]);
+    expect(fw.general).toEqual(["This field is not used by this cloud.", "This cloud cannot connect them."]);
+    expect(blockIssues(report, "vm", new Set(["size"])).notes).toEqual(["This VM is public but its firewall allows nothing in."]);
+    expect(blockIssues(undefined, "vm", new Set()).general).toEqual([]);
   });
 });

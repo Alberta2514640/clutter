@@ -1,7 +1,7 @@
 "use client";
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { cleanValues, defaultValues, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
@@ -26,7 +26,7 @@ type Props = {
   defaultOpen: boolean;
 };
 
-// BlockPlacement is a deployment's "Cloud" choice per block (ADR-020): each
+// BlockPlacement is a deployment's cloud per block (ADR-020): each
 // block runs on the deployment's own connection unless it is placed on
 // another of the organization's connections, which has its own settings. B
 // checks that every connection is the organization's and that each edge can
@@ -37,16 +37,21 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
   const updateM = useUpdateDeployment(token);
   const [chosenOpen, setOpen] = useState<boolean | null>(null);
   const open = chosenOpen ?? defaultOpen;
+  const [editing, setEditing] = useState(false);
   const placements: Placement[] = item.placements ?? [];
   const entryOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector) ?? null;
   const primary = connections.find((c) => c.id === item.connection_id);
   const choices = cloudChoices(primary, connections, (c) => !!entryOf(c), new Set(placements.map((p) => p.connection_id)));
   const reason = placementReason(item.status, running || updateM.isPending);
+  // Each block is offered only the connections whose cloud can build it, and
+  // the one it is on now.
+  const choicesFor = (b: BlockRef, current: string) =>
+    choices.filter((c) => c.id === current || (entryOf(c.connector) && manifestOffers(entryOf(c.connector)!.manifest, b.kind)));
+  const nameOf = (id: string) => connections.find((c) => c.id === id)?.name ?? placements.find((p) => p.connection_id === id)?.connection_name ?? item.connection_name;
 
   // With one usable cloud there is nothing to choose.
   if (choices.length < 2 && placements.length === 0) return null;
 
-  const label = (c: Connection) => `${c.name} (${entryOf(c.connector)?.manifest.display.short_name || c.connector})`;
   const move = (blockId: string, connectionId: string) =>
     updateM.mutate({
       organizationId,
@@ -73,52 +78,54 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
       </button>
       {open && (
         <div className="mt-2 space-y-2 pl-1" data-testid="block-placement">
-          <p className="text-[11px] leading-snug text-slate-400">
-            Every block runs on {item.connection_name} unless you choose another cloud for it. Clutter builds the clouds in the order the
-            links between their blocks need.
-          </p>
-          {reason && <p className="text-xs text-amber-300">{reason}</p>}
           {blocks.length === 0 ? (
             <p className="text-xs text-slate-500">Save the diagram with blocks first.</p>
           ) : (
-            // One row per block: its name and kind on a line, its cloud below at the
-            // panel's full width, so neither the name nor the cloud is clipped.
-            <ul className="space-y-2 text-xs" aria-label="The cloud each block runs on">
+            // One compact row per block: its name and its cloud. "Change" turns
+            // each cloud into a choice of the clouds that can build the block.
+            <ul className="space-y-1 text-xs" aria-label="The cloud each block runs on">
               {blocks.map((b) => {
                 const selectId = `${item.id}-cloud-${b.id}`;
                 const current = blockCloud(item.connection_id, placements, b.id);
-                const currentChoice = choices.find((c) => c.id === current);
                 return (
-                  <li key={b.id} className="space-y-1">
-                    <label htmlFor={selectId} className="flex min-w-0 items-baseline gap-1 text-slate-200" title={`${b.name} (${blockTitle(b.kind)})`}>
-                      <span className="truncate">{b.name}</span>
-                      <span className="shrink-0 whitespace-nowrap text-slate-500">({blockTitle(b.kind)})</span>
+                  <li key={b.id} className="flex min-w-0 items-center justify-between gap-2">
+                    <label htmlFor={editing ? selectId : undefined} className="min-w-0 truncate text-slate-200" title={`${b.name} (${blockTitle(b.kind)})`}>
+                      {b.name}
                     </label>
-                    <select
-                      id={selectId}
-                      value={current}
-                      disabled={!!reason}
-                      title={currentChoice ? label(currentChoice) : undefined}
-                      aria-describedby={reason ? `${item.id}-placement-reason` : undefined}
-                      onChange={(e) => move(b.id, e.target.value)}
-                      className="w-full truncate rounded border border-slate-700 bg-slate-950 px-1.5 py-1 text-xs text-slate-100 disabled:opacity-50">
-                      {choices.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {label(c)}
-                          {c.id === item.connection_id ? " (this deployment's own)" : ""}
-                        </option>
-                      ))}
-                    </select>
+                    {editing ? (
+                      <select
+                        id={selectId}
+                        value={current}
+                        onChange={(e) => move(b.id, e.target.value)}
+                        className="w-40 shrink-0 truncate rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100">
+                        {choicesFor(b, current).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span data-testid="block-cloud" className="shrink-0 truncate text-slate-400">
+                        {nameOf(current)}
+                      </span>
+                    )}
                   </li>
                 );
               })}
             </ul>
           )}
-          {reason && (
-            <span id={`${item.id}-placement-reason`} className="sr-only">
-              {reason}
-            </span>
-          )}
+          {blocks.length > 0 &&
+            (reason ? (
+              <p className="text-xs text-amber-300">{reason}</p>
+            ) : (
+              <button
+                type="button"
+                aria-expanded={editing}
+                onClick={() => setEditing((e) => !e)}
+                className="rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-800">
+                {editing ? "Done" : "Change"}
+              </button>
+            ))}
           {updateM.isPending && <p className="text-xs text-slate-400">Saving…</p>}
           {updateM.isError && (
             <p role="alert" className="text-xs text-red-300">

@@ -22,7 +22,7 @@
           "fields": {
             "size": "small",
             "public": true,
-            "startup_script": "#!/bin/sh\n# Clutter puts the database address in CLUTTER_DB_ADDRESS, and the bucket's name and region in CLUTTER_FILES_*.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/app.env\necho \"FILES_BUCKET=$CLUTTER_FILES_BUCKET\" >> /etc/app/app.env\necho \"FILES_REGION=$CLUTTER_FILES_REGION\" >> /etc/app/app.env\n"
+            "startup_script": "#!/bin/sh\n# Clutter puts the database address in CLUTTER_DB_ADDRESS, and the bucket's name and region in CLUTTER_FILES_*.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/app.env\necho \"FILES_BUCKET=$CLUTTER_FILES_BUCKET\" >> /etc/app/app.env\necho \"FILES_REGION=$CLUTTER_FILES_REGION\" >> /etc/app/app.env\n# Serve a page on port 80 with what the image has: python3 (Amazon Linux,\n# Ubuntu), else busybox httpd, else a busybox nc loop (cirros).\ndir=/var/www/clutter\nmkdir -p \"$dir\"\npage() { printf '<!doctype html><title>%s</title><h1>%s</h1><p>%s</p>\\n' \"$1\" \"$1\" \"$2\" > \"$dir/index.html\"; }\npage web \"Served by its startup script on port 80.\"\ncd \"$dir\"\nif command -v python3 >/dev/null 2>&1; then\n  nohup python3 -m http.server 80 >/var/log/clutter-web.log 2>&1 &\nelif busybox --list 2>/dev/null | grep -qx httpd; then\n  busybox httpd -p 80 -h \"$dir\"\nelse\n  while true; do { printf 'HTTP/1.0 200 OK\\r\\nContent-Type: text/html\\r\\n\\r\\n'; cat \"$dir/index.html\"; } | nc -l -p 80 >/dev/null 2>&1; done &\nfi\n"
           }
         }
       },

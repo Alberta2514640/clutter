@@ -3,7 +3,7 @@
 import CloudMark from "@/components/clouds/CloudMark";
 import { Button } from "@/components/ui/button";
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { cloudLookFor, type CloudLook } from "@/lib/features/catalog/display";
+import { cloudLookFor, cloudTitleWithNote, type CloudLook } from "@/lib/features/catalog/display";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import { useDeleteConnection, useVerifyConnection } from "@/lib/features/connections/hooks";
 import type { Connection } from "@/lib/features/connections/types";
@@ -31,6 +31,13 @@ export default function ConnectionList({ token, organizationId, connections, cat
   );
 }
 
+// What deleting a connection does to the diagrams that deploy to it.
+function deleteWarning(diagrams: number): string {
+  if (diagrams === 0) return "No diagram deploys to this connection. Delete it?";
+  const which = diagrams === 1 ? "1 diagram deploys" : `${diagrams} diagrams deploy`;
+  return `${which} to this connection. Deleting it removes ${diagrams === 1 ? "that deployment" : "those deployments"}; nothing in your cloud changes.`;
+}
+
 function ConnectionRow({ token, organizationId, connection, cloud }: { token: string; organizationId: string; connection: Connection; cloud: CloudLook }) {
   const verifyM = useVerifyConnection(token);
   const deleteM = useDeleteConnection(token);
@@ -48,7 +55,7 @@ function ConnectionRow({ token, organizationId, connection, cloud }: { token: st
               <span className="min-w-0 truncate font-medium text-white" title={connection.name}>
                 {connection.name}
               </span>
-              <span className="shrink-0 whitespace-nowrap rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300">{cloud.title}</span>
+              <span className="shrink-0 whitespace-nowrap rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300">{cloudTitleWithNote(cloud)}</span>
               <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">{connection.region}</span>
             </div>
             <div className={`mt-1 flex items-center gap-1.5 text-xs ${working ? "text-emerald-300" : "text-red-300"}`}>
@@ -104,6 +111,11 @@ function ConnectionRow({ token, organizationId, connection, cloud }: { token: st
           )}
         </div>
       </div>
+      {confirming && (
+        <p role="alert" data-testid="delete-connection-warning" className="mt-2 text-xs text-amber-200">
+          {deleteWarning(connection.diagrams ?? 0)}
+        </p>
+      )}
       {verifyM.isError && <p className="mt-2 text-xs text-red-300">Could not check this connection: {adapterErrorMessage(verifyM.error)}</p>}
       {deleteM.isError && (
         <p role="alert" className="mt-2 text-sm text-red-300">

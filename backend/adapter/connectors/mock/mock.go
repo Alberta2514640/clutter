@@ -43,7 +43,7 @@ func (*Connector) Manifest() connectors.Manifest {
 		Title:     "Mock cloud",
 		Version:   "1",
 		Regions:   []string{"mock-1", "mock-2"},
-		Display:   connectors.Display{ShortName: "Mock", Logo: "logo"},
+		Display:   connectors.Display{ShortName: "Mock", Logo: "logo", Note: "for testing; builds nothing"},
 		Blocks: []connectors.BlockSpec{
 			connectors.StandardBlock(connectors.KindVM).WithDisplay("VM", ""),
 			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("Network", ""),

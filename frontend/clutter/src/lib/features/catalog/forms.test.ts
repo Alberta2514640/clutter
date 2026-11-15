@@ -3,9 +3,11 @@ import {
   blockFields,
   blockTitle,
   cleanValues,
+  connectedBuilders,
   defaultValues,
   fieldControl,
   fieldError,
+  fieldShown,
   paletteBlocks,
   parseInput,
   settingsFor,
@@ -63,6 +65,28 @@ const catalog: CatalogEntry[] = [
     },
   },
 ];
+
+describe("connectedBuilders and fieldShown", () => {
+  it("lists only connected clouds that build a kind, with their service name and help", () => {
+    const withHelp = catalog.map((e) =>
+      e.manifest.connector === "aws"
+        ? { ...e, manifest: { ...e.manifest, blocks: (e.manifest.blocks ?? []).map((b) => (b.kind === "function" ? { ...b, help: ["Runtime: default provided.al2023."] } : b)) } }
+        : e,
+    );
+    expect(connectedBuilders(withHelp, "function", new Set(["aws"])).map((b) => [b.cloud.connector, b.service, b.help])).toEqual([
+      ["aws", "Function", ["Runtime: default provided.al2023."]],
+    ]);
+    expect(connectedBuilders(withHelp, "vm", new Set(["general-openstack"])).map((b) => b.cloud.connector)).toEqual(["general-openstack"]);
+    expect(connectedBuilders(withHelp, "function", new Set(["general-openstack"]))).toEqual([]);
+  });
+
+  it("shows internet access for private servers only on a network with a private VM", () => {
+    const field: FieldSpec = { name: "private_internet", title: "Internet access for private servers", type: "bool", required: false };
+    expect(fieldShown(field, { hasPrivateVM: false })).toBe(false);
+    expect(fieldShown(field, { hasPrivateVM: true })).toBe(true);
+    expect(fieldShown(cidr, { hasPrivateVM: false })).toBe(true);
+  });
+});
 
 describe("settingsFor", () => {
   const runtime: FieldSpec = { name: "function_runtime", title: "Function runtime", type: "enum", required: false, allowed: ["a"], applies_to: ["function"] };

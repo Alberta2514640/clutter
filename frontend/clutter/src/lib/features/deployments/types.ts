@@ -75,7 +75,20 @@ export type DeploymentListItem = Deployment & {
   connection_name: string;
   region: string;
   latest_run: Run | null;
+  // The latest completed apply, whose results "What was built" shows.
+  last_apply?: Run | null;
+  // The version of the diagram as saved now.
+  diagram_version?: number | null;
 };
+
+// changesNotDeployed reports whether the saved diagram is newer than the one
+// the deployment's last successful apply built, while it still holds what
+// that apply built.
+export function changesNotDeployed(item: Pick<DeploymentListItem, "status" | "last_apply" | "diagram_version">): boolean {
+  const built = item.last_apply?.diagram_version;
+  const saved = item.diagram_version;
+  return item.status !== "destroyed" && item.status !== "new" && typeof built === "number" && typeof saved === "number" && saved > built;
+}
 
 export type Problem = {
   node_id?: string;

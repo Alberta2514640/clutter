@@ -13,12 +13,10 @@ const steps = [
     linkLabel: "Connect a cloud",
     button: true,
   },
+  // No link here: the page around the steps has the one New project button.
   {
     title: "Create a project",
     detail: "A project holds your diagrams.",
-    href: "/projects/new",
-    linkLabel: "New project",
-    button: false,
   },
   {
     title: "Draw a diagram",

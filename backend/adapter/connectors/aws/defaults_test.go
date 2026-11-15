@@ -154,6 +154,22 @@ func TestFunctionsGetTheNamesTheyRead(t *testing.T) {
 	}
 }
 
+// The function block's help names the default runtime, each runtime's
+// handler and the variables the names above arrive in.
+func TestFunctionHelpNamesTheFacts(t *testing.T) {
+	spec, _ := manifest().Block(connectors.KindFunction)
+	help := strings.Join(spec.Help, "\n")
+	for _, want := range []string{"the default is provided.al2023", "index.handler", "lambda_function.lambda_handler", "runs your bootstrap file",
+		"CLUTTER_<NAME>_TABLE", "CLUTTER_<NAME>_BUCKET", "CLUTTER_<NAME>_REGION"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("the function help lacks %q:\n%s", want, help)
+		}
+	}
+	if err := manifest().Check(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestVMToVMOpensAPath: the VM that gets another's address may reach it,
 // through a security group on the target that lets in the source's private
 // address; VMs in different networks are refused.

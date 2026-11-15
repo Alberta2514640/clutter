@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"text/template"
 
@@ -36,20 +35,24 @@ const sampleMessage = "Hello from Clutter. Upload your code to replace this."
 // code for its runtime and handler: it does not answer.
 const placeholderCode = "Clutter has no sample code for this runtime and handler. Upload your code to run the function."
 
-// sampleAnswer is the sample code's answer, in the shape API Gateway's proxy
-// integration reads: status 200 and a small JSON body. It holds no single
-// quote, so the shell sample can quote it whole.
-var sampleAnswer = func() string {
-	body, _ := json.Marshal(map[string]string{"message": sampleMessage})
-	out, _ := json.Marshal(map[string]any{
-		"statusCode": 200,
-		"headers":    map[string]string{"Content-Type": "application/json"},
-		"body":       string(body),
-	})
-	if strings.ContainsRune(string(out), '\'') {
-		panic("aws: the sample answer holds a single quote")
+// The sample's answer names the tables and buckets the function's links hand
+// it (functionEnv), read from its environment at run time, so the answer
+// shows what the function received: {"message": "...", "table": "<name>"}, or
+// "tables": [...] when it has several. The variables end in these suffixes
+// (connectors.EnvName).
+var (
+	sampleTableSuffix  = "_" + strings.ToUpper(connectors.ValueTable)
+	sampleBucketSuffix = "_" + strings.ToUpper(connectors.ValueBucket)
+)
+
+// sampleMessageJSON is sampleMessage as a JSON string. It holds no quote,
+// backslash or dollar, so each sample can carry it as plain text.
+var sampleMessageJSON = func() string {
+	b, _ := json.Marshal(sampleMessage)
+	if strings.ContainsAny(sampleMessage, `'"\$`) {
+		panic("aws: the sample message holds a quote, a backslash or a dollar")
 	}
-	return string(out)
+	return string(b)
 }()
 
 // sampleHandler is a handler the Python and Node.js samples can serve: one
@@ -60,11 +63,13 @@ var sampleHandler = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-
 type sampleFile struct{ Name, Content string }
 
 // sampleCode is the code a function with no upload runs: a few lines that
-// answer every request with sampleAnswer, for the deployment's runtime and the
+// answer every request with status 200 and a JSON body (the shape API
+// Gateway's proxy integration reads) holding sampleMessage and the names of
+// its linked tables and buckets, for the deployment's runtime and the
 // function's handler. A custom runtime (provided.*) runs its bootstrap file
-// whatever the handler; it uses only sh and curl, which the provided.al2023
-// image holds (AWS's custom runtime tutorial uses the same). ok is false for
-// a runtime or handler Clutter has no sample for.
+// whatever the handler; it uses only sh, env and curl, which the
+// provided.al2023 image holds (AWS's custom runtime tutorial uses the same).
+// ok is false for a runtime or handler Clutter has no sample for.
 func sampleCode(runtime, handler string) (files []sampleFile, ok bool) {
 	switch {
 	case strings.HasPrefix(runtime, "provided."):
@@ -72,7 +77,36 @@ func sampleCode(runtime, handler string) (files []sampleFile, ok bool) {
 # Clutter's sample code. Upload your own code to replace it.
 set -eu
 api="http://${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime/invocation"
-answer='` + sampleAnswer + `'
+# The answer names the tables and buckets this function's links hand it.
+q='\"'
+tables=""
+ntables=0
+buckets=""
+nbuckets=0
+set -f
+for pair in $(env); do
+  value="${pair#*=}"
+  case "$value" in
+    "" | *[!A-Za-z0-9._-]*) continue ;;
+  esac
+  case "${pair%%=*}" in
+    CLUTTER_*` + sampleTableSuffix + `)
+      tables="$tables${tables:+,}$q$value$q"
+      ntables=$((ntables + 1))
+      ;;
+    CLUTTER_*` + sampleBucketSuffix + `)
+      buckets="$buckets${buckets:+,}$q$value$q"
+      nbuckets=$((nbuckets + 1))
+      ;;
+  esac
+done
+set +f
+body="{${q}message${q}:${q}` + sampleMessage + `${q}"
+if [ "$ntables" -eq 1 ]; then body="$body,${q}table${q}:$tables"; fi
+if [ "$ntables" -gt 1 ]; then body="$body,${q}tables${q}:[$tables]"; fi
+if [ "$nbuckets" -eq 1 ]; then body="$body,${q}bucket${q}:$buckets"; fi
+if [ "$nbuckets" -gt 1 ]; then body="$body,${q}buckets${q}:[$buckets]"; fi
+answer="{\"statusCode\":200,\"headers\":{\"Content-Type\":\"application/json\"},\"body\":\"$body}\"}"
 while true; do
   headers="$(mktemp)"
   curl -sS -o /dev/null -D "$headers" "$api/next"
@@ -87,11 +121,21 @@ done
 			return nil, false
 		}
 		return []sampleFile{{Name: m[1] + ".py", Content: `# Clutter's sample code. Upload your own code to replace it.
-import json
+import json as _clutter_json
+import os as _clutter_os
+import re as _clutter_re
 
 
 def ` + m[2] + `(event, context):
-    return json.loads(` + strconv.Quote(sampleAnswer) + `)
+    # The answer names the tables and buckets this function's links hand it.
+    body = {"message": ` + sampleMessageJSON + `}
+    for kind, suffix in (("table", "` + sampleTableSuffix + `"), ("bucket", "` + sampleBucketSuffix + `")):
+        names = sorted(v for k, v in _clutter_os.environ.items() if k.startswith("CLUTTER_") and k.endswith(suffix) and _clutter_re.fullmatch(r"[A-Za-z0-9._-]+", v))
+        if len(names) == 1:
+            body[kind] = names[0]
+        elif names:
+            body[kind + "s"] = names
+    return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": _clutter_json.dumps(body)}
 `}}, true
 	case strings.HasPrefix(runtime, "nodejs"):
 		m := sampleHandler.FindStringSubmatch(handler)
@@ -99,7 +143,19 @@ def ` + m[2] + `(event, context):
 			return nil, false
 		}
 		return []sampleFile{{Name: m[1] + ".mjs", Content: `// Clutter's sample code. Upload your own code to replace it.
-export const ` + m[2] + ` = async () => (` + sampleAnswer + `);
+export const ` + m[2] + ` = async () => {
+  // The answer names the tables and buckets this function's links hand it.
+  const body = { message: ` + sampleMessageJSON + ` };
+  for (const [kind, suffix] of [["table", "` + sampleTableSuffix + `"], ["bucket", "` + sampleBucketSuffix + `"]]) {
+    const names = Object.entries(process.env)
+      .filter(([k, v]) => k.startsWith("CLUTTER_") && k.endsWith(suffix) && /^[A-Za-z0-9._-]+$/.test(v ?? ""))
+      .map(([, v]) => v)
+      .sort();
+    if (names.length === 1) body[kind] = names[0];
+    else if (names.length > 1) body[kind + "s"] = names;
+  }
+  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+};
 `}}, true
 	}
 	return nil, false
@@ -732,7 +788,8 @@ type resultOutput struct{ Name, Value string }
 
 // resultOutputs are what an apply tells the user about each block
 // (connectors.ResultNames): a VM's private address and, when it is public, its
-// public one; a bucket's and a table's name; an HTTP API's address, on its
+// public one, and with an endpoint that it is simulated; a bucket's and a
+// table's name; an HTTP API's address, on its
 // first route, which answers. endpoint is the connector's endpoint (LocalStack
 // on a laptop, "" on AWS): there the API's address is the endpoint's own form,
 // since AWS's execute-api name does not reach LocalStack.
@@ -750,6 +807,10 @@ func (m *model) resultOutputs(endpoint string) []resultOutput {
 			add(id, connectors.ResultPrivateAddress, "aws_instance."+b.Addr+".private_ip")
 			if b.boolean(fieldPublic) {
 				add(id, connectors.ResultPublicAddress, "aws_instance."+b.Addr+".public_ip")
+			}
+			// LocalStack records an instance but never boots it.
+			if endpoint != "" {
+				add(id, connectors.ResultSimulated, `"`+connectors.ResultSimulatedEmulator+`"`)
 			}
 		case connectors.KindFunction:
 			if b.Code == nil {

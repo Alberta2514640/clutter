@@ -62,6 +62,10 @@ type Manifest struct {
 type Display struct {
 	ShortName string `json:"short_name"`
 	Logo      string `json:"logo,omitempty"`
+	// Note says in a few lower-case words what the cloud is when its title
+	// does not, such as "for testing; builds nothing". The Connections page
+	// shows it after the title.
+	Note string `json:"note,omitempty"`
 }
 
 // BlockDisplay is how the UI shows a block on one cloud: the cloud's own name
@@ -85,12 +89,22 @@ type BlockSpec struct {
 	// Display is set on every block the connector builds (the contract tests
 	// check it) and never on a removed one.
 	Display *BlockDisplay `json:"display,omitempty"`
+	// Help is what this cloud adds about the block, one short line each (its
+	// runtime's default, the names its links arrive under). The block panel
+	// shows it under the cloud's name for the block. Never on a removed one.
+	Help []string `json:"help,omitempty"`
 }
 
 // WithDisplay returns b showing as name, with the icon key icon ("" for the
 // block's neutral icon).
 func (b BlockSpec) WithDisplay(name, icon string) BlockSpec {
 	b.Display = &BlockDisplay{Name: name, Icon: icon}
+	return b
+}
+
+// WithHelp returns b with these help lines.
+func (b BlockSpec) WithHelp(lines ...string) BlockSpec {
+	b.Help = append([]string(nil), lines...)
 	return b
 }
 
@@ -191,6 +205,10 @@ const (
 const (
 	MaxSummary  = 48
 	MaxEdgeText = 120
+	// A block's help is a few short lines; a cloud's note fits beside its title.
+	MaxHelpLines = 4
+	MaxHelpLine  = 160
+	MaxNote      = 48
 )
 
 // Check returns an error unless the manifest is well formed: a valid id and
@@ -247,6 +265,17 @@ func (m Manifest) Check() error {
 				errs = append(errs, fmt.Errorf("removed block %q declares a display", b.Kind))
 			}
 			errs = append(errs, b.Display.check(b.Kind)...)
+		}
+		if b.Treatment == TreatmentRemoved && len(b.Help) > 0 {
+			errs = append(errs, fmt.Errorf("removed block %q declares help", b.Kind))
+		}
+		if len(b.Help) > MaxHelpLines {
+			errs = append(errs, fmt.Errorf("block %q has more than %d help lines", b.Kind, MaxHelpLines))
+		}
+		for _, line := range b.Help {
+			if line == "" || len(line) > MaxHelpLine {
+				errs = append(errs, fmt.Errorf("block %q has a help line that is empty or longer than %d characters", b.Kind, MaxHelpLine))
+			}
 		}
 		errs = append(errs, checkFields(fmt.Sprintf("block %q", b.Kind), b.Fields)...)
 	}
@@ -313,6 +342,9 @@ func (d Display) check() []error {
 	var errs []error
 	if len(d.ShortName) > MaxShortName {
 		errs = append(errs, fmt.Errorf("display short name is longer than %d characters", MaxShortName))
+	}
+	if len(d.Note) > MaxNote {
+		errs = append(errs, fmt.Errorf("display note is longer than %d characters", MaxNote))
 	}
 	if d.Logo != "" {
 		if d.ShortName == "" {

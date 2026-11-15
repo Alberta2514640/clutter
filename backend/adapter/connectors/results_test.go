@@ -6,7 +6,7 @@ import (
 )
 
 func TestResultNames(t *testing.T) {
-	if got := ResultNames(KindVM); !reflect.DeepEqual(got, []string{ResultPrivateAddress, ResultPublicAddress}) {
+	if got := ResultNames(KindVM); !reflect.DeepEqual(got, []string{ResultPrivateAddress, ResultPublicAddress, ResultSimulated}) {
 		t.Fatalf("vm results = %v", got)
 	}
 	if ResultNames(KindVolume) != nil {

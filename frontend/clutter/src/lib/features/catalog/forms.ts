@@ -75,6 +75,31 @@ export function blockFields(catalog: CatalogEntry[], kind: BlockKind): FieldSpec
   return out;
 }
 
+// The network field that gives private servers internet access
+// (connectors' standard network field). It does something only for a
+// network with a private VM, so it shows only then.
+export const PRIVATE_INTERNET_FIELD = "private_internet";
+
+// fieldShown reports whether a block's field is worth showing: every field
+// is, except internet access for private servers on a network with no
+// private VM.
+export const fieldShown = (f: FieldSpec, ctx: { hasPrivateVM: boolean }) => f.name !== PRIVATE_INTERNET_FIELD || ctx.hasPrivateVM;
+
+// connectedBuilders are the clouds that can build a kind and that the
+// organization has a connection to, with each cloud's service name and its
+// help lines for the block.
+export function connectedBuilders(
+  catalog: CatalogEntry[],
+  kind: BlockKind,
+  connected: ReadonlySet<string>,
+): { cloud: CloudLook; service: string; help: string[] }[] {
+  return catalog.flatMap(({ manifest }) => {
+    const b = (manifest.blocks ?? []).find((x) => x.kind === kind && x.treatment !== "removed");
+    if (!b || !connected.has(manifest.connector)) return [];
+    return [{ cloud: cloudLook(manifest), service: b.display?.name || b.title, help: b.help ?? [] }];
+  });
+}
+
 // settingsFor keeps the deployment settings that are about the diagram's
 // blocks: a function runtime only when the diagram has a function. A setting
 // that names no kind is about every deployment.

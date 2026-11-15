@@ -14,6 +14,7 @@ import {
   fromBlocksDocument,
   NETWORK_KIND,
   NETWORK_NODE_TYPE,
+  networksWithPrivateVM,
   newBlockId,
   nodeTypeFor,
   parentsFirst,
@@ -30,7 +31,7 @@ import { resourceNameError } from "@/lib/features/diagram/resourceName";
 import { saveStatus } from "@/lib/features/diagram/saveStatus";
 import { diagramSummary } from "@/lib/features/diagram/summary";
 import type { Diagram } from "@/lib/features/diagram/types";
-import { problemsByBlock, type BlockRef } from "@/lib/features/deployments/compatibility";
+import { blockIssues, problemsByBlock, type BlockRef } from "@/lib/features/deployments/compatibility";
 import { useCompatibility, useDiagramDeployments, useInvalidateDeploymentChecks } from "@/lib/features/deployments/hooks";
 import { servesWeb } from "@/lib/features/deployments/results";
 import { BLOCKS_VIEW, nodeLook, resolveView, viewClouds, viewSummary } from "@/lib/features/deployments/views";
@@ -59,7 +60,7 @@ import {
   type OnConnectEnd,
   type XYPosition,
 } from "@xyflow/react";
-import { ArrowLeft, Check, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Pencil, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BlockForm from "./BlockForm";
@@ -174,6 +175,9 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
   const checked = (currentView && deployments.find((d) => d.connector === currentView.connector)) || deployments[0] || null;
   const compatQ = useCompatibility(token, orgId, checked?.id ?? null);
   const problems = useMemo(() => problemsByBlock(compatQ.data), [compatQ.data]);
+  // The clouds the organization connects to: the palette and the Block panel
+  // name only these.
+  const connected = useMemo(() => new Set((connectionsQ.data ?? []).map((c) => c.connector)), [connectionsQ.data]);
 
   const saveM = useSaveBlocksDiagram(token);
   const invalidateChecks = useInvalidateDeploymentChecks();
@@ -193,6 +197,10 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
   const status = saveStatus({ dirty, saving: saveM.isPending });
   useLeaveGuard(dirty);
   const selected = nodes.find((n) => n.selected) ?? null;
+  // The networks a private VM runs in now: only they show the switch for
+  // internet access for private servers.
+  const privateNets = networksWithPrivateVM(doc);
+  const savedSelected = selected ? (saved.doc.nodes.find((n) => n.id === selected.id) ?? null) : null;
 
   // The box a VM being dragged would drop into, and the kind a palette drag holds.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -391,6 +399,7 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     },
     problems: (id) => problems.get(id) ?? [],
     fieldsOf: (kind) => blockFields(catalog, kind),
+    hasPrivateVM: (id) => privateNets.has(id),
     setField: (id, field, value) =>
       setNodes((cur) => cur.map((n) => (n.id === id ? { ...n, data: { ...n.data, fields: { ...n.data.fields, [field]: value } } } : n))),
     edgeCard: (source, target) => {
@@ -417,13 +426,20 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
         <button type="button" onClick={onBack} aria-label="Back to the project" className="rounded p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white">
           <ArrowLeft className="h-5 w-5" aria-hidden />
         </button>
-        <input
-          aria-label="Diagram name"
-          value={name}
-          maxLength={DIAGRAM_NAME_MAX}
-          onChange={(e) => setName(e.target.value)}
-          className="w-64 rounded-md border border-transparent bg-transparent px-2 py-1 text-base font-semibold text-white outline-none hover:border-slate-700 focus:border-teal-500/60"
-        />
+        {/* The name looks editable: a pencil on hover and focus, an underline while typing. */}
+        <label className="group relative flex items-center" title="Rename the diagram">
+          <input
+            aria-label="Diagram name"
+            value={name}
+            maxLength={DIAGRAM_NAME_MAX}
+            onChange={(e) => setName(e.target.value)}
+            className="w-64 rounded-md border border-transparent bg-transparent py-1 pl-2 pr-7 text-base font-semibold text-white underline-offset-4 outline-none hover:border-slate-700 focus:border-teal-500/60 focus:underline focus:decoration-teal-400/70"
+          />
+          <Pencil
+            aria-hidden
+            className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+          />
+        </label>
         <span className="shrink-0 rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-400">Building blocks</span>
         <ViewSwitch views={views} value={view} onChange={chooseView} />
         <div className="ml-auto flex shrink-0 items-center gap-3">
@@ -460,6 +476,7 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
           blocks={palette}
           loading={catalogQ.isLoading}
           error={catalogQ.isError ? adapterErrorMessage(catalogQ.error) : null}
+          connected={connected}
           onAdd={addAtCenter}
           onDragKind={(k) => {
             dragKind.current = k;
@@ -553,6 +570,10 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
                   catalog={catalog}
                   title={blockTitle(selected.data.kind)}
                   disabled={false}
+                  connected={connected}
+                  issues={blockIssues(compatQ.data, selected.id, new Set(["name", ...blockFields(catalog, selected.data.kind).map((f) => f.name)]))}
+                  saved={savedSelected ? { name: savedSelected.data.name, fields: savedSelected.data.fields } : null}
+                  hasPrivateVM={privateNets.has(selected.id)}
                   onChange={(patch) => patchNode(selected.id, patch)}
                   onRemove={() => removeNode(selected.id)}
                 />

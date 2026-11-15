@@ -145,6 +145,19 @@ export function toBlocksDocument(nodes: BlockNode[], edges: BlockEdge[]): Blocks
   };
 }
 
+// networksWithPrivateVM are the networks a VM that is not public runs in (its
+// VM-to-Network edge, which a box on the canvas stands for).
+export function networksWithPrivateVM(doc: BlocksDocument): Set<string> {
+  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  const out = new Set<string>();
+  for (const e of doc.edges) {
+    const vm = byId.get(e.source);
+    const net = byId.get(e.target);
+    if (vm?.type === VM_KIND && net?.type === NETWORK_KIND && vm.data.fields.public !== true) out.add(net.id);
+  }
+  return out;
+}
+
 // fromBlocksDocument reads a saved document onto the canvas. It accepts any
 // value, since the column holds whatever was last saved, and skips what it
 // cannot read rather than failing the whole editor. A VM goes into the box

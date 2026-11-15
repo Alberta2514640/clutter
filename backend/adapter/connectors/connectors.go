@@ -280,10 +280,12 @@ type Previewer interface {
 	Preview(ctx context.Context, g Graph, d Deployment) (map[string][]byte, error)
 }
 
-// Advisor is optional. A connector whose cloud bills for something the
-// diagram does not show as a block (a gateway charged by the hour) says so
-// before a run, as notes with code CodeCost, so the deploy confirmation can
-// name the cost. The core finds it by type assertion. Notes never stop a run.
+// Advisor is optional. A connector gives notes before a run: what its cloud
+// bills for that the diagram does not show as a block (a gateway charged by
+// the hour), with code CodeCost, so the deploy confirmation can name the
+// cost; and what will not work as drawn, such as a public VM nothing can
+// reach (ClosedPublicVMs), which every connector that builds VMs gives. The
+// core finds it by type assertion. Notes never stop a run.
 type Advisor interface {
 	Advice(g Graph, d Deployment) []Problem
 }

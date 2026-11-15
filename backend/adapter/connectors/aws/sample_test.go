@@ -3,12 +3,15 @@ package aws
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -17,9 +20,27 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
 
+// linkedEnv is what a function linked to one table and two buckets gets
+// (functionEnv), with a value the samples must not echo.
+var linkedEnv = []string{
+	"CLUTTER_ORDERS_TABLE=c1234abcd_orders",
+	"CLUTTER_ORDERS_REGION=ca-central-1",
+	"CLUTTER_FILES_BUCKET=c1234abcd-files-0a1b",
+	"CLUTTER_LOGS_BUCKET=c1234abcd-logs-9f8e",
+	"CLUTTER_BAD_TABLE=has\"quote",
+}
+
+// wantLinked is the body a sample answers with under linkedEnv.
+var wantLinked = map[string]any{
+	"message": sampleMessage,
+	"table":   "c1234abcd_orders",
+	"buckets": []any{"c1234abcd-files-0a1b", "c1234abcd-logs-9f8e"},
+}
+
 // wantAnswer checks one answer is what API Gateway's proxy integration needs:
-// status 200 and a JSON body with the sample message.
-func wantAnswer(t *testing.T, raw string) {
+// status 200 and a JSON body with the sample message and, when want is set,
+// exactly want.
+func wantAnswer(t *testing.T, raw string, want map[string]any) {
 	t.Helper()
 	var a struct {
 		StatusCode int               `json:"statusCode"`
@@ -29,19 +50,25 @@ func wantAnswer(t *testing.T, raw string) {
 	if err := json.Unmarshal([]byte(raw), &a); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, raw)
 	}
-	var body struct {
-		Message string `json:"message"`
-	}
+	var body map[string]any
 	if err := json.Unmarshal([]byte(a.Body), &body); err != nil {
 		t.Fatalf("the answer's body is not JSON: %v\n%s", err, a.Body)
 	}
-	if a.StatusCode != 200 || a.Headers["Content-Type"] != "application/json" || body.Message != sampleMessage {
-		t.Fatalf("answer = %+v, body %q", a, body.Message)
+	if a.StatusCode != 200 || a.Headers["Content-Type"] != "application/json" || body["message"] != sampleMessage {
+		t.Fatalf("answer = %+v, body %v", a, body)
+	}
+	// The shell sample lists names in the environment's order.
+	for _, k := range []string{"tables", "buckets"} {
+		if list, ok := body[k].([]any); ok {
+			sort.Slice(list, func(i, j int) bool { return fmt.Sprint(list[i]) < fmt.Sprint(list[j]) })
+		}
+	}
+	if want != nil && !reflect.DeepEqual(body, want) {
+		t.Fatalf("body = %v, want %v", body, want)
 	}
 }
 
 func TestEveryOfferedRuntimeHasASampleForItsDefaultHandler(t *testing.T) {
-	wantAnswer(t, sampleAnswer)
 	for _, rt := range runtimes() {
 		files, ok := sampleCode(rt, generic.LambdaRuntimes[rt])
 		if !ok || len(files) != 1 {
@@ -104,14 +131,14 @@ func TestBootstrapSampleAnswersThroughTheRuntimeAPI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", path)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "AWS_LAMBDA_RUNTIME_API=" + strings.TrimPrefix(srv.URL, "http://")}
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "AWS_LAMBDA_RUNTIME_API=" + strings.TrimPrefix(srv.URL, "http://")}, linkedEnv...)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	select {
 	case got := <-answered:
-		wantAnswer(t, got)
+		wantAnswer(t, got, wantLinked)
 	case <-ctx.Done():
 		t.Fatal("the bootstrap sample posted no answer")
 	}
@@ -128,12 +155,19 @@ func TestPythonSampleAnswers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, files[0].Name), []byte(files[0].Content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("python3", "-I", "-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import lambda_function as f; print(json.dumps(f.lambda_handler({}, None)))", dir)
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("python3: %v", err)
+	for _, env := range [][]string{nil, linkedEnv} {
+		cmd := exec.Command("python3", "-I", "-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import lambda_function as f; print(json.dumps(f.lambda_handler({}, None)))", dir)
+		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, env...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("python3: %v", err)
+		}
+		want := map[string]any{"message": sampleMessage}
+		if env != nil {
+			want = wantLinked
+		}
+		wantAnswer(t, strings.TrimSpace(string(out)), want)
 	}
-	wantAnswer(t, strings.TrimSpace(string(out)))
 }
 
 // The Node.js sample, run by node when the machine has it, returns the
@@ -149,11 +183,12 @@ func TestNodeSampleAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("node", "--input-type=module", "-e", "const m = await import(process.argv[1]); console.log(JSON.stringify(await m.handler()));", "file://"+path)
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, linkedEnv...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("node: %v", err)
 	}
-	wantAnswer(t, strings.TrimSpace(string(out)))
+	wantAnswer(t, strings.TrimSpace(string(out)), wantLinked)
 }
 
 func TestSampleCodeRendersExecutableAndReportsItself(t *testing.T) {

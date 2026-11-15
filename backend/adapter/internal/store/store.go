@@ -74,6 +74,10 @@ type Connection struct {
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	VerifiedAt          *time.Time
+	// Diagrams is how many diagrams have a deployment that builds on the
+	// connection, as its own or through a placement. Deleting the connection
+	// removes those deployments.
+	Diagrams int
 }
 
 // Connection statuses.
@@ -83,13 +87,20 @@ const (
 	ConnectionDeleting = "deleting"
 )
 
+// connectionColumns are read from the connections table, unaliased, in every
+// statement that uses them. The diagram count reaches only deployments on
+// this connection, which belong to its organization (CreateDeployment,
+// insertPlacements).
 const connectionColumns = `id, organization_id, connector_type, name, region, status, status_detail,
-	secret_ref, role_template_version, COALESCE(created_by::text, ''), created_at, updated_at, verified_at`
+	secret_ref, role_template_version, COALESCE(created_by::text, ''), created_at, updated_at, verified_at,
+	(SELECT count(DISTINCT dd.diagram_id) FROM deployments dd
+		WHERE dd.connection_id = connections.id OR EXISTS (
+			SELECT 1 FROM deployment_placements ddp WHERE ddp.deployment_id = dd.id AND ddp.connection_id = connections.id))`
 
 func scanConnection(row pgx.Row) (Connection, error) {
 	var c Connection
 	err := row.Scan(&c.ID, &c.OrganizationID, &c.ConnectorID, &c.Name, &c.Region, &c.Status, &c.StatusDetail,
-		&c.SecretRef, &c.RoleTemplateVersion, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.VerifiedAt)
+		&c.SecretRef, &c.RoleTemplateVersion, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.VerifiedAt, &c.Diagrams)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Connection{}, ErrNotFound
 	}
@@ -400,6 +411,29 @@ func (s *Store) GetDeployment(ctx context.Context, orgID, id string) (Deployment
 type DeploymentSummary struct {
 	Deployment
 	LatestRun *Run
+	// LastApply is the deployment's latest apply that completed, or nil.
+	LastApply *Run
+	// DiagramVersion is the version of the diagram as saved now (the version
+	// DiagramDocument reads), so it can be compared with LastApply's.
+	DiagramVersion *int
+}
+
+// nullableRun is a run read through a LEFT JOIN, whose columns are all null
+// when the deployment has no such run.
+type nullableRun struct {
+	r                                      Run
+	id, deployment, action, status, logKey *string
+	created                                *time.Time
+}
+
+// run returns the run, or nil when the join found none.
+func (n nullableRun) run() *Run {
+	if n.id == nil || n.deployment == nil || n.action == nil || n.status == nil || n.logKey == nil || n.created == nil {
+		return nil
+	}
+	r := n.r
+	r.ID, r.DeploymentID, r.Action, r.Status, r.LogKey, r.CreatedAt = *n.id, *n.deployment, *n.action, *n.status, *n.logKey, *n.created
+	return &r
 }
 
 // ListDeployments returns one diagram's deployments in an organization, oldest
@@ -410,7 +444,10 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 		SELECT d.id, d.diagram_id, d.connection_id, d.settings, d.exclusions, d.status, d.created_at, d.updated_at,
 		       c.connector_type, c.region, c.name,
 		       lr.id, lr.deployment_id, lr.action, lr.status, lr.diagram_version, lr.failure, lr.log_key,
-		       lr.created_at, lr.started_at, lr.finished_at, lr.parts
+		       lr.created_at, lr.started_at, lr.finished_at, lr.parts,
+		       la.id, la.deployment_id, la.action, la.status, la.diagram_version, la.failure, la.log_key,
+		       la.created_at, la.started_at, la.finished_at, la.parts,
+		       (SELECT COALESCE(max(h.version), 0) + 1 FROM diagram_history h WHERE h.diagram_id = d.diagram_id)
 		FROM deployments d
 		JOIN connections c ON c.id = d.connection_id
 		JOIN diagrams g ON g.id = d.diagram_id
@@ -418,6 +455,10 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 		LEFT JOIN LATERAL (
 			SELECT r.* FROM runs r WHERE r.deployment_id = d.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1
 		) lr ON true
+		LEFT JOIN LATERAL (
+			SELECT r.* FROM runs r WHERE r.deployment_id = d.id AND r.action = 'apply' AND r.status = 'completed'
+			ORDER BY r.created_at DESC, r.id DESC LIMIT 1
+		) la ON true
 		WHERE d.diagram_id = $1 AND c.organization_id = $2 AND p.organization_id = $2 AND c.status <> 'deleting'
 		ORDER BY d.created_at, d.id`, diagramID, orgID)
 	if err != nil {
@@ -427,19 +468,18 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 	out := []DeploymentSummary{}
 	for rows.Next() {
 		var d DeploymentSummary
-		var runID, runDeployment, action, status, logKey *string
-		var r Run
-		var created *time.Time
+		var latest, last nullableRun
 		if err := rows.Scan(&d.ID, &d.DiagramID, &d.ConnectionID, &d.Settings, &d.Exclusions, &d.Status, &d.CreatedAt, &d.UpdatedAt,
 			&d.ConnectorID, &d.Region, &d.ConnectionName,
-			&runID, &runDeployment, &action, &status, &r.DiagramVersion, &r.Failure, &logKey,
-			&created, &r.StartedAt, &r.FinishedAt, &r.Parts); err != nil {
+			&latest.id, &latest.deployment, &latest.action, &latest.status, &latest.r.DiagramVersion, &latest.r.Failure, &latest.logKey,
+			&latest.created, &latest.r.StartedAt, &latest.r.FinishedAt, &latest.r.Parts,
+			&last.id, &last.deployment, &last.action, &last.status, &last.r.DiagramVersion, &last.r.Failure, &last.logKey,
+			&last.created, &last.r.StartedAt, &last.r.FinishedAt, &last.r.Parts,
+			&d.DiagramVersion); err != nil {
 			return nil, err
 		}
-		if runID != nil && runDeployment != nil && action != nil && status != nil && logKey != nil && created != nil {
-			r.ID, r.DeploymentID, r.Action, r.Status, r.LogKey, r.CreatedAt = *runID, *runDeployment, *action, *status, *logKey, *created
-			d.LatestRun = &r
-		}
+		d.LatestRun = latest.run()
+		d.LastApply = last.run()
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {

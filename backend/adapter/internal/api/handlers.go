@@ -97,6 +97,9 @@ type connectionView struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	VerifiedAt     *time.Time `json:"verified_at"`
+	// Diagrams is how many diagrams deploy to it; deleting it removes those
+	// deployments.
+	Diagrams int `json:"diagrams"`
 }
 
 // connectionOut never carries the secret reference or any credential.
@@ -104,6 +107,7 @@ func connectionOut(c store.Connection) connectionView {
 	return connectionView{
 		ID: c.ID, OrganizationID: c.OrganizationID, Connector: c.ConnectorID, Name: c.Name, Region: c.Region,
 		Status: c.Status, StatusDetail: c.StatusDetail, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, VerifiedAt: c.VerifiedAt,
+		Diagrams: c.Diagrams,
 	}
 }
 
@@ -553,6 +557,12 @@ type deploymentListItem struct {
 	ConnectionName string   `json:"connection_name"`
 	Region         string   `json:"region"`
 	LatestRun      *runView `json:"latest_run"`
+	// LastApply is its latest completed apply, whose results "What was built"
+	// shows, or null.
+	LastApply *runView `json:"last_apply"`
+	// DiagramVersion is the version of the diagram as saved now; newer than
+	// LastApply's diagram_version means changes not deployed yet.
+	DiagramVersion *int `json:"diagram_version"`
 }
 
 func (a *API) listDiagramDeployments(w http.ResponseWriter, r *http.Request) {
@@ -574,10 +584,14 @@ func (a *API) listDiagramDeployments(w http.ResponseWriter, r *http.Request) {
 	out := make([]deploymentListItem, 0, len(ds))
 	for _, d := range ds {
 		item := deploymentListItem{deploymentView: deploymentOut(d.Deployment), Connector: d.ConnectorID,
-			ConnectionName: d.Deployment.ConnectionName, Region: d.Region}
+			ConnectionName: d.Deployment.ConnectionName, Region: d.Region, DiagramVersion: d.DiagramVersion}
 		if d.LatestRun != nil {
 			run := runOut(*d.LatestRun)
 			item.LatestRun = &run
+		}
+		if d.LastApply != nil {
+			run := runOut(*d.LastApply)
+			item.LastApply = &run
 		}
 		out = append(out, item)
 	}

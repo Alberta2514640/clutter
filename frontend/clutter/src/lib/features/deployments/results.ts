@@ -54,7 +54,14 @@ const LABELS: Record<string, string> = {
 // runs Clutter's sample code, which answers every request.
 const CODE = "code";
 const SAMPLE = "sample";
+// connectors.ResultSimulated: a VM built on a cloud emulator (LocalStack). It
+// has addresses but never boots, so it has nothing to open.
+const SIMULATED = "simulated";
+// Results that say something about a block rather than hold a value to show.
+const NOT_VALUES = new Set([CODE, SIMULATED]);
 const ORDER = Object.keys(LABELS);
+
+const isSimulated = (results: Map<string, BlockResult[]>, id: string) => (results.get(id) ?? []).some((r) => r.name === SIMULATED);
 
 export type ResultItem = { label: string; value: string; href: string | null };
 
@@ -77,7 +84,7 @@ export function resultRows(
     .filter((b) => !skip.has(b.id))
     .map((b) => {
       const items = [...(results.get(b.id) ?? [])]
-        .filter((r) => r.name !== CODE)
+        .filter((r) => !NOT_VALUES.has(r.name))
         .sort((x, y) => rank(x.name) - rank(y.name))
         .map((r) => ({ label: LABELS[r.name] ?? r.name, value: r.value, href: r.name === "url" ? linkFor(r.value) : null }));
       return { id: b.id, name: b.name, kind: b.kind, became: became(b), items };
@@ -100,7 +107,8 @@ export type LeadLine =
 const BASE_LABEL: Record<LeadLine["kind"], string> = { website: "Your website", server: "Your server", api: "Your API" };
 
 // leadLines reads the results in the diagram's order. web says whether a
-// server serves the web on port 80 (servesWeb). When two lines share a label,
+// server serves the web on port 80 (servesWeb). A simulated server has no
+// line: it never boots (simulatedNote says so). When two lines share a label,
 // each names its block: "Your website (shop)".
 export function leadLines(results: Map<string, BlockResult[]>, blocks: BlockRef[], web: ReadonlySet<string>, excluded: string[] = []): LeadLine[] {
   const skip = new Set(excluded);
@@ -110,6 +118,7 @@ export function leadLines(results: Map<string, BlockResult[]>, blocks: BlockRef[
     const value = (name: string) => (results.get(b.id) ?? []).find((r) => r.name === name)?.value;
     const pub = value("public_address");
     const url = value("url");
+    if (b.kind === "vm" && isSimulated(results, b.id)) continue;
     if (b.kind === "vm" && pub) {
       out.push(
         web.has(b.id)
@@ -137,6 +146,20 @@ export function sampleNote(results: Map<string, BlockResult[]>, blocks: BlockRef
   return `${who} ${names.length === 1 ? "answers" : "answer"} with a sample until you upload your code.`;
 }
 
+// simulatedNote is the one line for the VMs a cloud emulator only recorded,
+// per cloud in the order given ("VMs on local AWS are simulated; they do not
+// boot."), or [] when none is. cloudOf names the cloud a block ran on.
+export function simulatedNote(
+  results: Map<string, BlockResult[]>,
+  blocks: BlockRef[],
+  cloudOf: (id: string) => string,
+  excluded: string[] = [],
+): string[] {
+  const skip = new Set(excluded);
+  const clouds = blocks.filter((b) => !skip.has(b.id) && b.kind === "vm" && isSimulated(results, b.id)).map((b) => cloudOf(b.id));
+  return [...new Set(clouds)].map((c) => `VMs on local ${c} are simulated; they do not boot.`);
+}
+
 // A document's block and line, as much as servesWeb reads.
 export type DocBlock = { id: string; kind: string; fields: Record<string, unknown> };
 export type DocLine = { source: string; target: string };
@@ -153,16 +176,23 @@ const allowsHttp = (ingress: unknown) =>
     return from <= 80 && 80 <= to;
   });
 
+// A startup script with something in it: the only way the diagram says what
+// a server runs.
+const hasStartupScript = (fields: Record<string, unknown>) => typeof fields.startup_script === "string" && fields.startup_script.trim() !== "";
+
 // servesWeb is the servers the diagram makes a website: public, with a
-// firewall line that lets the web in on port 80. The diagram cannot say what
-// the server runs, so this is what the person asked Clutter to build.
+// firewall line that lets the web in on port 80, and a startup script to
+// start what serves it. A server without a script runs nothing on port 80,
+// so it is "Your server", not a website.
 export function servesWeb(blocks: DocBlock[], lines: DocLine[]): Set<string> {
   const byId = new Map(blocks.map((b) => [b.id, b]));
   const out = new Set<string>();
   for (const l of lines) {
     const fw = byId.get(l.source);
     const vm = byId.get(l.target);
-    if (fw?.kind === "firewall" && vm?.kind === "vm" && vm.fields.public === true && allowsHttp(fw.fields.ingress)) out.add(vm.id);
+    if (fw?.kind === "firewall" && vm?.kind === "vm" && vm.fields.public === true && hasStartupScript(vm.fields) && allowsHttp(fw.fields.ingress)) {
+      out.add(vm.id);
+    }
   }
   return out;
 }
