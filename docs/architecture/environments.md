@@ -50,7 +50,7 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 
 **Local:** nothing beyond the install list in the root `README.md`. No env file, no accounts.
 
-**Cloud.** Clutter in the cloud is a hosted service (SaaS): one copy, run for everyone. The accounts that run Clutter itself (world 1, `system-b-adapter-layer.md` § Names) belong to the client, who owns the product and pays for running it, and the team gets access to deploy. Users bring a Google sign-in and their own cloud accounts (world 2), which they pay for. Set up once stages 1 to 6 are done (`implementation-plan.md`):
+**Cloud.** Clutter in the cloud is a hosted service (SaaS): one copy, run for everyone. The accounts that run Clutter itself (world 1, `system-b-adapter-layer.md` § Names) belong to the client, who owns the product and pays for running it, and the team gets access to deploy. Users bring a Google sign-in and their own cloud accounts (world 2), which they pay for. Stages 1 to 6 are done, so this is set up when the client's accounts arrive (`implementation-plan.md`):
 
 | Thing | Owned by | Goes into |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 
 This section is the one owner of the go-live steps. The capstone deployment is gone: its API host (`7c1aawofvl.execute-api.us-west-2.amazonaws.com`) returns NXDOMAIN, and its platform state bucket belongs to the capstone AWS account, which we cannot reach. No step below has been run yet. What is missing is accounts and secrets, not tools. Every step marked **(person)** creates real resources, costs money or needs a person's login, so a person runs it, never a session.
 
-`npm run deploy:plan -- prod` shows what would change, and `npm run deploy -- prod` applies it. They stop on incomplete or example config (`backend/infra/check-config.sh`), on the wrong AWS account, and on anything but a clean `main`; they ask you to type `prod` before applying, and there is no tear-down command. `prod` is the only environment they accept (ADR-015). They have not been run against real AWS yet; `backend/infra/test-deploy.sh` tests only their checks. Stage 1 (phase 0 in `.claude/findings/NOW.md`) must be merged before step 9 on any account reachable from the internet. Its fixes, such as the signed-in generation endpoint, are in code on `impl/b0`; on the client's `main` the generation endpoint still needs no login.
+`npm run deploy:plan -- prod` shows what would change, and `npm run deploy -- prod` applies it. They stop on incomplete or example config (`backend/infra/check-config.sh`), on the wrong AWS account, and on anything but a clean `main`; they ask you to type `prod` before applying, and there is no tear-down command. `prod` is the only environment they accept (ADR-015). They have not been run against real AWS yet; `backend/infra/test-deploy.sh` tests only their checks. Stage 1 (phase 0 in `.claude/findings/NOW.md`) must be on the `main` you deploy from before step 9 on any account reachable from the internet. The fork's `main` has its fixes, such as the signed-in generation endpoint. The client's `main` does not until the fork's `main` reaches it, so there the generation endpoint still needs no login.
 
 ### Every value the cloud needs
 

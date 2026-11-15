@@ -140,14 +140,14 @@ CLUTTER_LOCALSTACK=1 TF_PLUGIN_CACHE_DIR="$HOME/.cache/clutter-tf-plugins" \
 
 The provider itself reads "exists" and "gone". A refresh-only plan after apply must find every resource. A refresh-only plan of the state from before the destroy must find every one deleted. Each test builds its environment from nothing, with LocalStack's test keys, so this machine's AWS credentials never reach Terraform.
 
-Results, checked on 2026-11-13:
+Results, checked on 2026-11-13 (B) and 2026-11-14 (A):
 
 | Test | Result |
 | --- | --- |
 | B, every block and edge | passes in about 5 minutes: 51 resources of 30 types apply, exist, and are gone after destroy |
 | A, `defaults` | passes: 17 resources apply, exist, and are gone after destroy |
-| A, `all-five-cors-on` | fails some of the time. The OPTIONS integration response can be created before its integration (`NotFoundException: Invalid Response status code specified`), because the apigateway template does not make it depend on the integration. With that `depends_on` added, it passes |
-| A, `all-five-cors-off` | fails: with CORS off, A's API has no method, and API Gateway refuses to deploy an API with no method (`The REST API doesn't contain any methods`). A's templates render no route for an edge from an API to a function |
+| A, `all-five-cors-on` | passes: 21 resources. The apigateway template makes the OPTIONS integration response depend on its integration; without that, AWS can answer `NotFoundException: Invalid Response status code specified` |
+| A, `all-five-cors-off` | passes: 15 resources. With CORS off, A's API has no method, and API Gateway refuses to deploy an API with no method (`The REST API doesn't contain any methods`), so the template renders no deployment or stage then. A's templates still render no route for an edge from an API to a function |
 
 ### What LocalStack cannot prove
 

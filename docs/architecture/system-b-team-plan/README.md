@@ -180,7 +180,7 @@ A split deployment repeats steps 8 to 14 once per cloud, in dependency order, ea
 
 The status on 2026-11-14, from `.claude/findings/NOW.md` § The order, which owns it:
 
-0. **Stage 0, housekeeping:** done. Decisions recorded, the design checked, merged into the fork's `main`; the client pull request is open.
+0. **Stage 0, housekeeping:** done. Decisions recorded, the design checked, merged into the fork's `main`; the client pull request and the message to the client are still to do.
 1. **Stage 1, make A safe:** done in code. Every phase 0 item is done or decided except item 9 (a lock on A's Terraform state); A's template loader and JWT check are in `generic`; real AWS must confirm items 7 and 10.
 2. **Stage 2, a test cloud on a laptop:** done. DevStack is proven on one laptop, and `npm run devstack -- create` sets it up (`backend/devserver/README.md`).
 3. **Stage 3, B's core:** done. B API, tables, job runner, run task and connector interface; the mock passes the contract tests.

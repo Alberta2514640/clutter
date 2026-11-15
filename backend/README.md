@@ -20,12 +20,12 @@ Run from the repo root:
 | Do this | Command | Result on 2026-11-14 |
 | --- | --- | --- |
 | Compile and vet | `go -C backend/api build ./...` and `go -C backend/api vet ./...` | pass |
-| A's unit tests | `go -C backend/api test ./...` | 30 packages `ok`, with no AWS or database. `TestHandler` and `TestGenerateOnly` in `terraform-engine/create` are integration tests: they skip unless `PSQL_CONNECTION_STRING` and `TEMPLATE_BUCKET_NAME` point at a live database and template bucket. |
+| A's unit tests | `go -C backend/api test ./...` | 30 packages `ok`, with no AWS or database. `TestGenerateOnly` in `terraform-engine/create` is an integration test: it skips unless `TEMPLATE_BUCKET_NAME` names a live template bucket. The tests in `tests/generic` that need Postgres skip when they cannot connect. |
 | B's unit tests | `go -C backend/adapter test ./...` | 18 packages `ok` (the list and what skips without Docker or Terraform are in `adapter/README.md`) |
 | A2's tests | `go -C backend/devserver test ./...` | 3 packages `ok` |
 | Run every route locally | `npm run dev`, then `npm run smoke` | A: all 32 routes in 39 calls, 31 pass, 3 need AWS, 5 expected failures, 0 fail. B: 32 of 32 checks pass. The full breakdown is in `devserver/README.md` |
 | Load the schema | `npm run dev` does it | A's 11 tables and 5 resources, then B's tables |
-| Validate the platform Terraform | `cp -R backend/infra "$TMPDIR/infra"`, then `terraform -chdir="$TMPDIR/infra" init -backend=false` and `terraform -chdir="$TMPDIR/infra" validate` (a copy, so `init` never touches the real state backend) | pass; `fmt -check` fails on 6 files, all unformatted on `main` before this work (`variables.tf`, `modules/api-gateway/main.tf`, `modules/fargate/outputs.tf`, `modules/fargate/variables.tf`, `modules/s3/main.tf`, `modules/templates/api-lambda-integration/main.tf`; formatting the CRLF ones would rewrite every line) |
+| Validate the platform Terraform | `cp -R backend/infra "$TMPDIR/infra"`, then `terraform -chdir="$TMPDIR/infra" init -backend=false` and `terraform -chdir="$TMPDIR/infra" validate` (a copy, so `init` never touches the real state backend) | pass; `fmt -check` fails on 6 files, all unformatted in the capstone's code (tag `capstone-original`) and left as they were (`variables.tf`, `modules/api-gateway/main.tf`, `modules/fargate/outputs.tf`, `modules/fargate/variables.tf`, `modules/s3/main.tf`, `modules/templates/api-lambda-integration/main.tf`; formatting the CRLF ones would rewrite every line) |
 | Build for AWS | `backend/api/build.sh` (all 34 Lambdas, linux/arm64 zips in each `deploy/`) | not run (nothing to deploy to) |
 
 A's lint results, recorded and not fixed (ADR-006 limits changes to A):

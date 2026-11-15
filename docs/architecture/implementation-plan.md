@@ -4,7 +4,7 @@ The order to build `system-b-adapter-layer.md` in, what each stage changes, how 
 
 ## How the work runs
 
-- **One implementation branch, `impl/b0`,** cut from `main` once this plan is merged, carries stages 1 to 6. Each stage is reviewed as it lands on the branch (every check, the smoke test, and a fresh reviewer where the next point says), and the branch goes to `main` by one pull request when stage 6 is done. Stage 7 waits for the credentials. After a merge, the fork's `main` goes to the client's repo by pull request.
+- **Stages 1 to 6 are built on one implementation branch** and reach `main` by one pull request. Each stage is reviewed as it lands (every check, the smoke test, and a fresh reviewer where the next point says). Stage 7 waits for the credentials. The fork's `main` then goes to the client's repo by pull request.
 - A builder writes the stage; the person reviewing runs every check and the smoke test themselves; a fresh reviewer attacks any stage that touches sign-in, tenancy, credentials or generated code. Findings are resolved before merge.
 - The person commits, pushes, merges and deploys. No session deploys.
 - **The docs move with the code.** Each stage's pull request updates the owner doc of every fact it changes (`docs/README.md` says which), its row in `.claude/findings/NOW.md`, and the folder README's expected results. A stage is not done while a doc still describes the old state.
@@ -20,15 +20,15 @@ Nothing waits for the client except stage 7.
 | B's API, sign-in, tables, connections, credential encryption | B's Go tests, and smoke checks through A2 |
 | The connector contract | a mock connector and the shared contract tests, in CI |
 | Real OpenStack deploys | General's OpenStack connector against DevStack |
-| B's AWS output | `terraform validate`, and the golden test for A's template move |
-| The whole editor flow | a browser against A2; AWS deployments stop at the AWS call |
+| B's AWS output | `terraform validate`, the golden test for A's template move, and plan, apply and destroy on LocalStack |
+| The whole editor flow | a browser against A2; AWS deployments apply on LocalStack when it runs, and otherwise stop at the AWS call |
 | CloudFormation and IAM | `cfn-lint`, `terraform validate` |
 
 Left for the credentials: real AWS deploys by A and B, the AWS role link end to end, hosting world 1, the client's Google sign-in, and the hosted demo.
 
 ## Stage 0: housekeeping
 
-The decisions are recorded (ADR-013 to ADR-017), the design was checked on 2026-11-13, and the questions for the client are in `.claude/findings/NOW.md` § What we need from the client. **Done when:** this branch is merged and the fork's `main` reaches the client's repo by pull request.
+The decisions are recorded (ADR-013 to ADR-017), the design was checked on 2026-11-13, and the questions for the client are in `.claude/findings/NOW.md` § What we need from the client. **Done when:** the fork's `main` has stages 1 to 6 and reaches the client's repo by pull request.
 
 ## Stage 1: make A safe
 
@@ -84,13 +84,13 @@ The platform Terraform holds B's part (`backend/infra/modules/adapter-service`):
 
 ## Stage 8 and later
 
-Patrii as an OpenStack connection when it opens; DigitalOcean as the second General connector; General's existing-servers mode (`general-ssh`) once the config runner is chosen; TierHive when it has an API; the optional Clutter sandbox connection; scoped keys on clouds other than AWS; B1, then B2; retiring A's own AWS flow. Blocks across clouds in one deployment (ADR-020) are already built on `impl/b0`, pulled forward as stage 6b. Live collaboration is another team's work, on the stable diagram document.
+Patrii as an OpenStack connection when it opens; DigitalOcean as the second General connector; General's existing-servers mode (`general-ssh`) once the config runner is chosen; TierHive when it has an API; the optional Clutter sandbox connection; scoped keys on clouds other than AWS; B1, then B2; retiring A's own AWS flow. Blocks across clouds in one deployment (ADR-020) are already built, pulled forward as stage 6b. Live collaboration is another team's work, on the stable diagram document.
 
 ### Retiring A's AWS path
 
 A's AWS-only machinery retires once B has proved itself on real AWS; what B shares with A stays.
 
-1. **B covers what A's AWS path does:** function code upload and server setup at first boot. Both are built on `impl/b0` (stage 6b in `.claude/findings/NOW.md`).
+1. **B covers what A's AWS path does:** function code upload and server setup at first boot. Both are built (stage 6b in `.claude/findings/NOW.md`).
 2. **B's AWS path passes on real AWS:** the stage 7 tests on the test account.
 3. **Remove A's AWS machinery in one change:** A's diagram editor and its AWS nodes, generation (`terraform-engine/create`, `files`), the command runner, code upload, A's log routes, the Ansible routes and queue, A's two Fargate runners and their images, and their routes in `backend/infra/main.tf` and A2's route table. Old AWS diagrams (none exist outside test data) are deleted or left read-only; no converter is built unless the client has real ones.
 4. **Keep what B uses:** log-in and the JWT, users, organizations, projects, diagram save and load, the CloudFormation account link and A's linked-role table, and the website shell.
@@ -98,7 +98,7 @@ A's AWS-only machinery retires once B has proved itself on real AWS; what B shar
 
 ![C after A's AWS path retires: one service, one website, one deploy path](figures/clutter-c.png)
 
-## What runs locally when stages 1 to 6 are done
+## What runs locally with stages 1 to 6
 
 `npm run dev` starts Postgres, A (through A2), B and the website; DevStack runs in its own VM. In the browser:
 

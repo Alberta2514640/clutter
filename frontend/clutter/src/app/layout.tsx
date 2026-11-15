@@ -27,7 +27,10 @@ export const metadata: Metadata = {
 // `dark` class turns on the `.dark` block in globals.css).
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+    // suppressHydrationWarning: browser extensions (QuillBot, password
+    // managers) add attributes to <html> before React loads. It covers this
+    // element's attributes only, not mismatches inside the page.
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased">
         <Providers>{children}</Providers>
       </body>

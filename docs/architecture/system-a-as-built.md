@@ -1,6 +1,6 @@
 # System A: Clutter as built (exists today)
 
-As it stands on 2026-11-14 on the `impl/b0` branch, from a read of the code and a local run of every route (`backend/devserver`). The client's `main` does not have the stage 1 fixes yet. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
+As it stands on 2026-11-14, from a read of the code and a local run of every route (`backend/devserver`). The client's `main` does not have the stage 1 fixes yet. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
 
 ## Parts
 
@@ -84,7 +84,7 @@ Testing in the report is manual: a Postman collection, exploratory UI testing, o
 
 The report makes claims the capstone's code did not support:
 
-| Report says | The capstone's code | Now, on `impl/b0` |
+| Report says | The capstone's code | Now |
 | --- | --- | --- |
 | Every endpoint requires a JWT | `POST /log-in`, `POST /terraform-engine` and `GET /resources` had no authorizer | `POST /log-in` and `GET /resources` (the static resource catalog) have none, on purpose |
 | Supabase row-level security keeps each user's data separate | only `supported_resources` enabled it, with a policy that gave the public `anon` role every command; the other ten tables had none | on for every table (§ What changed) |
