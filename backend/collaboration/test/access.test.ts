@@ -48,10 +48,16 @@ describe("checkAccess", () => {
   it("lets a member in and returns the saved document", async () => {
     const api = fakeApi(200, okBody());
     const got = await checkAccess(request(), cfg, api.fetchFn);
-    expect(got).toEqual({ ok: true, userId: USER, diagramName: "Demo", document: blocks });
+    expect(got).toEqual({ ok: true, userId: USER, expiresAt: null, diagramName: "Demo", document: blocks });
     expect(api.calls).toEqual([
       { url: `http://localhost:8787/diagram?projectId=${PROJECT}&diagramId=${DIAGRAM}`, authorization: TOKEN },
     ]);
+  });
+
+  it("returns when the login ends, in ms", async () => {
+    const token = tokenFor({ sub: USER, exp: 1_800_000_000 });
+    const got = await checkAccess(request({ cookieHeader: `clutter_token=${token}` }), cfg, fakeApi(200, okBody()).fetchFn);
+    expect(got).toMatchObject({ ok: true, expiresAt: 1_800_000_000_000 });
   });
 
   it("refuses a missing projectId without calling the API", async () => {

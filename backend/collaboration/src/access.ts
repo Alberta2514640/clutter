@@ -19,7 +19,14 @@ export interface AccessRequest {
 }
 
 export type Access =
-  | { ok: true; userId: string; diagramName: string; document: Record<string, unknown> }
+  | {
+      ok: true;
+      userId: string;
+      // When the login ends, in ms since 1970. Null if the token has no end time.
+      expiresAt: number | null;
+      diagramName: string;
+      document: Record<string, unknown>;
+    }
   | { ok: false; code: CloseCode; reason: string };
 
 const refuse = (code: CloseCode, reason: string): Access => ({ ok: false, code, reason });
@@ -41,14 +48,17 @@ export function readToken(cookieHeader: string | undefined): string | null {
   return null;
 }
 
-// Read the user id ("sub") from the token.
+// Read the user id ("sub") and the end time ("exp") from the token.
 // This does not verify the token. Only call it after A accepted the token.
-function userIdOf(token: string): string | null {
+function readClaims(token: string): { userId: string; expiresAt: number | null } | null {
   const payload = token.split(".")[1];
   if (!payload) return null;
   try {
     const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (isRecord(claims) && typeof claims.sub === "string" && UUID.test(claims.sub)) return claims.sub;
+    if (isRecord(claims) && typeof claims.sub === "string" && UUID.test(claims.sub)) {
+      // "exp" is in seconds. We keep it in ms.
+      return { userId: claims.sub, expiresAt: typeof claims.exp === "number" ? claims.exp * 1000 : null };
+    }
   } catch {
     // The token is not valid JSON. Fall through and return null.
   }
@@ -93,8 +103,8 @@ export async function checkAccess(req: AccessRequest, cfg: Config, fetchFn: type
   const document = diagram.data;
   if (!isRecord(document) || document.engine !== BLOCKS_ENGINE) return refuse(CLOSE.badRequest, "not a building-block diagram");
 
-  const userId = userIdOf(token);
-  if (!userId) return refuse(CLOSE.unauthorized, "not signed in");
+  const claims = readClaims(token);
+  if (!claims) return refuse(CLOSE.unauthorized, "not signed in");
 
-  return { ok: true, userId, diagramName: typeof diagram.name === "string" ? diagram.name : "", document };
+  return { ok: true, ...claims, diagramName: typeof diagram.name === "string" ? diagram.name : "", document };
 }

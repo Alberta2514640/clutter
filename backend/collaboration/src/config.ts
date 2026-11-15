@@ -15,6 +15,8 @@ export interface Config {
   maxRooms: number;
   // How long to keep an empty room, in ms.
   roomIdleMs: number;
+  // How often to ping each client, in ms. A client that does not answer is closed.
+  pingMs: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -70,5 +72,6 @@ export function loadConfig(env: Env = process.env): Config {
     maxClientsPerRoom: int(env, "COLLAB_MAX_CLIENTS_PER_ROOM", 20, 1, 1000),
     maxRooms: int(env, "COLLAB_MAX_ROOMS", 100, 1, 100_000),
     roomIdleMs: int(env, "COLLAB_ROOM_IDLE_MS", 30_000, 0, 3_600_000),
+    pingMs: int(env, "COLLAB_PING_MS", 30_000, 1000, 600_000),
   };
 }
