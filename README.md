@@ -33,7 +33,7 @@ Every command takes `--help`. The tools and their install commands are in [Set u
 | --- | --- |
 | **System A** (Clutter as built, AWS only) | Complete and tested by the capstone team. Its AWS hosting has been torn down. It runs locally through `backend/devserver`, except the parts that need AWS (deploy and running Ansible). Stage 1's security fixes are in code on the `impl/b0` branch; the customer role and runner fixes still need a real AWS account to confirm them. |
 | **System B** (the adapter layer) | Built on `impl/b0` for stages 3 to 6: B's service in `backend/adapter`, the OpenStack and AWS connectors, B's editor, the Connections page and the deploy panel. The OpenStack connector's real test on DevStack and B's AWS test on LocalStack pass, and so do plan, deploy and destroy from the browser on both (2026-11-14). Stage 7 (the cloud) is written in the platform Terraform and waits for the client's accounts. The build order is `docs/architecture/implementation-plan.md`; each stage's status is in `.claude/findings/NOW.md`. |
-| **Local checks** (2026-11-14) | Go: `backend/api` 30 packages ok, `backend/adapter` 18 ok, `backend/devserver` 3 ok. Frontend: 21 test files, 139 tests pass. Smoke: A covers all 32 routes in 39 calls (31 pass, 3 need AWS, 5 expected failures, 0 fail), and B passes 32 of 32 checks. Expected output is in `backend/README.md` and `frontend/clutter/README.md`. |
+| **Local checks** (2026-11-14) | Go: `backend/api` 30 packages ok, `backend/adapter` 18 ok, `backend/devserver` 3 ok. Frontend: 21 test files, 141 tests pass. Smoke: A covers all 32 routes in 39 calls (31 pass, 3 need AWS, 5 expected failures, 0 fail), and B passes 32 of 32 checks. Expected output is in `backend/README.md` and `frontend/clutter/README.md`. |
 | **Open defects** | Some defects in A are still open, including shared runner credentials. They are listed in `.claude/findings/NOW.md`. Read that before you build on any A code path. |
 
 ## How Clutter fits together
@@ -196,7 +196,7 @@ npm --prefix frontend/clutter run lint
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build
 terraform -chdir=backend/infra fmt -check -recursive    # 6 of A's files fail today
 go -C backend/devserver test ./...     # A2, the local run tool
-(cd frontend/clutter && npx vitest run)   # 21 files, 139 tests
+(cd frontend/clutter && npx vitest run)   # 21 files, 141 tests
 ```
 
 The expected result of each check, including the known `fmt` failure, is in `backend/README.md` and `frontend/clutter/README.md`. Every Go package must pass.
@@ -204,6 +204,8 @@ The expected result of each check, including the known `fmt` failure, is in `bac
 ### 4. A full local tour
 
 From a fresh clone to a real deploy and destroy on AWS (LocalStack) and OpenStack (DevStack), all on your machine. The details behind each step are in `backend/devserver/README.md`.
+
+If `npm run dev` already runs from the Quick start, run the tour's commands in a second terminal; `npm run dev` there restarts it.
 
 #### What runs, and when
 
@@ -244,8 +246,8 @@ Needs a Mac with 16 GB of memory or more (`backend/devserver/README.md` § OpenS
 
 1. `npm run devstack -- create`: once, 10 to 20 minutes. It ends with `DevStack runs in the devstack VM.`
 2. `npm run doctor`: a line says `DevStack answers at http://<the VM's address>/identity/v3`. If it does not, allow your terminal app in macOS's Local Network settings (§ Let this machine reach the VM (macOS) in the same README), then run the doctor again.
-3. `npm run devstack -- credential`, in a terminal: it prints a region, an auth URL, an application credential ID and a secret. The secret is shown once. Running it again replaces the credential, so delete the OpenStack connection and add it again with the new values.
-4. **Connections**, then **OpenStack**: fill in a connection name and the four printed values, then **Check and connect**: `Connected …. Clutter checked it and it works.`
+3. `npm run devstack -- credential`, in a terminal: it prints a region, an auth URL, an application credential ID and a secret. The values to copy are in the right-hand column. The secret is shown once. If a credential exists, it asks `Replace it? [y/N]`: answer `y`. Running it again replaces the credential, so delete the OpenStack connection and add it again with the new values.
+4. **Connections**, then **OpenStack**: fill in a connection name and the four printed values, then **Check and connect**: `Connected …. Clutter checked it and it works.` The editor's **View as** now offers OpenStack too.
 5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram: **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Apply complete: 5 added`, and **Destroy** says `Destroy complete: 5 destroyed`.
 
 In later sessions, `npm run devstack -- start` starts the VM, and `npm run doctor` shows whether OpenStack answers.

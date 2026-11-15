@@ -76,6 +76,8 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
   // A split deployment has a line per cloud, in the order a run takes them.
   const titleOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector)?.manifest.title ?? connector;
   const where = cloudsLine({ title: cloud, region: item.region }, item.placements, titleOf);
+  // The same clouds without regions, for the lines that say what a run does.
+  const builtIn = cloudsLine({ title: cloud, region: "" }, item.placements?.map((p) => ({ ...p, region: "" })), titleOf);
   const clouds = report ? orderedClouds(report) : [];
   const lines: CompatibilityLine[] = !report
     ? []
@@ -291,11 +293,11 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
       </div>
       <ul data-testid="action-help" className="space-y-0.5 text-[11px] leading-snug text-slate-400">
         <li>Plan shows what would change. Nothing is built.</li>
-        <li>Deploy builds it in {cloud}.</li>
+        <li>Deploy builds it in {builtIn}.</li>
         {offersDestroy && <li>Destroy removes everything this deployment built in your cloud.</li>}
         <li>Remove takes this deployment off the diagram. Nothing in your cloud changes.</li>
       </ul>
-      {confirm === "destroy" && <p className="text-xs text-red-300">Destroy removes everything this deployment built in {cloud}. This cannot be undone.</p>}
+      {confirm === "destroy" && <p className="text-xs text-red-300">Destroy removes everything this deployment built in {builtIn}. This cannot be undone.</p>}
       {off.length > 0 && (
         <div id={offId} data-testid="action-off" className="space-y-0.5">
           {off.map((l) => (

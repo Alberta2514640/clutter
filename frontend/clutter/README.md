@@ -30,7 +30,7 @@ Without `NEXT_PUBLIC_ADAPTER_API_ENDPOINT`, A's screens work and B's screens say
 ```bash
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter     # 0 errors
 npm --prefix frontend/clutter run lint                             # 0 errors, 3 warnings (unused variables in A's logs panel and in useCreateDiagram)
-(cd frontend/clutter && npx vitest run)                            # 21 files, 139 tests
+(cd frontend/clutter && npx vitest run)                            # 21 files, 141 tests
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790 npm --prefix frontend/clutter run build   # 21 routes
 ```
 

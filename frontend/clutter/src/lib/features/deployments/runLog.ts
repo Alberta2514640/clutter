@@ -7,9 +7,13 @@
 // destroy, and B repeats the plan's counts, so the last line of each kind
 // stands, and a plan is dropped once the run applied or destroyed. B's own
 // apply line counts blocks, not resources, so Terraform's count wins over it.
-// A run split across clouds labels B's line for each cloud ("Lab (Mock
-// cloud): apply complete, 4 blocks built."); those lines stand for the apply,
-// one per cloud.
+//
+// A run split across clouds has a part per cloud, each under a header ("==
+// Lab (Mock cloud): apply =="). B ends a split plan with its own total, so the
+// plan reads as above. Terraform's apply and destroy lines stand once per part
+// and are added up across the parts. B labels its apply line for each cloud
+// ("Lab (Mock cloud): apply complete, 4 blocks built."); when a cloud ran no
+// Terraform, those lines stand for the apply instead, one per cloud.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
 import type { RunStatus } from "./types";
@@ -18,22 +22,34 @@ export type RunResult = { tone: "ok" | "error"; text: string };
 
 type Kind = "plan" | "apply" | "destroy" | "none";
 // from: Terraform's own line, or B's block count (one cloud's, when labelled).
-type Summary = { kind: Kind; text: string; from: "terraform" | "blocks"; cloud?: string };
+// n: the counts of Terraform's apply or destroy line, for adding up parts.
+type Summary = { kind: Kind; text: string; from: "terraform" | "blocks"; cloud?: string; n?: number[] };
 
-const counts = (pairs: [string, string][]) => {
-  const shown = pairs.filter(([n]) => n !== "0").map(([n, word]) => `${n} ${word}`);
+const counts = (n: number[], words: string[]) => {
+  const shown = n.map((v, i) => (v !== 0 ? `${v} ${words[i]}` : "")).filter(Boolean);
   return shown.length > 0 ? shown.join(", ") : "no changes";
 };
 
+const APPLY = ["added", "changed", "destroyed"];
+const DESTROY = ["destroyed"];
+const done = (kind: Kind, n: number[]) =>
+  kind === "apply" ? `Apply complete: ${counts(n, APPLY)}` : `Destroy complete: ${counts(n, DESTROY)}`;
+
 const blocks = (n: string) => `${n} ${n === "1" ? "block" : "blocks"} built`;
+
+// The header B writes before each cloud's part of a split run.
+const PART = /^== .+: (plan|apply|destroy|roll back) ==$/;
 
 function summary(line: string): Summary | null {
   let m = line.match(/Apply complete! Resources: (\d+) added, (\d+) changed, (\d+) destroyed/);
-  if (m) return { kind: "apply", from: "terraform", text: `Apply complete: ${counts([[m[1], "added"], [m[2], "changed"], [m[3], "destroyed"]])}` };
+  if (m) {
+    const n = [+m[1], +m[2], +m[3]];
+    return { kind: "apply", from: "terraform", n, text: done("apply", n) };
+  }
   m = line.match(/Destroy complete! Resources: (\d+) destroyed/);
-  if (m) return { kind: "destroy", from: "terraform", text: `Destroy complete: ${counts([[m[1], "destroyed"]])}` };
+  if (m) return { kind: "destroy", from: "terraform", n: [+m[1]], text: done("destroy", [+m[1]]) };
   m = line.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
-  if (m) return { kind: "plan", from: "terraform", text: `Plan: ${counts([[m[1], "to add"], [m[2], "to change"], [m[3], "to destroy"]])}` };
+  if (m) return { kind: "plan", from: "terraform", text: `Plan: ${counts([+m[1], +m[2], +m[3]], ["to add", "to change", "to destroy"])}` };
   if (/No changes\. Your infrastructure matches the configuration\./.test(line)) return { kind: "none", from: "terraform", text: "No changes" };
   // B's lines: "Apply complete: 6 blocks built." and, per cloud of a split
   // run, "Lab (Mock cloud): apply complete, 4 blocks built."
@@ -46,23 +62,40 @@ function summary(line: string): Summary | null {
 
 export function runResult(log: string, status: RunStatus): RunResult | null {
   // Terraform colours its output; the stored log may keep the escape codes.
-  const lines = log.replace(/\u001b\[[0-9;]*m/g, "").split("\n");
+  const lines = log.replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim());
   if (status === "failed") {
-    const error = lines.map((l) => l.trim()).find((l) => /\bError:/.test(l));
+    const error = lines.find((l) => /\bError:/.test(l));
     return error ? { tone: "error", text: error.slice(error.indexOf("Error:")) } : null;
   }
   if (status !== "completed") return null;
 
   // A Map keeps each key where it was first seen; set replaces the value.
   const byKey = new Map<string, Summary>();
-  for (const s of lines.map((l) => summary(l.trim())).filter((s): s is Summary => !!s)) {
-    const key = s.cloud ? `${s.cloud}\u0000${s.kind}` : s.kind;
+  let part = 0;
+  for (const line of lines) {
+    if (PART.test(line)) {
+      part++;
+      continue;
+    }
+    const s = summary(line);
+    if (!s) continue;
+    const scope = s.cloud ?? (s.kind === "apply" || s.kind === "destroy" ? String(part) : "");
+    const key = `${scope}\u0000${s.kind}`;
     const prev = byKey.get(key);
     if (prev?.from === "terraform" && s.from === "blocks") continue;
     byKey.set(key, s);
   }
   let found = [...byKey.values()];
-  if (found.some((s) => s.cloud)) found = found.filter((s) => s.cloud || s.kind !== "apply");
+  const labelled = found.filter((s) => s.cloud).length;
+  if (labelled > 0) {
+    const counted = found.filter((s) => s.kind === "apply" && s.n).length;
+    found = counted >= labelled ? found.filter((s) => !s.cloud) : found.filter((s) => s.cloud || s.kind !== "apply");
+  }
+  // Add up Terraform's counts of the same kind across the parts.
+  const totals = new Map<Kind, number[]>();
+  for (const s of found) if (s.n) totals.set(s.kind, (totals.get(s.kind) ?? s.n.map(() => 0)).map((v, i) => v + s.n![i]));
+  found = found.filter((s, i) => !s.n || found.findIndex((t) => t.n && t.kind === s.kind) === i);
+  found = found.map((s) => (s.n ? { ...s, text: done(s.kind, totals.get(s.kind)!) } : s));
   if (found.some((s) => s.kind === "apply" || s.kind === "destroy")) found = found.filter((s) => s.kind === "apply" || s.kind === "destroy");
   return found.length > 0 ? { tone: "ok", text: found.map((s) => s.text).join("; ") } : null;
 }

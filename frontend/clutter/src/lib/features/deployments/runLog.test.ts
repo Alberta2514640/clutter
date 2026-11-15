@@ -55,6 +55,34 @@ describe("runResult", () => {
     expect(runResult(log, "completed")?.text).toBe("Lab (Mock cloud): 4 blocks built; Prod (AWS): 1 block built");
   });
 
+  it("adds up a split destroy across its clouds, once per cloud", () => {
+    const log = [
+      "== Prod (Amazon Web Services): destroy ==",
+      "Plan: 0 to add, 0 to change, 7 to destroy.",
+      "Destroy complete! Resources: 7 destroyed.",
+      "Destroy complete! Resources: 7 destroyed.",
+      "== Lab (OpenStack): destroy ==",
+      "Plan: 0 to add, 0 to change, 10 to destroy.",
+      "Destroy complete! Resources: 10 destroyed.",
+    ].join("\n");
+    expect(runResult(log, "completed")?.text).toBe("Destroy complete: 17 destroyed");
+  });
+
+  it("adds up a split apply when every cloud ran Terraform", () => {
+    const log = [
+      "== Lab (OpenStack): apply ==",
+      "Plan: 10 to add, 0 to change, 0 to destroy.",
+      "Apply complete! Resources: 10 added, 0 changed, 0 destroyed.",
+      "Apply complete! Resources: 10 added, 0 changed, 0 destroyed.",
+      "Lab (OpenStack): apply complete, 4 blocks built.",
+      "== Prod (Amazon Web Services): apply ==",
+      "Plan: 7 to add, 1 to change, 0 to destroy.",
+      "Apply complete! Resources: 7 added, 1 changed, 0 destroyed.",
+      "Prod (Amazon Web Services): apply complete, 3 blocks built.",
+    ].join("\n");
+    expect(runResult(log, "completed")?.text).toBe("Apply complete: 17 added, 1 changed");
+  });
+
   it("gives the first error of a failed run", () => {
     const log = "== Prod (AWS): apply ==\nProd (AWS): Error: nothing was built: This needs a real AWS account.\nError: second\n";
     expect(runResult(log, "failed")).toEqual({ tone: "error", text: "Error: nothing was built: This needs a real AWS account." });

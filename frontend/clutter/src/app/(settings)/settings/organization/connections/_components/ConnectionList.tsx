@@ -44,10 +44,12 @@ function ConnectionRow({ token, organizationId, connection, cloud }: { token: st
         <div className="flex min-w-0 items-start gap-3">
           <CloudMark cloud={cloud} size={28} className="mt-0.5" />
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium text-white">{connection.name}</span>
-              <span className="rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300">{cloud.title}</span>
-              <span className="text-xs text-slate-500">{connection.region}</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate font-medium text-white" title={connection.name}>
+                {connection.name}
+              </span>
+              <span className="shrink-0 whitespace-nowrap rounded border border-slate-700 px-1.5 py-0.5 text-xs text-slate-300">{cloud.title}</span>
+              <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">{connection.region}</span>
             </div>
             <div className={`mt-1 flex items-center gap-1.5 text-xs ${working ? "text-emerald-300" : "text-red-300"}`}>
               {working ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}

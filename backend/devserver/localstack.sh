@@ -75,6 +75,7 @@ stop() {
   if docker inspect "${CONTAINER}" >/dev/null 2>&1; then
     echo "Stopping LocalStack (it keeps no data) ..."
     docker rm -f "${CONTAINER}" >/dev/null
+    echo "LocalStack is stopped."
   else
     echo "LocalStack is not running."
   fi
