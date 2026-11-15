@@ -419,7 +419,8 @@ func (a *API) createDeployment(w http.ResponseWriter, r *http.Request) {
 		rf.write(w)
 		return
 	}
-	// The inserts prove every connection belongs to this organization.
+	// The inserts prove again that the diagram and every connection belong to
+	// this organization.
 	d, err := a.Store.CreateDeployment(r.Context(), orgID, userID, store.Deployment{
 		ID: uuid.NewString(), DiagramID: diagramID, ConnectionID: connectionID,
 		Settings: settings, Exclusions: exclusions, Placements: placements,

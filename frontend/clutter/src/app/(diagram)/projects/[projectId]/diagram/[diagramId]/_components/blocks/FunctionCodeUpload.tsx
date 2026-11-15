@@ -2,31 +2,28 @@
 
 import { adapterApiConfigured, adapterErrorMessage, NOT_CONFIGURED_MESSAGE } from "@/lib/adapterApi";
 import { useFunctionCode, useRemoveFunctionCode, useUploadFunctionCode } from "@/lib/features/functionCode/hooks";
+import { MAX_CODE_SIZE_TEXT } from "@/lib/features/functionCode/types";
 import { formatBytes, shortHash, uploadReducer, zipFileError } from "@/lib/features/functionCode/upload";
-import { useOrganizations } from "@/lib/features/organization/hooks";
-import { useProjectOrganization } from "@/lib/features/projects/hooks";
-import { useMe } from "@/lib/features/user/hooks";
 import { FileArchive, Loader2, RefreshCw, Trash2, Upload } from "lucide-react";
-import { useParams } from "next/navigation";
-import { useMemo, useReducer, useRef, type ReactNode } from "react";
+import { useReducer, useRef, type ReactNode } from "react";
 
 const buttonClass =
   "inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50";
 
+type Props = {
+  nodeId: string;
+  token: string | null;
+  // The project's own organization, which B checks every call against, and
+  // why it cannot be found (null while it is found or still being looked up).
+  organizationId: string | null;
+  organizationError: string | null;
+  diagramId: string;
+};
+
 // FunctionCodeUpload is a function block's code: the .zip uploaded through
 // B for this block, which every deployment of the diagram uses. With none,
-// the function deploys with Clutter's placeholder code.
-export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: string; disabled: boolean }) {
-  const params = useParams<{ projectId: string; diagramId: string }>();
-  const meQ = useMe();
-  const token = meQ.data?.token ?? null;
-  const orgsQ = useOrganizations(token);
-  const orgIds = useMemo(() => orgsQ.data?.map((o) => o.id) ?? null, [orgsQ.data]);
-  // B checks every call against the project's own organization.
-  const orgQ = useProjectOrganization(token, params.projectId, orgIds);
-  const orgId = orgQ.data ?? null;
-  const diagramId = params.diagramId;
-
+// the function deploys with Clutter's sample code.
+export default function FunctionCodeUpload({ nodeId, token, organizationId: orgId, organizationError, diagramId }: Props) {
   const codeQ = useFunctionCode(token, orgId, diagramId);
   const uploadM = useUploadFunctionCode(token);
   const removeM = useRemoveFunctionCode(token);
@@ -57,7 +54,7 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
 
   const remove = () => {
     if (!orgId || !current) return;
-    if (!window.confirm(`Remove ${current.file_name}? The function deploys with placeholder code until you upload new code.`)) return;
+    if (!window.confirm(`Remove ${current.file_name}? The function deploys with sample code until you upload new code.`)) return;
     dispatch({ type: "dismiss" });
     removeM.mutate({ organizationId: orgId, diagramId, nodeId });
   };
@@ -67,8 +64,8 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
   let body: ReactNode;
   if (!adapterApiConfigured) {
     body = <p className="text-xs text-slate-400">{NOT_CONFIGURED_MESSAGE}</p>;
-  } else if (orgQ.isError || (orgQ.isSuccess && !orgId)) {
-    body = <p className="text-xs text-red-400">Clutter could not find this diagram&apos;s organization. Reload the page.</p>;
+  } else if (organizationError) {
+    body = <p className="text-xs text-red-400">{organizationError}</p>;
   } else if (!ready || codeQ.isPending) {
     body = (
       <p className="flex items-center gap-2 text-xs text-slate-400">
@@ -76,7 +73,7 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
         Loading this function&apos;s code…
       </p>
     );
-  } else if (codeQ.isError) {
+  } else if (codeQ.isError && !codeQ.data) {
     body = (
       <div className="space-y-1.5">
         <p className="text-xs text-red-400">{adapterErrorMessage(codeQ.error)}</p>
@@ -106,14 +103,14 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
           </dl>
         </div>
         <div className="flex gap-2">
-          <button type="button" className={buttonClass} disabled={disabled || busy} onClick={openPicker}>
+          <button type="button" className={buttonClass} disabled={busy} onClick={openPicker}>
             <Upload className="h-3.5 w-3.5" />
             Replace
           </button>
           <button
             type="button"
             className={`${buttonClass} border-red-900 text-red-300 hover:bg-red-950`}
-            disabled={disabled || busy}
+            disabled={busy}
             onClick={remove}>
             {removeM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
             Remove
@@ -124,8 +121,8 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
   } else {
     body = (
       <div className="space-y-2">
-        <p className="text-xs text-slate-400">No code uploaded. The function runs placeholder code until you upload a .zip.</p>
-        <button type="button" className={buttonClass} disabled={disabled || busy} onClick={openPicker}>
+        <p className="text-xs text-slate-400">No code uploaded. The function runs sample code until you upload a .zip.</p>
+        <button type="button" className={buttonClass} disabled={busy} onClick={openPicker}>
           <Upload className="h-3.5 w-3.5" />
           Upload .zip
         </button>
@@ -136,7 +133,7 @@ export default function FunctionCodeUpload({ nodeId, disabled }: { nodeId: strin
   return (
     <div className="space-y-1.5">
       <p className="block text-xs font-medium text-slate-300">Code</p>
-      <p className="text-xs text-slate-500">A .zip of at most 50 MB, used by every deployment of this diagram. Save the diagram before uploading.</p>
+      <p className="text-xs text-slate-500">A .zip of at most {MAX_CODE_SIZE_TEXT}, used by every deployment of this diagram. Save the diagram before uploading.</p>
       {body}
       {state.phase === "uploading" && (
         <div className="space-y-1">

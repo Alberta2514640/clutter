@@ -4,7 +4,7 @@
 // (B refuses a second one, 409 name_taken).
 
 // B caps a connection's name at 64 characters.
-const NAME_MAX = 64;
+export const NAME_MAX = 64;
 
 export function localConnectionName(cloudShortName: string, taken: string[]): string {
   const base = `Local ${cloudShortName}`.slice(0, NAME_MAX).trimEnd();

@@ -22,6 +22,17 @@ export type PaletteBlock = {
 export const manifestOffers = (m: Manifest, kind: BlockKind) =>
   (m.blocks ?? []).some((b) => b.kind === kind && b.treatment !== "removed");
 
+// entryFor is a connector's catalog entry, or null when this server no
+// longer offers the connector.
+export const entryFor = (catalog: CatalogEntry[], connector: string | null | undefined): CatalogEntry | null =>
+  connector ? (catalog.find((e) => e.manifest.connector === connector) ?? null) : null;
+
+// cloudOffers reports whether a connector in the catalog can build a kind of block.
+export const cloudOffers = (catalog: CatalogEntry[], connector: string, kind: BlockKind) => {
+  const entry = entryFor(catalog, connector);
+  return !!entry && manifestOffers(entry.manifest, kind);
+};
+
 // paletteBlocks lists every block at least one cloud can build: the standard
 // blocks in their fixed order, then any cloud's own blocks by title.
 export function paletteBlocks(catalog: CatalogEntry[]): PaletteBlock[] {

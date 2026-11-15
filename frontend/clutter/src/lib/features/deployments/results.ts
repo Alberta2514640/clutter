@@ -12,6 +12,8 @@
 // for a result.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { joinAnd } from "../../text";
+import { VM_KIND } from "../diagram/blocksDocument";
 import type { BlockRef } from "./compatibility";
 
 export type BlockResult = { name: string; value: string };
@@ -118,8 +120,8 @@ export function leadLines(results: Map<string, BlockResult[]>, blocks: BlockRef[
     const value = (name: string) => (results.get(b.id) ?? []).find((r) => r.name === name)?.value;
     const pub = value("public_address");
     const url = value("url");
-    if (b.kind === "vm" && isSimulated(results, b.id)) continue;
-    if (b.kind === "vm" && pub) {
+    if (b.kind === VM_KIND && isSimulated(results, b.id)) continue;
+    if (b.kind === VM_KIND && pub) {
       out.push(
         web.has(b.id)
           ? { kind: "website", id: b.id, name: b.name, label: "", url: `http://${pub}` }
@@ -142,8 +144,7 @@ export function sampleNote(results: Map<string, BlockResult[]>, blocks: BlockRef
     .map((b) => b.name);
   if (names.length === 0) return null;
   if (names.length === 1 && hasApiLine) return "Answers with a sample until you upload your code.";
-  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `${who} ${names.length === 1 ? "answers" : "answer"} with a sample until you upload your code.`;
+  return `${joinAnd(names)} ${names.length === 1 ? "answers" : "answer"} with a sample until you upload your code.`;
 }
 
 // simulatedNote is the one line for the VMs a cloud emulator only recorded,
@@ -156,7 +157,7 @@ export function simulatedNote(
   excluded: string[] = [],
 ): string[] {
   const skip = new Set(excluded);
-  const clouds = blocks.filter((b) => !skip.has(b.id) && b.kind === "vm" && isSimulated(results, b.id)).map((b) => cloudOf(b.id));
+  const clouds = blocks.filter((b) => !skip.has(b.id) && b.kind === VM_KIND && isSimulated(results, b.id)).map((b) => cloudOf(b.id));
   return [...new Set(clouds)].map((c) => `VMs on local ${c} are simulated; they do not boot.`);
 }
 
@@ -190,7 +191,7 @@ export function servesWeb(blocks: DocBlock[], lines: DocLine[]): Set<string> {
   for (const l of lines) {
     const fw = byId.get(l.source);
     const vm = byId.get(l.target);
-    if (fw?.kind === "firewall" && vm?.kind === "vm" && vm.fields.public === true && hasStartupScript(vm.fields) && allowsHttp(fw.fields.ingress)) {
+    if (fw?.kind === "firewall" && vm?.kind === VM_KIND && vm.fields.public === true && hasStartupScript(vm.fields) && allowsHttp(fw.fields.ingress)) {
       out.add(vm.id);
     }
   }

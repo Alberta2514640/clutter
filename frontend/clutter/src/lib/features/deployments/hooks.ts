@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deploymentsApi } from "./api";
 import { deploymentKeys } from "./keys";
 import { isActive } from "./types";
-import type { CreateDeploymentInput, DeploymentListItem, RunAction, RunStatus, UpdateDeploymentInput } from "./types";
+import type { CreateDeploymentInput, DeploymentListItem, Run, RunAction, UpdateDeploymentInput } from "./types";
 
 // How often the deploy panel asks about a run in progress. B pushes nothing.
 const RUN_POLL_MS = 2000;
@@ -31,12 +31,12 @@ export const useCompatibility = (token?: string | null, organizationId?: string 
 };
 
 // The preview is rendered on demand and never kept: an old one must not stand
-// in for a later save.
-export const usePreview = (token: string | null, organizationId: string | null, deploymentId: string, open: boolean) => {
+// in for a later save. The preview dialog is mounted only while it is open.
+export const usePreview = (token: string | null, organizationId: string | null, deploymentId: string) => {
   return useQuery({
     queryKey: deploymentKeys.preview(organizationId ?? "", deploymentId),
     queryFn: () => deploymentsApi.preview(token as string, organizationId as string, deploymentId),
-    enabled: open && !!token && !!organizationId,
+    enabled: !!token && !!organizationId,
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -45,15 +45,15 @@ export const usePreview = (token: string | null, organizationId: string | null, 
 
 // A run's log. The key carries the run's status, so the log is read once more
 // when the run ends, and it polls only while the run is active.
-export const useRunLogs = (token: string | null, organizationId: string | null, runId: string | null, status: RunStatus | null) => {
-  const active = status === "queued" || status === "running";
+export const useRunLogs = (token: string | null, organizationId: string | null, run: Run | null) => {
+  const runId = run?.id ?? null;
   return useQuery({
-    queryKey: [...deploymentKeys.runLogs(organizationId ?? "", runId ?? ""), status ?? ""],
+    queryKey: [...deploymentKeys.runLogs(organizationId ?? "", runId ?? ""), run?.status ?? ""],
     queryFn: () => deploymentsApi.runLogs(token as string, organizationId as string, runId as string),
     enabled: !!token && !!organizationId && !!runId,
     staleTime: 0,
     retry: false,
-    refetchInterval: active ? RUN_POLL_MS : false,
+    refetchInterval: isActive(run) ? RUN_POLL_MS : false,
   });
 };
 

@@ -3,10 +3,7 @@
 import { APP_CRED_HELP, MAX_CLOUDS_FILE, readCloudsFiles, splitCloudsFiles, type CloudsEntry } from "@/lib/features/connections/cloudsYaml";
 import { FileUp, Loader2 } from "lucide-react";
 import { useId, useState } from "react";
-import { Notice } from "./ConnectionsPage";
-
-const selectClass =
-  "w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-teal-500/60";
+import { inputClass, Notice } from "./Notice";
 
 // CloudsYamlUpload fills the connection form from the clouds.yaml (and
 // secure.yaml) an OpenStack dashboard downloads. The files are read in the
@@ -106,7 +103,7 @@ export default function CloudsYamlUpload({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <label className="flex-1 space-y-1 text-sm text-slate-300">
             <span>This file lists {entries.length} clouds. Which one?</span>
-            <select value={pick} onChange={(e) => setPick(e.target.value)} className={selectClass}>
+            <select value={pick} onChange={(e) => setPick(e.target.value)} className={inputClass}>
               {entries.map((e) => (
                 <option key={e.name} value={e.name}>
                   {e.name}

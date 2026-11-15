@@ -61,8 +61,10 @@ type DevstackConfig struct {
 	Client *http.Client
 }
 
-// connectorID matches B's connector ids.
-var connectorID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
+// connectorID matches B's connector ids: the same pattern as B's
+// connectors.ConnectorIDPattern (backend/adapter/connectors/manifest.go),
+// which this module cannot import.
+var connectorID = regexp.MustCompile(`^[a-z][a-z0-9-]{1,40}$`)
 
 // devstackName is the connection's name when the website names none. The
 // website picks a free one ("Local OpenStack 2" when the first is taken),
@@ -200,10 +202,7 @@ func (s *Server) LinkDevstackHandler(cfg DevstackConfig) http.Handler {
 			made.Name = connName
 		}
 		s.logger.Printf("devstack: made the connection %s with the credential %s, at %s", made.Name, credName, authURL)
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "made a DevStack connection", "connectionName": made.Name})
+		writeDevAnswer(w, http.StatusOK, map[string]string{"message": "made a DevStack connection", "connectionName": made.Name})
 	})
 }
 

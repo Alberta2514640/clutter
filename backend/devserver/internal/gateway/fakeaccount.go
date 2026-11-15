@@ -16,9 +16,11 @@ import (
 // account button (A's "AWS account required" popup and the AWS link flow).
 const LinkFakeAccountPath = "/dev/link-fake-account"
 
-// fakeRoleArn is what the Link fake account button submits: a role in no real account,
-// in the form the submit-role-arn Lambda and the API Gateway model accept.
-const fakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-"
+// FakeRoleArn is what the Link fake account button submits, followed by the
+// stack URL's unique id: a role in no real account, in the form the
+// submit-role-arn Lambda and the API Gateway model accept. The smoke test
+// submits the same, and seed-diagram.py keeps a copy.
+const FakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-"
 
 // LinkFakeAccountHandler links a fake account for one
 // organization, for the signed-in caller. Every step is a call to the real
@@ -70,13 +72,13 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 			writeRouteRefusal(w, status, raw)
 			return
 		}
-		accountID, uniqueID, err := parseStackURL(raw)
+		accountID, uniqueID, err := ParseStackURL(raw)
 		if err != nil {
 			writeDevJSON(w, http.StatusBadGateway, err.Error())
 			return
 		}
 
-		role, _ := json.Marshal(map[string]string{"role_arn": fakeRoleArn + uniqueID})
+		role, _ := json.Marshal(map[string]string{"role_arn": FakeRoleArn + uniqueID})
 		status, raw = s.callRoute(r, http.MethodPost, "/organization/"+org+"/accounts/"+url.PathEscape(accountID), role)
 		if status < 200 || status >= 300 {
 			writeRouteRefusal(w, status, raw)
@@ -112,15 +114,13 @@ func devPost(w http.ResponseWriter, r *http.Request) bool {
 // writeLinked answers a successful link with the linked account's name, so
 // the website can choose that account.
 func writeLinked(w http.ResponseWriter, message, accountName string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": message, "accountName": accountName})
+	writeDevAnswer(w, http.StatusOK, map[string]string{"message": message, "accountName": accountName})
 }
 
-// parseStackURL pulls the account id and the unique id out of the stack-url
-// Lambda's answer. The URL's query sits after the console's #/ fragment.
-func parseStackURL(raw []byte) (accountID, uniqueID string, err error) {
+// ParseStackURL pulls the account id and the unique id out of the stack-url
+// Lambda's answer (the raw body, with its data envelope). The URL's query sits
+// after the console's #/ fragment.
+func ParseStackURL(raw []byte) (accountID, uniqueID string, err error) {
 	var stack struct {
 		Data struct {
 			URL       string `json:"url"`
@@ -174,10 +174,15 @@ func (b *bufferedResponse) WriteHeader(status int)      { b.status = status }
 func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }
 
 func writeDevJSON(w http.ResponseWriter, status int, message string) {
+	writeDevAnswer(w, status, map[string]string{"message": message})
+}
+
+// writeDevAnswer writes every dev-only route's JSON answer, which no cache keeps.
+func writeDevAnswer(w http.ResponseWriter, status int, body map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func writeRouteRefusal(w http.ResponseWriter, status int, raw []byte) {

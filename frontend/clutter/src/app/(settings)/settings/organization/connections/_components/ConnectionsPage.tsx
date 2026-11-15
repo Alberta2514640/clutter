@@ -5,9 +5,10 @@ import { useCatalog } from "@/lib/features/catalog/hooks";
 import { useConnections } from "@/lib/features/connections/hooks";
 import { useCurrentOrganization } from "@/lib/features/organization/hooks";
 import { useMe } from "@/lib/features/user/hooks";
-import { Loader2 } from "lucide-react";
+import { apiErrorMessage } from "@/lib/features/user/session";
 import AddConnection from "./AddConnection";
 import ConnectionList from "./ConnectionList";
+import { Loading, Notice } from "./Notice";
 
 export default function ConnectionsPage() {
   const meQ = useMe();
@@ -24,7 +25,11 @@ export default function ConnectionsPage() {
     return <Loading text="Loading your organization…" />;
   }
   if (!token) return <Notice tone="error">Sign in to see your connections.</Notice>;
-  if (currentOrg.isError) return <Notice tone="error">Could not load your organizations: {adapterErrorMessage(currentOrg.error)}</Notice>;
+  // The organizations come from A's API, whose error body is not for people.
+  if (currentOrg.isError && !currentOrg.data) {
+    const reason = apiErrorMessage(currentOrg.error);
+    return <Notice tone="error">{reason ? `Could not load your organizations: ${reason}` : "Could not load your organizations."}</Notice>;
+  }
   if (!currentOrg.organization) return <Notice tone="info">Create an organization first. Connections belong to an organization.</Notice>;
 
   const catalog = catalogQ.data ?? [];
@@ -45,7 +50,7 @@ export default function ConnectionsPage() {
         </h3>
         {connectionsQ.isLoading ? (
           <Loading text="Loading connections…" />
-        ) : connectionsQ.isError ? (
+        ) : connectionsQ.isError && !connectionsQ.data ? (
           <Notice tone="error">Could not load connections: {adapterErrorMessage(connectionsQ.error)}</Notice>
         ) : (
           <ConnectionList token={token} organizationId={currentOrg.organization.id} connections={connectionsQ.data ?? []} catalog={catalog} />
@@ -58,7 +63,7 @@ export default function ConnectionsPage() {
         </h3>
         {catalogQ.isLoading ? (
           <Loading text="Loading the clouds Clutter offers…" />
-        ) : catalogQ.isError ? (
+        ) : catalogQ.isError && !catalogQ.data ? (
           <Notice tone="error">Could not load the clouds Clutter offers: {adapterErrorMessage(catalogQ.error)}</Notice>
         ) : catalog.length === 0 ? (
           <Notice tone="info">Clutter offers no clouds yet.</Notice>
@@ -66,28 +71,6 @@ export default function ConnectionsPage() {
           <AddConnection token={token} organizationId={currentOrg.organization.id} catalog={catalog} />
         )}
       </section>
-    </div>
-  );
-}
-
-export function Loading({ text }: { text: string }) {
-  return (
-    <div role="status" className="flex items-center gap-2 px-1 py-3 text-sm text-slate-400">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      {text}
-    </div>
-  );
-}
-
-export function Notice({ tone, children }: { tone: "error" | "info" | "success"; children: React.ReactNode }) {
-  const styles = {
-    error: "border-red-800 bg-red-900/20 text-red-300",
-    info: "border-slate-700 bg-slate-900/50 text-slate-300",
-    success: "border-emerald-800 bg-emerald-900/20 text-emerald-200",
-  }[tone];
-  return (
-    <div role={tone === "error" ? "alert" : "status"} className={`rounded-lg border px-4 py-3 text-sm ${styles}`}>
-      {children}
     </div>
   );
 }

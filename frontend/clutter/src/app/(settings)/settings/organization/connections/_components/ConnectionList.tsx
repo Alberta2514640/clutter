@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor, cloudTitleWithNote, type CloudLook } from "@/lib/features/catalog/display";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
+import { deleteErrorMessage, deleteWarning } from "@/lib/features/connections/deleteConnection";
 import { useDeleteConnection, useVerifyConnection } from "@/lib/features/connections/hooks";
 import type { Connection } from "@/lib/features/connections/types";
 import { CheckCircle2, Loader2, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
-import { Notice } from "./ConnectionsPage";
+import { Notice } from "./Notice";
 
 type Props = {
   token: string;
@@ -29,13 +30,6 @@ export default function ConnectionList({ token, organizationId, connections, cat
       ))}
     </ul>
   );
-}
-
-// What deleting a connection does to the diagrams that deploy to it.
-function deleteWarning(diagrams: number): string {
-  if (diagrams === 0) return "No diagram deploys to this connection. Delete it?";
-  const which = diagrams === 1 ? "1 diagram deploys" : `${diagrams} diagrams deploy`;
-  return `${which} to this connection. Deleting it removes ${diagrams === 1 ? "that deployment" : "those deployments"}; nothing in your cloud changes.`;
 }
 
 function ConnectionRow({ token, organizationId, connection, cloud }: { token: string; organizationId: string; connection: Connection; cloud: CloudLook }) {
@@ -119,7 +113,7 @@ function ConnectionRow({ token, organizationId, connection, cloud }: { token: st
       {verifyM.isError && <p className="mt-2 text-xs text-red-300">Could not check this connection: {adapterErrorMessage(verifyM.error)}</p>}
       {deleteM.isError && (
         <p role="alert" className="mt-2 text-sm text-red-300">
-          {adapterErrorMessage(deleteM.error)}
+          {deleteErrorMessage(deleteM.error)}
         </p>
       )}
     </li>

@@ -1,7 +1,7 @@
 "use client";
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, cloudOffers, defaultValues, entryFor, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
@@ -39,14 +39,12 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
   const open = chosenOpen ?? defaultOpen;
   const [editing, setEditing] = useState(false);
   const placements: Placement[] = item.placements ?? [];
-  const entryOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector) ?? null;
   const primary = connections.find((c) => c.id === item.connection_id);
-  const choices = cloudChoices(primary, connections, (c) => !!entryOf(c), new Set(placements.map((p) => p.connection_id)));
+  const choices = cloudChoices(primary, connections, (c) => !!entryFor(catalog, c), new Set(placements.map((p) => p.connection_id)));
   const reason = placementReason(item.status, running || updateM.isPending);
   // Each block is offered only the connections whose cloud can build it, and
   // the one it is on now.
-  const choicesFor = (b: BlockRef, current: string) =>
-    choices.filter((c) => c.id === current || (entryOf(c.connector) && manifestOffers(entryOf(c.connector)!.manifest, b.kind)));
+  const choicesFor = (b: BlockRef, current: string) => choices.filter((c) => c.id === current || cloudOffers(catalog, c.connector, b.kind));
   const nameOf = (id: string) => connections.find((c) => c.id === id)?.name ?? placements.find((p) => p.connection_id === id)?.connection_name ?? item.connection_name;
 
   // With one usable cloud there is nothing to choose.
@@ -140,7 +138,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
               diagramId={diagramId}
               item={item}
               placement={p}
-              entry={entryOf(p.connector)}
+              entry={entryFor(catalog, p.connector)}
               kinds={new Set(cloudBlocks(item.connection_id, placements, blocks, p.connection_id).map((b) => b.kind))}
               disabled={running}
             />

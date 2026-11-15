@@ -14,3 +14,6 @@ export type FunctionCodeList = { items: FunctionCode[] | null };
 
 // codestore.MaxSize: the largest zip B takes.
 export const MAX_CODE_BYTES = 50 * 1024 * 1024;
+
+// The same cap as people read it: "50 MB".
+export const MAX_CODE_SIZE_TEXT = `${MAX_CODE_BYTES / (1024 * 1024)} MB`;

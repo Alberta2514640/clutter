@@ -3,10 +3,10 @@
 import CloudMark from "@/components/clouds/CloudMark";
 import { AdapterApiError, adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor } from "@/lib/features/catalog/display";
-import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, cloudOffers, defaultValues, entryFor, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
-import { ACTION_LABEL, actionReasons, canOfferRemove, type RowAction } from "@/lib/features/deployments/actions";
+import { ACTION_LABEL, actionReasons, canOfferRemove, RUN_STATUS_LABEL, type RowAction } from "@/lib/features/deployments/actions";
 import { compatibilityLine, nextExclusions, splitReadyLine, unsupportedBlocks, type BlockRef, type CompatibilityLine } from "@/lib/features/deployments/compatibility";
 import { costLines, deployLine } from "@/lib/features/deployments/confirm";
 import { useCompatibility, useRemoveDeployment, useStartRun, useUpdateDeployment } from "@/lib/features/deployments/hooks";
@@ -23,7 +23,7 @@ import {
   placementSuggestions,
   splitOnly,
 } from "@/lib/features/deployments/placements";
-import { changesNotDeployed, isActive, type DeploymentListItem, type DeploymentStatus, type RunAction, type RunStatus } from "@/lib/features/deployments/types";
+import { changesNotDeployed, isActive, type DeploymentListItem, type DeploymentStatus, type RunAction } from "@/lib/features/deployments/types";
 import { CheckCircle2, ChevronDown, ChevronRight, FileCode2, KeyRound, Loader2, Play, Rocket, Trash2, TriangleAlert, X } from "lucide-react";
 import { useId, useState } from "react";
 import BlockPlacement from "./BlockPlacement";
@@ -38,10 +38,6 @@ const DEPLOYMENT_STATUS: Record<DeploymentStatus, { label: string; className: st
   failed: { label: "Needs attention", className: "border-red-700 text-red-300" },
   destroyed: { label: "Destroyed", className: "border-slate-600 text-slate-400" },
 };
-
-const ACTION: Record<RunAction, string> = { plan: "Plan", apply: "Deploy", destroy: "Destroy" };
-
-const RUN_STATUS: Record<RunStatus, string> = { queued: "waiting to start", running: "running", completed: "finished", failed: "failed" };
 
 type Props = {
   token: string | null;
@@ -90,12 +86,8 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
   const run = item.latest_run;
   const running = isActive(run) || startM.isPending;
   const report = compatQ.data;
-  const titleOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector)?.manifest.title ?? connector;
-  const manifestOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector)?.manifest ?? null;
-  const offers = (connector: string, kind: string) => {
-    const m = manifestOf(connector);
-    return !!m && manifestOffers(m, kind);
-  };
+  const titleOf = (connector: string) => entryFor(catalog, connector)?.manifest.title ?? connector;
+  const offers = (connector: string, kind: string) => cloudOffers(catalog, connector, kind);
   const title = deploymentTitle(item.connection_name, placements);
   const where = cloudsLine({ title: cloud, region: item.region }, placements, titleOf);
   // The same clouds without regions, for the lines that say what a run does.
@@ -429,7 +421,7 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
           <div className="flex items-center justify-between gap-2">
             <p data-testid="run-status" data-status={run.status} className="flex items-center gap-1.5 text-xs text-slate-300">
               {isActive(run) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {ACTION[run.action]} {RUN_STATUS[run.status]}
+              {ACTION_LABEL[run.action]} {RUN_STATUS_LABEL[run.status]}
               {run.finished_at && <span className="text-slate-500">at {new Date(run.finished_at).toLocaleTimeString()}</span>}
             </p>
             <button type="button" aria-expanded={logOpen} onClick={() => setLogOpen((o) => !o)} className="text-xs text-teal-300 hover:underline">

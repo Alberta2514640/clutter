@@ -6,7 +6,9 @@
 // answers.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { joinAnd } from "../../text";
 import type { Connection } from "../connections/types";
+import { RUN_STATUS_LABEL } from "./actions";
 import type { BlockRef } from "./compatibility";
 import { COST_NOTE, type CloudReport, type Compatibility, type PartProgress, type Placement, type PlacementInput, type Problem } from "./types";
 
@@ -27,7 +29,7 @@ export function cloudsLine(primary: { title: string; region: string }, placement
   const parts = [primary, ...others.map((p) => ({ title: titleOf(p.connector), region: p.region }))].map((c) =>
     c.region ? `${c.title} (${c.region})` : c.title,
   );
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return joinAnd(parts);
 }
 
 // asInputs turns placements as B lists them into what B takes back.
@@ -245,10 +247,7 @@ export function orderedClouds(report: Compatibility): CloudReport[] {
 const STEP: Record<PartProgress["step"], string> = { plan: "plan", apply: "deploy", destroy: "destroy", rollback: "roll-back" };
 
 const STATUS: Record<PartProgress["status"], string> = {
-  queued: "waiting",
-  running: "running",
-  completed: "finished",
-  failed: "failed",
+  ...RUN_STATUS_LABEL,
   skipped: "not started, because an earlier cloud failed",
   rolled_back: "rolled back",
 };

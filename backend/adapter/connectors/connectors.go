@@ -310,7 +310,8 @@ type LinkedCredentials struct {
 	// CloudFormation role template) the account was linked with, when the
 	// cloud's link flow recorded it; empty when it is not known. The core
 	// stores it on the connection, so a later template change can tell which
-	// accounts must update.
+	// accounts must update. Nothing reads the stored value back yet, and the
+	// aws connector leaves it empty (A's link flow does not record it).
 	TemplateVersion string
 }
 

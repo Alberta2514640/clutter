@@ -12,7 +12,7 @@ import { useEffect, useRef } from "react";
 // first error. It reads the same log query as RunLog, so the log is fetched
 // once. Nothing shows until there is a line to show.
 export function RunHeadline({ token, organizationId, run, blocks }: { token: string | null; organizationId: string | null; run: Run; blocks: number }) {
-  const logQ = useRunLogs(token, organizationId, run.id, run.status);
+  const logQ = useRunLogs(token, organizationId, run);
   const result = logQ.data ? runHeadline(logQ.data, run.status, run.action, blocks) : null;
   if (!result) return null;
   return (
@@ -26,7 +26,7 @@ export function RunHeadline({ token, organizationId, run, blocks }: { token: str
 // and follows new output unless the reader has scrolled up. B removes
 // credential values from it before it is stored.
 export default function RunLog({ token, organizationId, run }: { token: string | null; organizationId: string | null; run: Run }) {
-  const logQ = useRunLogs(token, organizationId, run.id, run.status);
+  const logQ = useRunLogs(token, organizationId, run);
   const text = logQ.data ?? "";
   const preRef = useRef<HTMLPreElement>(null);
   const following = useRef(true);

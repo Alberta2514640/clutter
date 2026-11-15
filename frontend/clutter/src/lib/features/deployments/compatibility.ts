@@ -3,6 +3,7 @@
 // words it and lists the blocks the user can leave out.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { joinAnd, plural } from "../../text";
 import { manifestOffers } from "../catalog/forms";
 import type { Manifest } from "../catalog/types";
 import { COST_NOTE, type Compatibility, type Problem } from "./types";
@@ -26,8 +27,6 @@ export type CompatibilityLine = {
   problems: string[];
   notes: string[];
 };
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const UNSUPPORTED = "unsupported_block";
 
@@ -101,7 +100,7 @@ export function compatibilityLine(
 // and the panel shows each cloud's own line.
 export function splitReadyLine(lines: CompatibilityLine[], cloudNames: string[], leftOut: number): string | null {
   if (lines.length < 2 || lines.some((l) => !l.ready || l.choices.length > 0 || l.problems.length > 0)) return null;
-  const across = `${cloudNames.slice(0, -1).join(", ")} and ${cloudNames[cloudNames.length - 1]}`;
+  const across = joinAnd(cloudNames);
   return leftOut > 0
     ? `The other blocks can be built across ${across}, ${plural(leftOut, "block", "blocks")} left out`
     : `Every block can be built across ${across}`;

@@ -20,17 +20,44 @@ set -euo pipefail
 
 NAME=clutter
 
+# credential_fields json REGION | credential_fields lines: reads the openstack
+# client's JSON for a new application credential on stdin. json prints the id,
+# the secret and REGION as one JSON line; lines prints the id, then the secret.
+# It fails when the output has no id or no secret. openstackclient has used
+# both "id"/"secret" and "ID"/"Secret" as keys.
+credential_fields() {
+  python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+c = {"id": d.get("id") or d.get("ID") or "", "secret": d.get("secret") or d.get("Secret") or ""}
+if not c["id"] or not c["secret"]:
+    sys.exit(1)
+if sys.argv[1] == "json":
+    c["region"] = sys.argv[2]
+    print(json.dumps(c))
+else:
+    print(c["id"])
+    print(c["secret"])
+' "$@"
+}
+
 main() {
-  local mode="${1:-}" name="${2:-}" out id secret region auth_url
+  local mode="${1:-}" name="${2:-}" out fields id secret region auth_url
   if [[ ! -f /opt/stack/devstack/openrc ]]; then
     echo "DevStack is not installed in this VM. Run: npm run devstack -- create" >&2
     exit 1
   fi
-  # openrc reads unset variables, so -u is off while it runs.
+  # openrc reads unset variables, so -u is off while it runs. Its output is
+  # hidden, so a failing line in it would end this script without a word:
+  # the trap says why on the saved standard error (descriptor 3).
+  exec 3>&2
+  trap "echo \"Could not read DevStack's openrc.\" >&3; exit 1" ERR
   set +u
   # shellcheck disable=SC1091 # DevStack's own file, inside the VM
   source /opt/stack/devstack/openrc demo demo >/dev/null 2>&1
   set -u
+  trap - ERR
+  exec 3>&-
 
   case "${mode}" in
     link | remove)
@@ -54,15 +81,7 @@ main() {
       fi
       out="$(openstack application credential create "${name}" \
         --description "Clutter on this machine (Use this machine's DevStack)" -f json)"
-      # openstackclient has used both "id"/"secret" and "ID"/"Secret" as keys.
-      if ! printf '%s' "${out}" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-c = {"id": d.get("id") or d.get("ID") or "", "secret": d.get("secret") or d.get("Secret") or "", "region": sys.argv[1]}
-if not c["id"] or not c["secret"]:
-    sys.exit(1)
-print(json.dumps(c))
-' "${region}"; then
+      if ! printf '%s' "${out}" | credential_fields json "${region}"; then
         openstack application credential delete "${name}" || true
         echo "Made the ${name} credential, but could not read its id and secret from the openstack client's output, so it is deleted." >&2
         exit 1
@@ -83,14 +102,13 @@ print(json.dumps(c))
       fi
       out="$(openstack application credential create "${NAME}" \
         --description "Clutter on this machine (npm run devstack -- credential)" -f json)"
-      # openstackclient has used both "id"/"secret" and "ID"/"Secret" as keys.
-      id="$(printf '%s' "${out}" | python3 -c 'import json, sys; d = json.load(sys.stdin); print(d.get("id") or d.get("ID") or "")')"
-      secret="$(printf '%s' "${out}" | python3 -c 'import json, sys; d = json.load(sys.stdin); print(d.get("secret") or d.get("Secret") or "")')"
-      if [[ -z "${id}" || -z "${secret}" ]]; then
+      if ! fields="$(printf '%s' "${out}" | credential_fields lines)"; then
         echo "Made the ${NAME} credential, but could not read its id and secret from the openstack client's output." >&2
         echo "Run npm run devstack -- credential again to replace it." >&2
         exit 1
       fi
+      id="${fields%%$'\n'*}"
+      secret="${fields#*$'\n'}"
       region="$(openstack region list -f value -c Region | head -n 1)"
       # openrc points OS_AUTH_URL at Keystone on HOST_IP, the VM's lima0
       # address, which this machine reaches.

@@ -9,12 +9,9 @@ import (
 	"strings"
 )
 
-// The ingress protocols the portable firewall block takes.
-const (
-	ProtocolTCP  = "tcp"
-	ProtocolUDP  = "udp"
-	ProtocolICMP = "icmp"
-)
+// ProtocolICMP is the one ingress protocol with no ports. A tcp or udp rule
+// holds its protocol as written, "tcp" or "udp".
+const ProtocolICMP = "icmp"
 
 // IngressRule is one entry of a firewall block's ingress field. A tcp or udp
 // rule allows a port range; an icmp rule allows every ICMP type and has no

@@ -2,7 +2,8 @@
 
 import { AdapterApiError, adapterErrorMessage } from "@/lib/adapterApi";
 import { usePreview } from "@/lib/features/deployments/hooks";
-import { joinAnd, previewGroups } from "@/lib/features/deployments/preview";
+import { previewGroups } from "@/lib/features/deployments/preview";
+import { joinAnd } from "@/lib/text";
 import { Check, Copy, Download, Loader2, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useDialogFocus } from "@/components/common/useDialogFocus";
@@ -25,7 +26,7 @@ export default function PreviewDialog({
   title: string;
   onClose: () => void;
 }) {
-  const previewQ = usePreview(token, organizationId, deploymentId, true);
+  const previewQ = usePreview(token, organizationId, deploymentId);
   const files = previewQ.data ?? {};
   const groups = previewGroups(Object.keys(files));
   const [pickedGroup, setPickedGroup] = useState<string | null>(null);

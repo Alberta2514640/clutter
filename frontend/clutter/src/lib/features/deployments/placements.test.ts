@@ -201,8 +201,9 @@ describe("partLines", () => {
         { connection_id: "c-lab", name: "lab", step: "rollback", status: "rolled_back" },
         { connection_id: "c-aws", name: "aws", step: "apply", status: "failed" },
         { connection_id: "c-x", name: "x", step: "apply", status: "skipped" },
+        { connection_id: "c-y", name: "y", step: "plan", status: "queued" },
       ]).map((l) => l.text),
-    ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed"]);
+    ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed", "y: plan waiting to start"]);
     expect(partLines(null)).toEqual([]);
   });
 });

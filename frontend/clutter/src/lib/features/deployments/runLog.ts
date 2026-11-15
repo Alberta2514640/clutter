@@ -16,6 +16,7 @@
 // Terraform, those lines stand for the apply instead, one per cloud.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { plural } from "../../text";
 import type { RunStatus } from "./types";
 
 export type RunResult = { tone: "ok" | "error"; text: string };
@@ -79,8 +80,6 @@ export function runResult(log: string, status: RunStatus): RunResult | null {
   const { found } = summaries(lines);
   return found.length > 0 ? { tone: "ok", text: found.map((s) => s.text).join("; ") } : null;
 }
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // runHeadline is the first line a person reads after a run: for a finished
 // deploy, the blocks it built and the cloud resources behind them ("Built 4

@@ -2,6 +2,7 @@
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { blockLook } from "@/lib/features/catalog/display";
+import { entryFor } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
 import { useRunLogs } from "@/lib/features/deployments/hooks";
@@ -33,9 +34,9 @@ type Props = {
 // It reads them from the run's log, where B writes them
 // (deployments/results.ts).
 export default function WhatWasBuilt({ token, organizationId, item, run, catalog, blocks, blockTitle, webServers }: Props) {
-  const logQ = useRunLogs(token, organizationId, run.id, run.status);
+  const logQ = useRunLogs(token, organizationId, run);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const manifestOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector)?.manifest ?? null;
+  const manifestOf = (connector: string) => entryFor(catalog, connector)?.manifest ?? null;
   // A block placed on another cloud became that cloud's service.
   const cloudOf = (id: string) => item.placements?.find((p) => (p.node_ids ?? []).includes(id))?.connector ?? item.connector;
   const became = (b: BlockRef) => {

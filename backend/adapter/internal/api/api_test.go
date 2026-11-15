@@ -442,6 +442,34 @@ func TestCrossTenantIsRefused(t *testing.T) {
 	}
 }
 
+// The store refuses another organization's diagram by itself, for a caller
+// that skips the handler's ownership check.
+func TestCreateDeploymentRefusesAnotherOrgsDiagram(t *testing.T) {
+	e := newEnv(t)
+	a := e.tenant(t, blocksDoc)
+	b := e.tenant(t, blocksDoc)
+	connB := e.connect(t, &b, "b-cloud")
+	st := &store.Store{Pool: e.pool}
+	ctx := context.Background()
+
+	_, err := st.CreateDeployment(ctx, b.org, b.user, store.Deployment{ID: uuid.NewString(), DiagramID: a.diagram, ConnectionID: connB})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("A's diagram on B's connection through B's org: %v", err)
+	}
+	var n int
+	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM deployments WHERE diagram_id = $1`, a.diagram).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("%d deployments of A's diagram", n)
+	}
+
+	// B's own diagram on the same connection still works.
+	if _, err := st.CreateDeployment(ctx, b.org, b.user, store.Deployment{ID: uuid.NewString(), DiagramID: b.diagram, ConnectionID: connB}); err != nil {
+		t.Fatalf("B's own diagram: %v", err)
+	}
+}
+
 func TestCredentialsNeverLeave(t *testing.T) {
 	e := newEnv(t)
 	tn := e.tenant(t, blocksDoc)

@@ -3,10 +3,10 @@
 // blocks (B's notes with code "cost", connectors.CodeCost).
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { joinAnd } from "../../text";
 import { countedKinds } from "../diagram/summary";
 import type { BlockRef } from "./compatibility";
 import { blockCloud } from "./placements";
-import { joinAnd } from "./preview";
 import { COST_NOTE, type Compatibility, type Placement } from "./types";
 
 // deployLine is "Builds 1 server and 1 network on lab." for one cloud, and

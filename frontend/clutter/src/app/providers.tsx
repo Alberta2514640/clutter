@@ -21,7 +21,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         mutationCache: new MutationCache({ onError: onAnyError }),
         defaultOptions: {
           queries: {
-            // reasonable defaults; tweak later
+            // Data counts as fresh for a minute, returning to the window does
+            // not refetch, and a failed query retries once unless the session expired.
             staleTime: 60_000,
             refetchOnWindowFocus: false,
             retry: (failureCount, err) => !isSessionExpired(err) && failureCount < 1,

@@ -4,13 +4,14 @@ import CloudMark from "@/components/clouds/CloudMark";
 import { Button } from "@/components/ui/button";
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLook, cloudTitleWithNote } from "@/lib/features/catalog/display";
+import { entryFor } from "@/lib/features/catalog/forms";
 import { useLinkedAccounts } from "@/lib/features/catalog/hooks";
 import type { CatalogEntry, LinkedAccount } from "@/lib/features/catalog/types";
 import { fitsCloudsYaml } from "@/lib/features/connections/cloudsYaml";
 import { useConnections, useCreateConnection } from "@/lib/features/connections/hooks";
 import { chosenLinkedAccount, startRegion } from "@/lib/features/connections/linkedAccount";
 import { offersLocalDevstack } from "@/lib/features/connections/localDevstack";
-import { localConnectionName } from "@/lib/features/connections/localName";
+import { localConnectionName, NAME_MAX } from "@/lib/features/connections/localName";
 import { DEFAULT_AWS_REGION, isLocalDevApi } from "@/lib/features/organization/api";
 import { ChevronDown, ChevronRight, Link2, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
@@ -18,7 +19,7 @@ import { useState } from "react";
 import AwsLinkFlow from "../../aws-account/_components/AwsLinkFlow";
 import CloudsYamlUpload from "./CloudsYamlUpload";
 import ConnectLocalAccount from "./ConnectLocalAccount";
-import { Loading, Notice } from "./ConnectionsPage";
+import { inputClass, Loading, Notice } from "./Notice";
 import UseLocalDevstack from "./UseLocalDevstack";
 
 // The account-link flow of a cloud linked outside B, shown inline here, the
@@ -31,16 +32,13 @@ const LINK_FLOWS: Record<string, { page: string; pageLabel: string; region: stri
   aws: { page: "/settings/organization/aws-account", pageLabel: "Manage AWS account links", region: DEFAULT_AWS_REGION, local: true },
 };
 
-const inputClass =
-  "w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-teal-500/60";
-
 type Props = { token: string; organizationId: string; catalog: CatalogEntry[] };
 
 export default function AddConnection({ token, organizationId, catalog }: Props) {
   const [connector, setConnector] = useState<string | null>(null);
   // The name of the connection just added.
   const [added, setAdded] = useState<string | null>(null);
-  const entry = catalog.find((c) => c.manifest.connector === connector) ?? null;
+  const entry = entryFor(catalog, connector);
 
   return (
     <div className="space-y-4">
@@ -151,7 +149,7 @@ function ConnectionForm({
   const justLinkedAccount = !picked && !showLinkFlow && justLinked ? linked : null;
   const choose = (a: LinkedAccount) => {
     setPicked(a);
-    if (!name.trim()) setName(a.name.slice(0, 64));
+    if (!name.trim()) setName(a.name.slice(0, NAME_MAX));
     if (a.region) setRegion(a.region);
   };
 
@@ -160,7 +158,7 @@ function ConnectionForm({
     setFormError(null);
     const trimmed = name.trim();
     if (!trimmed) return setFormError("Give the connection a name.");
-    if (trimmed.length > 64) return setFormError("The name must be at most 64 characters.");
+    if (trimmed.length > NAME_MAX) return setFormError(`The name must be at most ${NAME_MAX} characters.`);
     if (!region.trim()) return setFormError("Choose a region.");
     if (mode === "linked") {
       if (!linked) return setFormError("Choose a linked account.");
@@ -285,7 +283,7 @@ function ConnectionForm({
                   setJustLinked(accountName);
                   setPicked(null);
                   setLinkOpen(false);
-                  if (!name.trim()) setName(accountName.slice(0, 64));
+                  if (!name.trim()) setName(accountName.slice(0, NAME_MAX));
                 }}
                 afterLink={<p>It is chosen above. Check the name of the connection, then choose Check and connect.</p>}
               />
@@ -312,7 +310,7 @@ function ConnectionForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm text-slate-300">
           <span>Connection name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder="for example lab" className={inputClass} />
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="for example lab" className={inputClass} />
         </label>
         <label className="space-y-1 text-sm text-slate-300">
           <span>Region</span>
@@ -342,7 +340,7 @@ function ConnectionForm({
                   return next;
                 });
                 if (cloudRegion && (regions.length === 0 || regions.includes(cloudRegion))) setRegion(cloudRegion);
-                if (!name.trim()) setName(cloudName.slice(0, 64));
+                if (!name.trim()) setName(cloudName.slice(0, NAME_MAX));
               }}
             />
           )}

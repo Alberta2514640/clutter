@@ -5,8 +5,8 @@ import { useLinkedAccounts } from "@/lib/features/catalog/hooks";
 import { useCreateConnection } from "@/lib/features/connections/hooks";
 import { isLocalDevApi } from "@/lib/features/organization/api";
 import { useLinkFakeAccount } from "@/lib/features/organization/hooks";
-import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import LocalConnectCard from "./LocalConnectCard";
 
 type Props = {
   token: string;
@@ -65,25 +65,5 @@ function ConnectLocalAccountButton({ token, organizationId, connector, cloudName
     }
   };
 
-  return (
-    <div className="flex flex-col gap-3 rounded-xl border border-teal-500/40 bg-teal-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-1">
-        <p className="text-sm text-slate-100">Use the {cloudName} running on this machine. One click, nothing to paste.</p>
-        {error && (
-          <p role="alert" className="text-sm text-red-300">
-            {error}
-          </p>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => void connect()}
-        disabled={busy}
-        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-        {busy ? "Connecting…" : `Connect local ${cloudName}`}
-      </button>
-    </div>
-  );
+  return <LocalConnectCard cloudName={cloudName} onClick={() => void connect()} busy={busy} error={error} />;
 }

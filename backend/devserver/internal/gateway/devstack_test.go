@@ -232,6 +232,9 @@ func TestLinkDevstackRefusesABadBody(t *testing.T) {
 		`{"organizationId":"not-a-uuid","connector":"general-openstack"}`,
 		`{"organizationId":"` + testOrg + `","connector":"General OpenStack"}`,
 		`{"organizationId":"` + testOrg + `"}`,
+		// B's ConnectorIDPattern takes 2 to 41 characters.
+		`{"organizationId":"` + testOrg + `","connector":"g"}`,
+		`{"organizationId":"` + testOrg + `","connector":"` + "g" + strings.Repeat("x", 41) + `"}`,
 	} {
 		vm := healthyVM()
 		rec, a, _ := runDevstack(t, devstackCase{enabled: true, member: true, vm: vm, body: body})

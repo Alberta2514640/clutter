@@ -4,6 +4,7 @@
 // so editing is the same in every view.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { plural } from "../../text";
 import { blockLook, cloudLook, type CloudLook } from "../catalog/display";
 import type { CatalogEntry, Manifest } from "../catalog/types";
 import type { Connection } from "../connections/types";
@@ -153,8 +154,6 @@ export function nodeLook(view: string, views: CloudView[], block: BlockRefLite, 
     .map((s) => ({ cloud: s.cloud, on: !s.state.dimmed, detail: s.state.detail }));
   return { subtitle: blockTitle, iconSrc: null, dimmed: false, status: null, statusDetail: null, badges };
 }
-
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // viewSummary is the one line a cloud view shows above the canvas.
 export function viewSummary(view: CloudView, blocks: BlockRefLite[], blockTitle: (kind: string) => string): string {

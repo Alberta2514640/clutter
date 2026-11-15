@@ -4,16 +4,25 @@
 
 // Relative imports: Vitest runs this file without the "@/" alias.
 import type { Connection } from "../connections/types";
-import type { DeploymentStatus } from "./types";
+import type { DeploymentStatus, RunStatus } from "./types";
 
 export type RowAction = "preview" | "plan" | "apply" | "destroy" | "remove";
 
+// A run's action (plan, apply, destroy) is named by the same three labels.
 export const ACTION_LABEL: Record<RowAction, string> = {
   preview: "Preview Terraform",
   plan: "Plan",
   apply: "Deploy",
   destroy: "Destroy",
   remove: "Remove from diagram",
+};
+
+// Where a run, or one cloud of a split run, stands: "Deploy waiting to start".
+export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
+  queued: "waiting to start",
+  running: "running",
+  completed: "finished",
+  failed: "failed",
 };
 
 export type RowState = {

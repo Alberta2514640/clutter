@@ -7,7 +7,10 @@
 // diagram's project. The job runner's writes (RunStarted, RunFinished,
 // RunParts, SetDeploymentStatus) and FailInterrupted take no organization:
 // they act only on runs B itself queued, after the request that queued them
-// was scoped, and no request reaches them.
+// was scoped. One request reaches RunFinished: when the queue refuses a run,
+// the create-run handler fails the run it made a moment before with the
+// scoped CreateRun, so the id is never one the caller sent. No other request
+// reaches them.
 package store
 
 import (
@@ -61,14 +64,19 @@ func (s *Store) ApplySchema(ctx context.Context, sql string) error {
 
 // Connection is a connections row.
 type Connection struct {
-	ID                  string
-	OrganizationID      string
-	ConnectorID         string // column connector_type
-	Name                string
-	Region              string
-	Status              string
-	StatusDetail        *string
-	SecretRef           string
+	ID             string
+	OrganizationID string
+	ConnectorID    string // column connector_type
+	Name           string
+	Region         string
+	Status         string
+	StatusDetail   *string
+	SecretRef      string
+	// RoleTemplateVersion is the access template version a linked account
+	// reported (connectors.LinkedCredentials.TemplateVersion), or nil when it
+	// is not known. It is kept so a later template change can tell which
+	// connections must update. Nothing reads it back yet, and the aws
+	// connector never supplies one.
 	RoleTemplateVersion *string
 	CreatedBy           string
 	CreatedAt           time.Time
@@ -333,9 +341,10 @@ func placementsOf(ctx context.Context, db q, orgID string, deploymentIDs []strin
 }
 
 // CreateDeployment binds a diagram to one of the organization's connections,
-// with its blocks placed on others. The caller has proved the diagram belongs
-// to orgID; the inserts prove every connection does. It returns ErrNotFound
-// for another organization's connection and ErrExists for a second deployment
+// with its blocks placed on others. The inserts prove that the diagram's
+// project and every connection belong to orgID, so a caller that skipped its
+// own check still inserts nothing. It returns ErrNotFound for another
+// organization's diagram or connection and ErrExists for a second deployment
 // of the same pair.
 func (s *Store) CreateDeployment(ctx context.Context, orgID, createdBy string, d Deployment) (Deployment, error) {
 	if d.Settings == nil {
@@ -352,9 +361,11 @@ func (s *Store) CreateDeployment(ctx context.Context, orgID, createdBy string, d
 	row := tx.QueryRow(ctx, `
 		INSERT INTO deployments (id, diagram_id, connection_id, settings, exclusions, status, created_by)
 		SELECT $1, $2, c.id, $4, $5, 'new', $6
-		FROM connections c
+		FROM connections c, diagrams g
+		JOIN projects p ON p.id = g.project_id
 		WHERE c.id = $3 AND c.organization_id = $7 AND c.status <> 'deleting'
-		FOR SHARE
+		  AND g.id = $2 AND p.organization_id = $7
+		FOR SHARE OF c
 		RETURNING status, created_at, updated_at`,
 		d.ID, d.DiagramID, d.ConnectionID, d.Settings, d.Exclusions, createdBy, orgID)
 	err = row.Scan(&d.Status, &d.CreatedAt, &d.UpdatedAt)

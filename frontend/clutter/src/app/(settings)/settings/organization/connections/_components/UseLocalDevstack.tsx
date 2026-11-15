@@ -3,7 +3,7 @@
 import { isLocalDevApi } from "@/lib/features/organization/api";
 import { useLinkDevstack } from "@/lib/features/organization/hooks";
 import { apiErrorMessage } from "@/lib/features/user/session";
-import { Loader2 } from "lucide-react";
+import LocalConnectCard from "./LocalConnectCard";
 
 type Props = {
   token: string;
@@ -32,24 +32,11 @@ function UseLocalDevstackButton({ token, organizationId, connector, cloudName, n
   const linkM = useLinkDevstack(token);
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-teal-500/40 bg-teal-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-1">
-        <p className="text-sm text-slate-100">Use the {cloudName} running on this machine. One click, nothing to paste.</p>
-        {linkM.isError && (
-          <p role="alert" className="text-sm text-red-300">
-            {apiErrorMessage(linkM.error) ?? "Could not reach the local gateway."}
-          </p>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => linkM.mutate({ organizationId, connector, name }, { onSuccess: onLinked })}
-        disabled={linkM.isPending}
-        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {linkM.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-        {linkM.isPending ? "Connecting…" : `Connect local ${cloudName}`}
-      </button>
-    </div>
+    <LocalConnectCard
+      cloudName={cloudName}
+      onClick={() => linkM.mutate({ organizationId, connector, name }, { onSuccess: onLinked })}
+      busy={linkM.isPending}
+      error={linkM.isError ? (apiErrorMessage(linkM.error) ?? "Could not reach the local gateway.") : null}
+    />
   );
 }

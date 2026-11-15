@@ -1,6 +1,7 @@
 "use client";
 
 import { adapterApiConfigured, adapterErrorMessage, NOT_CONFIGURED_MESSAGE } from "@/lib/adapterApi";
+import { entryFor } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import { useConnections } from "@/lib/features/connections/hooks";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
@@ -13,6 +14,9 @@ import DeploymentRow from "./DeploymentRow";
 type Props = {
   token: string | null;
   organizationId: string | null;
+  // Why the diagram's organization cannot be found, or null while it is found
+  // or still being looked up.
+  organizationError: string | null;
   diagramId: string;
   catalog: CatalogEntry[];
   // The blocks as last saved: B checks and runs the saved diagram.
@@ -29,12 +33,19 @@ type Props = {
 
 // The deploy panel: one row per deployment of this diagram (one per linked
 // cloud), each with its compatibility, settings, preview, runs and log.
-export default function DeployPanel({ token, organizationId, diagramId, catalog, savedBlocks, currentBlocks, webServers, blockTitle, dirty, save }: Props) {
+export default function DeployPanel({ token, organizationId, organizationError, diagramId, catalog, savedBlocks, currentBlocks, webServers, blockTitle, dirty, save }: Props) {
   const deploymentsQ = useDiagramDeployments(token, organizationId, diagramId);
   const connectionsQ = useConnections(token, organizationId);
 
   if (!adapterApiConfigured) {
     return <p className="text-sm text-red-300">{NOT_CONFIGURED_MESSAGE}</p>;
+  }
+  if (organizationError) {
+    return (
+      <p role="alert" className="text-sm text-red-300">
+        {organizationError}
+      </p>
+    );
   }
   if (!organizationId || deploymentsQ.isLoading) {
     return (
@@ -44,7 +55,9 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
       </div>
     );
   }
-  if (deploymentsQ.isError) {
+  // A failed refetch keeps the rows on screen; only a first load that failed
+  // shows the error instead.
+  if (deploymentsQ.isError && !deploymentsQ.data) {
     return (
       <p role="alert" className="text-sm text-red-300">
         Could not load deployments: {adapterErrorMessage(deploymentsQ.error)}
@@ -90,7 +103,7 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
               organizationId={organizationId}
               diagramId={diagramId}
               item={d}
-              entry={catalog.find((e) => e.manifest.connector === d.connector) ?? null}
+              entry={entryFor(catalog, d.connector)}
               catalog={catalog}
               connections={connections}
               blocks={savedBlocks}
@@ -106,7 +119,7 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Loading connections…
         </div>
-      ) : connectionsQ.isError ? (
+      ) : connectionsQ.isError && !connectionsQ.data ? (
         <p className="text-xs text-red-300">Could not load connections: {adapterErrorMessage(connectionsQ.error)}</p>
       ) : (
         <AddDeployment

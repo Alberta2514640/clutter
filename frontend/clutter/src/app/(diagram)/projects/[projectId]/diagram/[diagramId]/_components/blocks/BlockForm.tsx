@@ -14,7 +14,12 @@ type Props = {
   node: BlockNode;
   catalog: CatalogEntry[];
   title: string;
-  disabled: boolean;
+  // For a function's code upload: the caller's token, the diagram, and its
+  // organization (or why that cannot be found).
+  token: string | null;
+  organizationId: string | null;
+  organizationError: string | null;
+  diagramId: string;
   // The connectors the organization has a connection to.
   connected: ReadonlySet<string>;
   // What the compatibility check says about this block, as last saved.
@@ -33,7 +38,21 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
 // The selected block's name and its fields, from the manifests, with what the
 // compatibility check found under the field it is about. Per-cloud settings
 // (an image, an instance type) belong to each deployment instead.
-export default function BlockForm({ node, catalog, title, disabled, connected, issues, saved, hasPrivateVM, onChange, onRemove }: Props) {
+export default function BlockForm({
+  node,
+  catalog,
+  title,
+  token,
+  organizationId,
+  organizationError,
+  diagramId,
+  connected,
+  issues,
+  saved,
+  hasPrivateVM,
+  onChange,
+  onRemove,
+}: Props) {
   const fields = blockFields(catalog, node.data.kind).filter((f) => fieldShown(f, { hasPrivateVM }));
   const nameError = node.data.name.trim() === "" ? "Every block needs a name." : resourceNameError(node.data.name);
   // What each connected cloud that builds this block calls it, and adds about it.
@@ -98,7 +117,6 @@ export default function BlockForm({ node, catalog, title, disabled, connected, i
           id={`block-name-${node.id}`}
           value={node.data.name}
           maxLength={RESOURCE_NAME_INPUT_MAX_LENGTH}
-          disabled={disabled}
           spellCheck={false}
           aria-invalid={!!nameError || nameIssues.length > 0}
           onChange={(e) => onChange({ name: e.target.value })}
@@ -115,7 +133,6 @@ export default function BlockForm({ node, catalog, title, disabled, connected, i
               id={`block-${node.id}-${f.name}`}
               field={f}
               value={node.data.fields[f.name]}
-              disabled={disabled}
               invalid={problems.length > 0}
               onChange={(v) => {
                 const next = { ...node.data.fields };
@@ -128,10 +145,17 @@ export default function BlockForm({ node, catalog, title, disabled, connected, i
           </div>
         );
       })}
-      {node.data.kind === "function" && <FunctionCodeUpload nodeId={node.id} disabled={disabled} />}
+      {node.data.kind === "function" && (
+        <FunctionCodeUpload
+          nodeId={node.id}
+          token={token}
+          organizationId={organizationId}
+          organizationError={organizationError}
+          diagramId={diagramId}
+        />
+      )}
       <button
         type="button"
-        disabled={disabled}
         onClick={onRemove}
         className="inline-flex items-center gap-1.5 rounded-md border border-red-900 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-950 disabled:opacity-50">
         <Trash2 className="h-3.5 w-3.5" />

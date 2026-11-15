@@ -3,7 +3,7 @@
 import CloudMark from "@/components/clouds/CloudMark";
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor } from "@/lib/features/catalog/display";
-import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, cloudOffers, defaultValues, entryFor, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import { addDeploymentChoice } from "@/lib/features/deployments/actions";
@@ -112,7 +112,7 @@ export default function AddDeployment({
 
   const usable = choice.usable;
   const connection = usable.find((c) => c.id === connectionId) ?? null;
-  const entry = connection ? (catalog.find((e) => e.manifest.connector === connection.connector) ?? null) : null;
+  const entry = entryFor(catalog, connection?.connector);
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
@@ -210,10 +210,7 @@ function DeploymentForm({
 }) {
   const settingsSpec = entry.manifest.settings ?? [];
   const unsupported = unsupportedBlocks(entry.manifest, blocks);
-  const offers = (connector: string, kind: string) => {
-    const m = catalog.find((e) => e.manifest.connector === connector)?.manifest;
-    return !!m && manifestOffers(m, kind);
-  };
+  const offers = (connector: string, kind: string) => cloudOffers(catalog, connector, kind);
   // Where each block goes unless the person says otherwise: the example's
   // own cloud for it, else the first other connection that can build a block
   // this cloud cannot.

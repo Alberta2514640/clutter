@@ -3,8 +3,10 @@ import {
   blockFields,
   blockTitle,
   cleanValues,
+  cloudOffers,
   connectedBuilders,
   defaultValues,
+  entryFor,
   fieldControl,
   fieldError,
   fieldShown,
@@ -118,6 +120,21 @@ describe("paletteBlocks", () => {
     expect(paletteBlocks([])).toEqual([]);
     expect(blockTitle(catalog, "volume")).toBe("Volume");
     expect(blockTitle(catalog, "mystery")).toBe("mystery");
+  });
+});
+
+describe("entryFor and cloudOffers", () => {
+  it("finds a connector's entry, or null when the catalog does not offer it", () => {
+    expect(entryFor(catalog, "aws")?.manifest.title).toBe("Amazon Web Services");
+    expect(entryFor(catalog, "gone")).toBeNull();
+    expect(entryFor(catalog, null)).toBeNull();
+  });
+
+  it("says whether a connector builds a kind, and never for one it removed or a connector it does not know", () => {
+    expect(cloudOffers(catalog, "aws", "bucket")).toBe(true);
+    expect(cloudOffers(catalog, "general-openstack", "bucket")).toBe(false);
+    expect(cloudOffers(catalog, "general-openstack", "vm")).toBe(true);
+    expect(cloudOffers(catalog, "gone", "vm")).toBe(false);
   });
 });
 

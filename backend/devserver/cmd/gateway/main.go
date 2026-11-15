@@ -18,8 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -40,8 +38,7 @@ func run(logger *log.Logger) error {
 	frontAddr := flag.String("front-addr", "127.0.0.1:3000", "front door listen address (loopback only); empty disables it")
 	frontendUpstream := flag.String("frontend-upstream", "http://127.0.0.1:3100", "the Next.js dev server the front door forwards to")
 	apiDir := flag.String("api-dir", "", "path to backend/api")
-	stateDir := flag.String("state-dir", "", "directory for binaries, the Lambda HOME and the pid file")
-	skipBuild := flag.Bool("skip-build", false, "reuse binaries already in <state-dir>/bin")
+	stateDir := flag.String("state-dir", "", "directory for the Lambda binaries, the Lambda HOME and the local S3 files")
 	adapterAddr := flag.String("adapter-addr", "127.0.0.1:8790", "B API's address (loopback only), for the DevStack link route")
 	devstackVM := flag.String("devstack-vm", "devstack", "the Lima VM that runs DevStack, for the DevStack link route")
 	flag.Parse()
@@ -107,19 +104,14 @@ func run(logger *log.Logger) error {
 	}
 
 	binDir := filepath.Join(*stateDir, "bin")
-	if !*skipBuild {
-		logger.Printf("building Lambdas from %s", *apiDir)
-		if err := gateway.BuildLambdas(ctx, *apiDir, binDir, logger); err != nil {
-			return err
-		}
+	logger.Printf("building Lambdas from %s", *apiDir)
+	if err := gateway.BuildLambdas(ctx, *apiDir, binDir, logger); err != nil {
+		return err
 	}
 
 	pool := gateway.NewPool(cfg, binDir, logger)
 	defer pool.Stop()
 	if err := pool.Start(ctx); err != nil {
-		return err
-	}
-	if err := writePids(filepath.Join(*stateDir, "lambda.pids"), pool.Pids()); err != nil {
 		return err
 	}
 
@@ -185,13 +177,4 @@ func run(logger *log.Logger) error {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return nil
-}
-
-func writePids(path string, pids []int) error {
-	var b strings.Builder
-	for _, p := range pids {
-		b.WriteString(strconv.Itoa(p))
-		b.WriteByte('\n')
-	}
-	return os.WriteFile(path, []byte(b.String()), 0o600)
 }

@@ -98,6 +98,11 @@ func (c Config) GoString() string { return c.String() }
 // API's default, 3), and
 // ADAPTER_ALLOW_PRIVATE_TARGETS=1 (A2 only; refused unless ADAPTER_CREDENTIAL_STORE is
 // local). Errors name the variable, never its value.
+//
+// Load is not the only reader. The aws connector's four settings
+// (ADAPTER_AWS_TEMPLATE_DIR, ADAPTER_AWS_TEMPLATE_BUCKET, ADAPTER_AWS_STS and
+// ADAPTER_AWS_ENDPOINT) are read and checked by newAWS in cmd/api/main.go, and
+// the ECS launcher's by runtask.LoadECSSettings.
 func Load(getenv func(string) string) (Config, error) {
 	var errs []error
 	req := func(name string) string {

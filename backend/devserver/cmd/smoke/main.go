@@ -317,17 +317,10 @@ func main() {
 
 	// Link an AWS account: the stack URL, then paste back a role ARN.
 	stack := r.call("GET", "/cloudformation-stack-url/"+orgID+"?accountName=smoke"+sfx+"&region=us-west-2", nil, expectOK, 0, "", nil)
-	accountID := str(stack.json, "data", "account_id")
-	uniqueID := ""
-	if u, err := url.Parse(str(stack.json, "data", "url")); err == nil {
-		// The URL's query sits after the console's #/ fragment.
-		if i := strings.Index(u.Fragment, "?"); i >= 0 {
-			q, _ := url.ParseQuery(u.Fragment[i+1:])
-			uniqueID = q.Get("param_UniqueId")
-		}
-		if uniqueID == "" {
-			uniqueID = u.Query().Get("param_UniqueId")
-		}
+	// The same reading the Link fake account button uses.
+	accountID, uniqueID, err := gateway.ParseStackURL(stack.body)
+	if err != nil {
+		fatal(r, "cloudformation stack URL: "+err.Error())
 	}
 	r.call("GET", "/organization/"+orgID+"/accounts", nil, expectOK, 0, "", func(rs resp) string {
 		if !strings.Contains(string(rs.body), accountID) {
@@ -337,7 +330,7 @@ func main() {
 	})
 	// A fake ARN that matches the API Gateway model's pattern.
 	r.call("POST", "/organization/"+orgID+"/accounts/"+accountID, map[string]string{
-		"role_arn": "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-" + uniqueID,
+		"role_arn": gateway.FakeRoleArn + uniqueID,
 	}, expectOK, 0, "", nil)
 
 	// Projects.

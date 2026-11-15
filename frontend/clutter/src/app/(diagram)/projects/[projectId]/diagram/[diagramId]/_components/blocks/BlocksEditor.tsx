@@ -38,6 +38,7 @@ import { BLOCKS_VIEW, nodeLook, resolveView, viewClouds, viewSummary } from "@/l
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjectOrganization } from "@/lib/features/projects/hooks";
 import { useMe } from "@/lib/features/user/hooks";
+import { ApiError, apiErrorMessage } from "@/lib/features/user/session";
 import {
   addEdge,
   applyEdgeChanges,
@@ -112,17 +113,10 @@ function writeViewChoice(diagramId: string, view: string) {
 type Snapshot = { name: string; doc: BlocksDocument };
 const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b);
 
-// A's diagram API answers an error with a JSON body holding a message.
-function saveErrorMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : "";
-  try {
-    const parsed = JSON.parse(raw) as { message?: unknown };
-    if (typeof parsed.message === "string" && parsed.message) return parsed.message;
-  } catch {
-    // Not JSON: the request itself failed.
-  }
-  return raw || "The save failed.";
-}
+// A's diagram API answers an error with a JSON body holding a reason. A call
+// that never reached it (status 0) carries apiFetch's own sentence.
+const saveErrorMessage = (err: unknown) =>
+  apiErrorMessage(err) ?? (err instanceof ApiError && err.status === 0 ? err.message : "The save failed.");
 
 // The middle of a block card whose top left corner is at p.
 const cardCenter = (p: XYPosition, n?: BlockNodeType): XYPosition => ({
@@ -141,7 +135,15 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
   const orgsQ = useOrganizations(token);
   const orgIds = useMemo(() => orgsQ.data?.map((o) => o.id) ?? null, [orgsQ.data]);
   // Every B call is checked against the project's own organization.
-  const orgId = useProjectOrganization(token, projectId, orgIds).data ?? null;
+  const orgQ = useProjectOrganization(token, projectId, orgIds);
+  const orgId = orgQ.data ?? null;
+  // The organization cannot be found: the lookup failed or found none, or the
+  // organizations it searches could not be read or are none. B's panels say
+  // so instead of waiting for it.
+  const orgError =
+    !orgId && (orgsQ.isError || (orgsQ.isSuccess && orgsQ.data.length === 0) || orgQ.isError || orgQ.isSuccess)
+      ? "Clutter could not find this diagram's organization. Reload the page."
+      : null;
 
   const catalogQ = useCatalog(token);
   const catalog = useMemo(() => catalogQ.data ?? [], [catalogQ.data]);
@@ -475,7 +477,7 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
         <BlockPalette
           blocks={palette}
           loading={catalogQ.isLoading}
-          error={catalogQ.isError ? adapterErrorMessage(catalogQ.error) : null}
+          error={catalogQ.isError && !catalogQ.data ? adapterErrorMessage(catalogQ.error) : null}
           connected={connected}
           onAdd={addAtCenter}
           onDragKind={(k) => {
@@ -569,7 +571,10 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
                   node={selected}
                   catalog={catalog}
                   title={blockTitle(selected.data.kind)}
-                  disabled={false}
+                  token={token}
+                  organizationId={orgId}
+                  organizationError={orgError}
+                  diagramId={diagram.id}
                   connected={connected}
                   issues={blockIssues(compatQ.data, selected.id, new Set(["name", ...blockFields(catalog, selected.data.kind).map((f) => f.name)]))}
                   saved={savedSelected ? { name: savedSelected.data.name, fields: savedSelected.data.fields } : null}
@@ -584,6 +589,7 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
               <DeployPanel
                 token={token}
                 organizationId={orgId}
+                organizationError={orgError}
                 diagramId={diagram.id}
                 catalog={catalog}
                 savedBlocks={savedBlocks}
