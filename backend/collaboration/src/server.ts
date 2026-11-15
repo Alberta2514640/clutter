@@ -4,7 +4,7 @@
 
 import { createServer, type IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 import { checkAccess, type Access } from "./access.ts";
 import { CLOSE } from "./codes.ts";
 import { loadConfig, type Config } from "./config.ts";
@@ -48,6 +48,16 @@ export async function startServer(cfg: Config, fetchFn: typeof fetch = fetch): P
     return checkAccess({ cookieHeader: req.headers.cookie, diagramId, projectId }, cfg, fetchFn);
   };
 
+  // Close a socket we do not allow, after a short wait.
+  // The y-websocket client reconnects 0.1 seconds after a close. Without the
+  // wait, one refused browser tab would call A's API about 10 times a second.
+  const refuse = (client: WebSocket, code: number, reason: string): void => {
+    client.on("error", () => {});
+    const timer = setTimeout(() => client.close(code, reason), cfg.refuseDelayMs);
+    // If the client leaves first, there is nothing left to close.
+    client.on("close", () => clearTimeout(timer));
+  };
+
   const onUpgrade = async (req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
     // If the client goes away while we wait for A's API, do not crash.
     socket.on("error", () => {});
@@ -61,14 +71,12 @@ export async function startServer(cfg: Config, fetchFn: typeof fetch = fetch): P
       // The browser cannot read an HTTP error on a WebSocket.
       // So we always open the socket, and close it with a code if the answer is no.
       if (!access.ok) {
-        client.on("error", () => {});
-        client.close(access.code, access.reason);
+        refuse(client, access.code, access.reason);
         return;
       }
       const room = rooms.join(diagramId, client, { document: access.document, name: access.diagramName });
       if (!room) {
-        client.on("error", () => {});
-        client.close(CLOSE.full, "full");
+        refuse(client, CLOSE.full, "full");
         return;
       }
       handleConnection(client, room, access, { pingMs: cfg.pingMs, onClose: () => rooms.leave(room, client) });

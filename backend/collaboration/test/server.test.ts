@@ -35,7 +35,7 @@ let clients: TestClient[];
 
 // Start the service on a free port, with small limits so the tests are quick.
 async function start(over: Partial<Config> = {}): Promise<void> {
-  server = await startServer({ ...loadConfig({}), port: 0, roomIdleMs: 0, ...over }, api.fetchFn);
+  server = await startServer({ ...loadConfig({}), port: 0, roomIdleMs: 0, refuseDelayMs: 0, ...over }, api.fetchFn);
 }
 
 // Open a client. It is closed again after the test.
@@ -122,6 +122,26 @@ describe("refusing a connection", () => {
     await start({ maxClientsPerRoom: 1 });
     await connect(ALICE).waitSynced();
     expect((await connect(BOB).waitClosed()).code).toBe(CLOSE.full);
+  });
+
+  it("waits before it closes a refused socket, and sends nothing while it waits", async () => {
+    await start({ refuseDelayMs: 150 });
+    const started = Date.now();
+    const carol = connect(CAROL);
+    const closed = await carol.waitClosed();
+    expect(closed.code).toBe(CLOSE.notFound);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(140);
+    // Carol got no part of the diagram.
+    expect(carol.synced).toBe(false);
+    expect(carol.nodeIds()).toEqual([]);
+  });
+
+  it("does not keep a refused socket's timer when the client leaves first", async () => {
+    await start({ refuseDelayMs: 60_000 });
+    const carol = connect(CAROL);
+    await until(() => carol.ws.readyState === carol.ws.OPEN, "the socket to open");
+    carol.ws.close();
+    expect((await carol.waitClosed()).code).not.toBe(CLOSE.notFound);
   });
 
   it("checks every connection, not only the first one in a room", async () => {

@@ -17,6 +17,9 @@ export interface Config {
   roomIdleMs: number;
   // How often to ping each client, in ms. A client that does not answer is closed.
   pingMs: number;
+  // How long to wait before closing a refused socket, in ms.
+  // The client retries right after a close, so this slows the retries down.
+  refuseDelayMs: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -73,5 +76,6 @@ export function loadConfig(env: Env = process.env): Config {
     maxRooms: int(env, "COLLAB_MAX_ROOMS", 100, 1, 100_000),
     roomIdleMs: int(env, "COLLAB_ROOM_IDLE_MS", 30_000, 0, 3_600_000),
     pingMs: int(env, "COLLAB_PING_MS", 30_000, 1000, 600_000),
+    refuseDelayMs: int(env, "COLLAB_REFUSE_DELAY_MS", 1000, 0, 60_000),
   };
 }
