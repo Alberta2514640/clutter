@@ -1,6 +1,10 @@
 # IAM Role
 resource "aws_iam_role" "{{.ResourceName}}_role" {
   name = "{{.FunctionName}}-lambda-role"
+  # The customer role may create, change or pass a role only under /clutter/,
+  # with this boundary and tagged ManagedBy = Clutter.
+  path                 = "/clutter/"
+  permissions_boundary = var.permissions_boundary_arn
   assume_role_policy = jsonencode({
     "Version" : "2012-10-17",
     "Statement" : [{
@@ -12,6 +16,10 @@ resource "aws_iam_role" "{{.ResourceName}}_role" {
       }
     }]
   })
+
+  tags = {
+    ManagedBy = "Clutter"
+  }
 }
 
 # Lambda Function

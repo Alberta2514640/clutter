@@ -197,3 +197,20 @@ CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON playbooks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================
+-- ROW-LEVEL SECURITY
+-- ============================
+-- Every read and write goes through the Go API, which connects as the table owner and so is not
+-- subject to these rules. With RLS on and no policy, Supabase's anon and authenticated roles
+-- (its Data API) can read or change no row.
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organization_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aws_account_access_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.diagrams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.diagram_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.diagram_deployment_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;

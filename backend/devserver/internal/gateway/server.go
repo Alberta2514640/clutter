@@ -33,9 +33,6 @@ type Server struct {
 	// extra handles paths outside the API, such as /dev/login. It is checked
 	// before the route table and may be nil.
 	extra map[string]http.Handler
-	// Generation, when set, hears about every successful Lambda response so it
-	// can stand in for the Supabase webhook.
-	Generation *GenerationHook
 }
 
 // NewServer returns the API handler.
@@ -121,9 +118,11 @@ func findRoute(method, path string) (match, string, bool) {
 }
 
 // writeGatewayError writes an error API Gateway itself produces. The platform
-// Terraform configures no gateway responses, so these carry no CORS headers,
-// exactly as in AWS: a browser sees them as CORS failures.
+// Terraform's DEFAULT_4XX and DEFAULT_5XX gateway responses (backend/infra/main.tf)
+// add the CORS origin header, so the browser can read a refused token's 403 and
+// send the user back to sign in.
 func writeGatewayError(w http.ResponseWriter, status int, errorType, body string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Amzn-ErrorType", errorType)
 	w.WriteHeader(status)
@@ -205,9 +204,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProxyResponse(rec, out, s.logger, m.route.Lambda)
-	if s.Generation != nil && rec.status >= 200 && rec.status < 300 {
-		s.Generation.DiagramSaved(m.route.Lambda, out)
-	}
 }
 
 func mustLambda(name string) routes.Lambda {

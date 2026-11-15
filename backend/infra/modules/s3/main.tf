@@ -325,3 +325,82 @@ resource "aws_s3_object" "s3_outputstf_template" {
   etag = filemd5("${path.module}/uploads/aws/s3/outputs.tf.tmpl")
 
 }
+
+# Templates only B's AWS connector renders (network, firewall, volume).
+resource "aws_s3_object" "network_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/network/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/network/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/network/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "network_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/network/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/network/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/network/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "firewall_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/firewall/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/firewall/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/firewall/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "firewall_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/firewall/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/firewall/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/firewall/outputs.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "volume_maintf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/volume/main.tf.tmpl"
+  source = "${path.module}/uploads/aws/volume/main.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/volume/main.tf.tmpl")
+
+}
+
+resource "aws_s3_object" "volume_outputstf_template" {
+
+  bucket = aws_s3_bucket.templates.id
+
+  key    = "templates/aws/volume/outputs.tf.tmpl"
+  source = "${path.module}/uploads/aws/volume/outputs.tf.tmpl"
+
+  server_side_encryption = "AES256"
+
+  etag = filemd5("${path.module}/uploads/aws/volume/outputs.tf.tmpl")
+
+}

@@ -2,7 +2,7 @@
 
 import { ReactFlowProvider } from "@xyflow/react";
 import { use } from "react";
-import DiagramEditor from "./_components/DiagramEditor";
+import EditorSwitch from "./_components/EditorSwitch";
 
 type Params = { projectId: string; diagramId: string };
 
@@ -11,7 +11,7 @@ export default function DiagramPage({ params }: { params: Promise<Params> }) {
 
   return (
     <ReactFlowProvider>
-      <DiagramEditor projectId={resolved.projectId} diagramId={resolved.diagramId} />
+      <EditorSwitch projectId={resolved.projectId} diagramId={resolved.diagramId} />
     </ReactFlowProvider>
   );
 }

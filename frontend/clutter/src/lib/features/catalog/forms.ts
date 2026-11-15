@@ -1,0 +1,188 @@
+// The manifest-to-form mapping. B's editor builds its palette, block forms,
+// allowed edges and deployment settings from the catalog only (the manifests
+// are the one owner of blocks, fields, defaults and allowed values). The value
+// rules here mirror connectors.CheckValue in backend/adapter/connectors/manifest.go;
+// B checks again before anything runs.
+
+import { cloudLook, type CloudLook } from "./display";
+import { MAX_STRING_FIELD, MAX_TEXT_FIELD, STANDARD_BLOCKS } from "./types";
+import type { BlockKind, CatalogEntry, FieldSpec, Manifest } from "./types";
+
+export type PaletteBlock = {
+  kind: BlockKind;
+  title: string;
+  // The clouds that can build it.
+  clouds: CloudLook[];
+};
+
+// manifestOffers reports whether a cloud can build a kind of block.
+export const manifestOffers = (m: Manifest, kind: BlockKind) =>
+  (m.blocks ?? []).some((b) => b.kind === kind && b.treatment !== "removed");
+
+// paletteBlocks lists every block at least one cloud can build: the standard
+// blocks in their fixed order, then any cloud's own blocks by title.
+export function paletteBlocks(catalog: CatalogEntry[]): PaletteBlock[] {
+  const byKind = new Map<BlockKind, PaletteBlock>();
+  for (const { manifest } of catalog) {
+    for (const b of manifest.blocks ?? []) {
+      if (b.treatment === "removed") continue;
+      const cur = byKind.get(b.kind);
+      if (cur) {
+        if (!cur.clouds.some((c) => c.connector === manifest.connector)) cur.clouds.push(cloudLook(manifest));
+      } else {
+        byKind.set(b.kind, { kind: b.kind, title: b.title, clouds: [cloudLook(manifest)] });
+      }
+    }
+  }
+  const standard = STANDARD_BLOCKS.flatMap((k) => (byKind.has(k) ? [byKind.get(k)!] : []));
+  const own = [...byKind.values()].filter((b) => !STANDARD_BLOCKS.includes(b.kind)).sort((a, b) => a.title.localeCompare(b.title));
+  return [...standard, ...own];
+}
+
+// blockTitle names a kind as the manifests do, or by its kind when none offers it.
+export function blockTitle(catalog: CatalogEntry[], kind: BlockKind): string {
+  for (const { manifest } of catalog) {
+    const b = (manifest.blocks ?? []).find((x) => x.kind === kind);
+    if (b?.title) return b.title;
+  }
+  return kind;
+}
+
+// blockFields returns a block's form fields: every field any cloud that builds
+// it declares, first declaration first. An enum keeps only the values every
+// declaring cloud allows, so a value picked here passes each of them.
+export function blockFields(catalog: CatalogEntry[], kind: BlockKind): FieldSpec[] {
+  const out: FieldSpec[] = [];
+  for (const { manifest } of catalog) {
+    const b = (manifest.blocks ?? []).find((x) => x.kind === kind && x.treatment !== "removed");
+    for (const f of b?.fields ?? []) {
+      const i = out.findIndex((x) => x.name === f.name);
+      if (i < 0) {
+        out.push({ ...f, allowed: f.allowed ? [...f.allowed] : undefined });
+        continue;
+      }
+      const cur = out[i];
+      if (cur.type === "enum" && f.type === "enum" && cur.allowed && f.allowed) {
+        const both = cur.allowed.filter((v) => f.allowed!.includes(v));
+        if (both.length > 0) out[i] = { ...cur, allowed: both };
+      }
+    }
+  }
+  return out;
+}
+
+// defaultValues holds each field's default, leaving out fields with none.
+export function defaultValues(fields: FieldSpec[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (f.default !== undefined && f.default !== null) out[f.name] = f.default;
+  }
+  return out;
+}
+
+// edgeAllowed reports whether any cloud can wire source to target.
+export function edgeAllowed(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): boolean {
+  return catalog.some(({ manifest }) =>
+    (manifest.edges ?? []).some((e) => e.source === source && e.target === target),
+  );
+}
+
+// edgeMeaning is what an edge means on the first cloud that can wire it.
+export function edgeMeaning(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): string | null {
+  for (const { manifest } of catalog) {
+    const e = (manifest.edges ?? []).find((x) => x.source === source && x.target === target);
+    if (e) return e.meaning;
+  }
+  return null;
+}
+
+// What a field renders as.
+export type FieldControl =
+  | { control: "select"; options: string[] }
+  | { control: "checkbox" }
+  | { control: "number" }
+  | { control: "text" }
+  | { control: "textarea" };
+
+export function fieldControl(f: FieldSpec): FieldControl {
+  switch (f.type) {
+    case "enum":
+      return { control: "select", options: f.allowed ?? [] };
+    case "bool":
+      return { control: "checkbox" };
+    case "int":
+      return { control: "number" };
+    case "text":
+      return { control: "textarea" };
+    default:
+      return { control: "text" };
+  }
+}
+
+// textBytes is a text value's length as B counts it: UTF-8 bytes.
+export const textBytes = (s: string) => new TextEncoder().encode(s).length;
+
+// parseInput turns what a control holds into the value the document stores.
+// An empty text or number box means "not set" (undefined), so the default or
+// the required check applies.
+export function parseInput(f: FieldSpec, raw: string | boolean): unknown {
+  if (f.type === "bool") return raw === true || raw === "true";
+  const s = String(raw);
+  // A text area keeps what is typed, leading blank lines included; only an
+  // empty one is unset. B treats a blank script as none.
+  if (f.type === "text") return s === "" ? undefined : s;
+  if (s.trim() === "") return undefined;
+  if (f.type === "int") {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : s;
+  }
+  return s;
+}
+
+// fieldError returns why value is not valid for f, or null. It mirrors
+// connectors.CheckValue, plus the required check B's capability check makes.
+export function fieldError(f: FieldSpec, value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return f.required && (f.default === undefined || f.default === null) ? `${f.title} is required.` : null;
+  }
+  switch (f.type) {
+    case "string":
+      if (typeof value !== "string") return `${f.title} must be text.`;
+      if (value.length > MAX_STRING_FIELD) return `${f.title} must be at most ${MAX_STRING_FIELD} characters.`;
+      return null;
+    case "text":
+      if (typeof value !== "string") return `${f.title} must be text.`;
+      if (textBytes(value) > MAX_TEXT_FIELD) return `${f.title} must be at most ${MAX_TEXT_FIELD / 1024} KB.`;
+      return null;
+    case "int":
+      if (typeof value !== "number" || !Number.isInteger(value) || Math.abs(value) > 2 ** 53) {
+        return `${f.title} must be a whole number.`;
+      }
+      return null;
+    case "bool":
+      return typeof value === "boolean" ? null : `${f.title} must be on or off.`;
+    case "enum":
+      return typeof value === "string" && (f.allowed ?? []).includes(value) ? null : `${f.title} must be one of the listed values.`;
+    default:
+      return `${f.title} has a type this page does not know.`;
+  }
+}
+
+// valuesErrors checks every field of a form, in field order.
+export function valuesErrors(fields: FieldSpec[], values: Record<string, unknown>): { field: string; message: string }[] {
+  return fields.flatMap((f) => {
+    const msg = fieldError(f, values[f.name]);
+    return msg ? [{ field: f.name, message: msg }] : [];
+  });
+}
+
+// cleanValues drops unset values and names no field declares, so a saved
+// document or settings object holds only what the manifest knows.
+export function cleanValues(fields: FieldSpec[], values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    const v = values[f.name];
+    if (v !== undefined && v !== null && v !== "") out[f.name] = v;
+  }
+  return out;
+}

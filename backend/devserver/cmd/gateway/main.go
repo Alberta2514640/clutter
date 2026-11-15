@@ -129,8 +129,6 @@ func run(logger *log.Logger) error {
 	apiHandler := gateway.NewServer(pool, logger, devRoutes)
 	// This route calls back into the server, so it is added once the server exists.
 	devRoutes[gateway.LinkFakeAccountPath] = apiHandler.LinkFakeAccountHandler()
-	generation := gateway.NewGenerationHook(pool, cfg.PSQLConnString, logger)
-	apiHandler.Generation = generation
 	servers := []*http.Server{{Addr: *apiAddr, Handler: apiHandler, ReadHeaderTimeout: 10 * time.Second}}
 
 	if *frontAddr != "" {
@@ -173,7 +171,6 @@ func run(logger *log.Logger) error {
 	for _, s := range servers {
 		_ = s.Shutdown(shutdownCtx)
 	}
-	generation.Wait()
 	return nil
 }
 

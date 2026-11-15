@@ -72,9 +72,8 @@ export function ProjectHeader() {
 
       // Navigate to the newly created diagram
       router.push(`/projects/${projectId}/diagram/${created.id}`);
-    } catch (e) {
-      setCreateError(String(e));
-      console.error("Failed to create diagram:", e);
+    } catch {
+      setCreateError("Clutter could not create the diagram. Try again.");
     }
   };
 
@@ -83,8 +82,8 @@ export function ProjectHeader() {
 
   return (
     <>
-      <header className="border-b border-slate-800 px-12 py-8 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 px-4 py-6 md:px-12 md:py-8">
+        <div className="flex min-w-0 items-center gap-4">
           <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-blue-600 p-[2px]">
             <div className="w-full h-full flex items-center justify-center rounded-2xl bg-slate-900">
               {projectLoading ? (
@@ -94,24 +93,24 @@ export function ProjectHeader() {
               )}
             </div>
           </div>
-          <h1 className="text-2xl font-semibold">{projectName}</h1>
+          <h1 className="truncate text-2xl font-semibold">{projectName}</h1>
         </div>
 
         <div className="flex items-center gap-2">
           <Button
             onClick={handleCreateDiagram}
             disabled={projectLoading || !project || isCreating}
-            className="bg-gradient-to-br from-teal-600 to-blue-600 hover:opacity-90 text-white px-4 disabled:opacity-50"
+            className="bg-teal-600 px-4 text-white hover:bg-teal-500 disabled:opacity-50"
           >
             {isCreating ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
                 Creating...
               </>
             ) : (
               <>
-                <Plus className="w-4 h-4 mr-2" />
-                Create New Diagram
+                <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+                New diagram
               </>
             )}
           </Button>
@@ -121,7 +120,7 @@ export function ProjectHeader() {
       {/* Error banner */}
       {createError && (
         <div className="px-12 py-3 bg-red-900/20 border-b border-red-800">
-          <p className="text-sm text-red-400">Failed to create diagram: {createError}</p>
+          <p role="alert" className="text-sm text-red-400">{createError}</p>
         </div>
       )}
     </>

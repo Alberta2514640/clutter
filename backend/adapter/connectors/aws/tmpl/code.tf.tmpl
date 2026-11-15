@@ -1,0 +1,14 @@
+# Placeholder code for each function with no code uploaded through Clutter:
+# Clutter's placeholder code, zipped in the run's folder.
+{{- range .Functions}}
+
+data "archive_file" "{{.Addr}}_code" {
+  type        = "zip"
+  output_path = "${path.root}/{{.Zip}}"
+
+  source {
+    content  = "{{$.PlaceholderText}}"
+    filename = "welcome.txt"
+  }
+}
+{{- end}}

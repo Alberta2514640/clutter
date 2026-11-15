@@ -15,6 +15,29 @@ parts="$(split_commands "$cmd")"
 while IFS= read -r part; do
   words="$(printf '%s' "$part" | sed -E 's/^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*//')"
   set -- $words
+  # Wrappers that run another command (env -i, nohup, timeout 5, sudo, ...) hide the real one:
+  # step past them, and past env's flags and VAR=value words, to the command that runs.
+  while [ $# -gt 0 ]; do
+    case "${1##*/}" in
+      env)
+        shift
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -u|--unset|-C|--chdir|-S|--split-string) shift 2 ;;
+            -*|*=*) shift ;;
+            *) break ;;
+          esac
+        done ;;
+      command|exec|nohup|time|sudo|stdbuf|nice|caffeinate)
+        shift
+        while [ $# -gt 0 ]; do case "$1" in -n) shift 2 ;; -*) shift ;; *) break ;; esac; done ;;
+      timeout)
+        shift
+        while [ $# -gt 0 ]; do case "$1" in -*) shift ;; *) break ;; esac; done
+        [ $# -gt 0 ] && shift ;;  # the duration
+      *) break ;;
+    esac
+  done
   bin="${1:-}"; bin="${bin##*/}"
   case "$bin" in
     terraform|tofu)
@@ -60,4 +83,17 @@ while IFS= read -r part; do
 done <<EOF
 $parts
 EOF
+
+# Backstop for commands run inside another one (bash -c '...', limactl shell vm -- ..., ssh host ...):
+# if the whole text names a cloud-changing command anywhere, ask.
+flat="$(printf '%s' "$cmd" | tr '\n' ' ')"
+if printf '%s' "$flat" | grep -Eq '(^|[^[:alnum:]_.-])(terraform|tofu)[[:space:]]([^;&|]*[[:space:]])?(apply|destroy|import|taint|untaint|force-unlock)([[:space:]]|$|["'"'"'])'; then
+  ask "This runs Terraform apply, destroy or a state change inside another command. Approve only if you meant to deploy from this session."
+fi
+if printf '%s' "$flat" | grep -Eq '(^|[^[:alnum:]_.-])openstack[[:space:]]([^;&|]*[[:space:]])?(create|delete|set|unset|add|remove|rebuild|resize|reboot|stop|start|migrate|purge)([[:space:]]|$|["'"'"'])'; then
+  ask "This runs an OpenStack command that changes a real cloud project, inside another command. Approve only if intended."
+fi
+if printf '%s' "$flat" | grep -Eq '(^|[^[:alnum:]_.-])ansible-playbook([[:space:]]|$)'; then
+  ask "Ansible acts on real hosts. Approve only if the inventory points where you expect."
+fi
 exit 0

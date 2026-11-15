@@ -1,8 +1,6 @@
 // src/lib/features/user/hooks.ts
-//to do this need to properly reflect the changes from google auth
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { membersApi } from "../members/api";
-import { clearTokenCookie, userApi } from "./api";
+import { clearStoredSession, userApi } from "./api";
 import { userKeys } from "./keys";
 
 export const useMe = () => {
@@ -19,9 +17,8 @@ export function useLoginWithGoogle() {
 
   return useMutation({
     mutationFn: userApi.loginWithGoogle,
-    onSuccess: async (user) => {
+    onSuccess: (user) => {
       qc.setQueryData(userKeys.me(), user);
-      await membersApi.bootstrapWithMe(user); // placeholder for mock future deletion probably
     },
   });
 }
@@ -31,7 +28,7 @@ export function useLogout() {
   const qc = useQueryClient();
 
   return () => {
-    clearTokenCookie();
+    clearStoredSession();
     qc.setQueryData(userKeys.me(), null);
     qc.clear();
   };

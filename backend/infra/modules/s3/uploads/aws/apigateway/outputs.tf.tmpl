@@ -11,5 +11,6 @@ output "{{.ResourceName}}_execution_arn" {
 }
 
 output "{{.ResourceName}}_invoke_url" {
-  value = aws_api_gateway_stage.{{.ResourceName}}_stage.invoke_url
+  # Null when the API has no method, and so no stage.
+  value = one(aws_api_gateway_stage.{{.ResourceName}}_stage[*].invoke_url)
 }

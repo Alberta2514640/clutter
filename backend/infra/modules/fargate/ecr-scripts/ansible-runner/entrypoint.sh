@@ -6,8 +6,14 @@ set -euo pipefail
 # Runs inside a Fargate task. Downloads playbook from S3, generates a
 # pre-signed URL, then pushes execution to target instances via SSM Run
 # Command. Each instance downloads the playbook and runs it locally.
-# Fargate polls for completion, collects output, uploads logs, and updates
-# PostgreSQL job status.
+# Fargate polls for completion, collects output, uploads logs, and writes the
+# job's status file beside its log.
+#
+# The task has no database access. The status file
+# ({org}/{project}/{diagram}/playbooks/logs/{job_id}.status.json) holds the
+# status (RUNNING, then COMPLETED or FAILED), the error message and the log
+# key; the API copies it into the job's row (backend/api/generic/job_status.go,
+# which also owns the key format).
 #
 # Uses SSM Run Command (not SSM Session Manager) — no S3 staging bucket,
 # no cross-account S3 access needed. Target EC2 instances must have SSM
@@ -19,7 +25,6 @@ set -euo pipefail
 #   PLAYBOOK_S3_KEY     - S3 key for the playbook file
 #   TARGET_INSTANCE_IDS - Comma-separated EC2 instance IDs
 #   S3_BUCKET_NAME      - S3 bucket for playbooks and logs
-#   PSQL_CONNECTION_STRING - PostgreSQL connection string for job status updates
 #   AWS_DEFAULT_REGION  - AWS region
 #   ORG_ID              - Organization ID (for org-scoped log paths)
 #   PROJECT_ID          - Project ID (for org-scoped log paths)
@@ -134,9 +139,10 @@ PYEOF
 }
 
 
-# Retry configuration constants (global scope for use in functions and error handlers)
-DOWNLOAD_PLAYBOOK_MAX_RETRIES=3
 PLAYBOOK_TIMEOUT="${PLAYBOOK_TIMEOUT:-3600}"
+
+# The log key once the log is in S3; the final status file names it.
+UPLOADED_LOG_KEY=""
 
 # Create log directory and file immediately so all output is captured,
 # even if Ansible never runs (e.g. early failures in inventory generation).
@@ -145,162 +151,132 @@ touch "$LOG_FILE"
 # Tee all stdout and stderr into the log file while still printing to console.
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-# ---- Helper: Update job status in PostgreSQL (parameterized, no SQL injection) ----
-update_job_status() {
+UUID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+# ---- Helper: Write the job's status file beside its log ----
+# Runs with the Fargate task role, never the customer's credentials. The ids
+# become the S3 key, so each must be a lowercase UUID, the form the API reads
+# the key in. A failure is logged; the job then keeps its row status.
+write_job_status() {
     local status="$1"
     local error_message="${2:-}"
+    local log_key=""
+    local id status_file
 
-    python3 - <<'PYEOF' "$JOB_ID" "$status" "$error_message"
+    for id in "${ORG_ID:-}" "${PROJECT_ID:-}" "${DIAGRAM_ID:-}" "${JOB_ID:-}"; do
+        if [[ ! "$id" =~ $UUID_RE ]]; then
+            echo "[write_job_status] WARNING: cannot record status $status: the job's ids are not UUIDs" >&2
+            return 0
+        fi
+    done
+    if [ -z "${S3_BUCKET_NAME:-}" ]; then
+        echo "[write_job_status] WARNING: cannot record status $status: S3_BUCKET_NAME is not set" >&2
+        return 0
+    fi
+    if [ "$status" != "RUNNING" ]; then
+        log_key="$UPLOADED_LOG_KEY"
+    fi
+
+    status_file=$(mktemp)
+    if python3 - "$JOB_ID" "$status" "$error_message" "$log_key" >"$status_file" <<'PYEOF'
+import json
 import sys
-import os
-import psycopg2
-from datetime import datetime, timezone
 
-job_id, status, error_message = sys.argv[1], sys.argv[2], sys.argv[3]
-now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-conn_string = os.environ.get('PSQL_CONNECTION_STRING', '')
-
-if not conn_string:
-    print("[update_job_status] WARNING: PSQL_CONNECTION_STRING is missing", file=sys.stderr)
-    sys.exit(0)
-
-try:
-    with psycopg2.connect(conn_string) as conn:
-        with conn.cursor() as cur:
-            if error_message:
-                cur.execute(
-                    "UPDATE jobs SET status = %s, error_message = %s, updated_at = %s WHERE id = %s",
-                    (status, error_message, now, job_id)
-                )
-            else:
-                cur.execute(
-                    "UPDATE jobs SET status = %s, updated_at = %s WHERE id = %s",
-                    (status, now, job_id)
-                )
-            conn.commit()
-except Exception as e:
-    print(f"[update_job_status] WARNING: Failed to update job status: {e}", file=sys.stderr)
+job_id, status, error_message, log_key = sys.argv[1:5]
+json.dump({
+    "status": status,
+    "job_id": job_id,
+    "error_message": error_message[:500],
+    "log_s3_key": log_key,
+}, sys.stdout)
 PYEOF
+    then
+        env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+            aws s3 cp "$status_file" "s3://${S3_BUCKET_NAME}/${ORG_ID}/${PROJECT_ID}/${DIAGRAM_ID}/playbooks/logs/${JOB_ID}.status.json" \
+            --region "$AWS_DEFAULT_REGION" \
+            --content-type application/json \
+            --sse AES256 >/dev/null 2>&1 ||
+            echo "[write_job_status] WARNING: failed to record status $status" >&2
+    else
+        echo "[write_job_status] WARNING: failed to build the status file" >&2
+    fi
+    rm -f "$status_file"
 }
 
-# ---- Helper: Upload logs to S3 and record the key in the database ----
+# ---- Helper: Upload logs to S3 ----
 upload_logs() {
-    local upload_failed=0
     local max_retries=3
     local retry_count=0
     local retry_delay=2
 
-    if [ -f "$LOG_FILE" ]; then
-        local log_key="${ORG_ID:-unknown}/${PROJECT_ID:-unknown}/${DIAGRAM_ID:-unknown}/playbooks/logs/${JOB_ID:-unknown}.log"
-
-        # Retry loop for S3 upload with exponential backoff.
-        # Use Fargate task role by unsetting assumed role credentials contextually using env.
-        while [ $retry_count -lt $max_retries ]; do
-            if env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
-                aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME:-unknown}/${log_key}" \
-                --region "$AWS_DEFAULT_REGION" \
-                --sse AES256 2>&1; then
-                echo "[upload_logs] Log file uploaded successfully to s3://${S3_BUCKET_NAME}/${log_key}"
-
-                # Record log location in database (with retry)
-                local db_retry_count=0
-                local db_max_retries=3
-                local db_update_success=0
-                while [ $db_retry_count -lt $db_max_retries ]; do
-                    if python3 - <<'PYEOF' "$JOB_ID" "$log_key"
-import sys
-import os
-import psycopg2
-from datetime import datetime, timezone
-
-job_id, log_key = sys.argv[1], sys.argv[2]
-now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-conn_string = os.environ.get('PSQL_CONNECTION_STRING', '')
-
-if not conn_string:
-    print("[upload_logs] WARNING: PSQL_CONNECTION_STRING is missing", file=sys.stderr)
-    sys.exit(1)
-
-try:
-    with psycopg2.connect(conn_string) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE jobs SET log_s3_key = %s, updated_at = %s WHERE id = %s",
-                (log_key, now, job_id)
-            )
-            conn.commit()
-    print(f"[upload_logs] Log S3 key recorded in database")
-except Exception as e:
-    print(f"[upload_logs] WARNING: Failed to record log_s3_key in database: {e}", file=sys.stderr)
-    sys.exit(1)
-PYEOF
-                    then
-                        db_update_success=1
-                        break
-                    else
-                        db_retry_count=$((db_retry_count + 1))
-                        if [ $db_retry_count -lt $db_max_retries ]; then
-                            echo "[upload_logs] Database update failed, retrying in $((db_retry_count * 2))s..."
-                            sleep $((db_retry_count * 2))
-                        fi
-                    fi
-                done
-                # If DB update retries were exhausted, log error and return failure
-                if [ $db_update_success -eq 0 ]; then
-                    echo "[upload_logs] ERROR: Failed to update database with log_s3_key after $db_max_retries attempts" >&2
-                    return 1
-                fi
-                return 0
-            else
-                retry_count=$((retry_count + 1))
-                if [ $retry_count -lt $max_retries ]; then
-                    echo "[upload_logs] WARNING: S3 upload failed, retrying in ${retry_delay}s (attempt $retry_count/$max_retries)" >&2
-                    sleep $retry_delay
-                    retry_delay=$((retry_delay * 2))
-                else
-                    echo "[upload_logs] ERROR: S3 upload failed after $max_retries attempts" >&2
-                    upload_failed=1
-                fi
-            fi
-        done
+    if [ ! -f "$LOG_FILE" ]; then
+        return 1
     fi
-    return $upload_failed
+    local log_key="${ORG_ID:-unknown}/${PROJECT_ID:-unknown}/${DIAGRAM_ID:-unknown}/playbooks/logs/${JOB_ID:-unknown}.log"
+
+    # Retry loop for S3 upload with exponential backoff.
+    # Use Fargate task role by unsetting assumed role credentials contextually using env.
+    while [ $retry_count -lt $max_retries ]; do
+        if env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+            aws s3 cp "$LOG_FILE" "s3://${S3_BUCKET_NAME:-unknown}/${log_key}" \
+            --region "$AWS_DEFAULT_REGION" \
+            --sse AES256 2>&1; then
+            echo "[upload_logs] Log file uploaded successfully to s3://${S3_BUCKET_NAME}/${log_key}"
+            UPLOADED_LOG_KEY="$log_key"
+            return 0
+        fi
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "[upload_logs] WARNING: S3 upload failed, retrying in ${retry_delay}s (attempt $retry_count/$max_retries)" >&2
+            sleep $retry_delay
+            retry_delay=$((retry_delay * 2))
+        fi
+    done
+    echo "[upload_logs] ERROR: S3 upload failed after $max_retries attempts" >&2
+    return 1
+}
+
+# ---- Helper: End the job ----
+# Uploads the log first, so the final status file can name it, then exits:
+# 0 for COMPLETED, 1 for FAILED.
+finish_job() {
+    local status="$1"
+    local error_message="${2:-}"
+
+    upload_logs || true
+    write_job_status "$status" "$error_message"
+    if [ "$status" = "COMPLETED" ]; then
+        exit 0
+    fi
+    exit 1
 }
 
 # ---- Trap: Handle signals for graceful shutdown ----
 cleanup() {
     echo "[entrypoint] Received shutdown signal. Uploading logs."
-    update_job_status "FAILED" "Task was terminated by signal"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "Task was terminated by signal"
 }
 trap cleanup SIGTERM SIGINT
 
 # ---- Validate required env vars ----
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-}}"
-for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME PSQL_CONNECTION_STRING AWS_DEFAULT_REGION ORG_ID PROJECT_ID DIAGRAM_ID CLIENT_ROLE_ARN ASSUME_ROLE_EXTERNAL_ID; do
+for var in JOB_ID PLAYBOOK_S3_KEY TARGET_INSTANCE_IDS S3_BUCKET_NAME AWS_DEFAULT_REGION ORG_ID PROJECT_ID DIAGRAM_ID CLIENT_ROLE_ARN ASSUME_ROLE_EXTERNAL_ID; do
     if [ -z "${!var:-}" ]; then
         echo "[entrypoint] ERROR: Missing required environment variable: $var"
-        upload_logs || true
-        update_job_status "FAILED" "Missing environment variable: $var"
-        exit 1
+        finish_job "FAILED" "Missing environment variable: $var"
     fi
 done
 
 # Validate timeout after required env vars and helper functions are available.
 if ! [[ "$PLAYBOOK_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$PLAYBOOK_TIMEOUT" -lt 60 ] || [ "$PLAYBOOK_TIMEOUT" -gt 7200 ]; then
     echo "[entrypoint] ERROR: PLAYBOOK_TIMEOUT must be an integer between 60 and 7200, got: $PLAYBOOK_TIMEOUT"
-    update_job_status "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "Invalid PLAYBOOK_TIMEOUT value"
 fi
 
 # Validate TARGET_INSTANCE_IDS format to prevent injection attacks
 if [[ ! "$TARGET_INSTANCE_IDS" =~ ^i-[0-9a-fA-F]{8,17}(,i-[0-9a-fA-F]{8,17})*$ ]]; then
     echo "[entrypoint] ERROR: Invalid instance ID format in TARGET_INSTANCE_IDS"
-    upload_logs || true
-    update_job_status "FAILED" "Invalid EC2 instance ID format"
-    exit 1
+    finish_job "FAILED" "Invalid EC2 instance ID format"
 fi
 
 echo "[entrypoint] Starting Ansible job: $JOB_ID"
@@ -309,7 +285,7 @@ echo "[entrypoint] Targets: $TARGET_INSTANCE_IDS"
 echo "[entrypoint] Connection: SSM Run Command (local execution on targets)"
 
 # 1. Mark job as RUNNING
-update_job_status "RUNNING"
+write_job_status "RUNNING"
 
 # 2. Assume customer role
 # Credentials are stored in variables — NOT exported to the environment so
@@ -322,17 +298,13 @@ if ! CREDS=$(aws sts assume-role \
   --role-session-name "clutter-ansible-${JOB_ID}" \
   --external-id "$ASSUME_ROLE_EXTERNAL_ID" 2>&1); then
     echo "[entrypoint] ERROR: Failed to assume client role"
-    upload_logs || true
-    update_job_status "FAILED" "Failed to assume client AWS role"
-    exit 1
+    finish_job "FAILED" "Failed to assume client AWS role"
 fi
 
 # Validate credentials response before parsing to prevent exposure of error messages
 if ! echo "$CREDS" | python3 -c 'import sys, json; d=json.load(sys.stdin); sys.exit(0 if "Credentials" in d else 1)' 2>&1; then
     echo "[entrypoint] ERROR: Invalid credentials response from STS"
-    upload_logs || true
-    update_job_status "FAILED" "Invalid STS credentials response"
-    exit 1
+    finish_job "FAILED" "Invalid STS credentials response"
 fi
 
 CLIENT_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c 'import sys, json; print(json.load(sys.stdin)["Credentials"]["AccessKeyId"])')
@@ -345,9 +317,7 @@ echo "[entrypoint] Downloading playbook from S3..."
 
 if ! PLAYBOOK_B64=$(download_playbook_base64); then
     echo "[entrypoint] ERROR: Failed to download playbook from S3 after retries"
-    update_job_status "FAILED" "Failed to download playbook from S3"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "Failed to download playbook from S3"
 fi
 
 echo "[entrypoint] Playbook downloaded and encoded for transport"
@@ -358,9 +328,7 @@ EXTRA_VARS_B64=""
 if [ -n "${EXTRA_VARS:-}" ] && [ "$EXTRA_VARS" != "null" ] && [ "$EXTRA_VARS" != "{}" ]; then
     if ! echo "$EXTRA_VARS" | python3 -c 'import sys,json; json.load(sys.stdin)' >/dev/null 2>&1; then
         echo "[entrypoint] ERROR: EXTRA_VARS must be valid JSON"
-        update_job_status "FAILED" "Invalid EXTRA_VARS JSON"
-        upload_logs || true
-        exit 1
+        finish_job "FAILED" "Invalid EXTRA_VARS JSON"
     fi
 
     # Block likely secret values from being sent in SSM command payload.
@@ -396,9 +364,7 @@ sys.exit(0)
 PYEOF
     then
         echo "[entrypoint] ERROR: EXTRA_VARS contains sensitive keys and cannot be sent via SSM command payload"
-        update_job_status "FAILED" "EXTRA_VARS contains sensitive keys; use non-sensitive vars only"
-        upload_logs || true
-        exit 1
+        finish_job "FAILED" "EXTRA_VARS contains sensitive keys; use non-sensitive vars only"
     fi
 
     EXTRA_VARS_B64=$(printf '%s' "$EXTRA_VARS" | base64 | tr -d '\n')
@@ -494,9 +460,7 @@ set -e
 
 if [ $SEND_EXIT -ne 0 ] || [ -z "$COMMAND_ID" ]; then
     echo "[entrypoint] ERROR: Failed to send SSM command (exit=$SEND_EXIT): $COMMAND_ID"
-    update_job_status "FAILED" "Failed to send SSM Run Command"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "Failed to send SSM Run Command"
 fi
 
 echo "[entrypoint] SSM Command ID: $COMMAND_ID"
@@ -571,17 +535,11 @@ done
 # 9. Final status
 if [ "$ALL_DONE" = "false" ]; then
     echo "[entrypoint] ERROR: Command timed out after ${MAX_WAIT}s"
-    update_job_status "FAILED" "SSM command timed out after ${MAX_WAIT}s"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "SSM command timed out after ${MAX_WAIT}s"
 elif [ "$OVERALL_SUCCESS" = "true" ]; then
     echo "[entrypoint] All instances completed successfully"
-    update_job_status "COMPLETED"
-    upload_logs || true
-    exit 0
+    finish_job "COMPLETED"
 else
     echo "[entrypoint] One or more instances failed"
-    update_job_status "FAILED" "Playbook failed on one or more instances"
-    upload_logs || true
-    exit 1
+    finish_job "FAILED" "Playbook failed on one or more instances"
 fi

@@ -1,0 +1,100 @@
+# What this AWS part of a split deployment hands blocks on other clouds
+# (docs/architecture/system-b-adapter-layer.md § Split deployments). B's job
+# runner reads these outputs after the apply and passes them to the next
+# cloud's run; they never reach a run's log.
+{{- range .Keys}}
+
+# A key a VM on another cloud uses to read this {{if .Bucket}}bucket{{else}}table{{end}}, and nothing else. The
+# user sits under /clutter/ with the stack's users' boundary, which allows
+# reads only on buckets and tables named with a deployment prefix and denies
+# all of IAM; its one policy allows only the reads a "reads" edge grants, on
+# this one {{if .Bucket}}bucket{{else}}table{{end}}. Destroying the deployment deletes the key, the policy and
+# the user.
+resource "aws_iam_user" "{{.Addr}}" {
+  name                 = "{{.Name}}"
+  path                 = "/clutter/"
+  permissions_boundary = var.user_permissions_boundary_arn
+
+  tags = {
+    ManagedBy = "Clutter"
+  }
+}
+
+resource "aws_iam_user_policy" "{{.Addr}}" {
+  name = "{{.Name}}-read"
+  user = aws_iam_user.{{.Addr}}.name
+{{- if .Bucket}}
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.{{.Target}}.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.{{.Target}}.arn}/*"
+      },
+    ]
+  })
+{{- else}}
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:BatchGetItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+      ]
+      Resource = [
+        aws_dynamodb_table.{{.Target}}.arn,
+        "${aws_dynamodb_table.{{.Target}}.arn}/index/*",
+      ]
+    }]
+  })
+{{- end}}
+}
+
+resource "aws_iam_access_key" "{{.Addr}}" {
+  user = aws_iam_user.{{.Addr}}.name
+}
+{{- if .Bucket}}
+
+output "cross_{{.Key}}_bucket" {
+  value = aws_s3_bucket.{{.Target}}.bucket
+}
+{{- else}}
+
+output "cross_{{.Key}}_table" {
+  value = aws_dynamodb_table.{{.Target}}.name
+}
+{{- end}}
+
+output "cross_{{.Key}}_region" {
+  value = "{{$.Region}}"
+}
+
+output "cross_{{.Key}}_access_key_id" {
+  value = aws_iam_access_key.{{.Addr}}.id
+}
+
+output "cross_{{.Key}}_secret_access_key" {
+  value     = aws_iam_access_key.{{.Addr}}.secret
+  sensitive = true
+}
+{{- end}}
+{{- range .Addresses}}
+
+# A VM on another cloud gets this VM's public address.
+output "cross_{{.Key}}_address" {
+  value = aws_instance.{{.Target}}.public_ip
+}
+{{- end}}

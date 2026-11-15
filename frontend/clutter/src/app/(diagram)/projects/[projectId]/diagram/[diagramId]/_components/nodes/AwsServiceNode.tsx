@@ -1,5 +1,6 @@
 "use client";
 
+import { resourceNameError } from "@/lib/features/diagram/resourceName";
 import { NodeData } from "@/lib/features/diagram/types";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
@@ -7,27 +8,27 @@ import { AlertTriangle } from "lucide-react";
 import Image from "next/image";
 import { useMemo } from "react";
 
-const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HIDDEN_VARIABLE_NAMES = new Set([
   "label", "position", "x", "y",
   "position_x", "position_y", "x_position", "y_position",
   "pos_x", "pos_y",
 ]);
 
+// Keyed by AnsibleJobStatus (runs/types.ts).
 const JOB_STATUS_STYLES: Record<string, string> = {
   QUEUED:    "border-slate-500/40 bg-slate-500/10 text-slate-300",
+  STARTING:  "border-slate-500/40 bg-slate-500/10 text-slate-300",
   RUNNING:   "border-amber-400/40 bg-amber-500/10 text-amber-200",
-  SUCCESS:   "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  COMPLETED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
   FAILED:    "border-red-400/40 bg-red-500/10 text-red-300",
-  CANCELLED: "border-slate-500/40 bg-slate-500/10 text-slate-400",
 };
 
 const JOB_STATUS_DOT: Record<string, string> = {
   QUEUED:    "bg-slate-400 animate-pulse",
+  STARTING:  "bg-slate-400 animate-pulse",
   RUNNING:   "bg-amber-400 animate-pulse",
-  SUCCESS:   "bg-emerald-400",
+  COMPLETED: "bg-emerald-400",
   FAILED:    "bg-red-400",
-  CANCELLED: "bg-slate-500",
 };
 
 function getVariableError(name: string, value: unknown, required: boolean): string | null {
@@ -41,8 +42,8 @@ function getVariableError(name: string, value: unknown, required: boolean): stri
     if (isMissing) return "This field is required.";
   }
 
-  if (name === "resource_name" && stringValue && !RESOURCE_NAME_PATTERN.test(stringValue)) {
-    return "Invalid format.";
+  if (name === "resource_name") {
+    return resourceNameError(stringValue);
   }
 
   return null;

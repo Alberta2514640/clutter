@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -39,7 +40,7 @@ type TerraformWriter struct {
 }
 
 func NewTerraformWriter(ctx context.Context, bucketName string) (*TerraformWriter, error) {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-west-2"))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(generic.PlatformRegion()))
 	if err != nil {
 		return nil, err
 	}
@@ -186,12 +187,28 @@ func GenerateMainTF() string {
   }
 }
 
+# ManagedBy marks everything this code creates as Clutter's: the customer's
+# Clutter role may change or delete only resources that carry it, and adds
+# it only in a create request. A resource's own ManagedBy (Ansible on
+# instances) wins.
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      ManagedBy = "Clutter"
+    }
+  }
 }
 
 variable "aws_region" {
   type        = string
+}
+
+# The boundary the customer's Clutter role stack creates. Every role this code
+# creates carries it; the deployer sets it from the customer role's ARN.
+variable "permissions_boundary_arn" {
+  type = string
 }
 `
 }

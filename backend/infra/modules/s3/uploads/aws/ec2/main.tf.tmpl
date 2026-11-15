@@ -4,6 +4,11 @@ data "aws_ssm_parameter" "{{.ResourceName}}_ami" {
 
 resource "aws_iam_role" "{{.ResourceName}}_ssm_role" {
   name = "{{.ResourceName}}-ssm-role"
+  # The customer role may create, change or pass a role only under /clutter/,
+  # with this boundary and tagged ManagedBy = Clutter. The instance below keeps
+  # ManagedBy = Ansible, which is what lets the Ansible runner reach it.
+  path                 = "/clutter/"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -15,7 +20,7 @@ resource "aws_iam_role" "{{.ResourceName}}_ssm_role" {
   })
 
   tags = {
-    ManagedBy = "Ansible"
+    ManagedBy = "Clutter"
   }
 }
 
@@ -26,6 +31,7 @@ resource "aws_iam_role_policy_attachment" "{{.ResourceName}}_ssm_policy" {
 
 resource "aws_iam_instance_profile" "{{.ResourceName}}_ssm_profile" {
   name = "{{.ResourceName}}-ssm-profile"
+  path = "/clutter/"
   role = aws_iam_role.{{.ResourceName}}_ssm_role.name
 }
 

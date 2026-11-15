@@ -20,7 +20,7 @@ The folder `CLAUDE.md` files hold the traps of their own folders. This skill hol
 ## Go
 
 - One Lambda per folder under `backend/api`, each with its own `main.go`; shared code lives in `backend/api/generic` or a feature's `internal/` package. A copy of shared code inside a handler (as `ansible/run-task` has today) leaves the deployed path untested; import the shared package instead.
-- `gofmt` runs on write (hook) for new files and files already formatted at HEAD. 52 of A's Go files (87 files in all, root `CLAUDE.md`) use CRLF line endings: keep them as they are and check `git diff --stat` before committing one. `go vet` must stay clean.
+- `gofmt` runs on write (hook) for new files and files already formatted at HEAD. 50 of A's Go files (85 files in all, root `CLAUDE.md`) use CRLF line endings: keep them as they are and check `git diff --stat` before committing one. `go vet` must stay clean.
 - Unit tests sit beside the code (`*_test.go`) or in `backend/api/tests/<area>`. A test that needs live AWS is an integration test: guard it with a build tag or an env check so `go test ./...` stays meaningful offline.
 - Add a new Lambda to both `build.sh` and `build_linux.sh`, the platform Terraform and `backend/devserver/internal/routes/routes.go` in the same change (`backend/README.md` § Adding a Lambda or a route).
 

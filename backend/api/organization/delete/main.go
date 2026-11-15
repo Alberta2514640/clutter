@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 
@@ -32,8 +36,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
 	if err != nil {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to retrieve user data from autorizer context",
-			"error":   err.Error(),
+			"message": "failed to retrieve user data from authorizer context",
 		})
 	}
 	// Get user ID from user authorizer data
@@ -41,40 +44,19 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	// Connect to PostgreSQL
 	ctx := context.Background()
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("organization delete: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to connect to PostgreSQL database",
-			"error":   err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Create query to delete organization
@@ -88,10 +70,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	var deletedOrgId string
 	var deletedOrgName string
 	err = conn.QueryRow(ctx, queryDeleteOrg, orgId).Scan(&deletedOrgId, &deletedOrgName)
+	if generic.IsLiveDeploymentDelete(err) {
+		return generic.LiveDeploymentsResponse()
+	}
 	if err != nil {
+		log.Printf("organization delete: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": fmt.Sprintf("failed to delete organization with ID %s", deletedOrgId),
-			"error":   err.Error(),
+			"message": "failed to delete organization",
 		})
 	}
 

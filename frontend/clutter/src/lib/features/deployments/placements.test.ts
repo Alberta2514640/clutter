@@ -1,0 +1,172 @@
+import { describe, expect, it } from "vitest";
+import type { Connection } from "../connections/types";
+import {
+  blockCloud,
+  cloudChoices,
+  cloudsLine,
+  crossNotes,
+  movePlacement,
+  orderedClouds,
+  partLines,
+  placementReason,
+  splitOnly,
+  withPlacementSettings,
+} from "./placements";
+import type { Compatibility, Placement } from "./types";
+
+const blocks = [
+  { id: "web", kind: "vm", name: "web" },
+  { id: "db", kind: "vm", name: "db" },
+  { id: "files", kind: "bucket", name: "files" },
+];
+
+const lab: Placement = { connection_id: "c-lab", connection_name: "lab", connector: "general-openstack", region: "RegionOne", node_ids: ["db"], settings: { image: "cirros" } };
+
+const conn = (id: string, connector: string, status: Connection["status"] = "working"): Connection => ({
+  id,
+  organization_id: "o",
+  connector,
+  name: id,
+  region: "r",
+  status,
+  status_detail: null,
+  created_at: "",
+  updated_at: "",
+  verified_at: null,
+});
+
+describe("blockCloud", () => {
+  it("is the placement's connection, or the deployment's own", () => {
+    expect(blockCloud("c-aws", [lab], "db")).toBe("c-lab");
+    expect(blockCloud("c-aws", [lab], "web")).toBe("c-aws");
+    expect(blockCloud("c-aws", [], "db")).toBe("c-aws");
+  });
+});
+
+describe("cloudsLine", () => {
+  const titleOf = (c: string) => ({ "general-openstack": "OpenStack", aws: "Amazon Web Services" })[c] ?? c;
+
+  it("names one cloud and its region", () => {
+    expect(cloudsLine({ title: "Amazon Web Services", region: "ca-central-1" }, null, titleOf)).toBe("Amazon Web Services, ca-central-1");
+    expect(cloudsLine({ title: "Mock cloud", region: "" }, [], titleOf)).toBe("Mock cloud");
+  });
+
+  it("names every cloud a split deployment builds on, but not a placement with no block", () => {
+    const empty: Placement = { ...lab, connection_id: "c-empty", node_ids: [] };
+    expect(cloudsLine({ title: "Amazon Web Services", region: "ca-central-1" }, [lab, empty], titleOf)).toBe(
+      "Amazon Web Services (ca-central-1) and OpenStack (RegionOne)",
+    );
+  });
+});
+
+describe("movePlacement", () => {
+  it("places a block on a new cloud, with empty settings", () => {
+    expect(movePlacement("c-aws", [], blocks, "files", "c-lab")).toEqual([{ connection_id: "c-lab", node_ids: ["files"], settings: {} }]);
+  });
+
+  it("adds a block to a cloud that already has one, keeping its settings", () => {
+    expect(movePlacement("c-aws", [lab], blocks, "web", "c-lab")).toEqual([
+      { connection_id: "c-lab", node_ids: ["db", "web"], settings: { image: "cirros" } },
+    ]);
+  });
+
+  it("moves a block between clouds, and drops a cloud left with none", () => {
+    expect(movePlacement("c-aws", [lab], blocks, "db", "c-other")).toEqual([{ connection_id: "c-other", node_ids: ["db"], settings: {} }]);
+  });
+
+  it("gives a block back to the deployment's own cloud", () => {
+    expect(movePlacement("c-aws", [lab], blocks, "db", "c-aws")).toEqual([]);
+  });
+
+  it("forgets blocks no longer in the diagram", () => {
+    const stale: Placement = { ...lab, node_ids: ["db", "gone"] };
+    expect(movePlacement("c-aws", [stale], blocks, "web", "c-lab")).toEqual([
+      { connection_id: "c-lab", node_ids: ["db", "web"], settings: { image: "cirros" } },
+    ]);
+    expect(movePlacement("c-aws", [], blocks, "gone", "c-lab")).toEqual([]);
+  });
+});
+
+describe("withPlacementSettings", () => {
+  it("replaces one cloud's settings only", () => {
+    expect(withPlacementSettings([lab], "c-lab", { image: "ubuntu" })).toEqual([{ connection_id: "c-lab", node_ids: ["db"], settings: { image: "ubuntu" } }]);
+  });
+});
+
+describe("cloudChoices", () => {
+  const primary = conn("c-aws", "aws");
+  const offered = (c: string) => c !== "gone-cloud";
+  it("lists the deployment's own cloud first, then other working ones this server offers", () => {
+    const all = [primary, conn("c-lab", "general-openstack"), conn("c-broken", "general-openstack", "failed"), conn("c-gone", "gone-cloud")];
+    expect(cloudChoices(primary, all, offered, new Set()).map((c) => c.id)).toEqual(["c-aws", "c-lab"]);
+  });
+  it("keeps a failed connection a block already sits on", () => {
+    const all = [primary, conn("c-broken", "general-openstack", "failed")];
+    expect(cloudChoices(primary, all, offered, new Set(["c-broken"])).map((c) => c.id)).toEqual(["c-aws", "c-broken"]);
+  });
+});
+
+describe("placementReason", () => {
+  it("lets blocks move only while the deployment holds nothing", () => {
+    expect(placementReason("new", false)).toBeNull();
+    expect(placementReason("destroyed", false)).toBeNull();
+    expect(placementReason("live", false)).toMatch(/Destroy it first/);
+    expect(placementReason("failed", false)).toMatch(/Destroy it first/);
+    expect(placementReason("new", true)).toMatch(/run is in progress/);
+  });
+});
+
+const split: Compatibility = {
+  ready: false,
+  problems: [
+    { code: "cross_cloud_edge", edge_source: "web", edge_target: "net", message: "web and net are wired together inside one cloud." },
+    { code: "unsupported_block", node_id: "files", message: "OpenStack cannot build a Bucket block." },
+  ],
+  notes: [
+    { code: "cross_cloud_key", edge_source: "web", edge_target: "files", message: "Clutter creates a key that can only read files and puts it on web." },
+    { code: "cross_cloud_address", edge_source: "web", edge_target: "db", message: "web (aws) gets the public address of db (lab) when it first starts." },
+  ],
+  clouds: [
+    { connection_id: "c-aws", connection_name: "aws", connector: "aws", position: 1, ready: true, problems: [], notes: [] },
+    {
+      connection_id: "c-lab",
+      connection_name: "lab",
+      connector: "general-openstack",
+      position: 0,
+      ready: false,
+      problems: [{ code: "unsupported_block", node_id: "files", message: "OpenStack cannot build a Bucket block." }],
+      notes: [],
+    },
+  ],
+};
+
+describe("split reports", () => {
+  it("words what crosses clouds, keys first", () => {
+    expect(crossNotes(split)).toEqual({
+      keys: ["Clutter creates a key that can only read files and puts it on web."],
+      addresses: ["web (aws) gets the public address of db (lab) when it first starts."],
+    });
+  });
+  it("keeps only what no cloud's own report says", () => {
+    const only = splitOnly(split);
+    expect(only.problems.map((p) => p.code)).toEqual(["cross_cloud_edge"]);
+    expect(only.notes).toEqual([]);
+  });
+  it("orders the clouds as a run takes them", () => {
+    expect(orderedClouds(split).map((c) => c.connection_id)).toEqual(["c-lab", "c-aws"]);
+    expect(orderedClouds({ ready: true, problems: [], notes: [] })).toEqual([]);
+  });
+});
+
+describe("partLines", () => {
+  it("is one line per cloud of a split run", () => {
+    expect(
+      partLines([
+        { connection_id: "c-lab", name: "lab", step: "rollback", status: "rolled_back" },
+        { connection_id: "c-aws", name: "aws", step: "apply", status: "failed" },
+        { connection_id: "c-x", name: "x", step: "apply", status: "skipped" },
+      ]).map((l) => l.text),
+    ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed"]);
+    expect(partLines(null)).toEqual([]);
+  });
+});

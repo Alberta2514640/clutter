@@ -52,6 +52,13 @@ expect guard-cloud-writes.sh allow "$(bash_call 'openstack server list')"
 expect guard-cloud-writes.sh ask   "$(bash_call 'ansible-playbook -i hosts site.yml')"
 expect guard-cloud-writes.sh ask   "$(bash_call './build-and-push.sh')"
 expect guard-cloud-writes.sh allow "$(bash_call 'go build ./...')"
+expect guard-cloud-writes.sh ask   "$(bash_call 'env -i PATH=/usr/bin terraform apply -auto-approve')"
+expect guard-cloud-writes.sh ask   "$(bash_call 'nohup timeout 60 terraform destroy')"
+expect guard-cloud-writes.sh ask   "$(bash_call 'env -u HOME aws s3 rm s3://b/k')"
+expect guard-cloud-writes.sh ask   "$(bash_call "bash -c 'cd x && terraform apply'")"
+expect guard-cloud-writes.sh ask   "$(bash_call "limactl shell devstack -- bash -c 'openstack application credential create x'")"
+expect guard-cloud-writes.sh allow "$(bash_call 'env -i PATH=/usr/bin terraform plan')"
+expect guard-cloud-writes.sh allow "$(bash_call "bash -c 'terraform validate'")"
 
 # guard-git-writes (lanes only)
 expect guard-git-writes.sh deny  "$(bash_call 'git commit -m x' lane1)"

@@ -8,6 +8,17 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+usage() {
+  cat <<'EOF'
+usage: npm run generated [-- <diagram id>]
+
+Shows the Terraform that A's generator wrote for A's older AWS diagrams, and validates it.
+  npm run generated                    lists each diagram and its files
+  npm run generated -- <diagram id>    runs terraform init and validate on a scratch copy
+The diagram id is the last part of the editor's address. It runs no plan and no apply.
+EOF
+}
+
 # <bucket>/<org>/<project>/<diagram>/terraform, as the generator's writer lays it out.
 generated_dirs() {
   [[ -d "${STATE_DIR}/s3" ]] || return 0
@@ -31,7 +42,7 @@ list_generated() {
     done < <(find "${dir}" -type f | sort)
   done <<< "${dirs}"
   echo
-  echo "Files are in ${STATE_DIR}/s3. Validate one with: $0 <diagram id>"
+  echo "Files are in ${STATE_DIR}/s3. Validate one with: npm run generated -- <diagram id>"
 }
 
 validate_generated() {
@@ -42,7 +53,7 @@ validate_generated() {
   fi
   dir="$(generated_dirs | grep "/${id}/terraform$" || true)"
   if [[ -z "${dir}" ]]; then
-    echo "generated.sh: no generated files for diagram ${id}; run generated.sh to list them" >&2
+    echo "generated.sh: no generated files for diagram ${id}; run npm run generated to list them" >&2
     exit 1
   fi
   command -v terraform >/dev/null || { echo "generated.sh: terraform is required" >&2; exit 1; }
@@ -79,8 +90,11 @@ validate_generated() {
   exit 1
 }
 
+case "${1:-}" in
+  -h | --help) usage; exit 0 ;;
+esac
 case "$#" in
   0) list_generated ;;
   1) validate_generated "$1" ;;
-  *) echo "usage: generated.sh [diagram id]" >&2; exit 2 ;;
+  *) usage >&2; exit 2 ;;
 esac

@@ -1,7 +1,9 @@
 // lib/features/organization/hooks.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { catalogKeys } from "../catalog/keys";
 import { organizationApi } from "./api";
 import { orgKeys } from "./keys";
+import { useCurrentOrganizationStore } from "./uiStore";
 import type {
   CreateCloudFormationStackUrlInput,
   CreateOrganizationInput,
@@ -20,12 +22,27 @@ export const useOrganizations = (token?: string | null) => {
   });
 };
 
+// The organization the viewer chose (stored per browser), or their first.
+// Pages about one project use the project's own organization instead
+// (useProjectOrganization).
+export const useCurrentOrganization = (token?: string | null) => {
+  const orgsQ = useOrganizations(token);
+  const chosenId = useCurrentOrganizationStore((s) => s.organizationId);
+  const select = useCurrentOrganizationStore((s) => s.select);
+  const organizations = orgsQ.data ?? [];
+  const organization = organizations.find((o) => o.id === chosenId) ?? organizations[0] ?? null;
+  return { ...orgsQ, organizations, organization, organizationId: organization?.id ?? null, select };
+};
+
+// A new organization becomes the current one, so the pages that follow work in it.
 export const useCreateOrganization = (token?: string | null) => {
   const qc = useQueryClient();
+  const select = useCurrentOrganizationStore((s) => s.select);
   return useMutation({
     mutationFn: (input: CreateOrganizationInput) => organizationApi.create(token as string, input),
     onSuccess: (created) => {
       qc.setQueryData<Organization[]>(orgKeys.list(), (prev) => [created, ...(prev ?? [])]);
+      select(created.id);
     },
   });
 };
@@ -49,16 +66,23 @@ export const useDeleteOrganization = (token?: string | null) => {
     mutationFn: (organizationId: string) => organizationApi.delete(token as string, organizationId),
     onSuccess: (_void, organizationId) => {
       qc.setQueryData<Organization[]>(orgKeys.list(), (prev) => (prev ?? []).filter((o) => o.id !== organizationId));
-      qc.removeQueries({ queryKey: ["members"] });
     },
   });
 };
 
+// B's linked-account lists (Connections) read the same account links, so every
+// change to them refreshes those lists too.
+const linkedAccountsKey = (organizationId: string) => [...catalogKeys.base, "linked", organizationId] as const;
+
 export const useCreateCloudFormationStackUrl = (token?: string | null) => {
+  const qc = useQueryClient();
+
   return useMutation({
     mutationKey: orgKeys.cloudFormationStackUrl(),
     mutationFn: (input: CreateCloudFormationStackUrlInput) =>
       organizationApi.createCloudFormationStackUrl(token as string, input),
+    // The call starts an unfinished link, which the link flow then resumes.
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: orgKeys.accounts(input.organizationId) }),
   });
 };
 
@@ -76,7 +100,10 @@ export const useLinkFakeAccount = (token?: string | null) => {
 
   return useMutation({
     mutationFn: (organizationId: string) => organizationApi.linkFakeAccount(token as string, organizationId),
-    onSuccess: (_void, organizationId) => qc.invalidateQueries({ queryKey: orgKeys.accounts(organizationId) }),
+    onSuccess: (_accountName, organizationId) => {
+      qc.invalidateQueries({ queryKey: orgKeys.accounts(organizationId) });
+      qc.invalidateQueries({ queryKey: linkedAccountsKey(organizationId) });
+    },
   });
 };
 
@@ -91,6 +118,7 @@ export const useDeleteOrganizationAccount = (token?: string | null) => {
         orgKeys.accounts(input.organizationId),
         (prev) => (prev ?? []).filter((account) => account.id !== input.accountId)
       );
+      qc.invalidateQueries({ queryKey: linkedAccountsKey(input.organizationId) });
     },
   });
 };
@@ -106,6 +134,7 @@ export const useUpdateOrganizationAccount = (token?: string | null) => {
     }) => organizationApi.updateAccount(token as string, input.organizationId, input.accountId, input.data),
     onSuccess: (_void, input) => {
       qc.invalidateQueries({ queryKey: orgKeys.accounts(input.organizationId) });
+      qc.invalidateQueries({ queryKey: linkedAccountsKey(input.organizationId) });
     },
   });
 };

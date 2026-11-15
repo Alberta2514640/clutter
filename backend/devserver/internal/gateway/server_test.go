@@ -102,8 +102,8 @@ func TestMissingAuthorizationIs401WithoutCallingAuthorizer(t *testing.T) {
 	if rec.Code != 401 || f.authHits != 0 || f.lastFn != "" {
 		t.Fatalf("got %d, authorizer calls %d, handler %q", rec.Code, f.authHits, f.lastFn)
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
-		t.Errorf("gateway errors carry no CORS headers in AWS")
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("gateway errors carry the CORS origin (DEFAULT_4XX in backend/infra/main.tf)")
 	}
 }
 
@@ -112,6 +112,10 @@ func TestDenyIs403(t *testing.T) {
 	rec := serve(t, f, "GET", "/organization", "tok", "")
 	if rec.Code != 403 || f.lastFn != "" {
 		t.Fatalf("got %d, handler %q", rec.Code, f.lastFn)
+	}
+	// The website reads this 403 to spot an expired session; it can only if CORS lets it.
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("a refused token's 403 must carry the CORS origin")
 	}
 }
 

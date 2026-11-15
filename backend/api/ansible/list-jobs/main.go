@@ -13,7 +13,27 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
+// newStatusStore opens the bucket the runner writes job status files to.
+// Tests replace it with a fake.
+var newStatusStore = generic.StatusStoreFromEnv
+
+// Bounds the S3 reads one list can cause.
+const maxJobsPerReconcile = 10
+
+// jobRow is one listed job as scanned, before it is answered.
+type jobRow struct {
+	state              jobsutils.JobState
+	jobType            string
+	createdAt          time.Time
+	extraVars          []byte
+	targetInstanceIDs  []byte
+	taskArn            *string
+	terraformDirectory *string
+	roleArn            *string
+}
 
 func main() {
 	lambda.Start(handler)
@@ -49,8 +69,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
+	// Jobs are listed for one organization the caller belongs to
+	orgParam := request.QueryStringParameters["orgId"]
+	if !generic.IsValidUuid(orgParam) {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "orgId must be a valid UUID",
+		})
+	}
+
 	// Connect to PostgreSQL using shared helper
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
@@ -59,16 +87,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 	defer conn.Close(ctx)
 
-	// Build query dynamically based on filters
+	orgID, err := generic.CheckOwnershipPSQL(ctx, conn, userID, orgParam, "", "")
+	if err != nil {
+		return generic.AuthorizationResponse(err)
+	}
+
+	// Build query dynamically based on filters. A job's organization is the
+	// first segment of its playbook key, or of its Terraform directory when it
+	// has no playbook key, as ansible/get-job reads it.
 	query := `
 		SELECT id, COALESCE(job_type, 'ansible') as job_type, status, created_at, updated_at,
 		       extra_vars, task_arn, error_message,
 		       target_instance_ids, playbook_s3_key,
-		       terraform_directory, role_arn, assume_role_external_id
+		       terraform_directory, role_arn
 		FROM jobs
-		WHERE created_by = $1`
-	args := []interface{}{userID}
-	argNum := 2
+		WHERE created_by = $1
+		  AND split_part(COALESCE(NULLIF(playbook_s3_key, ''), terraform_directory), '/', 1) = $2`
+	args := []interface{}{userID, orgID}
+	argNum := 3
 
 	if statusFilter != "" {
 		query += ` AND status = $` + jobsutils.Itoa(argNum)
@@ -94,20 +130,14 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 	defer rows.Close()
 
-	jobs := []map[string]interface{}{}
-
+	var scanned []jobRow
 	for rows.Next() {
-		var id, jobType, status string
-		var createdAt, updatedAt time.Time
-		var extraVars, targetInstanceIDs []byte
-		var taskArn, errorMessage *string
-		var playbookS3Key, terraformDirectory, roleArn, assumeRoleExternalId *string
-
+		var row jobRow
 		err := rows.Scan(
-			&id, &jobType, &status, &createdAt, &updatedAt,
-			&extraVars, &taskArn, &errorMessage,
-			&targetInstanceIDs, &playbookS3Key,
-			&terraformDirectory, &roleArn, &assumeRoleExternalId,
+			&row.state.ID, &row.jobType, &row.state.Status, &row.createdAt, &row.state.UpdatedAt,
+			&row.extraVars, &row.taskArn, &row.state.ErrorMessage,
+			&row.targetInstanceIDs, &row.state.PlaybookS3Key,
+			&row.terraformDirectory, &row.roleArn,
 		)
 		if err != nil {
 			log.Printf("ERROR: failed to scan row: %v", err)
@@ -116,16 +146,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "failed to process job list",
 			})
 		}
-
-		job := generic.BuildJobResponse(
-			id, jobType, status,
-			createdAt, updatedAt,
-			extraVars, taskArn, errorMessage,
-			targetInstanceIDs, playbookS3Key,
-			terraformDirectory, roleArn, assumeRoleExternalId,
-		)
-
-		jobs = append(jobs, job)
+		scanned = append(scanned, row)
 	}
 
 	if rows.Err() != nil {
@@ -133,6 +154,41 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to process job list",
 		})
+	}
+	// The connection cannot write while the rows are open.
+	rows.Close()
+
+	// The runner has no database access; the newest unfinished jobs take
+	// their status from the status file beside their logs. Every job here is
+	// the caller's own in the checked organization (the query above).
+	var store *generic.StatusStore
+	reconciled := 0
+	for i := range scanned {
+		if generic.IsJobFinished(scanned[i].state.Status) || reconciled == maxJobsPerReconcile {
+			continue
+		}
+		if store == nil {
+			if store = newStatusStore(ctx); store == nil {
+				break
+			}
+		}
+		jobsutils.Reconcile(ctx, conn, store, &scanned[i].state)
+		reconciled++
+	}
+
+	jobs := []map[string]interface{}{}
+	for _, row := range scanned {
+		// A job that finished just now no longer matches a status filter.
+		if statusFilter != "" && row.state.Status != statusFilter {
+			continue
+		}
+		jobs = append(jobs, generic.BuildJobResponse(
+			row.state.ID, row.jobType, row.state.Status,
+			row.createdAt, row.state.UpdatedAt,
+			row.extraVars, row.taskArn, row.state.ErrorMessage,
+			row.targetInstanceIDs, row.state.PlaybookS3Key,
+			row.terraformDirectory, row.roleArn,
+		))
 	}
 
 	return generic.Response(http.StatusOK, generic.Json{

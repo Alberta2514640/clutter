@@ -6,14 +6,6 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
 
-type SupabaseWebhookPayload struct {
-	Type      string               `json:"type"`                 // INSERT, UPDATE, DELETE
-	Table     string               `json:"table"`                // table name
-	Schema    string               `json:"schema"`               // usually "public"
-	Record    generic.DiagramRecord `json:"record"`              // the new/updated record
-	OldRecord generic.DiagramRecord `json:"old_record,omitempty"` // for UPDATE
-}
-
 // ResourceType represents supported AWS resource types
 type ResourceType string
 
@@ -93,5 +85,7 @@ type ResourceGenerator interface {
 	Generate(node generic.DiagramNode, resourceName string) (string, error)
 	ValidateVariables(variables map[string]interface{}) error
 	GetRequiredVariables() []string
-	GetOutputs(resourceName string) string
+	// GetOutputs renders the resource's outputs. An error fails the run: a
+	// missing output block is never a success.
+	GetOutputs(resourceName string) (string, error)
 }

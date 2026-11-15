@@ -1,0 +1,55 @@
+# Terraform override file: it adds arguments to blocks that A's unchanged
+# templates render, where those templates have no input for them.
+{{- range .Instances}}
+
+resource "aws_instance" "{{.Addr}}" {
+  associate_public_ip_address = {{.Public}}
+{{- if .Subnet}}
+  subnet_id                   = aws_subnet.{{.Subnet}}_subnet.id
+{{- end}}
+{{- if .SecurityGroups}}
+  vpc_security_group_ids      = [{{range $i, $sg := .SecurityGroups}}{{if $i}}, {{end}}aws_security_group.{{$sg}}.id{{end}}]
+{{- end}}
+{{- if .UserData}}
+  # The block's startup script, which cloud-init runs once as root at first
+  # boot, behind the values the VM's connections hand it, if any. A changed
+  # script or value builds a new instance, so it runs again. A secret value
+  # makes the whole argument sensitive, so Terraform never prints it.
+  user_data_base64            = {{.UserData}}
+  user_data_replace_on_change = true
+{{- end}}
+}
+{{- end}}
+{{- range .Functions}}
+{{- if .Hash}}
+
+# The function's code is the zip uploaded through Clutter, which the runner
+# stages in the run's folder.
+resource "aws_lambda_function" "{{.Addr}}" {
+  filename         = "{{.Zip}}"
+  source_code_hash = "{{.Hash}}"
+}
+{{- else}}
+
+# The function's code is the placeholder zip code.tf builds.
+resource "aws_lambda_function" "{{.Addr}}" {
+  filename         = data.archive_file.{{.Addr}}_code.output_path
+  source_code_hash = data.archive_file.{{.Addr}}_code.output_base64sha256
+}
+{{- end}}
+{{- end}}
+{{- range .APIs}}
+
+# Redeploy the API when a route changes, and only after its routes exist.
+resource "aws_api_gateway_deployment" "{{.Addr}}_deployment" {
+  triggers = {
+    redeployment = sha1(jsonencode([
+{{- range .Routes}}
+      aws_api_gateway_resource.{{.}}.id,
+      aws_api_gateway_method.{{.}}.id,
+      aws_api_gateway_integration.{{.}}.id,
+{{- end}}
+    ]))
+  }
+}
+{{- end}}

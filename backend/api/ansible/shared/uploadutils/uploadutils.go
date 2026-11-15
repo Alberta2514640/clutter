@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 )
 
 var invalidPlaybookChars = regexp.MustCompile(`[^a-z0-9._-]+`)
@@ -134,6 +136,24 @@ func ExtractOrgIDFromJobPaths(playbookS3Key, terraformDirectory *string) (string
 	return parts[0], nil
 }
 
+// JobFolderFromPlaybookKey is a job's folder in the clutter bucket, from the
+// playbook key submit-job stored on it, in the lowercase form the runner
+// writes its keys in.
+func JobFolderFromPlaybookKey(playbookS3Key *string) (generic.JobFolder, error) {
+	if playbookS3Key == nil {
+		return generic.JobFolder{}, fmt.Errorf("job has no playbook key")
+	}
+	orgID, projectID, diagramID, err := ExtractPathComponentsFromPlaybookKey(*playbookS3Key)
+	if err != nil {
+		return generic.JobFolder{}, err
+	}
+	return generic.JobFolder{
+		OrgID:     strings.ToLower(orgID),
+		ProjectID: strings.ToLower(projectID),
+		DiagramID: strings.ToLower(diagramID),
+	}, nil
+}
+
 // ExtractPathComponentsFromPlaybookKey parses org, project, and diagram IDs
 // from a key of the form {orgID}/{projectID}/{diagramID}/playbooks/{filename}
 func ExtractPathComponentsFromPlaybookKey(key string) (orgID, projectID, diagramID string, err error) {
@@ -164,8 +184,9 @@ func BuildPlaybookObjectKey(orgID, projectID, diagramID, fileName, uploadID stri
 
 // BuildLogObjectKey builds the S3 object key for job logs
 // Format: {orgID}/{projectID}/{diagramID}/playbooks/logs/{job_id}.log
+// The format is owned by generic.JobLogKey, which the job reconcile checks.
 func BuildLogObjectKey(orgID, projectID, diagramID, jobID string) string {
-	return fmt.Sprintf("%s/%s/%s/playbooks/logs/%s.log", orgID, projectID, diagramID, jobID)
+	return generic.JobLogKey(generic.JobFolder{OrgID: orgID, ProjectID: projectID, DiagramID: diagramID}, jobID)
 }
 
 // ExtractOrgIDFromLogKey parses the org ID from a log key of the form

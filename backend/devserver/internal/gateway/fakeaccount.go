@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// LinkFakeAccountPath is the dev-only route behind the editor's Link fake
-// account button.
+// LinkFakeAccountPath is the dev-only route behind the website's Link fake
+// account button (A's "AWS account required" popup and the AWS link flow).
 const LinkFakeAccountPath = "/dev/link-fake-account"
 
 // fakeRoleArn is what the Link fake account button submits: a role in no real account,
@@ -24,7 +24,9 @@ const fakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerrafor
 // organization, for the signed-in caller. Every step is a call to the real
 // route with the caller's own token, so the real authorizer and each Lambda's
 // membership check decide, and a refusal is returned as it stands. Only
-// Postgres is written; no AWS call is made.
+// Postgres is written; no AWS call is made. An organization that already has
+// a linked account gets no second one. Either way the answer names the linked
+// account (accountName).
 func (s *Server) LinkFakeAccountHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowed := setCORS(w, r)
@@ -61,7 +63,9 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 		}
 		var accounts struct {
 			Data struct {
-				Complete []json.RawMessage `json:"complete"`
+				Complete []struct {
+					AccountName string `json:"account_name"`
+				} `json:"complete"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(raw, &accounts); err != nil {
@@ -69,7 +73,7 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 			return
 		}
 		if len(accounts.Data.Complete) > 0 {
-			writeDevJSON(w, http.StatusOK, "the organization already has a linked account")
+			writeLinked(w, "the organization already has a linked account", accounts.Data.Complete[0].AccountName)
 			return
 		}
 
@@ -91,8 +95,17 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 			writeRouteRefusal(w, status, raw)
 			return
 		}
-		writeDevJSON(w, http.StatusOK, "linked a fake account")
+		writeLinked(w, "linked a fake account", name)
 	})
+}
+
+// writeLinked answers a successful link with the linked account's name, so
+// the website can choose that account.
+func writeLinked(w http.ResponseWriter, message, accountName string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": message, "accountName": accountName})
 }
 
 // parseStackURL pulls the account id and the unique id out of the stack-url

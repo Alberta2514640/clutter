@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -20,6 +21,13 @@ type DeploymentLogs struct {
 	Files        []string `json:"files"`
 }
 
+// What the user reads when the log list cannot be read. The cause stays in
+// the log.
+const listFailure = "failed to list the deployment logs"
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
 func main() {
 	lambda.Start(handler)
 }
@@ -36,51 +44,46 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"message": "failed to get user from authorizer context",
-			"error":   err.Error(),
+			"message": "unauthorized: missing user identity",
 		})
 	}
 
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("deployment logs: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to verify organization membership",
-			"error":   err.Error(),
-		})
+	// The S3 prefix below is built from these ids, so each must belong to the
+	// caller's organization, and the prefix uses the checked, canonical ids.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userData.Id, orgID, projID, diagramID)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
 
 	bucket := os.Getenv("S3_BUCKET_NAME")
 	if bucket == "" {
+		log.Printf("deployment logs: S3_BUCKET_NAME is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "S3_BUCKET_NAME is not configured",
+			"message": listFailure,
 		})
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Printf("deployment logs: load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"message": listFailure,
 		})
 	}
 
 	s3Client := s3.NewFromConfig(cfg)
-	basePrefix := orgID + "/" + projID + "/" + diagramID + "/terraform/logs/"
+	basePrefix := ids.OrgID + "/" + ids.ProjectID + "/" + ids.DiagramID + "/terraform/logs/"
 
 	resp, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket:    aws.String(bucket),
@@ -88,9 +91,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		Delimiter: aws.String("/"),
 	})
 	if err != nil {
+		log.Printf("deployment logs: list deployment folders: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to list deployment folders",
-			"error":   err.Error(),
+			"message": listFailure,
 		})
 	}
 
@@ -108,9 +111,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			Prefix: aws.String(fullPrefix),
 		})
 		if err != nil {
+			log.Printf("deployment logs: list deployment files: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to list deployment files",
-				"error":   err.Error(),
+				"message": listFailure,
 			})
 		}
 
@@ -118,7 +121,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		for _, obj := range filesResp.Contents {
 			key := aws.ToString(obj.Key)
 			name := strings.TrimPrefix(key, fullPrefix)
-			if name != "" && !strings.Contains(name, "/") {
+			// The run's status file sits beside its logs but is not a log the
+			// user can open (logs/url serves init.log and command.log only).
+			if name != "" && name != generic.DeployStatusFile && !strings.Contains(name, "/") {
 				files = append(files, name)
 			}
 		}

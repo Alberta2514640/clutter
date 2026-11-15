@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
@@ -50,7 +51,7 @@ func SanitizeError(err error) string {
 func LoadRuntimeConfig() RuntimeConfig {
 	awsRegion := os.Getenv("AWS_REGION")
 	if awsRegion == "" {
-		awsRegion = "us-west-2"
+		awsRegion = generic.PlatformRegion()
 	}
 
 	return RuntimeConfig{

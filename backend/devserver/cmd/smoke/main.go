@@ -1,5 +1,6 @@
 // Command smoke drives every API route through the devserver gateway in the
-// order a person would use the app, and prints one row per call.
+// order a person would use the app, and prints one row per call. B API's main
+// paths are checked in a section of their own (adapter.go), outside the route rows.
 //
 // Verdicts:
 //
@@ -64,6 +65,8 @@ type runner struct {
 	rows   []row
 	hit    map[string]bool
 	checks []check
+	// adapterChecks are B API's checks, reported in a section of their own.
+	adapterChecks []check
 }
 
 type resp struct {
@@ -74,12 +77,17 @@ type resp struct {
 }
 
 func (r *runner) do(method, path string, body any, auth string) resp {
+	return r.doAt(r.api, method, path, body, auth)
+}
+
+// doAt is do against another service, such as B API.
+func (r *runner) doAt(base, method, path string, body any, auth string) resp {
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
 		rd = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, r.api+path, rd)
+	req, _ := http.NewRequest(method, base+path, rd)
 	req.Header.Set("Content-Type", "application/json")
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
@@ -243,6 +251,7 @@ func randSuffix() string {
 
 func main() {
 	api := flag.String("api", "http://127.0.0.1:8787", "gateway base URL")
+	adapterAPI := flag.String("adapter-api", "http://127.0.0.1:8790", "B API base URL")
 	s3Dir := flag.String("s3-dir", "", "the local S3 store on disk (.state/s3)")
 	flag.Parse()
 	conn := os.Getenv("PSQL_CONNECTION_STRING")
@@ -356,9 +365,16 @@ func main() {
 	r.call("PUT", "/diagram", map[string]any{
 		"projectId": projID, "diagramId": diaID, "name": "Smoke Diagram", "data": layout,
 	}, expectOK, 0, "", nil)
-	// Nothing in this run has called /terraform-engine yet: only the save can
-	// have produced these files.
+	// A save generates nothing by itself: the editor asks for generation next,
+	// with the user's token and only the two ids.
 	tfDir := filepath.Join(*s3Dir, gateway.LocalDataBucket, orgID, projID, diaID, "terraform")
+	r.checkSaveAloneGeneratesNothing(tfDir)
+	r.call("POST", "/terraform-engine", map[string]string{"projectId": projID, "diagramId": diaID}, expectOK, 0, "", func(rs resp) string {
+		if str(rs.json, "diagram_id") != diaID {
+			return "no diagram_id for the diagram: " + summary(rs)
+		}
+		return ""
+	})
 	r.checkGenerated(tfDir)
 	filesPath := "/terraform-engine/files?projectId=" + projID + "&diagramId=" + diaID
 	r.checkFilesAfterSave(filesPath, tfDir)
@@ -419,24 +435,6 @@ func main() {
 		"&taskArn="+url.QueryEscape("arn:aws:ecs:us-west-2:000000000000:task/clutter-devserver-local/0123456789abcdef0123456789abcdef"), nil, expectAWS, 0,
 		"stops at ecs:DescribeTasks", nil)
 
-	// Generation, as the Supabase webhook would call it (no token).
-	saveTok := r.token
-	r.token = ""
-	r.call("POST", "/terraform-engine", map[string]any{
-		"type": "UPDATE", "table": "diagrams", "schema": "public",
-		"record": map[string]any{
-			"id": diaID, "name": "Smoke Diagram", "project_id": projID, "created_by": userID,
-			"created_at": time.Now().UTC().Format(time.RFC3339), "data": layout,
-		},
-		"old_record": map[string]any{"id": diaID, "project_id": projID, "data": map[string]any{"nodes": []any{}, "edges": []any{}}},
-	}, expectOK, 0, "", func(rs resp) string {
-		if !strings.Contains(str(rs.json, "s3_path"), diaID) {
-			return "no s3_path for the diagram: " + summary(rs)
-		}
-		return ""
-	})
-	r.token = saveTok
-
 	// Ansible: playbook upload URL, the upload, job submit, then job reads.
 	pb := r.call("POST", "/ansible/playbooks/upload-url", map[string]string{
 		"file_name": "site.yml", "project_id": projID, "diagram_id": diaID,
@@ -459,7 +457,7 @@ func main() {
 	if rs := r.s3Put(s3Endpoint+jobLogKey, "smoke job log\n"); rs.status != http.StatusOK {
 		fatal(r, "seed the job log: "+summary(rs))
 	}
-	r.call("GET", "/ansible/jobs", nil, expectOK, 0, "", func(rs resp) string {
+	r.call("GET", "/ansible/jobs?orgId="+orgID, nil, expectOK, 0, "", func(rs resp) string {
 		if !strings.Contains(string(rs.body), jobID) {
 			return "fixture job missing from the list"
 		}
@@ -473,13 +471,15 @@ func main() {
 		return ""
 	})
 
-	// A second user, in an organization of their own: tenancy on the files route
-	// and on the fake-account route.
+	// A second user, in an organization of their own: tenancy on generation, the
+	// files route, the routes that take a child id, and the fake-account route.
 	second, err := newSecondUser(r, conn, jwtSecret, sfx)
 	if err != nil {
 		fatal(r, "create the second user: "+err.Error())
 	}
+	r.checkGenerationRefusals(projID, diaID, second)
 	r.checkFilesRefusals(filesPath, second)
+	r.checkChildIDRefusals(orgID, projID, diaID, accountID, second)
 	r.checkLinkFakeAccount(orgID, second)
 	if err := second.remove(r, conn); err != nil {
 		fatal(r, "remove the second user: "+err.Error())
@@ -503,6 +503,7 @@ func main() {
 	}
 
 	gatewayChecks(r, s3Endpoint)
+	adapterSmoke(r, strings.TrimRight(*adapterAPI, "/"), conn, jwtSecret, sfx)
 	report(r)
 }
 
@@ -522,12 +523,12 @@ func (r *runner) s3Put(target, body string) resp {
 	return resp{status: res.StatusCode, body: b, header: res.Header}
 }
 
-// checkGenerated waits for the background generation after a save and checks
-// that both files exist with all five resource types in them.
+// checkGenerated checks that generation wrote both files with all five
+// resource types in them.
 func (r *runner) checkGenerated(dir string) {
-	const name = "PUT /diagram generates main.tf and outputs.tf"
-	// Poll for the content, not the files: the diagram's create also generated
-	// a main.tf, and the writer may replace the two files in either order.
+	const name = "POST /terraform-engine writes main.tf and outputs.tf"
+	// Generation answers after the upload, so the files are normally there at
+	// once; the short poll only absorbs a slow disk.
 	problem := ""
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
 		mainTF, err := os.ReadFile(filepath.Join(dir, "main.tf"))
@@ -541,7 +542,7 @@ func (r *runner) checkGenerated(dir string) {
 			continue
 		}
 		problem = ""
-		for _, want := range []string{"aws_lambda_function", "aws_s3_bucket", "aws_dynamodb_table", "aws_api_gateway_rest_api", "aws_instance", "aws_iam_policy", "aws_lambda_permission"} {
+		for _, want := range []string{"aws_lambda_function", "aws_s3_bucket", "aws_dynamodb_table", "aws_api_gateway_rest_api", "aws_instance", "aws_iam_role_policy", "aws_lambda_permission"} {
 			if !strings.Contains(string(mainTF), want) {
 				problem = "main.tf has no " + want
 			}
@@ -573,7 +574,7 @@ func parseFiles(rs resp) filesAnswer {
 	return env.Data
 }
 
-// waitForFiles polls the route until the background generation has finished.
+// waitForFiles polls the route until the files show the expected status.
 func (r *runner) waitForFiles(path string, done func(filesAnswer) bool) filesAnswer {
 	var last filesAnswer
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
@@ -664,6 +665,57 @@ func (r *runner) checkFilesRefusals(path string, second *secondUser) {
 	r.call("GET", path, nil, expectStatus, http.StatusUnauthorized, "API Gateway refuses a call with no token", nil)
 }
 
+// checkSaveAloneGeneratesNothing proves no stand-in generates on save: the
+// diagram has no files until the editor calls POST /terraform-engine.
+func (r *runner) checkSaveAloneGeneratesNothing(dir string) {
+	const name = "a save alone writes no Terraform"
+	// Long enough for any generation started by the save to have written files.
+	time.Sleep(500 * time.Millisecond)
+	_, err := os.Stat(filepath.Join(dir, "main.tf"))
+	r.checks = append(r.checks, check{name, os.IsNotExist(err), fmt.Sprintf("main.tf on disk: %v", err == nil)})
+}
+
+// generate asks for generation the way the editor does after a save.
+func (r *runner) generate(projID, diaID string) resp {
+	return r.do("POST", "/terraform-engine", map[string]string{"projectId": projID, "diagramId": diaID}, r.token)
+}
+
+// checkGenerationRefusals proves generation answers neither a stranger nor a
+// caller with no token.
+func (r *runner) checkGenerationRefusals(projID, diaID string, second *secondUser) {
+	owner := r.token
+	defer func() { r.token = owner }()
+	body := map[string]string{"projectId": projID, "diagramId": diaID}
+	r.token = second.token
+	r.call("POST", "/terraform-engine", body, expectStatus, http.StatusNotFound, "a member of another organization cannot generate this diagram", nil)
+	r.token = ""
+	r.call("POST", "/terraform-engine", body, expectStatus, http.StatusUnauthorized, "API Gateway refuses generation with no token", nil)
+}
+
+// checkChildIDRefusals proves each route that takes a child id refuses a
+// member of another organization who names this organization's project,
+// diagram or jobs, before any AWS call.
+func (r *runner) checkChildIDRefusals(orgID, projID, diaID, accountID string, second *secondUser) {
+	want := func(name string, rs resp, status int) {
+		r.checks = append(r.checks, check{name + " for another organization", rs.status == status, fmt.Sprintf("%d %s", rs.status, summary(rs))})
+	}
+	want("GET /terraform-engine/logs/recent-activity",
+		r.do("GET", "/terraform-engine/logs/recent-activity?orgId="+second.orgID+"&diagramId="+diaID, nil, second.token), http.StatusNotFound)
+	want("POST /terraform-engine/code-upload/presigned-url",
+		r.do("POST", "/terraform-engine/code-upload/presigned-url", map[string]string{
+			"org_id": second.orgID, "project_id": projID, "diagram_id": diaID, "lambda_resource_name": "smoke_fn", "runtime": "python3.13",
+		}, second.token), http.StatusNotFound)
+	want("POST /terraform-command-runner",
+		r.do("POST", "/terraform-command-runner", map[string]string{
+			"organizationId": second.orgID, "projectId": projID, "diagramId": diaID, "accountAccessRoleId": accountID, "command": "apply",
+		}, second.token), http.StatusNotFound)
+	want("GET /terraform-engine/logs/live",
+		r.do("GET", "/terraform-engine/logs/live?orgId="+second.orgID+"&projId="+projID+"&diagramId="+diaID+
+			"&taskArn="+url.QueryEscape("arn:aws:ecs:us-west-2:000000000000:task/clutter-devserver-local/0123456789abcdef0123456789abcdef"), nil, second.token), http.StatusNotFound)
+	want("GET /ansible/jobs",
+		r.do("GET", "/ansible/jobs?orgId="+orgID, nil, second.token), http.StatusForbidden)
+}
+
 // checkLinkFakeAccount drives the dev route: it links for a member, and the
 // real Lambdas refuse anyone else.
 func (r *runner) checkLinkFakeAccount(orgID string, second *secondUser) {
@@ -706,6 +758,10 @@ func (r *runner) checkFailedGeneration(projID, diaID, path, dir string) {
 		r.checks = append(r.checks, check{name, false, summary(rs)})
 		return
 	}
+	if rs := r.generate(projID, diaID); rs.status != http.StatusBadRequest || !strings.Contains(str(rs.json, "error"), "Widget") {
+		r.checks = append(r.checks, check{name, false, fmt.Sprintf("generation answered %d: %s", rs.status, summary(rs))})
+		return
+	}
 	a := r.waitForFiles(path, func(a filesAnswer) bool { return hasState(a, "failed") })
 	after, _ := os.ReadFile(filepath.Join(dir, "main.tf"))
 	ok := hasState(a, "failed") && strings.Contains(a.Status.Error, "Widget") && string(after) == string(before) && a.Files["main.tf"] == string(before) && a.Files["outputs.tf"] != ""
@@ -723,6 +779,10 @@ func (r *runner) checkEmptiedDiagram(projID, diaID, path, dir string) {
 	empty := map[string]any{"nodes": []any{}, "edges": []any{}}
 	if rs := r.do("PUT", "/diagram", map[string]any{"projectId": projID, "diagramId": diaID, "name": "Smoke Diagram", "data": empty}, r.token); rs.status != http.StatusOK {
 		r.checks = append(r.checks, check{name, false, summary(rs)})
+		return
+	}
+	if rs := r.generate(projID, diaID); rs.status != http.StatusOK {
+		r.checks = append(r.checks, check{name, false, fmt.Sprintf("generation answered %d: %s", rs.status, summary(rs))})
 		return
 	}
 	a := r.waitForFiles(path, func(a filesAnswer) bool { return hasState(a, "success") })
@@ -965,6 +1025,7 @@ func report(r *runner) {
 	}
 	fmt.Printf("\ncalls: %d  PASS %d  NEEDS-AWS %d  EXPECTED %d  FAIL %d\n",
 		len(r.rows), counts["PASS"], counts["NEEDS-AWS"], counts["EXPECTED"], counts["FAIL"])
+	reportAdapter(r)
 	if failed {
 		os.Exit(1)
 	}

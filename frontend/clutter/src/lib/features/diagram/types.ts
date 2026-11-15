@@ -1,4 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
+import type { BlocksDocument } from "./blocksDocument";
 
 export type NodeData = {
   label: string;
@@ -17,7 +18,10 @@ export type NodeData = {
 export type DiagramNode = Node<NodeData>;
 export type DiagramEdge = Edge;
 
+// A diagram's saved document. engine is "blocks" for a building-block diagram,
+// which B's editor opens (blocksDocument.ts); A's diagrams have none.
 export type DiagramUiLayout = {
+  engine?: string;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
 };
@@ -59,6 +63,21 @@ export type TerraformFiles = {
 export const filesPredateStatus = (data?: TerraformFiles): boolean =>
   !!data && data.status === null && Object.keys(data.files).length > 0;
 
+// POST /terraform-engine. Only the ids are sent: the backend reads the diagram
+// as saved and checks that it belongs to the caller's organization.
+export type GenerateTerraformInput = {
+  projectId: string;
+  diagramId: string;
+};
+
+// The success body of POST /terraform-engine (backend/api/terraform-engine/create).
+export type GenerateTerraformResult = {
+  message: string;
+  diagram_id: string;
+  // false when A skipped a building-block diagram (B generates those).
+  generated?: boolean;
+};
+
 export type CreateDiagramInput = {
   projectId: string;
   name: string;
@@ -69,7 +88,7 @@ export type UpdateDiagramInput = {
   projectId: string;
   diagramId: string;
   name: string;
-  data: DiagramUiLayout; // was uiLayout — now consistently "data"
+  data: DiagramUiLayout | BlocksDocument; // was uiLayout — now consistently "data"
 };
 
 export type TerraformCommandInput = {

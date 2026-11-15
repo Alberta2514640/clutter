@@ -1,0 +1,55 @@
+data "aws_availability_zones" "{{.ResourceName}}_azs" {
+  state = "available"
+}
+
+# VPC
+resource "aws_vpc" "{{.ResourceName}}" {
+  cidr_block           = "{{.CIDR}}"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "{{.NetworkName}}"
+  }
+}
+
+# Subnet, spanning the VPC's range in its first availability zone
+resource "aws_subnet" "{{.ResourceName}}_subnet" {
+  vpc_id                  = aws_vpc.{{.ResourceName}}.id
+  cidr_block              = "{{.CIDR}}"
+  availability_zone       = data.aws_availability_zones.{{.ResourceName}}_azs.names[0]
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "{{.NetworkName}}-subnet"
+  }
+}
+{{- if .Public}}
+
+# Internet gateway and default route, for instances reachable from the internet
+resource "aws_internet_gateway" "{{.ResourceName}}_igw" {
+  vpc_id = aws_vpc.{{.ResourceName}}.id
+
+  tags = {
+    Name = "{{.NetworkName}}-igw"
+  }
+}
+
+resource "aws_route_table" "{{.ResourceName}}_rt" {
+  vpc_id = aws_vpc.{{.ResourceName}}.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.{{.ResourceName}}_igw.id
+  }
+
+  tags = {
+    Name = "{{.NetworkName}}-rt"
+  }
+}
+
+resource "aws_route_table_association" "{{.ResourceName}}_rta" {
+  subnet_id      = aws_subnet.{{.ResourceName}}_subnet.id
+  route_table_id = aws_route_table.{{.ResourceName}}_rt.id
+}
+{{- end}}

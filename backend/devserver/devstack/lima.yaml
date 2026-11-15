@@ -1,0 +1,40 @@
+# The Lima VM that runs DevStack, a small OpenStack, on a Mac.
+# `npm run devstack -- create` makes a VM named "devstack" from this file and
+# installs DevStack with install.sh. The guide is the "OpenStack on this
+# machine (DevStack)" section of backend/devserver/README.md.
+minimumLimaVersion: 2.0.0
+
+# Ubuntu 24.04, for the Mac's own architecture (arm64 or x86_64). No folders
+# of this machine are shared with the VM.
+base:
+- template:_images/ubuntu-24.04
+
+vmType: vz
+cpus: 4
+memory: 12GiB
+disk: 40GiB
+
+# Lets DevStack's own VMs run at full speed (Apple M3 or newer, macOS 15 or
+# newer). devstack.sh turns it off on other Macs, and install.sh then has
+# DevStack emulate its VMs instead.
+nestedVirtualization: true
+
+# vzNAT gives the VM an address this machine can reach (lima0). DevStack is
+# installed with HOST_IP set to that address, so the URLs in its catalog work
+# from this machine. Lima picks the VM's MAC address from its name, so the
+# address normally stays the same across restarts.
+networks:
+- vzNAT: true
+
+# The mark of a VM made from this file. devstack.sh reads it from Lima to tell
+# this VM from any other VM named devstack, and install.sh reads the copy the
+# first boot writes inside the VM, so it never installs into another VM.
+param:
+  ClutterDevstack: "1"
+
+provision:
+- mode: system
+  script: |
+    #!/bin/sh
+    set -eu
+    printf '%s\n' "${PARAM_ClutterDevstack}" > /etc/clutter-devstack

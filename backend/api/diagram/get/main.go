@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -25,6 +26,9 @@ type DiagramData struct {
 	LatestUpdateAt *time.Time             `json:"latestUpdateAt,omitempty"`
 }
 
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
 func main() {
 	lambda.Start(handler)
 }
@@ -32,10 +36,9 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// 1. Extract user data from authorizer context
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -50,40 +53,21 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// 2. Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("diagram get: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	// 3. Authorization: Get project's organization and check membership
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, projectID)
+	// 3. Authorization: the project (and the diagram, when one is named) belongs
+	// to an organization the caller is in. A project or diagram of another
+	// organization gets the same 404 as one that does not exist.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userID, "", projectID, diagramID)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to fetch project",
-			"error":   err.Error(),
-		})
-	}
-
-	// 4. Check organization membership
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Case 1: Get Single Diagram
@@ -96,7 +80,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			WHERE id = $1 AND project_id = $2
 		`
 		var rawData []byte
-		err := conn.QueryRow(ctx, query, diagramID, projectID).Scan(
+		err := conn.QueryRow(ctx, query, ids.DiagramID, ids.ProjectID).Scan(
 			&diagram.ID,
 			&diagram.Name,
 			&rawData,
@@ -111,15 +95,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 					"message": "diagram not found",
 				})
 			}
+			log.Printf("diagram get: read the diagram: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to fetch diagram",
-				"error":   err.Error(),
 			})
 		}
 		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+			log.Printf("diagram get: parse diagram %s: %v", diagram.ID, err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to parse diagram data",
-				"error":   err.Error(),
 			})
 		}
 
@@ -136,11 +120,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		WHERE project_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := conn.Query(ctx, query, projectID)
+	rows, err := conn.Query(ctx, query, ids.ProjectID)
 	if err != nil {
+		log.Printf("diagram get: list diagrams: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to list diagrams",
-			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -159,15 +143,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			&diagram.LatestUpdateAt,
 		)
 		if err != nil {
+			log.Printf("diagram get: scan a diagram row: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to scan diagram row",
-				"error":   err.Error(),
+				"message": "failed to list diagrams",
 			})
 		}
 		if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+			log.Printf("diagram get: parse diagram %s: %v", diagram.ID, err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to unmarshal diagram data",
-				"error":   err.Error(),
+				"message": "failed to parse diagram data",
 			})
 		}
 
@@ -179,9 +163,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("diagram get: read diagram rows: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to read diagram data",
-			"error":   err.Error(),
+			"message": "failed to list diagrams",
 		})
 	}
 

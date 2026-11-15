@@ -1,6 +1,7 @@
 # Local Postgres for the devserver. dev.sh starts it; stop.sh stops it.
 # On first start the entrypoint loads, in order: the Supabase roles, the
-# application tables and the resource seed, straight from backend/storage-sql.
+# application tables, the resource seed and B's tables, straight from
+# backend/storage-sql. B also applies adapter-tables.sql at its own start-up.
 name: clutter-devserver
 
 services:
@@ -20,6 +21,7 @@ services:
       - ./sql/00-supabase-roles.sql:/docker-entrypoint-initdb.d/00-supabase-roles.sql:ro
       - ../storage-sql/application-tables.sql:/docker-entrypoint-initdb.d/10-application-tables.sql:ro
       - ../storage-sql/seed-resources.sql:/docker-entrypoint-initdb.d/20-seed-resources.sql:ro
+      - ../storage-sql/adapter-tables.sql:/docker-entrypoint-initdb.d/30-adapter-tables.sql:ro
     healthcheck:
       # TCP is closed while the init scripts run, so this passes only once
       # the seed has loaded and the real server is up.

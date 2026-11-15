@@ -4,17 +4,19 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"regexp"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
-	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
+	"github.com/Alberta2514640/clutter/backend/api/generic/hclsafe"
+	"github.com/Alberta2514640/clutter/backend/api/generic/tftemplate"
 )
 
 type LambdaGenerator struct {
-	templateLoader *template.TemplateLoader
+	templateLoader *tftemplate.TemplateLoader
 	ctx            context.Context
 }
 
-func NewLambdaGenerator(ctx context.Context, loader *template.TemplateLoader) *LambdaGenerator {
+func NewLambdaGenerator(ctx context.Context, loader *tftemplate.TemplateLoader) *LambdaGenerator {
 	return &LambdaGenerator{
 		templateLoader: loader,
 		ctx:            ctx,
@@ -38,7 +40,46 @@ func (g *LambdaGenerator) ValidateVariables(variables map[string]interface{}) er
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required variables: %v", missing)
 	}
+	if err := checkResourceName(variables); err != nil {
+		return err
+	}
+	if err := checkOneOf(variables, "runtime", lambdaRuntimes); err != nil {
+		return err
+	}
+	if err := checkOneOf(variables, "architecture", lambdaArchitectures); err != nil {
+		return err
+	}
+	if folder := lambdaCodeFolder(variables); folder != "" {
+		if err := hclsafe.CheckName(folder); err != nil {
+			return invalidVariable("the uploaded code's folder name %v; upload the code again", err)
+		}
+	}
+	for key := range generic.GetStringMap(variables, "environment_variables") {
+		if !lambdaEnvKeyPattern.MatchString(key) {
+			return invalidVariable("environment_variables names must start with a letter and use only letters, digits and underscores")
+		}
+	}
 	return nil
+}
+
+// lambdaRuntimes are the Lambda runtimes a diagram may choose; generic owns the list.
+var lambdaRuntimes = hclsafe.NewAllowList(generic.LambdaRuntimeNames()...)
+
+var lambdaArchitectures = hclsafe.NewAllowList("arm64", "x86_64")
+
+// lambdaEnvKeyPattern is AWS's rule for a Lambda environment variable name. A
+// name that passes is also a bare HCL object key, which is how the template
+// writes it.
+var lambdaEnvKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+
+// lambdaCodeFolder returns the folder of the uploaded code's S3 key, or "" when
+// no code was uploaded. Code upload names that folder after the Lambda.
+func lambdaCodeFolder(vars map[string]interface{}) string {
+	s3Key := generic.GetString(vars, "s3_key", "")
+	if s3Key == "" {
+		return ""
+	}
+	return path.Base(path.Dir(s3Key))
 }
 
 func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string) (string, error) {
@@ -47,7 +88,7 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 	}
 
 	// Load main template from S3
-	templatePath := template.GetTemplatePath("lambda", "main.tf.tmpl")
+	templatePath := tftemplate.GetTemplatePath("lambda", "main.tf.tmpl")
 	tmpl, err := g.templateLoader.Load(g.ctx, templatePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to load lambda template: %w", err)
@@ -56,20 +97,17 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 	// If user has uploaded code, reference it by its S3 key path (downloaded
 	// by the entrypoint before the client role is assumed). Otherwise fall back
 	// to the default bootstrap.zip.
-	s3Key := generic.GetString(node.Variables, "s3_key", "")
-	var filename string
-	if s3Key != "" {
+	filename := "bootstrap.zip"
+	if folder := lambdaCodeFolder(node.Variables); folder != "" {
 		// Use the folder name from the S3 key so it matches what the sync downloaded.
 		// e.g. ".../terraform/code/my-lambda/bootstrap.zip" -> "code/my-lambda/bootstrap.zip"
-		filename = "code/" + path.Base(path.Dir(s3Key)) + "/bootstrap.zip"
-	} else {
-		filename = "bootstrap.zip"
+		filename = "code/" + folder + "/bootstrap.zip"
 	}
 
 	vars := map[string]interface{}{
 		"ResourceName": resourceName,
 		"FunctionName": generic.GetString(node.Variables, "resource_name", ""),
-		"Handler":      generic.GetString(node.Variables, "handler", "main"),
+		"Handler":      hclsafe.Escape(generic.GetString(node.Variables, "handler", "main")),
 		"Timeout":      generic.GetInt(node.Variables, "timeout", 3),
 		"Runtime":      generic.GetString(node.Variables, "runtime", "provided.al2023"),
 		"Architecture": generic.GetString(node.Variables, "architecture", "arm64"),
@@ -77,32 +115,31 @@ func (g *LambdaGenerator) Generate(node generic.DiagramNode, resourceName string
 		"Filename":     filename,
 	}
 
-	// Add environment variables if present
+	// Add environment variables if present. Their names are checked in
+	// ValidateVariables; their values are free text.
 	envVars := generic.GetStringMap(node.Variables, "environment_variables")
 	if len(envVars) > 0 {
+		for key, value := range envVars {
+			envVars[key] = hclsafe.Escape(value)
+		}
 		vars["EnvironmentVariables"] = envVars
 	}
 
 	// Render template
-	return template.Render(tmpl, vars)
+	return tftemplate.Render(tmpl, vars)
 }
 
-func (g *LambdaGenerator) GetOutputs(resourceName string) string {
+func (g *LambdaGenerator) GetOutputs(resourceName string) (string, error) {
 	// Load outputs template from S3
-	templatePath := template.GetTemplatePath("lambda", "outputs.tf.tmpl")
+	templatePath := tftemplate.GetTemplatePath("lambda", "outputs.tf.tmpl")
 	tmpl, err := g.templateLoader.Load(g.ctx, templatePath)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to load lambda outputs template: %w", err)
 	}
 
 	vars := map[string]interface{}{
 		"ResourceName": resourceName,
 	}
 
-	output, err := template.Render(tmpl, vars)
-	if err != nil {
-		return ""
-	}
-
-	return output
+	return tftemplate.Render(tmpl, vars)
 }

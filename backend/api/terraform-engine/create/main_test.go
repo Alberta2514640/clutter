@@ -3,178 +3,202 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/pashagolub/pgxmock/v4"
 )
 
-// getEnvOrDefault returns the environment variable value or the default if not set
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
+const (
+	testUser    = "44444444-4444-4444-8444-444444444444"
+	testOrg     = "33333333-3333-4333-8333-333333333333"
+	otherOrg    = "55555555-5555-4555-8555-555555555555"
+	testProject = "11111111-1111-4111-8111-111111111111"
+	otherProj   = "66666666-6666-4666-8666-666666666666"
+	testDiagram = "22222222-2222-4222-8222-222222222222"
+)
 
-func TestHandler(t *testing.T) {
-	os.Setenv("TEMPLATE_BUCKET_NAME", getEnvOrDefault("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c"))
-	os.Setenv("S3_BUCKET_NAME", getEnvOrDefault("S3_BUCKET_NAME", "clutter-us-west-2-b35a3c5c"))
-
-	if os.Getenv("PSQL_CONNECTION_STRING") == "" {
-		t.Skip("Skipping TestHandler: PSQL_CONNECTION_STRING not set")
-	}
-
-	// Variables are nested inside data.variables to match the frontend shape
-	payload := map[string]interface{}{
-		"type":   "UPDATE",
-		"table":  "diagrams",
-		"schema": "public",
-		"old_record": map[string]interface{}{
-			"id":   "test-diagram-123",
-			"name": "Old Name",
-		},
-		"record": map[string]interface{}{
-			"id":         "test-diagram-123",
-			"name":       "Test Architecture",
-			"project_id": "13b9254f-9728-4f37-ab0e-e89a5ada3a18",
-			"data": map[string]interface{}{
-				"nodes": []map[string]interface{}{
-					{
-						"id":   "node-apigw-1",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "API-Gateway",
-							"variables": map[string]interface{}{
-								"resource_name": "my_api",
-								"http_methods":  "GET,POST,DELETE",
-							},
-						},
-					},
-					{
-						"id":   "node-lambda-1",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "Lambda",
-							"variables": map[string]interface{}{
-								"resource_name": "my_handler_one",
-								"timeout":       30,
-								"handler":       "bootstrap",
-							},
-						},
-					},
-					{
-						"id":   "node-lambda-2",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "Lambda",
-							"variables": map[string]interface{}{
-								"resource_name": "my_handler_two",
-								"timeout":       30,
-								"handler":       "bootstrap",
-							},
-						},
-					},
-					{
-						"id":   "node-lambda-3",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "Lambda",
-							"variables": map[string]interface{}{
-								"resource_name": "my_handler_three",
-								"timeout":       30,
-								"handler":       "bootstrap",
-							},
-						},
-					},
-					{
-						"id":   "node-lambda-4",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "Lambda",
-							"variables": map[string]interface{}{
-								"resource_name": "my_handler_four",
-								"timeout":       30,
-								"handler":       "bootstrap",
-							},
-						},
-					},
-					{
-						"id":   "node-dynamodb-1",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "DynamoDB",
-							"variables": map[string]interface{}{
-								"resource_name": "my_users_table",
-								"hash_key":      "userId",
-							},
-						},
-					},
-					{
-						"id":   "node-s3-1",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "S3",
-							"variables": map[string]interface{}{
-								"resource_name": "my_assets_bucket",
-							},
-						},
-					},
-					{
-						"id":   "node-ec2-1",
-						"type": "awsNode",
-						"data": map[string]interface{}{
-							"label": "EC2",
-							"variables": map[string]interface{}{
-								"resource_name": "my_server",
-							},
-						},
-					},
-				},
-				"edges": []map[string]interface{}{
-					{"id": "e1", "source": "node-apigw-1", "target": "node-lambda-1"},
-					{"id": "e2", "source": "node-apigw-1", "target": "node-lambda-2"},
-					{"id": "e3", "source": "node-apigw-1", "target": "node-lambda-3"},
-					{"id": "e4", "source": "node-apigw-1", "target": "node-lambda-4"},
-					{"id": "e5", "source": "node-lambda-1", "target": "node-dynamodb-1"},
-					{"id": "e6", "source": "node-lambda-2", "target": "node-dynamodb-1"},
-					{"id": "e7", "source": "node-lambda-3", "target": "node-dynamodb-1"},
-					{"id": "e8", "source": "node-lambda-4", "target": "node-dynamodb-1"},
-					{"id": "e9", "source": "node-lambda-1", "target": "node-s3-1"},
-					{"id": "e10", "source": "node-lambda-2", "target": "node-s3-1"},
-					{"id": "e11", "source": "node-lambda-3", "target": "node-s3-1"},
-					{"id": "e12", "source": "node-lambda-4", "target": "node-s3-1"},
-				},
-			},
-		},
-	}
-
-	body, _ := json.Marshal(payload)
-
-	request := events.APIGatewayProxyRequest{
-		Body: string(body),
-	}
-
-	response, err := handler(context.Background(), request)
+// useMock makes the handler's database a pgxmock connection for one test.
+func useMock(t *testing.T) pgxmock.PgxConnIface {
+	t.Helper()
+	mock, err := pgxmock.NewConn()
 	if err != nil {
-		t.Fatalf("Handler error: %v", err)
+		t.Fatal(err)
 	}
+	connect = func() (generic.Conn, error) { return mock, nil }
+	t.Cleanup(func() { connect = generic.PsqlConnectConn })
+	return mock
+}
 
-	fmt.Printf("Status: %d\n", response.StatusCode)
-	fmt.Printf("Body: %s\n", response.Body)
+// noDatabase fails the test if the handler opens a connection.
+func noDatabase(t *testing.T) {
+	t.Helper()
+	connect = func() (generic.Conn, error) {
+		t.Error("the handler opened the database")
+		return nil, errors.New("no database in this test")
+	}
+	t.Cleanup(func() { connect = generic.PsqlConnectConn })
+}
 
-	if response.StatusCode != 200 {
-		t.Fatalf("Expected status 200, got %d: %s", response.StatusCode, response.Body)
+// signedIn is a request from testUser, as the authorizer passes it on.
+func signedIn(body any) events.APIGatewayProxyRequest {
+	raw, _ := json.Marshal(body)
+	return events.APIGatewayProxyRequest{
+		Body:           string(raw),
+		RequestContext: events.APIGatewayProxyRequestContext{Authorizer: map[string]any{"id": testUser}},
 	}
 }
 
-// TestGenerateOnly tests just the terraform generation without S3 upload
+// expectOwnership expects the queries CheckOwnershipPSQL runs for testDiagram
+// in testProject, where the project belongs to projectOrg and member says
+// whether testUser is in that organization.
+func expectOwnership(mock pgxmock.PgxConnIface, projectOrg string, member bool) {
+	mock.ExpectQuery(`SELECT project_id\s+FROM diagrams`).WithArgs(testDiagram).
+		WillReturnRows(pgxmock.NewRows([]string{"project_id"}).AddRow(testProject))
+	mock.ExpectQuery(`SELECT organization_id\s+FROM projects`).WithArgs(testProject).
+		WillReturnRows(pgxmock.NewRows([]string{"organization_id"}).AddRow(projectOrg))
+	mock.ExpectQuery(`FROM organizations WHERE id`).WithArgs(projectOrg).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`FROM organization_members`).WithArgs(projectOrg, testUser).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(member))
+}
+
+// expectDiagramRow expects the read of testDiagram's row with this layout.
+func expectDiagramRow(mock pgxmock.PgxConnIface, layout string) {
+	saved := time.Date(2026, 11, 13, 10, 0, 0, 123456000, time.UTC)
+	mock.ExpectQuery(`SELECT id, project_id, data, latest_update_at`).WithArgs(testDiagram, testProject).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "project_id", "data", "latest_update_at"}).
+			AddRow(testDiagram, testProject, []byte(layout), &saved))
+}
+
+func TestGenerationRefusesACallerWithNoIdentity(t *testing.T) {
+	noDatabase(t)
+	res, err := handler(context.Background(), events.APIGatewayProxyRequest{Body: `{"projectId":"` + testProject + `","diagramId":"` + testDiagram + `"}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+}
+
+func TestGenerationRefusesABodyWithoutIDs(t *testing.T) {
+	noDatabase(t)
+	for _, body := range []any{
+		map[string]string{"projectId": testProject},
+		map[string]string{"projectId": "not-a-uuid", "diagramId": testDiagram},
+		// The old webhook body names no projectId or diagramId.
+		map[string]any{"type": "UPDATE", "record": map[string]string{"id": testDiagram, "project_id": testProject}},
+	} {
+		res, err := handler(context.Background(), signedIn(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%v: status %d: %s", body, res.StatusCode, res.Body)
+		}
+	}
+}
+
+func TestGenerationRefusesAnotherOrganizationsDiagram(t *testing.T) {
+	mock := useMock(t)
+	// The diagram's project belongs to otherOrg, and testUser is not a member.
+	expectOwnership(mock, otherOrg, false)
+
+	res, err := handler(context.Background(), signedIn(map[string]string{"projectId": testProject, "diagramId": testDiagram}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+	// The diagram row is never read: the mock expects no further query.
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenerationRefusesADiagramNamedUnderAnotherProject(t *testing.T) {
+	mock := useMock(t)
+	mock.ExpectQuery(`SELECT project_id\s+FROM diagrams`).WithArgs(testDiagram).
+		WillReturnRows(pgxmock.NewRows([]string{"project_id"}).AddRow(testProject))
+
+	res, err := handler(context.Background(), signedIn(map[string]string{"projectId": otherProj, "diagramId": testDiagram}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGenerationSkipsABuildingBlockDiagram: A's generator answers a
+// building-block diagram with nothing generated, before it loads a template
+// or writes a file (ADR-014).
+func TestGenerationSkipsABuildingBlockDiagram(t *testing.T) {
+	mock := useMock(t)
+	expectOwnership(mock, testOrg, true)
+	expectDiagramRow(mock, `{"engine":"blocks","nodes":[{"id":"a","type":"vm","data":{"name":"web"}}],"edges":[]}`)
+	// No bucket is set: reaching the generator or the writer would fail.
+	t.Setenv("TEMPLATE_BUCKET_NAME", "")
+	t.Setenv("S3_BUCKET_NAME", "")
+
+	res, err := handler(context.Background(), signedIn(map[string]string{"projectId": testProject, "diagramId": testDiagram}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+	var body struct {
+		DiagramID string `json:"diagram_id"`
+		Generated *bool  `json:"generated"`
+	}
+	if err := json.Unmarshal([]byte(res.Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.DiagramID != testDiagram || body.Generated == nil || *body.Generated {
+		t.Fatalf("body: %s", res.Body)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadDiagramKeepsTheSaveTimeToTheMicrosecond(t *testing.T) {
+	mock, err := pgxmock.NewConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectDiagramRow(mock, `{"nodes":[{"id":"a","data":{"label":"S3"}}],"edges":[]}`)
+	record, err := loadDiagram(context.Background(), mock, testDiagram, testProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ID != testDiagram || record.ProjectID != testProject || len(record.Data.Nodes) != 1 {
+		t.Fatalf("record: %+v", record)
+	}
+	if record.LatestUpdateAt == nil || *record.LatestUpdateAt != "2026-11-13T10:00:00.123456Z" {
+		t.Fatalf("latest_update_at: %v", record.LatestUpdateAt)
+	}
+}
+
+// TestGenerateOnly is an integration test: it loads the templates from a live S3 bucket.
 func TestGenerateOnly(t *testing.T) {
-	os.Setenv("TEMPLATE_BUCKET_NAME", getEnvOrDefault("TEMPLATE_BUCKET_NAME", "clutter-templates-us-west-2-b35a3c5c"))
+	if os.Getenv("TEMPLATE_BUCKET_NAME") == "" {
+		t.Skip("Skipping TestGenerateOnly: TEMPLATE_BUCKET_NAME not set (needs a live template bucket)")
+	}
 
 	ctx := context.Background()
 

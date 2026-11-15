@@ -1,0 +1,11 @@
+# The build context is backend/. Send only what the image needs: never
+# backend/devserver/.state, tfvars or any other local file.
+*
+!api/
+!adapter/
+!storage-sql/adapter-tables.sql
+**/*.zip
+**/.terraform
+**/*.tfstate*
+**/*.tfvars
+**/.env*

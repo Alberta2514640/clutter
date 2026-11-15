@@ -84,14 +84,32 @@ func TestLinkFakeAccountRunsTheRealRoutesInOrder(t *testing.T) {
 	if rec.Header().Get("Access-Control-Allow-Origin") != "http://localhost:3000" {
 		t.Fatalf("allow-origin: %q", rec.Header().Get("Access-Control-Allow-Origin"))
 	}
+	if name := linkedName(t, rec); !strings.HasPrefix(name, "localfake") || len(name) != len("localfake")+12 {
+		t.Fatalf("accountName: %q", name)
+	}
 }
 
 func TestLinkFakeAccountLeavesALinkedOrganizationAlone(t *testing.T) {
-	a := &accountsInvoker{fakeInvoker: fakeInvoker{allow: true}, complete: `[{"id":"x"}]`, accountsAt: http.StatusOK}
+	a := &accountsInvoker{fakeInvoker: fakeInvoker{allow: true}, complete: `[{"id":"x","account_name":"lab"}]`, accountsAt: http.StatusOK}
 	rec := linkRequest(t, a, "POST", "", "token", validBody())
 	if rec.Code != http.StatusOK || len(a.calls) != 1 {
 		t.Fatalf("status %d calls %v", rec.Code, a.calls)
 	}
+	if name := linkedName(t, rec); name != "lab" {
+		t.Fatalf("accountName: %q, want the account already linked", name)
+	}
+}
+
+// linkedName reads the account name a successful link answers with.
+func linkedName(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body struct {
+		AccountName string `json:"accountName"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q: %v", rec.Body, err)
+	}
+	return body.AccountName
 }
 
 func TestLinkFakeAccountReturnsTheMembershipRefusal(t *testing.T) {

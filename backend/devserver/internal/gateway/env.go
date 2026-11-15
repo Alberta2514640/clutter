@@ -40,6 +40,13 @@ const (
 	// templates buckets. The local S3 serves these two and no others.
 	LocalDataBucket     = "clutter-devserver-local"
 	LocalTemplateBucket = "clutter-devserver-local-templates"
+
+	// FrontendGoogleClientID is the Google OAuth client id the local frontend
+	// signs in with: dev.sh passes it as NEXT_PUBLIC_GOOGLE_CLIENT_ID, which
+	// frontend/clutter/src/providers/GoogleAuthProvider.tsx reads. The log-in
+	// Lambda accepts only Google tokens minted for it, so real Google sign-in
+	// works locally. env_test.go fails when the two differ.
+	FrontendGoogleClientID = "214630517546-2tttdua57o7gj14up16v7s3unqoah46k.apps.googleusercontent.com"
 )
 
 // lambdaEnvValue returns the local value for one key a Lambda reads in main.tf.
@@ -51,6 +58,8 @@ func lambdaEnvValue(key string, c Config) (string, error) {
 		return c.PSQLConnString, nil
 	case "JWT_SECRET":
 		return c.JWTSecret, nil
+	case "GOOGLE_CLIENT_ID":
+		return FrontendGoogleClientID, nil
 	case "CORS_ALLOWED_ORIGIN":
 		return c.FrontendOrigin, nil
 	case "CLOUDFORMATION_TEMPLATE_URL":

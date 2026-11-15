@@ -146,7 +146,8 @@ export default function FilesTab({
   }) => {
     const { key, deploymentId, file, refetchUrl } = args;
     setViewerOpen(true);
-    setViewerTitle(`${file} — ${deploymentId}`);
+    // deploymentId holds the Terraform command's id (command_id), not a B deployment or run.
+    setViewerTitle(`${file} (command ${deploymentId})`);
     setViewerContent("");
     setViewerError(null);
     setLoadingFileKey(key);

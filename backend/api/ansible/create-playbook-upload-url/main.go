@@ -27,13 +27,16 @@ type createPlaybookUploadURLRequest struct {
 	DiagramID string `json:"diagram_id"`
 }
 
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
 func main() {
 	lambda.Start(handler)
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized",
@@ -61,55 +64,31 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
 	}
 	defer conn.Close(ctx)
 
-	// 1. Get org from project (404 if project doesn't exist)
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, body.ProjectID)
+	// The diagram must belong to the project and the project to an organization
+	// the caller is in. The organization comes from the project row, and the
+	// key and the playbook row use the checked, canonical ids.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userData.Id, "", body.ProjectID, body.DiagramID)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
-		}
-		log.Printf("ERROR: failed to fetch project: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+		return generic.AuthorizationResponse(err)
 	}
-
-	// 2. Check org membership (403 if not a member)
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
-		}
-		log.Printf("ERROR: failed to check membership: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
-	}
-
-	// 3. Confirm diagram belongs to this project (404 if not)
-	var diagramExists bool
-	err = conn.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM diagrams WHERE id = $1 AND project_id = $2)`,
-		body.DiagramID, body.ProjectID,
-	).Scan(&diagramExists)
-	if err != nil {
-		log.Printf("ERROR: failed to verify diagram: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
-	}
-	if !diagramExists {
-		return generic.Response(http.StatusNotFound, generic.Json{"message": "diagram not found"})
-	}
+	orgID := ids.OrgID
 
 	bucketName := os.Getenv("S3_BUCKET_NAME")
 	if bucketName == "" {
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "server configuration error: missing S3_BUCKET_NAME",
+			"message": "internal server error",
 		})
 	}
 
 	uploadID := uuid.NewString()
-	objectKey := uploadutils.BuildPlaybookObjectKey(orgID, body.ProjectID, body.DiagramID, normalizedFileName, uploadID)
+	objectKey := uploadutils.BuildPlaybookObjectKey(orgID, ids.ProjectID, ids.DiagramID, normalizedFileName, uploadID)
 
 	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -144,7 +123,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		INSERT INTO playbooks (diagram_id, org_id, project_id, file_name, s3_key, uploaded_by)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
-	`, body.DiagramID, orgID, body.ProjectID, normalizedFileName, objectKey, userData.Id).Scan(&playbookID)
+	`, ids.DiagramID, orgID, ids.ProjectID, normalizedFileName, objectKey, userData.Id).Scan(&playbookID)
 	if err != nil {
 		log.Printf("ERROR: failed to insert playbook record: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{

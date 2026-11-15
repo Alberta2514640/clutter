@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/jobsutils"
 	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -60,20 +61,20 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	var createdAt, updatedAt time.Time
 	var extraVars, targetInstanceIDs []byte
 	var taskArn, errorMessage *string
-	var playbookS3Key, terraformDirectory, roleArn, assumeRoleExternalId *string
+	var playbookS3Key, terraformDirectory, roleArn *string
 
 	err = conn.QueryRow(ctx, `
 		SELECT id, COALESCE(job_type, 'ansible') as job_type, status, created_at, updated_at,
 		       extra_vars, task_arn, error_message,
 		       target_instance_ids, playbook_s3_key,
-		       terraform_directory, role_arn, assume_role_external_id
+		       terraform_directory, role_arn
 		FROM jobs
 		WHERE id = $1
 	`, jobID).Scan(
 		&id, &jobType, &status, &createdAt, &updatedAt,
 		&extraVars, &taskArn, &errorMessage,
 		&targetInstanceIDs, &playbookS3Key,
-		&terraformDirectory, &roleArn, &assumeRoleExternalId,
+		&terraformDirectory, &roleArn,
 	)
 
 	if err != nil {
@@ -102,16 +103,23 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "failed to retrieve job"})
 	}
 
+	// The runner has no database access; a started or finished job's status
+	// reaches its row here, from the status file beside its log.
+	if !generic.IsJobFinished(status) {
+		state := jobsutils.JobState{ID: id, Status: status, ErrorMessage: errorMessage, UpdatedAt: updatedAt, PlaybookS3Key: playbookS3Key}
+		jobsutils.Reconcile(ctx, conn, generic.StatusStoreFromEnv(ctx), &state)
+		status, errorMessage, updatedAt = state.Status, state.ErrorMessage, state.UpdatedAt
+	}
+
 	job := generic.BuildJobResponse(
 		id, jobType, status,
 		createdAt, updatedAt,
 		extraVars, taskArn, errorMessage,
 		targetInstanceIDs, playbookS3Key,
-		terraformDirectory, roleArn, assumeRoleExternalId,
+		terraformDirectory, roleArn,
 	)
 
 	return generic.Response(http.StatusOK, generic.Json{
 		"data": job,
 	})
 }
-

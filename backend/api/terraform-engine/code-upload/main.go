@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
+	"github.com/Alberta2514640/clutter/backend/api/generic/hclsafe"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,15 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
-
-var runtimeHandlers = map[string]string{
-	"nodejs24":      "index.handler",
-	"nodejs22":      "index.handler",
-	"python3.14":      "lambda_function.lambda_handler",
-	"python3.13":      "lambda_function.lambda_handler",
-	"python3.12":      "lambda_function.lambda_handler",
-	"provided.al2023": "bootstrap",
-}
 
 type requestBody struct {
 	OrgID              string `json:"org_id"`
@@ -34,16 +27,18 @@ type requestBody struct {
 	Runtime            string `json:"runtime"`
 }
 
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
 func main() {
 	lambda.Start(handler)
 }
 
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"message": "failed to get user from authorizer context",
-			"error":   err.Error(),
+			"message": "unauthorized: missing user identity",
 		})
 	}
 
@@ -51,7 +46,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid JSON body",
-			"error":   err.Error(),
 		})
 	}
 
@@ -61,50 +55,54 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	defaultHandler, ok := runtimeHandlers[body.Runtime]
-	if !ok {
+	// The name becomes a segment of the S3 key and the Terraform resource name,
+	// so it follows the generator's rule for resource names.
+	if err := hclsafe.CheckName(body.LambdaResourceName); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": fmt.Sprintf("unsupported runtime: %s", body.Runtime),
+			"message": "lambda_resource_name " + err.Error(),
 		})
 	}
 
-	conn, err := generic.PsqlConnect()
+	defaultHandler, ok := generic.LambdaRuntimes[body.Runtime]
+	if !ok {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "unsupported runtime",
+		})
+	}
+
+	conn, err := connect()
 	if err != nil {
+		log.Printf("code upload: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, body.OrgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to verify organization membership",
-			"error":   err.Error(),
-		})
+	// The key below is built from these ids, so each must belong to the
+	// caller's organization, and the key uses the checked, canonical ids.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userData.Id, body.OrgID, body.ProjectID, body.DiagramID)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
 
 	bucket := os.Getenv("S3_BUCKET_NAME")
 	if bucket == "" {
+		log.Printf("code upload: S3_BUCKET_NAME is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "S3_BUCKET_NAME is not configured",
+			"message": "failed to generate the upload URL",
 		})
 	}
 
 	s3Key := fmt.Sprintf("%s/%s/%s/terraform/code/%s/bootstrap.zip",
-		body.OrgID, body.ProjectID, body.DiagramID, body.LambdaResourceName,
+		ids.OrgID, ids.ProjectID, ids.DiagramID, body.LambdaResourceName,
 	)
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Printf("code upload: load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"message": "failed to generate the upload URL",
 		})
 	}
 
@@ -116,9 +114,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		ServerSideEncryption: types.ServerSideEncryptionAes256,
 	}, s3.WithPresignExpires(15*time.Minute))
 	if err != nil {
+		log.Printf("code upload: presign: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to generate presigned URL",
-			"error":   err.Error(),
+			"message": "failed to generate the upload URL",
 		})
 	}
 

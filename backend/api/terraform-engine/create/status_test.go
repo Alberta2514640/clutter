@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
-	"github.com/aws/aws-lambda-go/events"
 )
 
 func captureLog(t *testing.T) *bytes.Buffer {
@@ -23,13 +21,11 @@ func captureLog(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-func TestRecordFailureStopsAtAnEmptyDiagramID(t *testing.T) {
-	// A bad connection string proves the guard: past it, the log line would be
-	// about the database.
-	t.Setenv("PSQL_CONNECTION_STRING", "postgres://127.0.0.1:1/none?connect_timeout=1")
+func TestRecordFailureStopsAtAMissingID(t *testing.T) {
+	// Past the guard, the log line would be about the S3 writer.
 	logged := captureLog(t)
-	recordFailure(context.Background(), generic.DiagramRecord{ProjectID: "project"}, "failed")
-	if !strings.Contains(logged.String(), "no diagram id") {
+	recordFailure(context.Background(), "", generic.DiagramRecord{ID: testDiagram, ProjectID: testProject}, "failed")
+	if !strings.Contains(logged.String(), "an id is missing") {
 		t.Fatalf("log: %q", logged.String())
 	}
 }
@@ -47,16 +43,12 @@ func TestATemplateFailureIsLoggedWithItsCause(t *testing.T) {
 	t.Setenv("TEMPLATE_BUCKET_NAME", "templates-bucket")
 	logged := captureLog(t)
 
-	body, err := json.Marshal(map[string]any{"record": map[string]any{
-		"id": "diagram",
-		"data": map[string]any{"nodes": []any{map[string]any{
-			"id": "a", "data": map[string]any{"label": "S3", "variables": map[string]any{"resource_name": "uploads"}},
-		}}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := handler(context.Background(), events.APIGatewayProxyRequest{Body: string(body)})
+	// The request names only the ids; the S3 node comes from the database row.
+	mock := useMock(t)
+	expectOwnership(mock, testOrg, true)
+	expectDiagramRow(mock, `{"nodes":[{"id":"a","data":{"label":"S3","variables":{"resource_name":"uploads"}}}],"edges":[]}`)
+
+	res, err := handler(context.Background(), signedIn(map[string]string{"projectId": testProject, "diagramId": testDiagram}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,5 +57,12 @@ func TestATemplateFailureIsLoggedWithItsCause(t *testing.T) {
 	}
 	if !strings.Contains(logged.String(), "templates/aws/s3/main.tf.tmpl") {
 		t.Fatalf("log: %q", logged.String())
+	}
+	// The body names neither the bucket path nor the SDK error.
+	if strings.Contains(res.Body, "templates/") || strings.Contains(res.Body, "AccessDenied") {
+		t.Fatalf("the body leaks the cause: %s", res.Body)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

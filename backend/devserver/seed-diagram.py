@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create a separate local diagram for dragging, connecting and saving nodes."""
+import argparse
 import json
 import sys
 import uuid
@@ -82,6 +83,8 @@ def main():
         "projectId": project, "diagramId": diagram_id,
         "name": "Drag Me Around", "data": layout,
     }, "PUT")
+    # Generate after the save, as the editor does, so Preview Terraform has files.
+    api("/terraform-engine", {"projectId": project, "diagramId": diagram_id})
     saved = api(f"/diagram?projectId={project}&diagramId={diagram_id}")
     if isinstance(saved, list):
         saved = saved[0]
@@ -94,6 +97,16 @@ def main():
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(
+        prog="npm run seed",
+        description=(
+            "Adds sample data to the local database through the running backend: a new "
+            "organization with a fake linked AWS account, a project, and an AWS diagram "
+            "with 5 nodes and 4 connections. It belongs to the local test user, so sign "
+            "in at http://localhost:3000/dev/login to see it. Each run adds a new set and "
+            "keeps the old ones. Start the app first with npm run dev."
+        ),
+    ).parse_args()
     try:
         main()
     except HTTPError as error:

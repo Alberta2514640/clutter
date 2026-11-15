@@ -11,9 +11,13 @@ CREATE TABLE IF NOT EXISTS public.supported_resources (
 );
 
 ALTER TABLE public.supported_resources ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_all_permissions"
+-- The resource catalog is not secret, so the Data API may read it; nobody may change it through the Data API.
+-- The drops make the file safe to re-apply, and remove the old policy that let anon write the catalog.
+DROP POLICY IF EXISTS "anon_all_permissions" ON "public"."supported_resources";
+DROP POLICY IF EXISTS "catalog_read_only" ON "public"."supported_resources";
+CREATE POLICY "catalog_read_only"
 ON "public"."supported_resources"
-AS PERMISSIVE TO anon USING (true);
+AS PERMISSIVE FOR SELECT TO anon, authenticated USING (true);
 
 -- ============================
 -- SEED DATA
@@ -38,7 +42,7 @@ INSERT INTO public.supported_resources (label, display_name, description, variab
 
 ('DynamoDB', 'AWS DynamoDB', 'NoSQL key-value table', '[
   {"name": "resource_name",  "type": "string",  "required": true,  "default": null,              "description": "Terraform resource ID and table name"},
-  {"name": "billing_mode",   "type": "string",  "required": false, "default": "PAY_PER_REQUEST", "description": "PAY_PER_REQUEST or PROVISIONED"},
+  {"name": "billing_mode",   "type": "string",  "required": false, "default": "PAY_PER_REQUEST", "description": "PAY_PER_REQUEST (on-demand) only"},
   {"name": "hash_key",       "type": "string",  "required": false, "default": "id",              "description": "Partition key attribute name"},
   {"name": "hash_key_type",  "type": "string",  "required": false, "default": "S",               "description": "Partition key type: S, N, or B"},
   {"name": "enable_ttl",     "type": "boolean", "required": false, "default": false,             "description": "Enable TTL"},
@@ -57,4 +61,9 @@ INSERT INTO public.supported_resources (label, display_name, description, variab
   {"name": "resource_name",  "type": "string",  "required": true,  "default": null,          "description": "Terraform resource ID and instance Name tag"},
   {"name": "instance_type",  "type": "string",  "required": false, "default": "t3.micro",    "description": "EC2 instance type"},
   {"name": "key_name",       "type": "string",  "required": false, "default": null,           "description": "Key pair name for SSH access"}
-]');
+]')
+-- Re-applying the file brings an existing catalog row up to date instead of failing.
+ON CONFLICT (label) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    description  = EXCLUDED.description,
+    variables    = EXCLUDED.variables;

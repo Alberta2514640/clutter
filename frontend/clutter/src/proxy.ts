@@ -2,7 +2,10 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const PUBLIC = ["/login", "/terms", "/privacy", "/favicon.ico", "/robots.txt"];
+// The public pages and what they load without a session: the legal pages, the
+// sitemap, the Open Graph image (crawlers have no cookie), the site icon and the
+// landing images.
+const PUBLIC = ["/login", "/favicon.ico", "/robots.txt", "/privacy", "/terms", "/sitemap.xml", "/opengraph-image", "/icon.svg", "/landing/"];
 
 export function proxy(req: NextRequest) {
   const { pathname, origin } = req.nextUrl;

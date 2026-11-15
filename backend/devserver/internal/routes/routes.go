@@ -39,7 +39,7 @@ const AuthorizerLambda = "authorizer"
 // Lambdas lists every HTTP-facing Lambda plus the authorizer. ansible-run-task
 // is an SQS consumer with no route, so the devserver does not run it.
 var Lambdas = []Lambda{
-	{Name: "log-in", Dir: "log-in", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "JWT_SECRET"}},
+	{Name: "log-in", Dir: "log-in", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "JWT_SECRET", "GOOGLE_CLIENT_ID"}},
 	{Name: "authorizer", Dir: "authorizer", TimeoutSeconds: 3, EnvKeys: []string{"JWT_SECRET"}},
 	{Name: "cloudformation-stack-url-generator", Dir: "cloudformation/stack-url-generator", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "CLOUDFORMATION_TEMPLATE_URL", "CLUTTER_ACCOUNT_ID"}},
 	{Name: "terraform-command-runner", Dir: "terraform-command-runner", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "ECS_CLUSTER_NAME", "TASK_DEFINITION_ARN", "CONTAINER_NAME", "SUBNET_IDS", "SECURITY_GROUP_ID"}},
@@ -66,11 +66,11 @@ var Lambdas = []Lambda{
 	{Name: "terraform-engine-files", Dir: "terraform-engine/files", TimeoutSeconds: 10, EnvKeys: []string{"S3_BUCKET_NAME", "PSQL_CONNECTION_STRING"}},
 	{Name: "terraform-engine-logs-get", Dir: "terraform-engine/logs/get", TimeoutSeconds: 3, EnvKeys: []string{"S3_BUCKET_NAME", "PSQL_CONNECTION_STRING"}},
 	{Name: "terraform-engine-logs-url", Dir: "terraform-engine/logs/url", TimeoutSeconds: 3, EnvKeys: []string{"S3_BUCKET_NAME", "PSQL_CONNECTION_STRING"}},
-	{Name: "terraform-engine-logs-live", Dir: "terraform-engine/logs/live", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "ECS_CLUSTER_NAME", "TERRAFORM_DEPLOYER_LOG_GROUP", "TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX", "TERRAFORM_DEPLOYER_CONTAINER_NAME"}},
-	{Name: "terraform-command-runner-logs-recent-activity", Dir: "terraform-engine/logs/recent-activity", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING"}},
+	{Name: "terraform-engine-logs-live", Dir: "terraform-engine/logs/live", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "ECS_CLUSTER_NAME", "TERRAFORM_DEPLOYER_LOG_GROUP", "TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX", "TERRAFORM_DEPLOYER_CONTAINER_NAME", "S3_BUCKET_NAME"}},
+	{Name: "terraform-command-runner-logs-recent-activity", Dir: "terraform-engine/logs/recent-activity", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "S3_BUCKET_NAME"}},
 	{Name: "ansible-submit-job", Dir: "ansible/submit-job", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "JOB_QUEUE_URL", "CORS_ALLOWED_ORIGIN", "S3_BUCKET_NAME"}},
-	{Name: "ansible-get-job", Dir: "ansible/get-job", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "CORS_ALLOWED_ORIGIN"}},
-	{Name: "ansible-list-jobs", Dir: "ansible/list-jobs", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "CORS_ALLOWED_ORIGIN"}},
+	{Name: "ansible-get-job", Dir: "ansible/get-job", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "S3_BUCKET_NAME", "CORS_ALLOWED_ORIGIN"}},
+	{Name: "ansible-list-jobs", Dir: "ansible/list-jobs", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "S3_BUCKET_NAME", "CORS_ALLOWED_ORIGIN"}},
 	{Name: "ansible-get-job-logs", Dir: "ansible/get-job-logs", TimeoutSeconds: 3, EnvKeys: []string{"PSQL_CONNECTION_STRING", "S3_BUCKET_NAME", "CORS_ALLOWED_ORIGIN"}},
 	{Name: "ansible-create-playbook-upload-url", Dir: "ansible/create-playbook-upload-url", TimeoutSeconds: 3, EnvKeys: []string{"S3_BUCKET_NAME", "CORS_ALLOWED_ORIGIN", "PSQL_CONNECTION_STRING"}},
 }
@@ -110,7 +110,7 @@ var Routes = []Route{
 	{Method: "POST", Path: "/ansible/playbooks/upload-url", Lambda: "ansible-create-playbook-upload-url", Authorized: true},
 	{Method: "GET", Path: "/user-information", Lambda: "user-information-get", Authorized: true},
 	{Method: "GET", Path: "/resources", Lambda: "resources-get", Authorized: false},
-	{Method: "POST", Path: "/terraform-engine", Lambda: "terraform-engine-create", Authorized: false},
+	{Method: "POST", Path: "/terraform-engine", Lambda: "terraform-engine-create", Authorized: true},
 	{Method: "POST", Path: "/terraform-engine/code-upload/presigned-url", Lambda: "terraform-engine-code-upload-presigned-url", Authorized: true},
 }
 
