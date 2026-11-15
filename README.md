@@ -99,6 +99,7 @@ AWS terms you will meet in A: Lambda (a function AWS runs on request), API Gatew
 ```text
 backend/
   adapter/          B, the adapter layer: its API (cmd/api), run task (cmd/runtask), connectors and images
+  collaboration/    the live sync service (Node): several users edit one building-block diagram together
   api/              A's Go Lambdas, one folder per route; generic/ is shared code (B imports it too)
     terraform-engine/create/   A's generator: diagram JSON to Terraform
   infra/            Terraform that deploys Clutter itself (A, B and the website) into Clutter's AWS account
@@ -191,6 +192,7 @@ go -C backend/api build ./...
 go -C backend/api vet ./...
 go -C backend/api test ./...
 go -C backend/adapter test ./...      # B; some tests skip without Docker or Terraform
+(cd backend/collaboration && npm run typecheck && npm test)   # the live sync service
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
 npm --prefix frontend/clutter run lint
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build
@@ -214,6 +216,7 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 | Postgres | Docker, port 54329 | `npm run dev` | always |
 | A's Lambdas behind the local API gateway, with the local S3 | port 8787 | `npm run dev` | always |
 | B API | port 8790 | `npm run dev` | always |
+| The live sync service | port 8791 | `npm run dev` | optional; Clutter runs without it (`backend/collaboration/README.md`) |
 | The website | port 3000 (Next.js on 3100 behind it) | `npm run dev` | always |
 | LocalStack, a stand-in for AWS | Docker, port 4566 | `npm run localstack -- start` | only for real AWS deploys |
 | DevStack, a small OpenStack | the Lima VM `devstack` | `npm run devstack -- start` | only for OpenStack deploys |

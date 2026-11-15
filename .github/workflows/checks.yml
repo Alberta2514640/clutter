@@ -83,6 +83,25 @@ jobs:
         env:
           NEXT_PUBLIC_API_ENDPOINT: http://localhost:8787
 
+  collaboration:
+    # The live sync service. Its tests need no database and no running app.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/collaboration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/collaboration/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests (Vitest)
+        run: npm test
+
   docs-and-scripts:
     runs-on: ubuntu-latest
     steps:

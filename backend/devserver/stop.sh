@@ -71,6 +71,9 @@ if [[ -n "${dev_start}" ]]; then
 fi
 rm -f "${STATE_DIR}/dev.pid"
 
+# The live sync service, when dev.sh started it. It keeps nothing on disk.
+stop_process "the live sync service" collab "${COLLAB_DIR}/src/server.ts" 5
+
 # B finishes or fails its runs in progress within 30 seconds of SIGTERM.
 stop_process "B API" adapter "${STATE_DIR}/adapter-api" 35
 stop_process "the gateway" gateway "${STATE_DIR}/gateway" 10

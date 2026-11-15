@@ -91,6 +91,10 @@ Real Google sign-in works here while the capstone team's Google client still exi
 
 The frontend reads its API token from `localStorage` on its own origin, and the gateway on port 8787 cannot write it. So the gateway also runs a front door on `127.0.0.1:3000`. The front door serves `/dev/login` and passes every other request to the Next dev server on port 3100. `dev.sh` starts that server with `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787` (A) and `NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790` (B). So B's screens (the building-block editor, its deploy panel and the Connections page) call B directly. `/dev/login` sets the `clutter_token` cookie and the `google_data` localStorage entry, just as a real log-in does, then opens `/dashboard`.
 
+## Live sync locally
+
+`dev.sh` starts the live sync service (`backend/collaboration`) on `127.0.0.1:8791` after B API is up, and `stop.sh` stops it. It is optional. When Node or its packages are missing, or it does not start, Clutter starts without it and the start message's `Live sync:` line says why. `npm run setup` installs its packages. It gets no secret and no database address: it checks each connection through A's API with the user's own token. The website gets `NEXT_PUBLIC_COLLAB_URL=ws://localhost:8791` only while the service runs. Its log is `.state/collab.log`. Its settings, close codes and tests are in `backend/collaboration/README.md`.
+
 ## B API locally
 
 `dev.sh` builds `backend/adapter/cmd/api` into `.state/adapter-api` and starts it on `127.0.0.1:8790` with a clean environment and only B's own variables. It gets the same JWT secret as A, so A's tokens (including `/dev/login`'s) sign in to B too. It connects to the same Postgres and applies `backend/storage-sql/adapter-tables.sql` at start-up. The Postgres container also loads that file as `30-adapter-tables.sql` on a fresh volume. B offers three connectors. `mock` builds nothing. `general-openstack` needs a reachable OpenStack, such as DevStack (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)). `aws` renders and previews real Terraform from the repo's templates. An `aws` run applies against LocalStack when it is running (see [AWS on LocalStack](#aws-on-localstack)), and otherwise stops at "needs a real AWS account". Connection credentials are encrypted under `.state/adapter/secrets` with a key `dev.sh` generates once into `.state/adapter_credential_key` (mode 600). Run logs go to `.state/adapter/logs`. B answers CORS for `http://localhost:3000` and `http://127.0.0.1:3000` only. Its log is `.state/adapter.log`. `npm run stop -- --wipe` deletes `.state/adapter` with the database, and keeps the key.
@@ -246,7 +250,7 @@ Any other call is refused with a 403: ECS, SQS, STS, CloudWatch, any other bucke
 
 ## Guard rails
 
-One devserver runs per machine. Its ports (3000, 3100, 8787, 8790, 54329) and its Docker database are fixed, so two clones on one laptop share them. Separate laptops never collide; each generates its own secrets.
+One devserver runs per machine. Its ports (3000, 3100, 8787, 8790, 8791, 54329) and its Docker database are fixed, so two clones on one laptop share them. Separate laptops never collide; each generates its own secrets.
 
 The gateway and B API bind to loopback only. The gateway refuses a JWT secret that `dev.sh` did not generate (prefix `devserver-local-`). It refuses a Postgres that is not on loopback. Secrets, binaries, logs, the local S3 files and B's data live in `.state/`, which git ignores.
 
