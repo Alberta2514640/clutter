@@ -1,7 +1,7 @@
 import { DemoClip } from "./DemoClip";
 import motion from "./motion.module.css";
 
-const steps = ["Drag a VM and a network onto the canvas.", "Connect the VM to the network.", "Save, add a deployment to an AWS connection, and press Deploy.", "Follow the run log as Terraform starts."];
+const steps = ["Open the Web shop diagram and drag a VM into its network box.", "Point at a link to see what it does.", "Save, then press Deploy on the AWS deployment and confirm.", "See what was built, with an Open button for the API."];
 
 // A short muted clip of the whole path, recorded from the running app.
 export function Demo() {
@@ -11,7 +11,7 @@ export function Demo() {
         <div className={motion.reveal}>
           <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">See it work</p>
           <h2 id="demo-title" className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-            Two blocks to a running deploy
+            A VM to a running deploy
           </h2>
           <ol id="demo-steps" className="mt-6 space-y-3 text-slate-300">
             {steps.map((s, i) => (
