@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -314,6 +315,14 @@ func TestRunsGoThroughTheSharedRunner(t *testing.T) {
 	// was left as it was.
 	if len(res.Resources) != 2 || res.Resources["n1"] != "9b1d5a8e-0000-4000-8000-0000000000a1" || res.Resources["n2"] == "" {
 		t.Fatalf("apply resources %v", res.Resources)
+	}
+	// n1 is the sample's public VM: it has both addresses.
+	wantResults := []connectors.Result{
+		{Name: connectors.ResultPrivateAddress, Value: "10.0.0.12"},
+		{Name: connectors.ResultPublicAddress, Value: "172.24.4.10"},
+	}
+	if !reflect.DeepEqual(res.Results["n1"], wantResults) {
+		t.Fatalf("apply results %+v", res.Results)
 	}
 
 	if _, err := c.Destroy(ctx, connectors.Run{ID: uuid.NewString(), Action: connectors.ActionDestroy, Log: &log}, d); err != nil {

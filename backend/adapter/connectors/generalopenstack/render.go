@@ -302,6 +302,13 @@ func renderOutputs(m model) []byte {
 		if v.public {
 			out(outputAddressPrefix+v.id, ref(tFloatingIP, addr(v.id), "address"))
 		}
+		// What the deploy panel shows the user (connectors.ReadResults).
+		if key, ok := connectors.ResultOutputName(v.id, connectors.ResultPrivateAddress); ok {
+			out(key, ref(tInstance, addr(v.id), "access_ip_v4"))
+		}
+		if key, ok := connectors.ResultOutputName(v.id, connectors.ResultPublicAddress); ok && v.public {
+			out(key, ref(tFloatingIP, addr(v.id), "address"))
+		}
 	}
 	for _, vol := range m.volumes {
 		out(outputIDPrefix+vol.id, ref(tVolume, addr(vol.id), "id"))

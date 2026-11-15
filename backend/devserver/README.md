@@ -188,6 +188,7 @@ npm run devstack -- credential   # makes the credential and prints the values fo
 | --- | --- |
 | `npm run devstack -- create` | makes the VM from `devstack/lima.yaml`, starts it, and installs DevStack with `devstack/install.sh`. A second run does nothing when DevStack is installed. When the VM's address changed, it installs DevStack again for the new address. It refuses a VM named `devstack` that it did not make, and changes nothing in it. The install log is `/opt/stack/stack.log` inside the VM; follow it with `limactl shell devstack tail -f /opt/stack/stack.log` |
 | `npm run devstack -- credential` | makes an OpenStack application credential named `clutter`, for the `demo` user in the `demo` project, and prints the values Clutter's Connections page needs. When one exists, it asks before it replaces it; the old one then stops working |
+| `npm run devstack -- dashboard` | prints the address of DevStack's dashboard (`http://<the VM's address>/dashboard`), the `Default` domain and the `demo` user. The password, read inside the VM from `local.conf`, is printed only to a terminal, as `credential`'s secret is |
 | `npm run devstack -- start` | starts the VM |
 | `npm run devstack -- stop` | stops the VM; its disk, and DevStack in it, are kept |
 | `npm run devstack -- status` | shows the VM's state, and exits with 1 when it is not running |

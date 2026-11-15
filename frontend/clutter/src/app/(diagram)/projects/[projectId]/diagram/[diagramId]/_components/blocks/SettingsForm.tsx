@@ -8,6 +8,7 @@ import { optionsState, settingView, TYPE_OWN } from "@/lib/features/connections/
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import FieldInput, { inputClass } from "./FieldInput";
+import HelpTip from "./HelpTip";
 
 // SettingsForm draws a deployment's settings. A setting that names something
 // in the user's cloud (an image, a flavor, a network) is a list of the
@@ -54,10 +55,13 @@ export default function SettingsForm({
           const error = fieldError(f, values[f.name]);
           return (
             <div key={f.name} className="space-y-1">
-              <label htmlFor={id} className="block text-xs font-medium text-slate-300">
-                {f.title}
-                {f.required ? "" : " (optional)"}
-              </label>
+              <div className="flex items-center gap-2">
+                <label htmlFor={id} className="block text-xs font-medium text-slate-300">
+                  {f.title}
+                  {f.required ? "" : " (optional)"}
+                </label>
+                {f.help && <HelpTip text={f.help} label={`About ${f.title}`} align="end" />}
+              </div>
               <select
                 id={id}
                 disabled={disabled}

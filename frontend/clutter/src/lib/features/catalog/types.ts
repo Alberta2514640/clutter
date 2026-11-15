@@ -40,6 +40,8 @@ export type BlockSpec = {
   kind: BlockKind;
   treatment: Treatment;
   title: string;
+  // What the block is for, in a few plain words ("A private area for servers").
+  summary?: string;
   fields?: FieldSpec[];
   // Set on every block the cloud builds, never on a removed one.
   display?: BlockDisplay;
@@ -56,6 +58,11 @@ export type EdgeSpec = {
   source: BlockKind;
   target: BlockKind;
   meaning: string;
+  // What the link is good for, in plain words.
+  why?: string;
+  // A source links to at most one block of the target kind; rule says so.
+  single_target?: boolean;
+  rule?: string;
 };
 
 export type Manifest = {

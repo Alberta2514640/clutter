@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -333,6 +334,7 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 			return fail(failGeneric, err)
 		}
 		fmt.Fprintf(rw, "Apply complete: %s.\n", blocksChanged(len(res.Resources)))
+		writeResults(rw, res.Results)
 	case connectors.ActionDestroy:
 		if _, err := c.Destroy(ctx, run, d); err != nil {
 			return fail(failGeneric, err)
@@ -356,6 +358,32 @@ func blocksChanged(n int) string {
 		return "1 block built or changed"
 	}
 	return fmt.Sprintf("%d blocks built or changed", n)
+}
+
+// ResultLinePrefix starts each line of an apply's results in the run's log:
+// "Result: <node id> <name> <value>", one per result, after the apply's
+// "Apply complete" line. The deploy panel reads them back for "What was
+// built" (frontend deployments/results.ts). A node id and a result name hold
+// no space, and connectors.ReadResults keeps only values CheckCrossValue
+// accepts, which hold none either.
+const ResultLinePrefix = "Result: "
+
+// writeResults writes an apply's results to the run's log, by node id, each
+// block's in the order the connector gave them.
+func writeResults(w io.Writer, results map[string][]connectors.Result) {
+	ids := make([]string, 0, len(results))
+	for id := range results {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		for _, r := range results[id] {
+			if strings.ContainsAny(id+r.Name, " \n") || connectors.CheckCrossValue(r.Value) != nil {
+				continue
+			}
+			fmt.Fprintf(w, "%s%s %s %s\n", ResultLinePrefix, id, r.Name, r.Value)
+		}
+	}
 }
 
 // preflight is what every cloud of a run passes before any cloud changes: its

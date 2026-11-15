@@ -10,13 +10,13 @@
       {
         "id": "web-fw",
         "type": "firewall",
-        "position": { "x": 0, "y": 0 },
+        "position": { "x": 0, "y": 30 },
         "data": { "name": "web-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
       },
       {
         "id": "web",
         "type": "vm",
-        "position": { "x": 320, "y": 0 },
+        "position": { "x": 340, "y": 50 },
         "data": {
           "name": "web",
           "fields": {
@@ -29,25 +29,25 @@
       {
         "id": "files",
         "type": "bucket",
-        "position": { "x": 640, "y": -180 },
+        "position": { "x": 660, "y": 50 },
         "data": { "name": "files", "fields": { "versioning": true } }
       },
       {
         "id": "db-fw",
         "type": "firewall",
-        "position": { "x": 320, "y": 200 },
+        "position": { "x": 0, "y": 170 },
         "data": { "name": "db-fw", "fields": { "ingress": "tcp/22, tcp/5432, icmp", "source_cidr": "10.40.0.0/24" } }
       },
       {
         "id": "db-data",
         "type": "volume",
-        "position": { "x": 320, "y": 360 },
+        "position": { "x": 0, "y": 310 },
         "data": { "name": "db-data", "fields": { "size_gb": 20 } }
       },
       {
         "id": "db",
         "type": "vm",
-        "position": { "x": 640, "y": 200 },
+        "position": { "x": 340, "y": 170 },
         "data": {
           "name": "db",
           "fields": {
@@ -60,25 +60,27 @@
       {
         "id": "app-net",
         "type": "network",
-        "position": { "x": 960, "y": 100 },
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 270,
         "data": { "name": "app-net", "fields": { "cidr": "10.40.0.0/24" } }
       },
       {
         "id": "orders-api",
         "type": "http_api",
-        "position": { "x": 0, "y": 540 },
+        "position": { "x": 0, "y": 420 },
         "data": { "name": "orders-api", "fields": { "description": "Orders API", "cors": true } }
       },
       {
         "id": "orders",
         "type": "function",
-        "position": { "x": 320, "y": 540 },
+        "position": { "x": 330, "y": 420 },
         "data": { "name": "orders", "fields": { "memory_mb": 256, "timeout_s": 10 } }
       },
       {
         "id": "orders-table",
         "type": "table",
-        "position": { "x": 640, "y": 540 },
+        "position": { "x": 660, "y": 420 },
         "data": { "name": "orders-table", "fields": { "key": "order_id", "key_type": "string" } }
       }
     ],

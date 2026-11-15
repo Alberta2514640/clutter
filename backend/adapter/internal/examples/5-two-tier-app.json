@@ -8,40 +8,48 @@
     "engine": "blocks",
     "nodes": [
       {
+        "id": "app-net",
+        "type": "network",
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 270,
+        "data": { "name": "app-net", "fields": { "cidr": "10.20.0.0/24" } }
+      },
+      {
         "id": "web-fw",
         "type": "firewall",
-        "position": { "x": 0, "y": 0 },
+        "position": { "x": 0, "y": 30 },
         "data": { "name": "web-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
       },
       {
         "id": "web",
         "type": "vm",
-        "position": { "x": 320, "y": 0 },
+        "position": { "x": 340, "y": 50 },
         "data": {
           "name": "web",
           "fields": {
             "size": "small",
             "public": true,
-            "startup_script": "#!/bin/sh\n# Clutter puts the database server's private address in CLUTTER_DB_ADDRESS.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/database.env\n"
+            "startup_script": "#!/bin/sh\n# Clutter puts the database server's private address in CLUTTER_DB_ADDRESS.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/database.env\n# Check that this server reaches the database server, and say so on the console.\nresult=\"web could not reach db\"\ni=0\nwhile [ \"$i\" -lt 30 ]; do\n  if ping -c 1 -W 2 \"$CLUTTER_DB_ADDRESS\" >/dev/null 2>&1; then\n    result=\"web reached db\"\n    break\n  fi\n  i=$((i + 1))\n  sleep 5\ndone\necho \"$result\"\necho \"$result\" >/dev/console 2>/dev/null\n"
           }
         }
       },
       {
         "id": "db-fw",
         "type": "firewall",
-        "position": { "x": 320, "y": 200 },
+        "position": { "x": 0, "y": 170 },
         "data": { "name": "db-fw", "fields": { "ingress": "tcp/22, tcp/5432, icmp", "source_cidr": "10.20.0.0/24" } }
       },
       {
         "id": "db-data",
         "type": "volume",
-        "position": { "x": 320, "y": 360 },
+        "position": { "x": 0, "y": 310 },
         "data": { "name": "db-data", "fields": { "size_gb": 20 } }
       },
       {
         "id": "db",
         "type": "vm",
-        "position": { "x": 640, "y": 200 },
+        "position": { "x": 340, "y": 170 },
         "data": {
           "name": "db",
           "fields": {
@@ -50,12 +58,6 @@
             "startup_script": "#!/bin/sh\n# Install PostgreSQL where the image has a package manager for it.\nif command -v dnf >/dev/null 2>&1; then\n  dnf install -y postgresql15-server && postgresql-setup --initdb && systemctl enable --now postgresql\nelif command -v apt-get >/dev/null 2>&1; then\n  apt-get update && apt-get install -y postgresql\nfi\n"
           }
         }
-      },
-      {
-        "id": "app-net",
-        "type": "network",
-        "position": { "x": 960, "y": 100 },
-        "data": { "name": "app-net", "fields": { "cidr": "10.20.0.0/24" } }
       }
     ],
     "edges": [

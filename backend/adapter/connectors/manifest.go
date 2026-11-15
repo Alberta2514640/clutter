@@ -74,10 +74,14 @@ type BlockDisplay struct {
 
 // BlockSpec is one block a connector declares.
 type BlockSpec struct {
-	Kind      BlockKind   `json:"kind"`
-	Treatment Treatment   `json:"treatment"`
-	Title     string      `json:"title"`
-	Fields    []FieldSpec `json:"fields,omitempty"`
+	Kind      BlockKind `json:"kind"`
+	Treatment Treatment `json:"treatment"`
+	Title     string    `json:"title"`
+	// Summary says in a few plain words what the block is for, such as "A
+	// private area for servers". The palette shows it under the title.
+	// StandardBlock sets it from the one owner, standardSummaries.
+	Summary string      `json:"summary,omitempty"`
+	Fields  []FieldSpec `json:"fields,omitempty"`
 	// Display is set on every block the connector builds (the contract tests
 	// check it) and never on a removed one.
 	Display *BlockDisplay `json:"display,omitempty"`
@@ -108,6 +112,16 @@ type EdgeSpec struct {
 	Source  BlockKind `json:"source"`
 	Target  BlockKind `json:"target"`
 	Meaning string    `json:"meaning"`
+	// Why says in plain words what the link is good for, for a person with
+	// no cloud background, such as "Your app on the server can look up data
+	// such as users or orders." The editor shows it when a line is hovered.
+	Why string `json:"why,omitempty"`
+	// SingleTarget means a source block links to at most one block of the
+	// target kind, and Rule says so in one short line ("A volume attaches to
+	// one VM."). The editor refuses a second such line with Rule; the
+	// connector's Validate refuses it too.
+	SingleTarget bool   `json:"single_target,omitempty"`
+	Rule         string `json:"rule,omitempty"`
 }
 
 // Block returns the spec for kind.
@@ -167,6 +181,13 @@ const (
 	MaxDisplayName = 48
 )
 
+// The longest plain-words texts: a block's summary sits on one palette line,
+// and an edge's why and rule fit one line of a small card.
+const (
+	MaxSummary  = 48
+	MaxEdgeText = 120
+)
+
 // Check returns an error unless the manifest is well formed: a valid id and
 // title, a treatment for every standard block, new kinds marked new, valid
 // fields and defaults, edges between declared blocks, unique regions, and
@@ -213,6 +234,9 @@ func (m Manifest) Check() error {
 		if b.Treatment == TreatmentRemoved && len(b.Fields) > 0 {
 			errs = append(errs, fmt.Errorf("removed block %q declares fields", b.Kind))
 		}
+		if len(b.Summary) > MaxSummary {
+			errs = append(errs, fmt.Errorf("block %q summary is longer than %d characters", b.Kind, MaxSummary))
+		}
 		if b.Display != nil {
 			if b.Treatment == TreatmentRemoved {
 				errs = append(errs, fmt.Errorf("removed block %q declares a display", b.Kind))
@@ -237,6 +261,12 @@ func (m Manifest) Check() error {
 			} else if t == TreatmentRemoved {
 				errs = append(errs, fmt.Errorf("edge %s->%s names removed block %q", e.Source, e.Target, k))
 			}
+		}
+		if len(e.Why) > MaxEdgeText || len(e.Rule) > MaxEdgeText {
+			errs = append(errs, fmt.Errorf("edge %s->%s has a why or rule longer than %d characters", e.Source, e.Target, MaxEdgeText))
+		}
+		if e.SingleTarget != (e.Rule != "") {
+			errs = append(errs, fmt.Errorf("edge %s->%s needs a rule exactly when it allows a single target", e.Source, e.Target))
 		}
 		p := pair{e.Source, e.Target}
 		if edges[p] {

@@ -11,13 +11,13 @@
       {
         "id": "app-fw",
         "type": "firewall",
-        "position": { "x": 0, "y": 0 },
+        "position": { "x": 0, "y": 30 },
         "data": { "name": "app-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
       },
       {
         "id": "app",
         "type": "vm",
-        "position": { "x": 320, "y": 110 },
+        "position": { "x": 340, "y": 50 },
         "data": {
           "name": "app",
           "fields": {
@@ -30,13 +30,15 @@
       {
         "id": "app-net",
         "type": "network",
-        "position": { "x": 640, "y": 0 },
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 160,
         "data": { "name": "app-net", "fields": { "cidr": "10.30.0.0/24" } }
       },
       {
         "id": "files",
         "type": "bucket",
-        "position": { "x": 640, "y": 220 },
+        "position": { "x": 660, "y": 50 },
         "data": { "name": "files", "fields": { "versioning": false } }
       }
     ],

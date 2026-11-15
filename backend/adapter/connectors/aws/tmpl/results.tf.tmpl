@@ -1,0 +1,8 @@
+# What the deploy panel shows about each block after an apply
+# (connectors.ReadResults): addresses and names, never a secret.
+{{- range .Outputs}}
+
+output "{{.Name}}" {
+  value = {{.Value}}
+}
+{{- end}}

@@ -63,13 +63,19 @@ func (*Connector) Manifest() connectors.Manifest {
 			{Kind: connectors.KindTable, Treatment: connectors.TreatmentRemoved, Title: "Table"},
 			{Kind: connectors.KindHTTPAPI, Treatment: connectors.TreatmentRemoved, Title: "HTTP API"},
 		},
+		// A VM may sit on several networks here; a volume attaches to one VM
+		// (connectors.CodeVolumeTwoVMs).
 		Edges: []connectors.EdgeSpec{
-			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network"},
-			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM"},
-			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM"},
+			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network",
+				Why: "Servers in one network can talk to each other privately."},
+			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM",
+				Why: "Only the traffic you allow can reach the server."},
+			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM",
+				Why: "Gives the server more room for its data.", SingleTarget: true, Rule: "A volume attaches to one VM."},
 			// Across clouds this is a split deployment's address edge
 			// (connectors.CrossClass).
-			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts"},
+			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts",
+				Why: "Your app on the server can find the other server, such as its database."},
 		},
 		Settings: specs(settingImage, settingExternalNetwork, settingFlavorSmall, settingFlavorMedium, settingFlavorLarge),
 	}

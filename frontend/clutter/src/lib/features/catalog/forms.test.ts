@@ -4,7 +4,6 @@ import {
   blockTitle,
   cleanValues,
   defaultValues,
-  edgeAllowed,
   fieldControl,
   fieldError,
   paletteBlocks,
@@ -29,7 +28,7 @@ const catalog: CatalogEntry[] = [
       title: "OpenStack",
       version: "1",
       blocks: [
-        { kind: "vm", treatment: "as-is", title: "VM", fields: [size, isPublic] },
+        { kind: "vm", treatment: "as-is", title: "VM", summary: "A server that runs your app", fields: [size, isPublic] },
         { kind: "network", treatment: "as-is", title: "Network", fields: [cidr] },
         { kind: "volume", treatment: "as-is", title: "Volume", fields: [sizeGB] },
         { kind: "bucket", treatment: "removed", title: "Bucket" },
@@ -69,6 +68,9 @@ describe("paletteBlocks", () => {
     const palette = paletteBlocks(catalog);
     expect(palette.map((b) => b.kind)).toEqual(["vm", "network", "volume", "bucket", "function", "queue"]);
     expect(palette.find((b) => b.kind === "vm")?.clouds.map((c) => c.title)).toEqual(["OpenStack", "Amazon Web Services"]);
+    // The summary comes from the first cloud that has one.
+    expect(palette.find((b) => b.kind === "vm")?.summary).toBe("A server that runs your app");
+    expect(palette.find((b) => b.kind === "network")?.summary).toBe("");
     expect(palette.find((b) => b.kind === "bucket")?.clouds).toEqual([
       { connector: "aws", title: "Amazon Web Services", shortName: "AWS", logoSrc: "/clouds/aws/logo.svg" },
     ]);
@@ -97,15 +99,6 @@ describe("blockFields", () => {
   it("gives a new block its defaults", () => {
     expect(defaultValues(blockFields(catalog, "vm"))).toEqual({ size: "small", public: false });
     expect(defaultValues(blockFields(catalog, "function"))).toEqual({});
-  });
-});
-
-describe("edgeAllowed", () => {
-  it("allows an edge some cloud can wire, in that direction only", () => {
-    expect(edgeAllowed(catalog, "vm", "network")).toBe(true);
-    expect(edgeAllowed(catalog, "function", "bucket")).toBe(true);
-    expect(edgeAllowed(catalog, "network", "vm")).toBe(false);
-    expect(edgeAllowed(catalog, "bucket", "network")).toBe(false);
   });
 });
 

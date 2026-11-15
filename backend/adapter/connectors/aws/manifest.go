@@ -98,19 +98,30 @@ func manifest() connectors.Manifest {
 			connectors.StandardBlock(connectors.KindTable, "Table").WithDisplay("DynamoDB", "dynamodb"),
 			connectors.StandardBlock(connectors.KindHTTPAPI, "HTTP API").WithDisplay("API Gateway", "api-gateway"),
 		},
+		// Each rule matches a problem this connector's Validate reports
+		// (CodeVMTwoNetworks, connectors.CodeVolumeTwoVMs).
 		Edges: []connectors.EdgeSpec{
-			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM runs in the network"},
-			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM"},
-			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM"},
-			{Source: connectors.KindFunction, Target: connectors.KindBucket, Meaning: "the function can read the bucket"},
-			{Source: connectors.KindFunction, Target: connectors.KindTable, Meaning: "the function can read the table"},
-			{Source: connectors.KindHTTPAPI, Target: connectors.KindFunction, Meaning: "the HTTP API sends requests to the function"},
+			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM runs in the network",
+				Why: "Servers in one network can talk to each other privately.", SingleTarget: true, Rule: "A VM runs in one network."},
+			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM",
+				Why: "Gives the server more room for its data.", SingleTarget: true, Rule: "A volume attaches to one VM."},
+			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM",
+				Why: "Only the traffic you allow can reach the server."},
+			{Source: connectors.KindFunction, Target: connectors.KindBucket, Meaning: "the function can read the bucket",
+				Why: "Your code can read the files it needs."},
+			{Source: connectors.KindFunction, Target: connectors.KindTable, Meaning: "the function can read the table",
+				Why: "Your code can look up data such as users or orders."},
+			{Source: connectors.KindHTTPAPI, Target: connectors.KindFunction, Meaning: "the HTTP API sends requests to the function",
+				Why: "A visit to the web address runs your code."},
 			// A VM's edges hand it values at first boot (connectors.StartupHCL);
 			// across clouds they are a split deployment's address and
 			// permission edges (connectors.CrossClass).
-			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts"},
-			{Source: connectors.KindVM, Target: connectors.KindBucket, Meaning: "the VM can read the bucket"},
-			{Source: connectors.KindVM, Target: connectors.KindTable, Meaning: "the VM can read the table"},
+			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts",
+				Why: "Your app on the server can find the other server, such as its database."},
+			{Source: connectors.KindVM, Target: connectors.KindBucket, Meaning: "the VM can read the bucket",
+				Why: "Your app on the server can read the files it needs."},
+			{Source: connectors.KindVM, Target: connectors.KindTable, Meaning: "the VM can read the table",
+				Why: "Your app on the server can look up data such as users or orders."},
 		},
 		Settings: []connectors.FieldSpec{
 			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes},

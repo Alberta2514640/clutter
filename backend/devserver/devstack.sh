@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Makes, starts, stops or reports on the Lima VM that runs DevStack, a small
-# OpenStack for B's OpenStack connector, and makes the application credential
-# Clutter uses (`npm run devstack -- create|credential|start|stop|status`).
+# OpenStack for B's OpenStack connector, makes the application credential
+# Clutter uses, and says how to sign in to DevStack's dashboard
+# (`npm run devstack -- create|credential|dashboard|start|stop|status`).
 # The VM's template and the scripts it runs inside the VM are in devstack/.
 # Development only. The guide is DEVSTACK_GUIDE (lib.sh).
 set -euo pipefail
@@ -9,7 +10,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
   cat <<EOF
-usage: npm run devstack -- create|credential|start|stop|status
+usage: npm run devstack -- create|credential|dashboard|start|stop|status
 
 DevStack (OpenStack on this machine) runs in a Lima VM named ${DEVSTACK_VM}.
   create      makes the VM from backend/devserver/devstack/lima.yaml and
@@ -19,6 +20,8 @@ DevStack (OpenStack on this machine) runs in a Lima VM named ${DEVSTACK_VM}.
   credential  makes the application credential Clutter uses, replacing the old
               one, and prints the values for Clutter's Connections page. The
               secret is shown once, so it runs only in a terminal.
+  dashboard   prints the address of DevStack's dashboard and the demo login.
+              The password is printed only to a terminal.
   start       starts the VM
   stop        stops the VM (its disk, and DevStack in it, are kept)
   status      shows the VM's state; exits with 1 when it is not running
@@ -28,7 +31,7 @@ EOF
 }
 
 case "${1:-}" in
-  create | credential | start | stop | status) action="$1" ;;
+  create | credential | dashboard | start | stop | status) action="$1" ;;
   -h | --help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -135,6 +138,23 @@ make_credential() {
   in_vm sudo -u stack -i bash -s -- create <"${DEVSTACK_DIR}/credential.sh"
 }
 
+# show_dashboard prints how to sign in to DevStack's dashboard. The password
+# goes to a terminal only, as credential's secret does: never to a pipe or a
+# file.
+show_dashboard() {
+  local address password
+  address="$(in_vm sudo -u stack -i bash -s -- address <"${DEVSTACK_DIR}/dashboard.sh")"
+  echo "Dashboard  ${address}"
+  echo "Domain     Default"
+  echo "User       demo (project demo)"
+  if [[ -t 1 ]]; then
+    password="$(in_vm sudo -u stack -i bash -s -- password <"${DEVSTACK_DIR}/dashboard.sh")"
+    echo "Password   ${password}"
+  else
+    echo "Password   shown only in a terminal: run npm run devstack -- dashboard without a pipe or a redirect"
+  fi
+}
+
 if [[ "${action}" == create ]]; then
   create_vm
   exit 0
@@ -152,6 +172,13 @@ case "${action}" in
       exit 1
     fi
     make_credential
+    ;;
+  dashboard)
+    if [[ "${vm_status}" != Running ]]; then
+      echo "The ${DEVSTACK_VM} VM is ${vm_status}. Start it first: npm run devstack -- start" >&2
+      exit 1
+    fi
+    show_dashboard
     ;;
   start)
     if [[ "${vm_status}" == Running ]]; then

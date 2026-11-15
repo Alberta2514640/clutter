@@ -143,6 +143,11 @@ func (c *Connector) render(ctx context.Context, m *model) (map[string][]byte, er
 	if err != nil {
 		return nil, err
 	}
+	results, err := executeOwn("results.tf.tmpl", map[string]any{"Outputs": m.resultOutputs(c.endpoint)})
+	if err != nil {
+		return nil, err
+	}
+	files["results.tf"] = []byte(results)
 	return c.withEndpoint(files)
 }
 
@@ -221,7 +226,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 			&connectors.UserError{Message: "A value another cloud should hand this deployment is missing. Apply the deployment again."})
 	}
 	var outputs bytes.Buffer
-	res, err := c.apply(ctx, run, g, d, connectors.ExportsWriter(d, &outputs))
+	res, err := c.apply(ctx, run, g, d, &outputs)
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
@@ -320,17 +325,19 @@ func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.G
 
 // Apply implements connectors.Connector.
 func (c *Connector) Apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.RunResult, error) {
-	return c.apply(ctx, run, g, d, nil)
+	var outputs bytes.Buffer
+	return c.apply(ctx, run, g, d, &outputs)
 }
 
-// apply applies g for d; outputs, when set, receives the run's outputs.
-func (c *Connector) apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment, outputs io.Writer) (connectors.RunResult, error) {
+// apply applies g for d. outputs receives the run's outputs, and the result's
+// Results are read from them.
+func (c *Connector) apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment, outputs *bytes.Buffer) (connectors.RunResult, error) {
 	m := newModel(g, d)
 	log, err := c.run(ctx, run, &g, d, outputs)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	res := connectors.RunResult{Resources: map[string]string{}}
+	res := connectors.RunResult{Resources: map[string]string{}, Results: connectors.ReadResults(outputs.Bytes(), g, d)}
 	for addr, nodeID := range m.primaryAddresses() {
 		if id, ok := log.created[addr]; ok {
 			res.Resources[nodeID] = id

@@ -55,10 +55,10 @@ func (*Connector) Manifest() connectors.Manifest {
 			{Kind: connectors.KindHTTPAPI, Treatment: connectors.TreatmentRemoved, Title: "HTTP API"},
 		},
 		Edges: []connectors.EdgeSpec{
-			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network"},
-			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM"},
-			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM"},
-			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts"},
+			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network", Why: "Servers in one network can talk to each other privately."},
+			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM", Why: "Gives the server more room for its data."},
+			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM", Why: "Only the traffic you allow can reach the server."},
+			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts", Why: "Your app on the server can find the other server, such as its database."},
 		},
 		Settings: []connectors.FieldSpec{
 			{Name: "image", Title: "Image", Type: connectors.FieldEnum, Default: "ubuntu-24.04", Allowed: []string{"ubuntu-24.04", "debian-12"}},
@@ -132,12 +132,17 @@ func (c *Connector) Apply(ctx context.Context, run connectors.Run, g connectors.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	built := map[string]string{}
+	results := map[string][]connectors.Result{}
 	for _, id := range included(g, d) {
 		built[id] = fmt.Sprintf("mock-%s-%s", d.Prefix, id)
 		fmt.Fprintf(run.Log, "Created %s (%s).\n", built[id], g.Blocks[id].Kind)
+		// A public VM gets the mock's fake address, as its exports do.
+		if b := g.Blocks[id]; b.Kind == connectors.KindVM && b.Fields["public"] == true {
+			results[id] = []connectors.Result{{Name: connectors.ResultPublicAddress, Value: address(d.ID, id)}}
+		}
 	}
 	c.built[d.ID] = built
-	return connectors.RunResult{Resources: copyMap(built)}, nil
+	return connectors.RunResult{Resources: copyMap(built), Results: results}, nil
 }
 
 // Destroy implements connectors.Connector.

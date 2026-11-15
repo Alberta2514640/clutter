@@ -84,6 +84,22 @@ export function compatibilityLine(
   };
 }
 
+// problemsByBlock maps each block of a deployment's report to the messages
+// of its problems, for the badge on the block: a block's own, and a line's on
+// the block it starts from. B's messages say what is wrong and how to fix it.
+// Notes are not problems and get no badge.
+export function problemsByBlock(report: Compatibility | null | undefined): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const p of report?.problems ?? []) {
+    const id = p.node_id || p.edge_source;
+    if (!id) continue;
+    const list = out.get(id) ?? [];
+    if (!list.includes(p.message)) list.push(p.message);
+    out.set(id, list);
+  }
+  return out;
+}
+
 // unsupportedBlocks is what a cloud cannot build, before a deployment exists:
 // the blocks whose kind its manifest does not offer.
 export function unsupportedBlocks(manifest: Manifest, blocks: BlockRef[]): BlockRef[] {

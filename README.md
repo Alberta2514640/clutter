@@ -234,10 +234,10 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 6. Name the organization and press **Create organization**: the dashboard. Press **New Project**, name it, press **Create Project**: the project's page.
 7. **Connections** in the sidebar, then **Amazon Web Services**, then **Link fake account**: `localfake… is linked and chosen above`. Press **Check and connect**: `Connected localfake…. Clutter checked it and it works.`
 8. Open the project and press **New diagram**, then **Blank**: the building-block editor. (The other choices are seven built-in examples, from Starter to Advanced, which open with their blocks and links in place.)
-9. Click **VM** and **Network** in the palette, and drag them apart if they land together. Then drag from the VM's right dot to the network's left dot: a line joins them. Press **Save**: the top bar says `Saved`.
+9. Click **Network** in the palette: a dashed box labelled `network · 10.0.0.0/24`. Drag **VM** from the palette onto the box: it lights up and says `Drop to run it in network`. Drop it: a VM inside a box runs in that network. Every other link is a line: drag from a block's dot, and only the blocks it can link to light up. Hover a line, a block's `?` or a setting's `?` to see what it does. Press **Save**: the top bar says `Saved`.
 10. The **Deploy** tab, **Add deployment**, the AWS connection, then **Add deployment to localfake…**: `Amazon Web Services: every block can be built here`.
-11. **Preview Terraform**: five files, `main.tf` among them.
-12. **Plan**: `Plan: 6 to add`. **Deploy**: `Apply complete: 6 added`, and the badge says `Deployed`.
+11. **Preview Terraform**: six files, `main.tf` and `results.tf` among them.
+12. **Plan**: `Plan: 6 to add`. **Deploy**: `Apply complete: 6 added`, the badge says `Deployed`, and **What was built** lists each block, what it became (`EC2`, `VPC`) and the server's private address. An HTTP API's address there is a link that opens it.
 13. **Destroy**, then **Destroy for good**: `Destroy complete: 6 destroyed`, and the badge says `Destroyed`.
 
 #### OpenStack, on DevStack
@@ -248,14 +248,15 @@ Needs a Mac with 16 GB of memory or more (`backend/devserver/README.md` § OpenS
 2. `npm run doctor`: a line says `DevStack answers at http://<the VM's address>/identity/v3`. If it does not, allow your terminal app in macOS's Local Network settings (§ Let this machine reach the VM (macOS) in the same README), then run the doctor again.
 3. `npm run devstack -- credential`, in a terminal: it prints a region, an auth URL, an application credential ID and a secret. The values to copy are in the right-hand column. The secret is shown once. If a credential exists, it asks `Replace it? [y/N]`: answer `y`. Running it again replaces the credential, so delete the OpenStack connection and add it again with the new values.
 4. **Connections**, then **OpenStack**: fill in a connection name and the four printed values, then **Check and connect**: `Connected …. Clutter checked it and it works.` The editor's **View as** now offers OpenStack too.
-5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram: **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Apply complete: 5 added`, and **Destroy** says `Destroy complete: 5 destroyed`.
+5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram: **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Apply complete: 5 added` and **What was built** shows the server's address, and **Destroy** says `Destroy complete: 5 destroyed`.
+6. `npm run devstack -- dashboard`, in a terminal: the address of DevStack's own dashboard and the `demo` login, to see the servers Clutter built there.
 
 In later sessions, `npm run devstack -- start` starts the VM, and `npm run doctor` shows whether OpenStack answers.
 
 #### A's older editor, and the end
 
 1. `npm run seed`: it prints `Open diagram:` and a link. The link opens A's older AWS editor with 5 nodes. Press **Save** first: Preview and Deploy stay off until then. Deploy then shows `Clutter could not start the deploy.` locally; that is expected, because it needs real AWS.
-2. `npm run smoke`: A's summary ends with `FAIL 0`, and B's says `B checks: 32  PASS 32  FAIL 0`.
+2. `npm run smoke`: A's summary ends with `FAIL 0`, and B's says `B checks: 34  PASS 34  FAIL 0`.
 3. `npm run stop`, then `npm run localstack -- stop` (and `npm run devstack -- stop`): your data is kept. Add `-- --wipe` to `npm run stop` to delete it.
 
 Frontend edits reload by themselves. After editing Go code, run `npm run dev` again.

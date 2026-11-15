@@ -2,13 +2,14 @@
 
 import { fieldControl, fieldError, parseInput } from "@/lib/features/catalog/forms";
 import type { FieldSpec } from "@/lib/features/catalog/types";
+import HelpTip from "./HelpTip";
 
 export const inputClass =
   "w-full rounded-md border border-slate-700 bg-slate-950/60 px-2.5 py-1.5 text-sm text-white outline-none focus:border-teal-500/70 disabled:opacity-50";
 
 // FieldInput draws one manifest field and reports the parsed value. An unset
 // value shows the field's default as a placeholder. The field's help, from
-// the manifest, is a short line with the label.
+// the manifest, sits behind a "?" beside the label.
 export default function FieldInput({
   id,
   field,
@@ -27,39 +28,34 @@ export default function FieldInput({
   const hint = field.default !== undefined && field.default !== null ? `Default: ${String(field.default)}` : undefined;
   const help = field.help;
 
+  const tip = help ? <HelpTip text={help} label={`About ${field.title}`} align="end" /> : null;
+
   return (
     <div className="space-y-1">
       {control.control === "checkbox" ? (
-        <>
+        <div className="flex items-center gap-2">
           <label htmlFor={id} className="flex items-center gap-2 text-sm text-slate-200">
             <input
               id={id}
               type="checkbox"
               disabled={disabled}
               checked={value === undefined ? field.default === true : value === true}
-              aria-describedby={help ? `${id}-help` : undefined}
               onChange={(e) => onChange(parseInput(field, e.target.checked))}
               className="h-4 w-4 accent-teal-500"
             />
             {field.title}
           </label>
-          {help && (
-            <p id={`${id}-help`} className="pl-6 text-xs text-slate-500">
-              {help}
-            </p>
-          )}
-        </>
+          {tip}
+        </div>
       ) : (
         <>
-          <label htmlFor={id} className="block text-xs font-medium text-slate-300">
-            {field.title}
-            {field.required ? "" : " (optional)"}
-          </label>
-          {help && (
-            <p id={`${id}-help`} className="text-xs text-slate-500">
-              {help}
-            </p>
-          )}
+          <div className="flex items-center gap-2">
+            <label htmlFor={id} className="block text-xs font-medium text-slate-300">
+              {field.title}
+              {field.required ? "" : " (optional)"}
+            </label>
+            {tip}
+          </div>
           {control.control === "textarea" ? (
             <textarea
               id={id}
@@ -72,7 +68,6 @@ export default function FieldInput({
               value={typeof value === "string" ? value : ""}
               placeholder={hint}
               aria-invalid={!!error}
-              aria-describedby={help ? `${id}-help` : undefined}
               onChange={(e) => onChange(parseInput(field, e.target.value))}
               className={`${inputClass} resize-y font-mono text-xs leading-5 ${error ? "border-red-600" : ""}`}
             />

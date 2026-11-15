@@ -211,6 +211,11 @@ type RunResult struct {
 	// Resources maps a node id to the cloud's id, for each block whose main
 	// resource the run created or changed. A block left as it was is not in it.
 	Resources map[string]string
+	// Results maps a node id to what an apply returns about that block, such
+	// as a server's address (ResultNames). Every block the deployment holds
+	// after the apply may have some, built in this run or before. Results are
+	// shown to the user, so they never hold a secret.
+	Results map[string][]Result
 }
 
 // ErrNothingBuilt marks a run that failed before Terraform could change

@@ -140,6 +140,14 @@ output "address_n1" {
   value = openstack_networking_floatingip_v2.b_n1.address
 }
 
+output "result_private_address_n1" {
+  value = openstack_compute_instance_v2.b_n1.access_ip_v4
+}
+
+output "result_public_address_n1" {
+  value = openstack_networking_floatingip_v2.b_n1.address
+}
+
 output "id_n4" {
   value = openstack_blockstorage_volume_v3.b_n4.id
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Manifest } from "../catalog/types";
-import { compatibilityLine, nextExclusions, unsupportedBlocks, type BlockRef } from "./compatibility";
+import { compatibilityLine, nextExclusions, problemsByBlock, unsupportedBlocks, type BlockRef } from "./compatibility";
 import type { Compatibility, Problem } from "./types";
 
 const blocks: BlockRef[] = [
@@ -101,5 +101,25 @@ describe("nextExclusions", () => {
     expect(nextExclusions(["n3", "n4"], blocks, "n3", false)).toEqual(["n4"]);
     expect(nextExclusions(["n3"], blocks, "n3", true)).toEqual(["n3"]);
     expect(nextExclusions([], blocks, "missing", true)).toEqual([]);
+  });
+});
+
+describe("problemsByBlock", () => {
+  it("puts each problem on its block, or on the block its line starts from, once, and skips notes", () => {
+    const report: Compatibility = {
+      ready: false,
+      problems: [
+        unsupported("n3", "Bucket"),
+        unsupported("n3", "Bucket"),
+        { edge_source: "n1", edge_target: "n2", code: "invalid_edge", message: "On AWS a VM runs in one network. Connect it to only one." },
+        { field: "image", code: "missing_value", message: "Settings: the image is required." },
+      ],
+      notes: [{ node_id: "n4", code: "note", message: "A note." }],
+    };
+    const p = problemsByBlock(report);
+    expect([...p.keys()]).toEqual(["n3", "n1"]);
+    expect(p.get("n3")).toHaveLength(1);
+    expect(p.get("n1")).toEqual(["On AWS a VM runs in one network. Connect it to only one."]);
+    expect(problemsByBlock(undefined).size).toBe(0);
   });
 });

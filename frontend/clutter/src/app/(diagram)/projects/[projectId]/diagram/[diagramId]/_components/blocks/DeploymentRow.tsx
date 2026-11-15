@@ -17,6 +17,7 @@ import BlockPlacement from "./BlockPlacement";
 import PreviewDialog from "./PreviewDialog";
 import RunLog from "./RunLog";
 import SettingsForm from "./SettingsForm";
+import WhatWasBuilt from "./WhatWasBuilt";
 
 const DEPLOYMENT_STATUS: Record<DeploymentStatus, { label: string; className: string }> = {
   new: { label: "Not deployed", className: "border-slate-600 text-slate-300" },
@@ -348,6 +349,9 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
             </ol>
           )}
           {run.failure && <p className="text-xs text-red-300">{run.failure}</p>}
+          {run.action === "apply" && run.status === "completed" && (
+            <WhatWasBuilt token={token} organizationId={organizationId} item={item} run={run} catalog={catalog} blocks={blocks} blockTitle={blockTitle} />
+          )}
           {showLog && <RunLog token={token} organizationId={organizationId} run={run} />}
         </div>
       ) : (

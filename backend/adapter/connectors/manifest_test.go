@@ -82,6 +82,57 @@ func TestCheckRefusesBadDisplay(t *testing.T) {
 	}
 }
 
+func TestStandardBlocksHaveSummaries(t *testing.T) {
+	for _, k := range StandardBlocks() {
+		s := StandardBlock(k, string(k)).Summary
+		if s == "" || len(s) > MaxSummary {
+			t.Errorf("block %q summary %q: want 1 to %d characters", k, s, MaxSummary)
+		}
+	}
+	if StandardSummary("cache") != "" {
+		t.Error("a kind that is not standard has a summary")
+	}
+}
+
+func TestCheckEdgeTexts(t *testing.T) {
+	cases := map[string]struct {
+		edge EdgeSpec
+		want string
+	}{
+		"single target without a rule": {
+			edge: EdgeSpec{Source: KindVolume, Target: KindVM, Meaning: "m", SingleTarget: true},
+			want: "needs a rule exactly when",
+		},
+		"rule without single target": {
+			edge: EdgeSpec{Source: KindVolume, Target: KindVM, Meaning: "m", Rule: "A volume attaches to one VM."},
+			want: "needs a rule exactly when",
+		},
+		"why too long": {
+			edge: EdgeSpec{Source: KindVolume, Target: KindVM, Meaning: "m", Why: strings.Repeat("x", MaxEdgeText+1)},
+			want: "longer than",
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := displayManifest()
+			m.Edges = []EdgeSpec{c.edge}
+			err := m.Check()
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Check() = %v, want an error containing %q", err, c.want)
+			}
+		})
+	}
+	m := displayManifest()
+	m.Edges = []EdgeSpec{{Source: KindVolume, Target: KindVM, Meaning: "m", Why: "w", SingleTarget: true, Rule: "A volume attaches to one VM."}}
+	if err := m.Check(); err != nil {
+		t.Fatalf("a well-formed edge refused: %v", err)
+	}
+	m.Blocks[0].Summary = strings.Repeat("x", MaxSummary+1)
+	if err := m.Check(); err == nil || !strings.Contains(err.Error(), "summary is longer") {
+		t.Fatalf("Check() = %v, want a long summary refused", err)
+	}
+}
+
 func TestWithDisplayDoesNotShareState(t *testing.T) {
 	a := StandardBlock(KindVM, "VM")
 	b := a.WithDisplay("EC2", "ec2")

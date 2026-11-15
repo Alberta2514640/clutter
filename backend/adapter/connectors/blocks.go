@@ -103,9 +103,28 @@ func StandardField(kind BlockKind, name string) FieldSpec {
 	panic("connectors: no standard field " + string(kind) + "." + name)
 }
 
-// StandardBlock is a block a connector offers as-is, with the portable fields.
+// standardSummaries owns what each building block is for, in a few plain
+// words for a person with no cloud background. Every connector that builds a
+// standard block shows the same line.
+var standardSummaries = map[BlockKind]string{
+	KindVM:       "A server that runs your app",
+	KindNetwork:  "A private area for servers",
+	KindFirewall: "Who may reach a server",
+	KindVolume:   "An extra disk for a server",
+	KindBucket:   "Stores files",
+	KindFunction: "Code that runs when called",
+	KindTable:    "Stores records, such as users",
+	KindHTTPAPI:  "A web address for your code",
+}
+
+// StandardSummary returns a building block's summary, or "" for a kind that
+// is not standard.
+func StandardSummary(kind BlockKind) string { return standardSummaries[kind] }
+
+// StandardBlock is a block a connector offers as-is, with the portable fields
+// and summary.
 func StandardBlock(kind BlockKind, title string) BlockSpec {
-	return BlockSpec{Kind: kind, Treatment: TreatmentAsIs, Title: title, Fields: StandardFields(kind)}
+	return BlockSpec{Kind: kind, Treatment: TreatmentAsIs, Title: title, Summary: StandardSummary(kind), Fields: StandardFields(kind)}
 }
 
 // FunctionCode is a zip a user uploaded for one function block through B

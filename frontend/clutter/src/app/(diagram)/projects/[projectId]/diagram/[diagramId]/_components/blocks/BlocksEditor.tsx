@@ -1,15 +1,25 @@
 "use client";
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { blockFields, blockTitle as titleOf, defaultValues, edgeAllowed, paletteBlocks, valuesErrors } from "@/lib/features/catalog/forms";
+import { blockFields, blockTitle as titleOf, defaultValues, paletteBlocks, valuesErrors } from "@/lib/features/catalog/forms";
 import { useCatalog } from "@/lib/features/catalog/hooks";
+import { allLinkCards, linkCard, linkCheck, manifestsInPlay } from "@/lib/features/catalog/links";
 import { useConnections } from "@/lib/features/connections/hooks";
 import {
   BLOCK_NODE_TYPE,
+  BOX,
+  boxAt,
   defaultBlockName,
+  detachFrom,
   fromBlocksDocument,
+  NETWORK_KIND,
+  NETWORK_NODE_TYPE,
   newBlockId,
+  nodeTypeFor,
+  parentsFirst,
+  placeIn,
   toBlocksDocument,
+  VM_KIND,
   type BlockEdge,
   type BlockNode as BlockNodeType,
   type BlocksDocument,
@@ -18,9 +28,10 @@ import { DIAGRAM_NAME_MAX } from "@/lib/features/diagram/diagramName";
 import { useSaveBlocksDiagram } from "@/lib/features/diagram/hooks";
 import { resourceNameError } from "@/lib/features/diagram/resourceName";
 import { saveStatus } from "@/lib/features/diagram/saveStatus";
+import { diagramSummary } from "@/lib/features/diagram/summary";
 import type { Diagram } from "@/lib/features/diagram/types";
-import type { BlockRef } from "@/lib/features/deployments/compatibility";
-import { useDiagramDeployments, useInvalidateDeploymentChecks } from "@/lib/features/deployments/hooks";
+import { problemsByBlock, type BlockRef } from "@/lib/features/deployments/compatibility";
+import { useCompatibility, useDiagramDeployments, useInvalidateDeploymentChecks } from "@/lib/features/deployments/hooks";
 import { BLOCKS_VIEW, nodeLook, resolveView, viewClouds, viewSummary } from "@/lib/features/deployments/views";
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjectOrganization } from "@/lib/features/projects/hooks";
@@ -34,6 +45,7 @@ import {
   Controls,
   MarkerType,
   ReactFlow,
+  useConnection,
   useReactFlow,
   type Connection,
   type DefaultEdgeOptions,
@@ -42,19 +54,25 @@ import {
   type IsValidConnection,
   type NodeChange,
   type NodeTypes,
+  type OnBeforeDelete,
+  type OnConnectEnd,
+  type XYPosition,
 } from "@xyflow/react";
 import { ArrowLeft, Check, Loader2, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BlockForm from "./BlockForm";
-import BlockNode, { BlockLooks } from "./BlockNode";
+import BlockNode from "./BlockNode";
 import BlockPalette, { BLOCK_DND_MIME } from "./BlockPalette";
+import { CanvasContext, type Canvas, type EdgeCard } from "./canvasContext";
 import DeployPanel from "./DeployPanel";
 import FloatingEdge, { FLOATING_EDGE_TYPE } from "./FloatingEdge";
+import NetworkBox from "./NetworkBox";
+import SummaryPill from "./SummaryPill";
 import { LEAVE_PROMPT, useLeaveGuard } from "./useLeaveGuard";
 import ViewSwitch from "./ViewSwitch";
 
-const nodeTypes: NodeTypes = { [BLOCK_NODE_TYPE]: BlockNode };
+const nodeTypes: NodeTypes = { [BLOCK_NODE_TYPE]: BlockNode, [NETWORK_NODE_TYPE]: NetworkBox };
 const edgeTypes: EdgeTypes = { [FLOATING_EDGE_TYPE]: FloatingEdge };
 // Applied to every edge as it is drawn: saved edges carry no type or marker.
 // The arrow shows which way an edge reads ("Firewall to VM").
@@ -62,6 +80,12 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
   type: FLOATING_EDGE_TYPE,
   markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
 };
+
+// The canvas's background, which a box's label sits on.
+const CANVAS_BG = "#020617";
+
+// How long a refused line's reason stays on screen.
+const REFUSAL_MS = 3500;
 
 // The "View as" choice is remembered per viewer and diagram, in this browser
 // only. Storage can be blocked (a private window); the choice then lasts the visit.
@@ -98,8 +122,16 @@ function saveErrorMessage(err: unknown): string {
   return raw || "The save failed.";
 }
 
+// The middle of a block card whose top left corner is at p.
+const cardCenter = (p: XYPosition, n?: BlockNodeType): XYPosition => ({
+  x: p.x + (n?.measured?.width ?? BOX.blockW) / 2,
+  y: p.y + (n?.measured?.height ?? BOX.blockH) / 2,
+});
+
 // B's editor: building blocks from the manifests, saved through A's diagram
 // API as a building-block document, deployed through B per linked cloud.
+// Networks are boxes and a VM inside one runs in it (ADR-025); every other
+// link is a line, and while one is drawn only the blocks it may reach glow.
 export default function BlocksEditor({ projectId, diagram }: { projectId: string; diagram: Diagram }) {
   const router = useRouter();
   const meQ = useMe();
@@ -129,10 +161,18 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     setViewChoice(v);
     writeViewChoice(diagram.id, v);
   };
-  const lookFor = useCallback(
-    (block: { id: string; kind: string }) => nodeLook(view, views, block, blockTitle(block.kind)),
-    [view, views, blockTitle],
+  // The clouds in play decide which lines may be drawn and what they mean.
+  const manifests = useMemo(
+    () => manifestsInPlay(catalog, currentView ? [currentView.connector] : views.map((v) => v.connector)),
+    [catalog, currentView, views],
   );
+
+  // Problem badges come from one deployment's compatibility check: the first
+  // on the cloud being viewed, or the first of all.
+  const deployments = deploymentsQ.data ?? [];
+  const checked = (currentView && deployments.find((d) => d.connector === currentView.connector)) || deployments[0] || null;
+  const compatQ = useCompatibility(token, orgId, checked?.id ?? null);
+  const problems = useMemo(() => problemsByBlock(compatQ.data), [compatQ.data]);
 
   const saveM = useSaveBlocksDiagram(token);
   const invalidateChecks = useInvalidateDeploymentChecks();
@@ -153,6 +193,17 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
   useLeaveGuard(dirty);
   const selected = nodes.find((n) => n.selected) ?? null;
 
+  // The box a VM being dragged would drop into, and the kind a palette drag holds.
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragKind = useRef<string | null>(null);
+  // Why the last line was refused, shown for a moment.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => {
+    if (!refusal) return;
+    const t = window.setTimeout(() => setRefusal(null), REFUSAL_MS);
+    return () => window.clearTimeout(t);
+  }, [refusal]);
+
   const savedBlocks: BlockRef[] = useMemo(
     () => saved.doc.nodes.map((n) => ({ id: n.id, kind: n.type, name: n.data.name })),
     [saved],
@@ -171,13 +222,15 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     return null;
   })();
 
+  // addBlock adds a block with its top left corner at position on the canvas;
+  // a VM dropped on a box goes into it.
   const addBlock = useCallback(
-    (kind: string, position: { x: number; y: number }) => {
-      setNodes((cur) => [
-        ...cur.map((n) => ({ ...n, selected: false })),
-        {
-          id: newBlockId(),
-          type: BLOCK_NODE_TYPE,
+    (kind: string, position: XYPosition, box: string | null = null) => {
+      const id = newBlockId();
+      setNodes((cur) => {
+        const node: BlockNodeType = {
+          id,
+          type: nodeTypeFor(kind),
           position,
           selected: true,
           data: {
@@ -185,8 +238,11 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
             name: defaultBlockName(kind, cur.map((n) => n.data.name)),
             fields: defaultValues(blockFields(catalog, kind)),
           },
-        },
-      ]);
+          ...(kind === NETWORK_KIND ? { width: BOX.width, height: BOX.height } : {}),
+        };
+        const next = parentsFirst([...cur.map((n) => ({ ...n, selected: false })), node]);
+        return kind === VM_KIND && box ? placeIn(next, id, box, position) : next;
+      });
       setTab("block");
     },
     [catalog],
@@ -199,33 +255,98 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     addBlock(kind, screenToFlowPosition(center));
   };
 
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const box = dragKind.current === VM_KIND ? boxAt(nodes, screenToFlowPosition({ x: e.clientX, y: e.clientY })) : null;
+    if (box !== dropTarget) setDropTarget(box);
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setDropTarget(null);
+    dragKind.current = null;
     const kind = e.dataTransfer.getData(BLOCK_DND_MIME);
     if (!kind || !palette.some((b) => b.kind === kind)) return;
-    addBlock(kind, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    const at = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    addBlock(kind, at, kind === VM_KIND ? boxAt(nodes, at) : null);
+  };
+
+  // While a VM is dragged on the canvas, the box under its middle lights up,
+  // unless it is the box the VM is already in. Dropped, the VM moves into
+  // that box, or out of its box onto the canvas.
+  const boxUnder = useCallback(
+    (n: BlockNodeType, all: BlockNodeType[]) => {
+      const byId = new Map(all.map((x) => [x.id, x]));
+      const parent = n.parentId ? byId.get(n.parentId) : undefined;
+      const abs = parent ? { x: parent.position.x + n.position.x, y: parent.position.y + n.position.y } : n.position;
+      return { abs, box: boxAt(all, cardCenter(abs, n)) };
+    },
+    [],
+  );
+
+  const onNodeDrag = (_e: React.MouseEvent, n: BlockNodeType) => {
+    if (n.data.kind !== VM_KIND) return;
+    const { box } = boxUnder(n, nodes);
+    const next = box && box !== n.parentId ? box : null;
+    if (next !== dropTarget) setDropTarget(next);
+  };
+
+  const onNodeDragStop = (_e: React.MouseEvent, _n: BlockNodeType, dragged: BlockNodeType[]) => {
+    setDropTarget(null);
+    setNodes((cur) => {
+      let next = cur;
+      for (const d of dragged) {
+        if (d.data.kind !== VM_KIND) continue;
+        const { abs, box } = boxUnder(d, next);
+        if ((box ?? null) !== (d.parentId ?? null)) next = placeIn(next, d.id, box, abs);
+      }
+      return next;
+    });
   };
 
   const onNodesChange = useCallback((changes: NodeChange<BlockNodeType>[]) => setNodes((cur) => applyNodeChanges(changes, cur)), []);
   const onEdgesChange = useCallback((changes: EdgeChange<BlockEdge>[]) => setEdges((cur) => applyEdgeChanges(changes, cur)), []);
   const onConnect = useCallback((c: Connection) => setEdges((cur) => addEdge({ ...c, id: newBlockId() }, cur)), []);
 
-  // An edge is allowed when some cloud can wire its two kinds (the manifests'
-  // edge lists) and it is not already drawn.
-  const isValidConnection: IsValidConnection<BlockEdge> = (c) => {
-    if (!c.source || !c.target || c.source === c.target) return false;
-    const s = nodes.find((n) => n.id === c.source);
-    const t = nodes.find((n) => n.id === c.target);
-    if (!s || !t) return false;
-    if (edges.some((e) => e.source === c.source && e.target === c.target)) return false;
-    return edgeAllowed(catalog, s.data.kind, t.data.kind);
+  // Removing a box keeps the VMs in it, on the canvas where they were; React
+  // Flow would remove them with it.
+  const onBeforeDelete: OnBeforeDelete<BlockNodeType, BlockEdge> = async ({ nodes: gone, edges: goneEdges }) => {
+    const boxes = new Set(gone.filter((n) => n.type === NETWORK_NODE_TYPE).map((n) => n.id));
+    const kept = new Set(gone.filter((n) => n.parentId && boxes.has(n.parentId) && !n.selected).map((n) => n.id));
+    if (kept.size === 0) return true;
+    setNodes((cur) => detachFrom(cur, boxes));
+    const removed = gone.filter((n) => !kept.has(n.id));
+    const removedIds = new Set(removed.map((n) => n.id));
+    return { nodes: removed, edges: goneEdges.filter((e) => e.selected || removedIds.has(e.source) || removedIds.has(e.target)) };
+  };
+
+  // Which lines may be drawn: the manifests of the clouds in play decide.
+  const kindById = useMemo(() => new Map(nodes.map((n) => [n.id, n.data.kind])), [nodes]);
+  const check = useCallback(
+    (from: string, to: string) => {
+      const fk = kindById.get(from);
+      const tk = kindById.get(to);
+      if (!fk || !tk) return { ok: false as const, reason: "" };
+      return linkCheck(manifests, { id: from, kind: fk }, { id: to, kind: tk }, edges, (id) => kindById.get(id), blockTitle);
+    },
+    [manifests, kindById, edges, blockTitle],
+  );
+  const connectingFrom = useConnection((c) => (c.inProgress ? c.fromNode.id : null));
+
+  const isValidConnection: IsValidConnection<BlockEdge> = (c) => !!c.source && !!c.target && check(c.source, c.target).ok;
+
+  const onConnectEnd: OnConnectEnd = (_e, state) => {
+    if (!state.fromNode || !state.toNode || state.isValid !== false || state.toNode.id === state.fromNode.id) return;
+    const r = check(state.fromNode.id, state.toNode.id);
+    if (!r.ok && r.reason) setRefusal(r.reason);
   };
 
   const patchNode = (id: string, patch: { name?: string; fields?: Record<string, unknown> }) =>
     setNodes((cur) => cur.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)));
 
   const removeNode = (id: string) => {
-    setNodes((cur) => cur.filter((n) => n.id !== id));
+    setNodes((cur) => detachFrom(cur, new Set([id])).filter((n) => n.id !== id));
     setEdges((cur) => cur.filter((e) => e.source !== id && e.target !== id));
   };
 
@@ -249,6 +370,36 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     if (dirty && !window.confirm(LEAVE_PROMPT)) return;
     router.push(`/projects/${projectId}/diagrams`);
   };
+
+  const nameOf = useCallback((id: string) => nodes.find((n) => n.id === id)?.data.name || "(no name)", [nodes]);
+
+  const canvas: Canvas = {
+    look: (block) => nodeLook(view, views, block, blockTitle(block.kind)),
+    dropTarget,
+    linkState: (id) => {
+      if (!connectingFrom || id === connectingFrom) return null;
+      return check(connectingFrom, id).ok ? "valid" : "invalid";
+    },
+    problems: (id) => problems.get(id) ?? [],
+    fieldsOf: (kind) => blockFields(catalog, kind),
+    setField: (id, field, value) =>
+      setNodes((cur) => cur.map((n) => (n.id === id ? { ...n, data: { ...n.data, fields: { ...n.data.fields, [field]: value } } } : n))),
+    edgeCard: (source, target) => {
+      const sk = kindById.get(source);
+      const tk = kindById.get(target);
+      const c = sk && tk ? linkCard(manifests, catalog, sk, tk) : null;
+      return c ? { ...c, sourceName: nameOf(source), targetName: nameOf(target) } : null;
+    },
+  };
+
+  const links: EdgeCard[] = useMemo(
+    () => allLinkCards(manifests).map((c) => ({ ...c, sourceName: titleOf(catalog, c.source), targetName: titleOf(catalog, c.target) })),
+    [manifests, catalog],
+  );
+  const summary = diagramSummary(
+    nodes.map((n) => ({ kind: n.data.kind, name: n.data.name })),
+    blockTitle,
+  );
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-white">
@@ -298,15 +449,18 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
       <div className="flex min-h-0 flex-1">
         <BlockPalette
           blocks={palette}
-          catalog={catalog}
           loading={catalogQ.isLoading}
           error={catalogQ.isError ? adapterErrorMessage(catalogQ.error) : null}
           onAdd={addAtCenter}
-          blockTitle={blockTitle}
+          onDragKind={(k) => {
+            dragKind.current = k;
+            if (!k) setDropTarget(null);
+          }}
+          links={links}
         />
 
         <div ref={canvasRef} className="relative min-w-0 flex-1" data-testid="blocks-canvas">
-          <BlockLooks.Provider value={lookFor}>
+          <CanvasContext.Provider value={canvas}>
             <ReactFlow<BlockNodeType, BlockEdge>
               colorMode="dark"
               nodes={nodes}
@@ -317,21 +471,26 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onConnectEnd={onConnectEnd}
               isValidConnection={isValidConnection}
+              onBeforeDelete={onBeforeDelete}
               onNodeClick={() => setTab("block")}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
+              onNodeDrag={onNodeDrag}
+              onNodeDragStop={onNodeDragStop}
+              onDragOver={onDragOver}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
               }}
               onDrop={onDrop}
+              elevateNodesOnSelect={false}
               snapToGrid
               snapGrid={[20, 20]}
               fitView={nodes.length > 0}
               fitViewOptions={{ maxZoom: 1 }}>
-              <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+              <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} bgColor={CANVAS_BG} color="#1e293b" />
               <Controls showInteractive={false} />
             </ReactFlow>
-          </BlockLooks.Provider>
+          </CanvasContext.Provider>
           {currentView && (
             <p data-testid="view-summary" className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] truncate rounded-md border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-300">
               {viewSummary(
@@ -341,17 +500,22 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
               )}
             </p>
           )}
-          {nodes.length === 0 && (
+          {refusal && (
+            <p
+              role="status"
+              data-testid="link-refused"
+              className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-amber-700/70 bg-slate-900/95 px-3.5 py-1.5 text-xs text-amber-200 shadow-lg">
+              {refusal}
+            </p>
+          )}
+          {nodes.length === 0 ? (
             <div data-testid="canvas-hint" className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-              <div className="max-w-sm rounded-lg border border-slate-800 bg-slate-900/90 px-5 py-4 text-sm text-slate-300 shadow-lg">
-                <h2 className="font-semibold text-white">Start your diagram</h2>
-                <ol className="mt-2 list-decimal space-y-1 pl-5">
-                  <li>Drag a building block from the left onto the canvas, or click it.</li>
-                  <li>Link two blocks: drag from the right dot of one block to the left dot of another.</li>
-                  <li>Save, then open the Deploy tab to build it in your cloud.</li>
-                </ol>
-              </div>
+              <p className="rounded-full border border-slate-800 bg-slate-900/90 px-4 py-2 text-sm text-slate-300 shadow-lg">
+                Drag a block here to start. Drop VMs into a network box.
+              </p>
             </div>
+          ) : (
+            <SummaryPill summary={summary} />
           )}
         </div>
 
@@ -384,9 +548,7 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
                   onRemove={() => removeNode(selected.id)}
                 />
               ) : (
-                <p className="text-sm text-slate-400">
-                  {nodes.length === 0 ? "Add a building block from the left to start." : "Select a block to name it and set its fields."}
-                </p>
+                <p className="text-sm text-slate-400">{nodes.length === 0 ? "Add a building block from the left to start." : "Select a block to name it and set its fields."}</p>
               )
             ) : (
               <DeployPanel

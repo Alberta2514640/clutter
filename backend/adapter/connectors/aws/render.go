@@ -632,6 +632,51 @@ func (m *model) overrideVars() (map[string]any, error) {
 	}, nil
 }
 
+// resultOutput is one output of results.tf: a connectors.ResultOutputName and
+// a Terraform expression built from checked parts.
+type resultOutput struct{ Name, Value string }
+
+// resultOutputs are what an apply tells the user about each block
+// (connectors.ResultNames): a VM's private address and, when it is public, its
+// public one; a bucket's and a table's name; an HTTP API's address, on its
+// first route, which answers. endpoint is the connector's endpoint (LocalStack
+// on a laptop, "" on AWS): there the API's address is the endpoint's own form,
+// since AWS's execute-api name does not reach LocalStack.
+func (m *model) resultOutputs(endpoint string) []resultOutput {
+	var out []resultOutput
+	add := func(id, name, value string) {
+		if key, ok := connectors.ResultOutputName(id, name); ok {
+			out = append(out, resultOutput{Name: key, Value: value})
+		}
+	}
+	for _, id := range m.order {
+		b := m.blocks[id]
+		switch b.Kind {
+		case connectors.KindVM:
+			add(id, connectors.ResultPrivateAddress, "aws_instance."+b.Addr+".private_ip")
+			if b.boolean(fieldPublic) {
+				add(id, connectors.ResultPublicAddress, "aws_instance."+b.Addr+".public_ip")
+			}
+		case connectors.KindBucket:
+			add(id, connectors.ResultBucket, "aws_s3_bucket."+b.Addr+".bucket")
+		case connectors.KindTable:
+			add(id, connectors.ResultTable, "aws_dynamodb_table."+b.Addr+".name")
+		case connectors.KindHTTPAPI:
+			routes := m.apiRoutes[id]
+			if len(routes) == 0 {
+				continue // no route, so no stage and no address (CodeAPIWithoutRoute)
+			}
+			path := hclsafe.Escape(m.blocks[routes[0]].Name)
+			if endpoint != "" {
+				add(id, connectors.ResultURL, `"`+hclsafe.Escape(endpoint)+"/restapis/${aws_api_gateway_rest_api."+b.Addr+".id}/"+apiStage+"/_user_request_/"+path+`"`)
+			} else {
+				add(id, connectors.ResultURL, `"${aws_api_gateway_stage.`+b.Addr+"_stage[0].invoke_url}/"+path+`"`)
+			}
+		}
+	}
+	return out
+}
+
 // primaryAddresses maps each block's main Terraform resource to its node id,
 // so an apply can report what it built.
 func (m *model) primaryAddresses() map[string]string {

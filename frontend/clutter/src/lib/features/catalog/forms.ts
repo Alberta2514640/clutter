@@ -1,5 +1,6 @@
-// The manifest-to-form mapping. B's editor builds its palette, block forms,
-// allowed edges and deployment settings from the catalog only (the manifests
+// The manifest-to-form mapping. B's editor builds its palette, block forms
+// and deployment settings from the catalog only (links.ts reads the edges;
+// the manifests
 // are the one owner of blocks, fields, defaults and allowed values). The value
 // rules here mirror connectors.CheckValue in backend/adapter/connectors/manifest.go;
 // B checks again before anything runs.
@@ -11,6 +12,8 @@ import type { BlockKind, CatalogEntry, FieldSpec, Manifest } from "./types";
 export type PaletteBlock = {
   kind: BlockKind;
   title: string;
+  // What it is for, from the first cloud that says; "" when none does.
+  summary: string;
   // The clouds that can build it.
   clouds: CloudLook[];
 };
@@ -29,8 +32,9 @@ export function paletteBlocks(catalog: CatalogEntry[]): PaletteBlock[] {
       const cur = byKind.get(b.kind);
       if (cur) {
         if (!cur.clouds.some((c) => c.connector === manifest.connector)) cur.clouds.push(cloudLook(manifest));
+        if (!cur.summary && b.summary) cur.summary = b.summary;
       } else {
-        byKind.set(b.kind, { kind: b.kind, title: b.title, clouds: [cloudLook(manifest)] });
+        byKind.set(b.kind, { kind: b.kind, title: b.title, summary: b.summary ?? "", clouds: [cloudLook(manifest)] });
       }
     }
   }
@@ -78,22 +82,6 @@ export function defaultValues(fields: FieldSpec[]): Record<string, unknown> {
     if (f.default !== undefined && f.default !== null) out[f.name] = f.default;
   }
   return out;
-}
-
-// edgeAllowed reports whether any cloud can wire source to target.
-export function edgeAllowed(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): boolean {
-  return catalog.some(({ manifest }) =>
-    (manifest.edges ?? []).some((e) => e.source === source && e.target === target),
-  );
-}
-
-// edgeMeaning is what an edge means on the first cloud that can wire it.
-export function edgeMeaning(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): string | null {
-  for (const { manifest } of catalog) {
-    const e = (manifest.edges ?? []).find((x) => x.source === source && x.target === target);
-    if (e) return e.meaning;
-  }
-  return null;
 }
 
 // What a field renders as.

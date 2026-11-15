@@ -191,6 +191,73 @@ func TestEveryExamplePassesEveryCloudItNames(t *testing.T) {
 	}
 }
 
+// A starter example must not cost money nobody expects: only an example with
+// a private VM gets a NAT gateway on AWS (about $40 a month), and every
+// example names a box for each of its networks.
+func TestOnlyPrivateVMsBringANATGateway(t *testing.T) {
+	reg := registry(t)
+	for _, e := range all(t) {
+		g, err := e.Graph()
+		if err != nil {
+			t.Fatal(err)
+		}
+		private := false
+		for _, b := range g.Blocks {
+			if b.Kind == connectors.KindVM && b.Fields["public"] != true {
+				private = true
+			}
+		}
+		if e.Level == "starter" && private {
+			t.Errorf("%s is a starter example with a private VM", e.ID)
+		}
+		for _, tg := range rendered(t, reg, e) {
+			if tg.name != aws.ID && tg.name != "split-"+aws.ID {
+				continue
+			}
+			nat := strings.Contains(joined(tg.files), `resource "aws_nat_gateway"`)
+			if nat != private {
+				t.Errorf("%s on AWS: NAT gateway = %v, private VM = %v", e.ID, nat, private)
+			}
+		}
+	}
+}
+
+// The two-tier app proves its link: the web VM pings the database VM at the
+// address Clutter hands it and says on its console whether it got through,
+// with commands both cirros and Amazon Linux have.
+func TestTwoTierWebSaysWhetherItReachedTheDatabase(t *testing.T) {
+	for _, e := range all(t) {
+		if e.ID != "two-tier-app" {
+			continue
+		}
+		g, err := e.Graph()
+		if err != nil {
+			t.Fatal(err)
+		}
+		script, _ := g.Blocks["web"].Fields[connectors.FieldStartupScript].(string)
+		for _, want := range []string{
+			`ping -c 1 -W 2 "$` + connectors.EnvName("db", connectors.ValueAddress) + `"`,
+			`result="web reached db"`,
+			`result="web could not reach db"`,
+			`>/dev/console`,
+		} {
+			if !strings.Contains(script, want) {
+				t.Errorf("the web VM's script lacks %q", want)
+			}
+		}
+		return
+	}
+	t.Fatal("no two-tier-app example")
+}
+
+func joined(files map[string][]byte) string {
+	var b strings.Builder
+	for _, body := range files {
+		b.Write(body)
+	}
+	return b.String()
+}
+
 // TestExamplesTerraformValidates runs terraform init and validate on what
 // every example renders for every cloud it names. It downloads providers, so
 // it runs only with CLUTTER_TF_VALIDATE=1; it needs no cloud and no

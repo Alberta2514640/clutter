@@ -271,6 +271,19 @@ run_args devstack.sh credential
 check "credential refuses output that is not a terminal" 1 "runs only when its output is a terminal"
 refute "credential called nothing" "UNEXPECTED"
 
+# dashboard prints the address and the user; the password only to a terminal,
+# so here, with output to a file, the VM is never asked for it.
+stub limactl '
+case "$*" in
+  *--format*) echo Running ;;
+  *" address") echo "http://192.168.64.2/dashboard" ;;
+  *" password") echo "UNEXPECTED-password" ;;
+esac'
+run_args devstack.sh dashboard
+check "dashboard prints the address and the user" 0 "Dashboard  http://192.168.64.2/dashboard" "User       demo (project demo)" \
+  "shown only in a terminal"
+refute "dashboard keeps the password off a file" "UNEXPECTED"
+
 run_args devstack.sh status extra
 check "devstack.sh refuses an extra argument" 2 "usage: npm run devstack"
 

@@ -190,6 +190,15 @@ func (f *fakeTerraform) Launch(_ context.Context, t runtask.Task) error {
 					name = "cross_" + strings.TrimSuffix(name, `" {`)
 					parts = append(parts, fmt.Sprintf(`%q: {"sensitive": false, "type": "string", "value": "172.24.4.77"}`, name))
 				}
+				// Every result_ output, as a private or a public address.
+				if name, ok := strings.CutPrefix(line, `output "result_`); ok {
+					name = "result_" + strings.TrimSuffix(name, `" {`)
+					value := "10.0.0.12"
+					if strings.HasPrefix(name, "result_public_address_") {
+						value = "172.24.4.10"
+					}
+					parts = append(parts, fmt.Sprintf(`%q: {"sensitive": false, "type": "string", "value": %q}`, name, value))
+				}
 			}
 		}
 		fmt.Fprintf(t.Output, "{%s}\n", strings.Join(parts, ", "))

@@ -193,7 +193,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 			&connectors.UserError{Message: "A value another cloud should hand this deployment is missing. Apply the deployment again."})
 	}
 	var outputs bytes.Buffer
-	out, err := c.terraform(ctx, run, connectors.ActionApply, d, renderFiles(m), connectors.ExportsWriter(d, &outputs))
+	out, err := c.terraform(ctx, run, connectors.ActionApply, d, renderFiles(m), &outputs)
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
@@ -201,7 +201,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
-	return connectors.RunResult{Resources: out.resources()}, exports, nil
+	return connectors.RunResult{Resources: out.resources(), Results: connectors.ReadResults(outputs.Bytes(), g, d)}, exports, nil
 }
 
 var _ connectors.CrossCloud = (*Connector)(nil)
@@ -220,17 +220,19 @@ func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.G
 }
 
 // Apply implements connectors.Connector. Its result maps each block's node id
-// to the id the cloud gave it, read from Terraform's outputs in the run's log.
+// to the id the cloud gave it, read from Terraform's outputs in the run's log,
+// and holds each block's results, read from `terraform output -json`.
 func (c *Connector) Apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.RunResult, error) {
 	files, err := c.Render(g, d)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	out, err := c.terraform(ctx, run, connectors.ActionApply, d, files, nil)
+	var outputs bytes.Buffer
+	out, err := c.terraform(ctx, run, connectors.ActionApply, d, files, &outputs)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	return connectors.RunResult{Resources: out.resources()}, nil
+	return connectors.RunResult{Resources: out.resources(), Results: connectors.ReadResults(outputs.Bytes(), g, d)}, nil
 }
 
 // Destroy implements connectors.Connector. It needs only the provider

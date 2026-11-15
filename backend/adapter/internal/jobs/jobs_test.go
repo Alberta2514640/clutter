@@ -113,9 +113,10 @@ func (broker) Credentials(context.Context, string) (connectors.Secrets, error) {
 
 // fake is a connector whose plan does what the test needs.
 type fake struct {
-	plan  func(ctx context.Context, run connectors.Run) error
-	apply func() error
-	built map[string]string
+	plan    func(ctx context.Context, run connectors.Run) error
+	apply   func() error
+	built   map[string]string
+	results map[string][]connectors.Result
 }
 
 func (fake) ID() string { return "fake" }
@@ -140,7 +141,7 @@ func (f fake) Apply(context.Context, connectors.Run, connectors.Graph, connector
 	if f.apply != nil {
 		return connectors.RunResult{}, f.apply()
 	}
-	return connectors.RunResult{Resources: f.built}, nil
+	return connectors.RunResult{Resources: f.built, Results: f.results}, nil
 }
 func (fake) Destroy(context.Context, connectors.Run, connectors.Deployment) (connectors.RunResult, error) {
 	return connectors.RunResult{}, nil
@@ -222,6 +223,37 @@ func TestTheApplyLineCountsBlocks(t *testing.T) {
 		if !strings.HasSuffix(string(b), want) || strings.Contains(string(b), "resources") {
 			t.Errorf("%d blocks: log ends %q, want %q", n, string(b), want)
 		}
+	}
+}
+
+// An apply's results follow B's apply line, one "Result:" line each, by node
+// id; a value that could break the line is left out.
+func TestTheApplyWritesItsResults(t *testing.T) {
+	r, st, logs := setup(t, fake{built: map[string]string{"web": "i-1"}, results: map[string][]connectors.Result{
+		"web": {{Name: connectors.ResultPrivateAddress, Value: "10.0.0.5"}, {Name: connectors.ResultPublicAddress, Value: "203.0.113.9"}},
+		"api": {{Name: connectors.ResultURL, Value: "https://x.example/v1/items"}},
+		"bad": {{Name: connectors.ResultTable, Value: "two words"}},
+	}}, io.Discard)
+	j := job(uuid.NewString())
+	j.Action = connectors.ActionApply
+	if err := r.Enqueue(j); err != nil {
+		t.Fatal(err)
+	}
+	<-st.done
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rc, err := logs.Open(j.LogKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
+	want := "Apply complete: 1 block built or changed.\n" +
+		"Result: api url https://x.example/v1/items\n" +
+		"Result: web private_address 10.0.0.5\n" +
+		"Result: web public_address 203.0.113.9\n"
+	if !strings.HasSuffix(string(b), want) {
+		t.Fatalf("log ends %q, want %q", string(b), want)
 	}
 }
 
