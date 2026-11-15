@@ -154,6 +154,18 @@ cleanup() {
 trap cleanup EXIT
 trap 'cleanup; exit 0' INT TERM
 
+# show_log FILE: the end of a failed part's log, plus a plain hint for the one
+# failure a new person cannot read: a database made by another copy of Clutter
+# on this machine (the Docker volume is shared, its password is not).
+show_log() {
+  tail -n 30 "$1" >&2
+  if grep -q "password authentication failed" "$1" 2>/dev/null; then
+    echo >&2
+    echo "The database was made by another copy of Clutter on this machine, with a different password." >&2
+    echo "Run npm run stop -- --wipe to start with a clean database, then npm run dev again." >&2
+  fi
+}
+
 # Runs a quiet step, and shows its output only when it fails.
 quietly() {
   local out
@@ -194,14 +206,14 @@ for _ in $(seq 1 240); do
   gateway_healthy && break
   if ! kill -0 "${gateway_pid}" 2>/dev/null; then
     echo "The gateway exited. Last log lines:" >&2
-    tail -n 30 "${STATE_DIR}/gateway.log" >&2
+    show_log "${STATE_DIR}/gateway.log"
     exit 1
   fi
   sleep 0.5
 done
 if ! gateway_healthy; then
   echo "The gateway did not become ready. Last log lines:" >&2
-  tail -n 30 "${STATE_DIR}/gateway.log" >&2
+  show_log "${STATE_DIR}/gateway.log"
   exit 1
 fi
 
@@ -249,14 +261,14 @@ for _ in $(seq 1 60); do
   adapter_healthy && break
   if ! kill -0 "${adapter_pid}" 2>/dev/null; then
     echo "B API exited. Last log lines:" >&2
-    tail -n 30 "${STATE_DIR}/adapter.log" >&2
+    show_log "${STATE_DIR}/adapter.log"
     exit 1
   fi
   sleep 0.5
 done
 if ! adapter_healthy; then
   echo "B API did not become ready. Last log lines:" >&2
-  tail -n 30 "${STATE_DIR}/adapter.log" >&2
+  show_log "${STATE_DIR}/adapter.log"
   exit 1
 fi
 

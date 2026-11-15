@@ -37,8 +37,14 @@ main() {
       fi
       out="$(openstack application credential create "${NAME}" \
         --description "Clutter on this machine (npm run devstack -- credential)" -f json)"
-      id="$(printf '%s' "${out}" | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
-      secret="$(printf '%s' "${out}" | python3 -c 'import json, sys; print(json.load(sys.stdin)["secret"])')"
+      # openstackclient has used both "id"/"secret" and "ID"/"Secret" as keys.
+      id="$(printf '%s' "${out}" | python3 -c 'import json, sys; d = json.load(sys.stdin); print(d.get("id") or d.get("ID") or "")')"
+      secret="$(printf '%s' "${out}" | python3 -c 'import json, sys; d = json.load(sys.stdin); print(d.get("secret") or d.get("Secret") or "")')"
+      if [[ -z "${id}" || -z "${secret}" ]]; then
+        echo "Made the ${NAME} credential, but could not read its id and secret from the openstack client's output." >&2
+        echo "Run npm run devstack -- credential again to replace it." >&2
+        exit 1
+      fi
       region="$(openstack region list -f value -c Region | head -n 1)"
       # openrc points OS_AUTH_URL at Keystone on HOST_IP, the VM's lima0
       # address, which this machine reaches.

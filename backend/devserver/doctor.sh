@@ -338,7 +338,7 @@ check_port "${PG_PORT}" "Postgres" "${pg_up}"
 if [[ -n "${free_ports}" ]]; then ok "ports ${free_ports} are free"; fi
 if [[ -n "${our_ports}" ]]; then
   note "ports ${our_ports} are held by Clutter's own running dev stack" \
-    "Ctrl+C in the npm run dev terminal stops it, or npm run stop after npm run dev:backend."
+    "npm run stop stops it, from any terminal (Ctrl+C in the npm run dev terminal works too)."
 fi
 
 # Disk.

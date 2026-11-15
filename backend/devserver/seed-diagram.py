@@ -53,11 +53,12 @@ def main():
     nodes = []
     # The editor's Save accepts lowercase letters, numbers and hyphens only.
     samples = [
-        ("API Gateway", "demo-api", "/aws/apigateway.png", 0, 150),
-        ("Lambda", "demo-handler", "/aws/lambda.png", 300, 50),
-        ("Lambda", "demo-worker", "/aws/lambda.png", 300, 300),
-        ("S3", "demo-uploads", "/aws/s3.png", 650, 0),
-        ("DynamoDB", "demo-records", "/aws/dynamodb.png", 650, 300),
+        # y starts at 120, below the editor's floating toolbar.
+        ("API Gateway", "demo-api", "/aws/apigateway.png", 0, 270),
+        ("Lambda", "demo-handler", "/aws/lambda.png", 300, 170),
+        ("Lambda", "demo-worker", "/aws/lambda.png", 300, 420),
+        ("S3", "demo-uploads", "/aws/s3.png", 650, 120),
+        ("DynamoDB", "demo-records", "/aws/dynamodb.png", 650, 420),
     ]
     for label, name, image, x, y in samples:
         variables = {

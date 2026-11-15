@@ -96,3 +96,4 @@ else
   echo "Stopping Postgres (data kept; use --wipe to delete it) ..."
   compose down
 fi
+echo "Clutter is stopped: the website, A's API, B API and Postgres."

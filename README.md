@@ -226,10 +226,10 @@ From a fresh clone to a real deploy and destroy on AWS (LocalStack) and OpenStac
 
 1. `npm run doctor`: one line per tool, ending with `Ready: everything Clutter needs is here.`
 2. `npm run setup`: five numbered steps, ending with `Ready. Run: npm run dev`.
-3. `npm run dev`: a start message, then Next.js prints `Ready`. Its `AWS:` line says runs need a real AWS account, and how to change that.
-4. Open <http://localhost:3000/dev/login>: you are signed in as a local test user, on "Create your organization".
-5. Name the organization and press **Create organization**: the dashboard. Press **New Project**, name it, press **Create Project**: the project's page.
-6. In a second terminal, run `npm run localstack -- start` (it ends with `LocalStack is ready`), then `npm run dev` in the same terminal. The `AWS:` line now says `AWS runs apply against LocalStack`. The first terminal prints `Stopping the website, the backend and the database`: that is the expected restart.
+3. `npm run localstack -- start`: it downloads LocalStack the first time and ends with `LocalStack is ready`.
+4. `npm run dev`: a start message, then Next.js prints `Ready`. Its `AWS:` line says `AWS runs apply against LocalStack`.
+5. Open <http://localhost:3000/dev/login>: you are signed in as a local test user, on "Create your organization".
+6. Name the organization and press **Create organization**: the dashboard. Press **New Project**, name it, press **Create Project**: the project's page.
 7. **Connections** in the sidebar, then **Amazon Web Services**, then **Link fake account**: `localfake… is linked and chosen above`. Press **Check and connect**: `Connected localfake…. Clutter checked it and it works.`
 8. Open the project and press **New diagram**: the building-block editor.
 9. Click **VM** and **Network** in the palette, and drag them apart if they land together. Then drag from the VM's right dot to the network's left dot: a line joins them. Press **Save**: the top bar says `Saved`.
