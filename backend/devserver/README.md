@@ -22,7 +22,7 @@ It runs the real, unchanged Lambdas from `backend/api`. Each one is built for th
 
 The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, on macOS and Linux). It also runs every script's `--help`. CI runs it.
 
-The gateway also serves `POST /dev/link-fake-account` for the local-only **Link fake account** button, on A's "AWS account required" popup and in the AWS link flow on Connections. It links one fake account per organization and answers with the linked account's name. A production build shows no such button.
+The gateway also serves `POST /dev/link-fake-account` for the local-only **Link fake account** button, on A's "AWS account required" popup and in the AWS link flow on Connections. It links one fake account per organization and answers with the linked account's name. Its twin, `POST /dev/link-devstack`, serves the **Use this machine's DevStack** button on the OpenStack form (see [Add the connection in Clutter](#add-the-connection-in-clutter)). A production build shows neither button.
 
 ## Why the backend runs this way
 
@@ -211,6 +211,8 @@ macOS asks before an app may reach a device on a local network, and the VM's add
 2. Open Organization settings, then Connections, and choose OpenStack.
 3. Fill in the form with the values `credential` printed: a name of your choice, the region (`RegionOne`), the auth URL (`http://<the VM's address>/identity/v3`), the application credential ID and the application credential secret.
 4. Choose Check and connect. B checks the credential with DevStack's Keystone.
+
+Or choose **Use this machine's DevStack** on that form (a development build only). The gateway's `POST /dev/link-devstack` checks that the caller is a member of the organization, makes a new credential `clutter-<8 hex>` in the VM with `credential.sh link` (it never replaces `clutter`), and creates the connection `devstack-<8 hex>` in B with the caller's token. The secret goes from the VM to B only, and the credential is deleted again when B refuses it. The route refuses unless `dev.sh` gave the gateway `ADAPTER_ALLOW_PRIVATE_TARGETS=1`, and says so when the VM is not running.
 
 Locally, B accepts an auth URL over plain `http` at a private address, because `dev.sh` starts it with `ADAPTER_ALLOW_PRIVATE_TARGETS=1`. In the cloud it does not. The connection's default settings (the `cirros` image, the `public` external network, and the `m1.tiny`, `m1.small` and `m1.medium` flavors) are DevStack's own names.
 

@@ -183,17 +183,26 @@ quietly compose up -d --wait postgres
 quietly go -C "${DEVSERVER_DIR}" build -o "${STATE_DIR}/gateway" ./cmd/gateway
 quietly go -C "${REPO_DIR}/backend/adapter" build -o "${STATE_DIR}/adapter-api" ./cmd/api
 
+# B accepts an OpenStack auth URL over plain http at a private address
+# (DevStack's) only with this flag. The gateway reads the same flag, and its
+# DevStack link route refuses without it.
+allow_private_targets=1
+
 # A clean environment: no AWS_* or other variables from this shell reach the
-# gateway. Go needs PATH and HOME (for its caches).
+# gateway. Go needs PATH and HOME (for its caches); limactl, for the DevStack
+# link route, needs them too.
 nohup env -i \
   PATH="${PATH}" HOME="${HOME}" TMPDIR="${TMPDIR:-/tmp}" \
   ${GOPROXY:+GOPROXY="${GOPROXY}"} ${GOFLAGS:+GOFLAGS="${GOFLAGS}"} \
   JWT_SECRET="${JWT_SECRET}" \
   PSQL_CONNECTION_STRING="${PSQL_CONNECTION_STRING}" \
+  ADAPTER_ALLOW_PRIVATE_TARGETS="${allow_private_targets}" \
   "${STATE_DIR}/gateway" \
     -api-dir "${REPO_DIR}/backend/api" \
     -state-dir "${STATE_DIR}" \
     -api-addr "${API_ADDR}" \
+    -adapter-addr "${ADAPTER_ADDR}" \
+    -devstack-vm "${DEVSTACK_VM}" \
     -front-addr "${FRONT_ADDR}" \
     -frontend-upstream "${FRONTEND_UPSTREAM}" \
   > "${STATE_DIR}/gateway.log" 2>&1 &
@@ -250,7 +259,7 @@ nohup env -i \
   ADAPTER_CONNECTORS=mock,general-openstack,aws \
   ADAPTER_AWS_TEMPLATE_DIR="${REPO_DIR}/backend/infra/modules/s3/uploads/aws" \
   "${adapter_aws[@]}" \
-  ADAPTER_ALLOW_PRIVATE_TARGETS=1 \
+  ADAPTER_ALLOW_PRIVATE_TARGETS="${allow_private_targets}" \
   ADAPTER_ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000" \
   "${STATE_DIR}/adapter-api" \
   > "${STATE_DIR}/adapter.log" 2>&1 &

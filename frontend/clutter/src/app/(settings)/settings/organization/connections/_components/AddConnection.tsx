@@ -9,14 +9,15 @@ import type { CatalogEntry, LinkedAccount } from "@/lib/features/catalog/types";
 import { fitsCloudsYaml } from "@/lib/features/connections/cloudsYaml";
 import { useCreateConnection } from "@/lib/features/connections/hooks";
 import { chosenLinkedAccount, startRegion } from "@/lib/features/connections/linkedAccount";
-import type { Connection } from "@/lib/features/connections/types";
-import { DEFAULT_AWS_REGION } from "@/lib/features/organization/api";
+import { offersLocalDevstack } from "@/lib/features/connections/localDevstack";
+import { DEFAULT_AWS_REGION, isLocalDevApi } from "@/lib/features/organization/api";
 import { Link2, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import AwsLinkFlow from "../../aws-account/_components/AwsLinkFlow";
 import CloudsYamlUpload from "./CloudsYamlUpload";
 import { Loading, Notice } from "./ConnectionsPage";
+import UseLocalDevstack from "./UseLocalDevstack";
 
 // The account-link flow of a cloud linked outside B, shown inline here, the
 // page that lists and removes its links, and the region the flow opens the
@@ -33,7 +34,8 @@ type Props = { token: string; organizationId: string; catalog: CatalogEntry[] };
 
 export default function AddConnection({ token, organizationId, catalog }: Props) {
   const [connector, setConnector] = useState<string | null>(null);
-  const [added, setAdded] = useState<Connection | null>(null);
+  // The name of the connection just added.
+  const [added, setAdded] = useState<string | null>(null);
   const entry = catalog.find((c) => c.manifest.connector === connector) ?? null;
 
   return (
@@ -74,7 +76,7 @@ export default function AddConnection({ token, organizationId, catalog }: Props)
 
       {added && (
         <Notice tone="success">
-          Connected {added.name}. Clutter checked it and it works.
+          Connected {added}. Clutter checked it and it works.
         </Notice>
       )}
 
@@ -84,8 +86,8 @@ export default function AddConnection({ token, organizationId, catalog }: Props)
           token={token}
           organizationId={organizationId}
           entry={entry}
-          onAdded={(c) => {
-            setAdded(c);
+          onAdded={(connectionName) => {
+            setAdded(connectionName);
             setConnector(null);
           }}
         />
@@ -103,7 +105,7 @@ function ConnectionForm({
   token: string;
   organizationId: string;
   entry: CatalogEntry;
-  onAdded: (c: Connection) => void;
+  onAdded: (connectionName: string) => void;
 }) {
   const { manifest, credentials } = entry;
   const regions = manifest.regions ?? [];
@@ -149,7 +151,7 @@ function ConnectionForm({
       if (!linked) return setFormError("Choose a linked account.");
       createM.mutate(
         { organizationId, data: { connector: manifest.connector, name: trimmed, region: region.trim(), linked_id: linked.id } },
-        { onSuccess: onAdded },
+        { onSuccess: (c) => onAdded(c.name) },
       );
       return;
     }
@@ -165,7 +167,7 @@ function ConnectionForm({
       {
         onSuccess: (c) => {
           setValues({});
-          onAdded(c);
+          onAdded(c.name);
         },
       },
     );
@@ -261,6 +263,10 @@ function ConnectionForm({
             </Link>
           )}
         </div>
+      )}
+
+      {offersLocalDevstack(isLocalDevApi, fields.map((f) => f.name), mode, linkedOnly) && (
+        <UseLocalDevstack token={token} organizationId={organizationId} connector={manifest.connector} onLinked={onAdded} />
       )}
 
       <form onSubmit={submit} className="space-y-5">

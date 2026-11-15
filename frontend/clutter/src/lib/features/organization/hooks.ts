@@ -1,6 +1,7 @@
 // lib/features/organization/hooks.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { catalogKeys } from "../catalog/keys";
+import { connectionKeys } from "../connections/keys";
 import { organizationApi } from "./api";
 import { orgKeys } from "./keys";
 import { useCurrentOrganizationStore } from "./uiStore";
@@ -107,7 +108,19 @@ export const useLinkFakeAccount = (token?: string | null) => {
   });
 };
 
-export const useDeleteOrganizationAccount = (token?: string | null) => {
+export const useLinkDevstack = (token?: string | null) => {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { organizationId: string; connector: string }) =>
+      organizationApi.linkDevstack(token as string, input.organizationId, input.connector),
+    onSuccess: (_name, input) => {
+      qc.invalidateQueries({ queryKey: connectionKeys.list(input.organizationId) });
+    },
+  });
+};
+
+export const useDeleteOrganizationAccount =(token?: string | null) => {
   const qc = useQueryClient();
 
   return useMutation({

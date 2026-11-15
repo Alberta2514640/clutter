@@ -29,20 +29,7 @@ const fakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerrafor
 // account (accountName).
 func (s *Server) LinkFakeAccountHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowed := setCORS(w, r)
-		if r.Header.Get("Origin") != "" && !allowed {
-			writeDevJSON(w, http.StatusForbidden, "this route answers loopback origins only")
-			return
-		}
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", "POST,OPTIONS")
-			writeDevJSON(w, http.StatusMethodNotAllowed, "use POST")
+		if !devPost(w, r) {
 			return
 		}
 
@@ -97,6 +84,29 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 		}
 		writeLinked(w, "linked a fake account", name)
 	})
+}
+
+// devPost answers what every dev-only POST route answers the same way: a
+// foreign origin, a CORS preflight and a method other than POST. It reports
+// whether the request is a POST the route should handle.
+func devPost(w http.ResponseWriter, r *http.Request) bool {
+	allowed := setCORS(w, r)
+	if r.Header.Get("Origin") != "" && !allowed {
+		writeDevJSON(w, http.StatusForbidden, "this route answers loopback origins only")
+		return false
+	}
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
+		w.WriteHeader(http.StatusNoContent)
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST,OPTIONS")
+		writeDevJSON(w, http.StatusMethodNotAllowed, "use POST")
+		return false
+	}
+	return true
 }
 
 // writeLinked answers a successful link with the linked account's name, so

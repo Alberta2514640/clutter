@@ -7,15 +7,21 @@
 #   create  deletes that credential when it exists, makes a new one for the
 #           demo user in the demo project, and prints what Clutter's
 #           Connections page needs
+#   link NAME    makes a new credential named NAME (clutter-<8 hex>) for the
+#                demo user in the demo project, and prints its id, secret and
+#                region as one JSON line. It never replaces a credential. The
+#                devserver gateway runs it for the website's "Use this
+#                machine's DevStack" button and hands the line to B.
+#   remove NAME  deletes the credential NAME (clutter-<8 hex>) when it exists
 #
-# The secret goes to the terminal once and nowhere else: not to a file, and
-# not to a log.
+# The secret goes to the terminal once (create) or to the gateway once (link),
+# and nowhere else: not to a file, and not to a log.
 set -euo pipefail
 
 NAME=clutter
 
 main() {
-  local mode="${1:-}" out id secret region auth_url
+  local mode="${1:-}" name="${2:-}" out id secret region auth_url
   if [[ ! -f /opt/stack/devstack/openrc ]]; then
     echo "DevStack is not installed in this VM. Run: npm run devstack -- create" >&2
     exit 1
@@ -27,6 +33,46 @@ main() {
   set -u
 
   case "${mode}" in
+    link | remove)
+      if [[ ! "${name}" =~ ^clutter-[0-9a-f]{8}$ ]]; then
+        echo "usage: credential.sh ${mode} clutter-<8 hex digits>" >&2
+        exit 2
+      fi
+      ;;
+  esac
+
+  case "${mode}" in
+    link)
+      if openstack application credential show "${name}" >/dev/null 2>&1; then
+        echo "A credential named ${name} exists already; it is left alone." >&2
+        exit 1
+      fi
+      region="$(openstack region list -f value -c Region | head -n 1)"
+      if [[ -z "${region}" ]]; then
+        echo "DevStack lists no region." >&2
+        exit 1
+      fi
+      out="$(openstack application credential create "${name}" \
+        --description "Clutter on this machine (Use this machine's DevStack)" -f json)"
+      # openstackclient has used both "id"/"secret" and "ID"/"Secret" as keys.
+      if ! printf '%s' "${out}" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+c = {"id": d.get("id") or d.get("ID") or "", "secret": d.get("secret") or d.get("Secret") or "", "region": sys.argv[1]}
+if not c["id"] or not c["secret"]:
+    sys.exit(1)
+print(json.dumps(c))
+' "${region}"; then
+        openstack application credential delete "${name}" || true
+        echo "Made the ${name} credential, but could not read its id and secret from the openstack client's output, so it is deleted." >&2
+        exit 1
+      fi
+      ;;
+    remove)
+      if openstack application credential show "${name}" >/dev/null 2>&1; then
+        openstack application credential delete "${name}"
+      fi
+      ;;
     check)
       if openstack application credential show "${NAME}" >/dev/null 2>&1; then echo exists; else echo absent; fi
       ;;
@@ -68,7 +114,7 @@ stops working, and Clutter needs the new values.
 EOF
       ;;
     *)
-      echo "usage: credential.sh check|create" >&2
+      echo "usage: credential.sh check|create|link NAME|remove NAME" >&2
       exit 2
       ;;
   esac

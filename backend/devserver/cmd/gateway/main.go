@@ -42,6 +42,8 @@ func run(logger *log.Logger) error {
 	apiDir := flag.String("api-dir", "", "path to backend/api")
 	stateDir := flag.String("state-dir", "", "directory for binaries, the Lambda HOME and the pid file")
 	skipBuild := flag.Bool("skip-build", false, "reuse binaries already in <state-dir>/bin")
+	adapterAddr := flag.String("adapter-addr", "127.0.0.1:8790", "B API's address (loopback only), for the DevStack link route")
+	devstackVM := flag.String("devstack-vm", "devstack", "the Lima VM that runs DevStack, for the DevStack link route")
 	flag.Parse()
 
 	if *apiDir == "" || *stateDir == "" {
@@ -49,6 +51,9 @@ func run(logger *log.Logger) error {
 	}
 	if err := gateway.RequireLoopbackAddr(*apiAddr); err != nil {
 		return err
+	}
+	if err := gateway.RequireLoopbackAddr(*adapterAddr); err != nil {
+		return fmt.Errorf("-adapter-addr: %w", err)
 	}
 	frontOrigin := "http://localhost:3000"
 	if *frontAddr != "" {
@@ -127,8 +132,16 @@ func run(logger *log.Logger) error {
 		}),
 	}
 	apiHandler := gateway.NewServer(pool, logger, devRoutes)
-	// This route calls back into the server, so it is added once the server exists.
+	// These routes call back into the server, so they are added once the server exists.
 	devRoutes[gateway.LinkFakeAccountPath] = apiHandler.LinkFakeAccountHandler()
+	devRoutes[gateway.LinkDevstackPath] = apiHandler.LinkDevstackHandler(gateway.DevstackConfig{
+		// The same flag dev.sh gives B; the route refuses without it.
+		Enabled:    os.Getenv("ADAPTER_ALLOW_PRIVATE_TARGETS") == "1",
+		AdapterURL: "http://" + *adapterAddr,
+		VM:         *devstackVM,
+		Script:     filepath.Join(*apiDir, "..", "devserver", "devstack", "credential.sh"),
+		Run:        gateway.ExecRunner{},
+	})
 	servers := []*http.Server{{Addr: *apiAddr, Handler: apiHandler, ReadHeaderTimeout: 10 * time.Second}}
 
 	if *frontAddr != "" {
