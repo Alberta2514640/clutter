@@ -7,41 +7,48 @@ export const inputClass =
   "w-full rounded-md border border-slate-700 bg-slate-950/60 px-2.5 py-1.5 text-sm text-white outline-none focus:border-teal-500/70 disabled:opacity-50";
 
 // FieldInput draws one manifest field and reports the parsed value. An unset
-// value shows the field's default as a placeholder. help is a short line under
-// the label.
+// value shows the field's default as a placeholder. The field's help, from
+// the manifest, is a short line with the label.
 export default function FieldInput({
   id,
   field,
   value,
   onChange,
   disabled,
-  help,
 }: {
   id: string;
   field: FieldSpec;
   value: unknown;
   onChange: (value: unknown) => void;
   disabled?: boolean;
-  help?: string;
 }) {
   const control = fieldControl(field);
   const error = fieldError(field, value);
   const hint = field.default !== undefined && field.default !== null ? `Default: ${String(field.default)}` : undefined;
+  const help = field.help;
 
   return (
     <div className="space-y-1">
       {control.control === "checkbox" ? (
-        <label htmlFor={id} className="flex items-center gap-2 text-sm text-slate-200">
-          <input
-            id={id}
-            type="checkbox"
-            disabled={disabled}
-            checked={value === undefined ? field.default === true : value === true}
-            onChange={(e) => onChange(parseInput(field, e.target.checked))}
-            className="h-4 w-4 accent-teal-500"
-          />
-          {field.title}
-        </label>
+        <>
+          <label htmlFor={id} className="flex items-center gap-2 text-sm text-slate-200">
+            <input
+              id={id}
+              type="checkbox"
+              disabled={disabled}
+              checked={value === undefined ? field.default === true : value === true}
+              aria-describedby={help ? `${id}-help` : undefined}
+              onChange={(e) => onChange(parseInput(field, e.target.checked))}
+              className="h-4 w-4 accent-teal-500"
+            />
+            {field.title}
+          </label>
+          {help && (
+            <p id={`${id}-help`} className="pl-6 text-xs text-slate-500">
+              {help}
+            </p>
+          )}
+        </>
       ) : (
         <>
           <label htmlFor={id} className="block text-xs font-medium text-slate-300">

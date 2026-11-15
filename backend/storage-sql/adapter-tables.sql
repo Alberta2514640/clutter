@@ -75,8 +75,9 @@ CREATE INDEX IF NOT EXISTS deployments_connection_id ON public.deployments (conn
 -- ============================
 -- RUNS
 -- ============================
--- One plan, apply or destroy of one deployment. diagram_version is the diagram_history version
--- the run was built from (NULL when the diagram has no history yet).
+-- One plan, apply or destroy of one deployment. diagram_version is the version of the saved
+-- document the run was built from: one past the latest diagram_history row, the row that
+-- document becomes on the next save (NULL for a destroy, which reads no diagram).
 CREATE TABLE IF NOT EXISTS public.runs (
     id UUID PRIMARY KEY,
     deployment_id UUID NOT NULL REFERENCES public.deployments(id) ON DELETE CASCADE,

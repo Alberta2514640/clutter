@@ -580,12 +580,15 @@ func (s *Store) DeleteDeployment(ctx context.Context, orgID, id string) error {
 }
 
 // DiagramDocument returns the saved document of a diagram in one of the
-// organization's projects, and its latest history version (nil when it has
-// none).
+// organization's projects, and the version of that document. A's save writes
+// the document it replaces to diagram_history as the next version, so history
+// row N holds the document before save N, and the saved document is one past
+// the latest row (1 for a diagram never saved again): the row it becomes on
+// the next save.
 func (s *Store) DiagramDocument(ctx context.Context, orgID, diagramID string) ([]byte, *int, error) {
 	var data []byte
 	var version *int
-	err := s.Pool.QueryRow(ctx, `SELECT g.data::text, (SELECT max(version) FROM diagram_history WHERE diagram_id = $1)
+	err := s.Pool.QueryRow(ctx, `SELECT g.data::text, (SELECT COALESCE(max(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1)
 		FROM diagrams g JOIN projects p ON p.id = g.project_id
 		WHERE g.id = $1 AND p.organization_id = $2`, diagramID, orgID).Scan(&data, &version)
 	if errors.Is(err, pgx.ErrNoRows) {

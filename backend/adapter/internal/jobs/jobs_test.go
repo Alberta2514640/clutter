@@ -191,13 +191,14 @@ func TestAFailingConnectorNeverLeaksTheCredential(t *testing.T) {
 	}
 }
 
-// B's own apply line counts the blocks a connector built, and says so: it must
-// not read as Terraform's resource count, which is printed earlier and larger.
+// B's own apply line counts the blocks a connector built or changed in the
+// run, and says so: it must not read as Terraform's resource count, which is
+// printed earlier and larger, and an apply that changed nothing says so.
 func TestTheApplyLineCountsBlocks(t *testing.T) {
 	for n, want := range map[int]string{
-		0: "Apply complete: 0 blocks built.\n",
-		1: "Apply complete: 1 block built.\n",
-		6: "Apply complete: 6 blocks built.\n",
+		0: "Apply complete: everything is up to date.\n",
+		1: "Apply complete: 1 block built or changed.\n",
+		6: "Apply complete: 6 blocks built or changed.\n",
 	} {
 		built := map[string]string{}
 		for i := range n {

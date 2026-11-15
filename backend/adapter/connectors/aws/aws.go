@@ -36,7 +36,7 @@ const ID = "aws"
 // output RoleTemplateVersion) this connector expects. A test keeps the two
 // equal. A connection records it, so a later change to the role can tell
 // which users must update their stack.
-const RoleTemplateVersion = "8"
+const RoleTemplateVersion = "9"
 
 // Session lengths. A run's keys last one hour, the most STS gives when one
 // role assumes another (B's runner role assuming the user's role).

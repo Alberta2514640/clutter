@@ -120,7 +120,7 @@ func TestEveryBlockIsBuiltOrNamed(t *testing.T) {
 
 	t.Run("the four blocks that were saved when the run started are all built", func(t *testing.T) {
 		// The diagram as saved before vm-2 and the volume were: the run
-		// reported "4 blocks built", which is every block it was given.
+		// reported "4 blocks built or changed", which is every block it was given.
 		g, d := threeNetworksGraph(), testDeployment("ca-central-1")
 		delete(g.Blocks, vm2)
 		delete(g.Blocks, volume)

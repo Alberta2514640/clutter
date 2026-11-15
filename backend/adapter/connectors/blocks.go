@@ -16,7 +16,16 @@ const (
 	FieldStartupScript = "startup_script"
 	// FieldHandler is a function's entry point inside its code.
 	FieldHandler = "handler"
+	// FieldSSHKey is a VM's OpenSSH public key (SSHPublicKey).
+	FieldSSHKey = "ssh_public_key"
 )
+
+// privateInternetHelp names what the network field costs on AWS, where it adds
+// a NAT gateway and its public address: $0.05 and $0.005 an hour in
+// ca-central-1, about $40 for a 730-hour month (AWS Price List API, the
+// AmazonEC2 and AmazonVPC offers for ca-central-1, read 2026-11-14). Data
+// through the gateway costs $0.05 a GB more.
+const privateInternetHelp = "Lets servers without a public address reach the internet. Costs about $40 a month plus data on AWS."
 
 // standardFields owns the portable fields of each building block. A diagram
 // holds only these, so one diagram can pass every connector's manifest; what is
@@ -28,13 +37,19 @@ var standardFields = map[BlockKind][]FieldSpec{
 		{Name: "size", Title: "Size", Type: FieldEnum, Required: true, Default: "small", Allowed: []string{"small", "medium", "large"}},
 		{Name: "public", Title: "Reachable from the internet", Type: FieldBool, Default: false},
 		// Every cloud runs it through cloud-init at first boot (StartupUserData).
-		{Name: FieldStartupScript, Title: "Startup script", Type: FieldText},
+		{Name: FieldStartupScript, Title: "Startup script", Type: FieldText,
+			Help: "Runs once as root when the VM first starts. Use it to install and start your app."},
+		// Text, not a string: an RSA key is longer than MaxStringField.
+		{Name: FieldSSHKey, Title: "SSH public key", Type: FieldText, Help: "Paste your public key to log in with SSH."},
 	},
 	KindNetwork: {
 		{Name: "cidr", Title: "Address range (CIDR)", Type: FieldString, Required: true, Default: "10.0.0.0/24"},
+		{Name: "private_internet", Title: "Internet access for private servers", Type: FieldBool, Default: true, Help: privateInternetHelp},
 	},
 	KindFirewall: {
-		{Name: "ingress", Title: "Allowed incoming traffic (for example tcp/22,tcp/443,udp/1000-2000)", Type: FieldString, Default: "tcp/22"},
+		// No default rule: a new firewall lets nothing in until the user says
+		// what. The source range applies only to the rules listed.
+		{Name: "ingress", Title: "Allowed incoming traffic (for example tcp/22,tcp/443,udp/1000-2000)", Type: FieldString},
 		{Name: "source_cidr", Title: "Allowed source addresses (CIDR)", Type: FieldString, Required: true, Default: "0.0.0.0/0"},
 	},
 	KindVolume: {
@@ -42,6 +57,8 @@ var standardFields = map[BlockKind][]FieldSpec{
 	},
 	KindBucket: {
 		{Name: "versioning", Title: "Keep old versions", Type: FieldBool, Default: false},
+		{Name: "force_destroy", Title: "Delete files on destroy", Type: FieldBool, Default: false,
+			Help: "Lets destroy remove the bucket even when it still holds files. The files are deleted for good."},
 	},
 	KindFunction: {
 		{Name: "memory_mb", Title: "Memory in MB", Type: FieldInt, Default: 128},
@@ -158,4 +175,91 @@ func StartupUserData(fields map[string]any) (string, error) {
 		return "", fmt.Errorf("The startup script must be at most %d bytes, counting the #!/bin/sh line Clutter adds when the script has none.", MaxTextField)
 	}
 	return base64.StdEncoding.EncodeToString([]byte(s)), nil
+}
+
+// The SSH key types every cloud Clutter builds on imports: EC2 takes only
+// these two.
+const (
+	sshEd25519 = "ssh-ed25519"
+	sshRSA     = "ssh-rsa"
+	minRSABits = 2048
+	maxRSABits = 16384
+)
+
+var errSSHKey = errors.New("The SSH public key must be one line that starts with ssh-ed25519 or ssh-rsa, such as the contents of ~/.ssh/id_ed25519.pub.")
+
+// SSHPublicKey reads a VM block's SSH public key: one OpenSSH line, an
+// ssh-ed25519 key or an ssh-rsa key of 2048 bits or more, whose base64 body
+// holds a key of its named type. It returns the key as "<type> <base64>",
+// without the comment, so only checked text reaches Terraform; "" when the
+// block has none. The key is public, but a connector still never logs it.
+// The error's message is safe to show the user.
+func SSHPublicKey(fields map[string]any) (string, error) {
+	v, set := fields[FieldSSHKey]
+	if !set || v == nil {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", errSSHKey
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(s, "\r\n") {
+		return "", errSSHKey
+	}
+	parts := strings.Fields(s)
+	if len(parts) < 2 || (parts[0] != sshEd25519 && parts[0] != sshRSA) {
+		return "", errSSHKey
+	}
+	blob, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", errSSHKey
+	}
+	typ, rest, ok := sshString(blob)
+	if !ok || string(typ) != parts[0] {
+		return "", errSSHKey
+	}
+	switch parts[0] {
+	case sshEd25519:
+		key, rest, ok := sshString(rest)
+		if !ok || len(key) != 32 || len(rest) != 0 {
+			return "", errSSHKey
+		}
+	case sshRSA:
+		e, rest, ok := sshString(rest)
+		if !ok || len(e) == 0 {
+			return "", errSSHKey
+		}
+		n, rest, ok := sshString(rest)
+		if !ok || len(n) == 0 || len(rest) != 0 {
+			return "", errSSHKey
+		}
+		// n is a positive mpint: a leading zero byte only keeps its sign.
+		n = []byte(strings.TrimLeft(string(n), "\x00"))
+		bits := len(n) * 8
+		if len(n) > 0 {
+			for b := n[0]; b&0x80 == 0; b <<= 1 {
+				bits--
+			}
+		}
+		if bits < minRSABits || bits > maxRSABits {
+			return "", fmt.Errorf("An RSA key must have from %d to %d bits. An ssh-ed25519 key is shorter and safer.", minRSABits, maxRSABits)
+		}
+	}
+	return parts[0] + " " + parts[1], nil
+}
+
+// sshString reads one length-prefixed string of the SSH wire format.
+func sshString(b []byte) (s, rest []byte, ok bool) {
+	if len(b) < 4 {
+		return nil, nil, false
+	}
+	n := int(b[0])<<24 | int(b[1])<<16 | int(b[2])<<8 | int(b[3])
+	if n < 0 || n > len(b)-4 {
+		return nil, nil, false
+	}
+	return b[4 : 4+n], b[4+n:], true
 }

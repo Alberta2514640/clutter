@@ -172,11 +172,20 @@ func (m *model) render(ctx context.Context, src TemplateSource) (map[string][]by
 	if err != nil {
 		return nil, err
 	}
+	dv, err := m.defaultsVars()
+	if err != nil {
+		return nil, err
+	}
+	defaults, err := executeOwn("defaults.tf.tmpl", dv)
+	if err != nil {
+		return nil, err
+	}
 	files := map[string][]byte{
 		"main.tf":     []byte(main.String()),
 		"outputs.tf":  []byte(strings.TrimLeft(outputs.String(), "\n")),
 		"iam.tf":      []byte(iam),
 		"override.tf": []byte(override),
+		"defaults.tf": []byte(defaults),
 	}
 	// An override file cannot add a block, so the placeholder zips are in
 	// their own primary file. A function with uploaded code needs none.
@@ -253,7 +262,8 @@ func (m *model) vars(b *block) (map[string]any, error) {
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"InstanceType": m.vmInstanceType(b),
-			// B links no key pair: access is through SSM, as in A.
+			// A key pair the block names is set in override.tf, as a
+			// reference, so the instance waits for it.
 			"KeyName": "",
 		}, nil
 	case connectors.KindNetwork:
@@ -261,11 +271,18 @@ func (m *model) vars(b *block) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
+		private, public := networkHalves(cidr)
+		hasPublic, _ := m.networkVMs(b.ID)
+		nat := m.networkNAT(b.ID)
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"NetworkName":  m.physical(b, maxName),
 			"CIDR":         cidr.String(),
-			"Public":       m.networkPublic(b.ID),
+			"PrivateCIDR":  private.String(),
+			"PublicCIDR":   public.String(),
+			// The NAT gateway reaches the internet through the internet gateway.
+			"Public": hasPublic || nat,
+			"NAT":    nat,
 		}, nil
 	case connectors.KindFirewall:
 		rules, err := firewallRules(b.str(fieldIngress), b.str(fieldSourceCIDR))
@@ -326,19 +343,20 @@ func (m *model) vars(b *block) (map[string]any, error) {
 			"Architecture":         m.architecture,
 			"MemorySize":           memory,
 			"Filename":             b.Addr + ".zip",
-			"EnvironmentVariables": map[string]string{},
+			"EnvironmentVariables": m.functionEnv(b.ID),
 		}, nil
 	case connectors.KindHTTPAPI:
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"APIName":      m.physical(b, maxName),
 			"Description":  hclsafe.Escape(b.str(fieldDescription)),
-			"StageName":    "v1",
-			"EnableCORS":   b.boolean(fieldCORS),
-			// AWS deploys an API only when it has a method: the CORS answer or a route.
-			"HasMethods": b.boolean(fieldCORS) || len(m.apiRoutes[b.ID]) > 0,
-			// Only the CORS answer reads this; each route takes every method.
-			"HTTPMethods": "GET,POST,PUT,PATCH,DELETE",
+			"StageName":    apiStage,
+			// A's template answers CORS only at the API's root, where B has no
+			// route; iam.tf answers it on each route instead.
+			"EnableCORS": false,
+			// AWS deploys an API only when it has a method; B's every API has a
+			// route (CodeAPIWithoutRoute).
+			"HasMethods": len(m.apiRoutes[b.ID]) > 0,
 		}, nil
 	}
 	return nil, fmt.Errorf("no AWS template for %q blocks", b.Kind)
@@ -348,12 +366,30 @@ func (m *model) vars(b *block) (map[string]any, error) {
 // (a function's role, or a VM's instance role).
 type readVars struct{ Addr, Name, Role, Target string }
 
-type routeVars struct{ Addr, API, Function, PathPart, StatementID string }
+type routeVars struct {
+	Addr, API, Function, PathPart, StatementID string
+	// CORS is the API's cors field: the route answers a browser's preflight.
+	CORS bool
+}
+
+// peerVars is the security group that lets the VMs that get Target's address
+// reach it. VPC is the network's Terraform address, or "" for the account's
+// default VPC.
+type peerVars struct {
+	Addr, Name, VPC, Target string
+	Sources                 []peerSource
+}
+
+type peerSource struct{ Addr, Part string }
+
+// peerGroup is the Terraform address of a VM's peer security group.
+func peerGroup(vm *block) string { return vm.Addr + "_peers" }
 
 func (m *model) iamVars() map[string]any {
 	var functions []string
 	var bucketReads, tableReads []readVars
 	var routes []routeVars
+	var peers []peerVars
 	for _, id := range m.order {
 		if b := m.blocks[id]; b.Kind == connectors.KindFunction {
 			functions = append(functions, b.Addr)
@@ -394,21 +430,97 @@ func (m *model) iamVars() map[string]any {
 				PathPart: fn.Name,
 				// Unique per API, so two APIs on one function do not collide.
 				StatementID: "AllowInvokeFrom-" + api.Addr,
+				CORS:        api.boolean(fieldCORS),
 			})
 		}
+	}
+	for _, id := range m.order {
+		vm := m.blocks[id]
+		sources := m.peersOf(id)
+		if vm.Kind != connectors.KindVM || len(sources) == 0 {
+			continue
+		}
+		p := peerVars{
+			Addr: peerGroup(vm),
+			// A block name holds no dot, so this name is never another block's.
+			Name:   m.physical(vm, maxName-len(".peers")) + ".peers",
+			Target: vm.Addr,
+		}
+		if net, ok := m.vmNetwork[id]; ok {
+			p.VPC = m.blocks[net].Addr
+		}
+		for _, s := range sources {
+			p.Sources = append(p.Sources, peerSource{Addr: m.blocks[s].Addr, Part: m.blocks[s].Part})
+		}
+		peers = append(peers, p)
 	}
 	return map[string]any{
 		"Functions":   functions,
 		"BucketReads": bucketReads,
 		"TableReads":  tableReads,
 		"Routes":      routes,
+		"Peers":       peers,
 	}
 }
 
+// Stage throttling for every HTTP API: 100 requests a second on average and
+// bursts of 200, well under the account's regional limit (10,000 and 5,000),
+// so one API cannot use it all, and a loop or a flood of calls costs at most
+// that much.
+const (
+	apiRateLimit  = 100
+	apiBurstLimit = 200
+	apiStage      = "v1"
+)
+
+type logGroupVars struct{ Addr, Name string }
+
+type keyPairVars struct{ Addr, Name, Key string }
+
+// defaultsVars feeds defaults.tf: each function's log group, each bucket's
+// TLS-only policy, each API's throttling and each VM's key pair.
+func (m *model) defaultsVars() (map[string]any, error) {
+	var functions []logGroupVars
+	var buckets, apis []string
+	var keys []keyPairVars
+	for _, id := range m.order {
+		b := m.blocks[id]
+		switch b.Kind {
+		case connectors.KindFunction:
+			functions = append(functions, logGroupVars{Addr: b.Addr, Name: m.physical(b, maxFunctionName)})
+		case connectors.KindBucket:
+			buckets = append(buckets, b.Addr)
+		case connectors.KindHTTPAPI:
+			apis = append(apis, b.Addr)
+		case connectors.KindVM:
+			key, err := connectors.SSHPublicKey(b.fields)
+			if err != nil {
+				return nil, err
+			}
+			if key != "" {
+				keys = append(keys, keyPairVars{Addr: b.Addr, Name: m.physical(b, maxName), Key: hclsafe.Escape(key)})
+			}
+		}
+	}
+	return map[string]any{
+		"Functions":  functions,
+		"Buckets":    buckets,
+		"APIs":       apis,
+		"KeyPairs":   keys,
+		"RateLimit":  apiRateLimit,
+		"BurstLimit": apiBurstLimit,
+	}, nil
+}
+
 type instanceVars struct {
+	// Subnet is the subnet's whole Terraform address after "aws_subnet.".
 	Addr, Subnet   string
 	SecurityGroups []string
 	Public         bool
+	// KeyPair is the address of the VM's aws_key_pair, or "" for none.
+	KeyPair string
+	// Name is the instance's Name tag: the block's name, as an HCL string.
+	Name string
 	// UserData is the user_data_base64 argument (model.userData): an HCL
 	// string of base64, or an expression that builds the startup wrapper, or
 	// "" for none.
@@ -444,22 +556,42 @@ func (m *model) archives() []terraform.Archive {
 type apiVars struct {
 	Addr   string
 	Routes []string
+	CORS   bool
+}
+
+type bucketVars struct {
+	Addr         string
+	ForceDestroy bool
 }
 
 func (m *model) overrideVars() (map[string]any, error) {
 	var instances []instanceVars
 	var functions []functionVars
 	var apis []apiVars
+	var buckets []bucketVars
+	var tables []string
 	for _, id := range m.order {
 		b := m.blocks[id]
 		switch b.Kind {
 		case connectors.KindVM:
-			v := instanceVars{Addr: b.Addr, Public: b.boolean(fieldPublic)}
-			if net, ok := m.vmNetwork[id]; ok {
-				v.Subnet = m.blocks[net].Addr
+			v := instanceVars{
+				Addr:   b.Addr,
+				Public: b.boolean(fieldPublic),
+				Subnet: m.vmSubnet(id),
+				Name:   hclsafe.Escape(m.physical(b, maxName)),
 			}
 			for _, fw := range m.vmFirewalls[id] {
 				v.SecurityGroups = append(v.SecurityGroups, m.blocks[fw].Addr)
+			}
+			if len(m.peersOf(id)) > 0 {
+				v.SecurityGroups = append(v.SecurityGroups, peerGroup(b))
+			}
+			key, err := connectors.SSHPublicKey(b.fields)
+			if err != nil {
+				return nil, err
+			}
+			if key != "" {
+				v.KeyPair = b.Addr
 			}
 			// The script reaches HCL only as base64; values reach it only
 			// checked and escaped (connectors.StartupHCL).
@@ -480,17 +612,23 @@ func (m *model) overrideVars() (map[string]any, error) {
 			}
 			functions = append(functions, f)
 		case connectors.KindHTTPAPI:
-			v := apiVars{Addr: b.Addr}
+			v := apiVars{Addr: b.Addr, CORS: b.boolean(fieldCORS)}
 			for _, fnID := range m.apiRoutes[id] {
 				v.Routes = append(v.Routes, b.Addr+"_to_"+m.blocks[fnID].Part)
 			}
 			apis = append(apis, v)
+		case connectors.KindBucket:
+			buckets = append(buckets, bucketVars{Addr: b.Addr, ForceDestroy: b.boolean(fieldForceDestroy)})
+		case connectors.KindTable:
+			tables = append(tables, b.Addr)
 		}
 	}
 	return map[string]any{
 		"Instances": instances,
 		"Functions": functions,
 		"APIs":      apis,
+		"Buckets":   buckets,
+		"Tables":    tables,
 	}, nil
 }
 

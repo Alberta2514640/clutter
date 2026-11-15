@@ -11,19 +11,21 @@ import (
 // a portable one connectors owns; StandardField panics on a name it does not
 // have, so a typo fails at start-up and in every test.
 var (
-	fieldSize        = connectors.StandardField(connectors.KindVM, "size").Name
-	fieldPublic      = connectors.StandardField(connectors.KindVM, "public").Name
-	fieldCIDR        = connectors.StandardField(connectors.KindNetwork, "cidr").Name
-	fieldIngress     = connectors.StandardField(connectors.KindFirewall, "ingress").Name
-	fieldSourceCIDR  = connectors.StandardField(connectors.KindFirewall, "source_cidr").Name
-	fieldSizeGB      = connectors.StandardField(connectors.KindVolume, "size_gb").Name
-	fieldVersioning  = connectors.StandardField(connectors.KindBucket, "versioning").Name
-	fieldMemoryMB    = connectors.StandardField(connectors.KindFunction, "memory_mb").Name
-	fieldTimeoutS    = connectors.StandardField(connectors.KindFunction, "timeout_s").Name
-	fieldKey         = connectors.StandardField(connectors.KindTable, "key").Name
-	fieldKeyType     = connectors.StandardField(connectors.KindTable, "key_type").Name
-	fieldDescription = connectors.StandardField(connectors.KindHTTPAPI, "description").Name
-	fieldCORS        = connectors.StandardField(connectors.KindHTTPAPI, "cors").Name
+	fieldSize            = connectors.StandardField(connectors.KindVM, "size").Name
+	fieldPublic          = connectors.StandardField(connectors.KindVM, "public").Name
+	fieldCIDR            = connectors.StandardField(connectors.KindNetwork, "cidr").Name
+	fieldPrivateInternet = connectors.StandardField(connectors.KindNetwork, "private_internet").Name
+	fieldForceDestroy    = connectors.StandardField(connectors.KindBucket, "force_destroy").Name
+	fieldIngress         = connectors.StandardField(connectors.KindFirewall, "ingress").Name
+	fieldSourceCIDR      = connectors.StandardField(connectors.KindFirewall, "source_cidr").Name
+	fieldSizeGB          = connectors.StandardField(connectors.KindVolume, "size_gb").Name
+	fieldVersioning      = connectors.StandardField(connectors.KindBucket, "versioning").Name
+	fieldMemoryMB        = connectors.StandardField(connectors.KindFunction, "memory_mb").Name
+	fieldTimeoutS        = connectors.StandardField(connectors.KindFunction, "timeout_s").Name
+	fieldKey             = connectors.StandardField(connectors.KindTable, "key").Name
+	fieldKeyType         = connectors.StandardField(connectors.KindTable, "key_type").Name
+	fieldDescription     = connectors.StandardField(connectors.KindHTTPAPI, "description").Name
+	fieldCORS            = connectors.StandardField(connectors.KindHTTPAPI, "cors").Name
 )
 
 // Deployment setting names: what is AWS's own, so it lives on the deployment.
@@ -58,9 +60,19 @@ func regions() []string {
 	return out
 }
 
-// runtimes returns the Lambda runtimes A supports (generic owns the list), sorted.
+// deprecatedRuntimes are runtimes A keeps (its seed's default) that B does
+// not offer: AWS deprecated provided.al2 on 2026-07-31.
+var deprecatedRuntimes = map[string]bool{"provided.al2": true}
+
+// runtimes returns the Lambda runtimes A supports (generic owns the list),
+// less the deprecated ones, sorted.
 func runtimes() []string {
-	out := generic.LambdaRuntimeNames()
+	var out []string
+	for _, r := range generic.LambdaRuntimeNames() {
+		if !deprecatedRuntimes[r] {
+			out = append(out, r)
+		}
+	}
 	sort.Strings(out)
 	return out
 }

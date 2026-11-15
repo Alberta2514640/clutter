@@ -218,7 +218,7 @@ func (s *splitRun) apply(ctx context.Context, conns []connectors.CrossCloud, pla
 			if err == nil {
 				s.keep(out)
 				s.record(i, string(connectors.ActionApply), StatusCompleted)
-				fmt.Fprintf(s.rw, "%s: apply complete, %s.\n", name, blocksBuilt(len(res.Resources)))
+				fmt.Fprintf(s.rw, "%s: apply complete, %s.\n", name, blocksChanged(len(res.Resources)))
 				built = i + 1
 				continue
 			}

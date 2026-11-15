@@ -32,10 +32,28 @@ const (
 	tVolume       = "openstack_blockstorage_volume_v3"
 	tVolumeAttach = "openstack_compute_volume_attach_v2"
 	tImage        = "openstack_images_image_v2"
+	tKeypair      = "openstack_compute_keypair_v2"
 
 	externalAddr = "external"
 	imageAddr    = "image"
+	// routerAddr is the deployment's one router; no block's address (addr)
+	// can be it.
+	routerAddr = "deployment"
 )
+
+// peerAddr is the address of the security group that lets the VMs that get a
+// VM's address reach it. It starts with p_, so it is never a block's address.
+func peerAddr(nodeID string) string { return "p_" + nodeID }
+
+// tags marks a Neutron resource as the deployment's, as the AWS provider's
+// default tags do there; metadata does the same on a server or a volume.
+func (m model) tags() string {
+	return list([]string{str("ManagedBy=Clutter"), str("ClutterDeployment=" + m.deploymentID)})
+}
+
+func (m model) metadata() string {
+	return "{ ManagedBy = " + str("Clutter") + ", ClutterDeployment = " + str(m.deploymentID) + " }"
+}
 
 // versionsFile pins the provider and leaves its block empty: the provider
 // reads the run's OS_* variables.
@@ -88,31 +106,41 @@ func renderMain(m model) []byte {
 		d.set("most_recent", "true")
 	}
 
+	// One router for the deployment: it joins every network whose VMs may
+	// reach the internet, so they also reach each other.
+	if m.anyRouted() {
+		r := f.block("resource", tRouter, routerAddr)
+		r.set("name", str(m.prefix+"-router"))
+		r.set("external_network_id", ref("data", tNetwork, externalAddr, "id"))
+		r.set("tags", m.tags())
+	}
+
 	for _, n := range m.networks {
 		a := addr(n.id)
 		r := f.block("resource", tNetwork, a)
 		r.set("name", str(n.name))
 		r.set("admin_state_up", "true")
+		r.set("tags", m.tags())
 
 		r = f.block("resource", tSubnet, a)
 		r.set("name", str(n.name))
 		r.set("network_id", ref(tNetwork, a, "id"))
 		r.set("cidr", str(n.cidr))
 		r.set("ip_version", "4")
+		r.set("tags", m.tags())
 
-		r = f.block("resource", tRouter, a)
-		r.set("name", str(n.name))
-		r.set("external_network_id", ref("data", tNetwork, externalAddr, "id"))
-
-		r = f.block("resource", tRouterIface, a)
-		r.set("router_id", ref(tRouter, a, "id"))
-		r.set("subnet_id", ref(tSubnet, a, "id"))
+		if n.routed {
+			r = f.block("resource", tRouterIface, a)
+			r.set("router_id", ref(tRouter, routerAddr, "id"))
+			r.set("subnet_id", ref(tSubnet, a, "id"))
+		}
 	}
 
 	for _, fw := range m.firewalls {
 		a := addr(fw.id)
 		r := f.block("resource", tSecgroup, a)
 		r.set("name", str(fw.name))
+		r.set("tags", m.tags())
 		for _, rl := range fw.rules {
 			r := f.block("resource", tSecgroupRule, a+ruleSuffix(rl))
 			r.set("security_group_id", ref(tSecgroup, a, "id"))
@@ -127,12 +155,53 @@ func renderMain(m model) []byte {
 		}
 	}
 
+	// VMs that get another VM's address may reach it: every protocol and
+	// port, from each of their addresses (one per network) only. Its own
+	// group, beside the VM's firewalls; Neutron's default egress rules stay.
+	byID := map[string]vm{}
+	for _, v := range m.vms {
+		byID[v.id] = v
+	}
+	for _, v := range m.vms {
+		if len(v.reachedBy) == 0 {
+			continue
+		}
+		a := peerAddr(v.id)
+		r := f.block("resource", tSecgroup, a)
+		// A block name holds no dot, so this name is never a firewall's.
+		r.set("name", str(v.name+".peers"))
+		r.set("tags", m.tags())
+		for _, src := range v.reachedBy {
+			for i := range byID[src].networks {
+				r := f.block("resource", tSecgroupRule, fmt.Sprintf("%s_from_%s_%d", a, src, i))
+				r.set("security_group_id", ref(tSecgroup, a, "id"))
+				r.set("direction", str("ingress"))
+				r.set("ethertype", str("IPv4"))
+				r.set("remote_ip_prefix", `"${`+ref(tInstance, addr(src), fmt.Sprintf("network[%d]", i), "fixed_ip_v4")+`}/32"`)
+			}
+		}
+	}
+
+	for _, v := range m.vms {
+		if v.sshKey == "" {
+			continue
+		}
+		// Marked sensitive only to keep the key out of the run's log.
+		r := f.block("resource", tKeypair, addr(v.id))
+		r.set("name", str(v.name))
+		r.set("public_key", "sensitive("+str(v.sshKey)+")")
+	}
+
 	for _, v := range m.vms {
 		a := addr(v.id)
 		r := f.block("resource", tInstance, a)
 		r.set("name", str(v.name))
 		r.set("image_id", ref("data", tImage, imageAddr, "id"))
 		r.set("flavor_name", str(v.flavor))
+		if v.sshKey != "" {
+			r.set("key_pair", ref(tKeypair, a, "name"))
+		}
+		r.set("metadata", m.metadata())
 		switch {
 		case v.userDataExpr != "":
 			// The values the VM's connections hand it, then its startup
@@ -150,11 +219,14 @@ func renderMain(m model) []byte {
 			// as root at first boot. A changed script builds a new server.
 			r.set("user_data", "base64decode("+str(v.userData)+")")
 		}
-		if len(v.firewalls) > 0 {
-			groups := make([]string, len(v.firewalls))
-			for i, id := range v.firewalls {
-				groups[i] = ref(tSecgroup, addr(id), "name")
-			}
+		var groups []string
+		for _, id := range v.firewalls {
+			groups = append(groups, ref(tSecgroup, addr(id), "name"))
+		}
+		if len(v.reachedBy) > 0 {
+			groups = append(groups, ref(tSecgroup, peerAddr(v.id), "name"))
+		}
+		if len(groups) > 0 {
 			r.set("security_groups", list(groups))
 		}
 		subnets := make([]string, len(v.networks))
@@ -169,6 +241,7 @@ func renderMain(m model) []byte {
 			r := f.block("resource", tFloatingIP, a)
 			r.set("pool", ref("data", tNetwork, externalAddr, "name"))
 			r.set("description", str(v.name))
+			r.set("tags", m.tags())
 
 			d := f.block("data", tPort, a)
 			d.set("device_id", ref(tInstance, a, "id"))
@@ -187,6 +260,7 @@ func renderMain(m model) []byte {
 		r := f.block("resource", tVolume, a)
 		r.set("name", str(vol.name))
 		r.set("size", strconv.FormatInt(vol.sizeGB, 10))
+		r.set("metadata", m.metadata())
 		if vol.vm != "" {
 			r := f.block("resource", tVolumeAttach, a)
 			r.set("instance_id", ref(tInstance, addr(vol.vm), "id"))

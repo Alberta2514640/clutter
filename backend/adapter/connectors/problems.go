@@ -18,6 +18,9 @@ const (
 	CodeVolumeTwoVMs = "volume_on_two_vms"
 	// CodeAddressCycle is a circle of VMs that get each other's address.
 	CodeAddressCycle = "vm_address_cycle"
+	// CodePeerUnreachable is a VM to VM edge whose two VMs are in networks
+	// that cannot reach each other.
+	CodePeerUnreachable = "vm_peer_unreachable"
 	// CodeCrossNeedsPublic is a VM another cloud reaches that is not public.
 	CodeCrossNeedsPublic = "cross_needs_public"
 	// CodeCrossInvalid is a cross-cloud edge this cloud cannot serve.

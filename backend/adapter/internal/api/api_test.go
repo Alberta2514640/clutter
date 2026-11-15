@@ -353,8 +353,10 @@ func TestRunMovesThroughStatesWithLogs(t *testing.T) {
 			t.Fatalf("%s moved through %v", action, seen)
 		}
 		_, b := e.call(t, &tn, "GET", "/v1/organizations/"+tn.org+"/runs/"+runID, nil)
-		// A destroy does not read the diagram, so it records no version.
-		wantVersion := `"diagram_version":3`
+		// History row 3 holds the document before the third save, so the
+		// saved document the run used is version 4. A destroy does not read
+		// the diagram, so it records no version.
+		wantVersion := `"diagram_version":4`
 		if action == "destroy" {
 			wantVersion = `"diagram_version":null`
 		}

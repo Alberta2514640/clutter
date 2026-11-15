@@ -44,12 +44,12 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Function logs: AWSLambdaBasicExecutionRole, which B attaches,
-          # limited to Lambda's own log groups.
+          # Function logs: the streams and events of Lambda's own log
+          # groups. B creates each function's group first and lets the
+          # function write only to it.
           - Sid: FunctionLogs
             Effect: Allow
             Action:
-              - logs:CreateLogGroup
               - logs:CreateLogStream
               - logs:PutLogEvents
             Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/*"
@@ -213,6 +213,8 @@ Resources:
             - Sid: Ec2Reads
               Effect: Allow
               Action:
+                - ec2:DescribeAddresses
+                - ec2:DescribeAddressesAttribute
                 - ec2:DescribeAvailabilityZones
                 - ec2:DescribeIamInstanceProfileAssociations
                 - ec2:DescribeImages
@@ -221,6 +223,8 @@ Resources:
                 - ec2:DescribeInstanceTypes
                 - ec2:DescribeInstances
                 - ec2:DescribeInternetGateways
+                - ec2:DescribeKeyPairs
+                - ec2:DescribeNatGateways
                 - ec2:DescribeNetworkAcls
                 - ec2:DescribeNetworkInterfaces
                 - ec2:DescribeRouteTables
@@ -234,21 +238,27 @@ Resources:
                 - ec2:DescribeVpcs
               Resource: "*"
 
-            # A new VPC, subnet, route table, internet gateway, security
-            # group, volume or instance must carry ManagedBy in its create
-            # request.
+            # A new VPC, subnet, route table, internet gateway, NAT gateway,
+            # Elastic IP, key pair, security group, volume or instance must
+            # carry ManagedBy in its create request.
             - Sid: Ec2CreateTagged
               Effect: Allow
               Action:
+                - ec2:AllocateAddress
                 - ec2:CreateInternetGateway
+                - ec2:CreateNatGateway
                 - ec2:CreateRouteTable
                 - ec2:CreateSecurityGroup
                 - ec2:CreateSubnet
                 - ec2:CreateVolume
+                - ec2:ImportKeyPair
                 - ec2:RunInstances
               Resource:
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:elastic-ip/*"
                 - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
                 - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:internet-gateway/*"
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:key-pair/*"
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:natgateway/*"
                 - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:route-table/*"
                 - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*"
                 - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
@@ -278,6 +288,19 @@ Resources:
                 - ec2:CreateRouteTable
                 - ec2:CreateSubnet
               Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
+              Condition:
+                StringEquals:
+                  aws:ResourceTag/ManagedBy: Clutter
+
+            # A NAT gateway goes only in a subnet and VPC Clutter made, with
+            # an Elastic IP Clutter allocated (B's network template).
+            - Sid: Ec2NatGatewayInClutterNetworks
+              Effect: Allow
+              Action: ec2:CreateNatGateway
+              Resource:
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:elastic-ip/*"
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
+                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
               Condition:
                 StringEquals:
                   aws:ResourceTag/ManagedBy: Clutter
@@ -325,14 +348,17 @@ Resources:
               Condition:
                 StringEquals:
                   ec2:CreateAction:
+                    - AllocateAddress
                     - AuthorizeSecurityGroupEgress
                     - AuthorizeSecurityGroupIngress
                     - CreateInternetGateway
+                    - CreateNatGateway
                     - CreateRouteTable
                     - CreateSecurityGroup
                     - CreateSubnet
                     - CreateVolume
                     - CreateVpc
+                    - ImportKeyPair
                     - RunInstances
 
             # Tags change later only on a resource that already carries
@@ -368,6 +394,8 @@ Resources:
                 - ec2:AuthorizeSecurityGroupIngress
                 - ec2:CreateRoute
                 - ec2:DeleteInternetGateway
+                - ec2:DeleteKeyPair
+                - ec2:DeleteNatGateway
                 - ec2:DeleteRoute
                 - ec2:DeleteRouteTable
                 - ec2:DeleteSecurityGroup
@@ -376,15 +404,18 @@ Resources:
                 - ec2:DeleteVpc
                 - ec2:DetachInternetGateway
                 - ec2:DetachVolume
+                - ec2:DisassociateAddress
                 - ec2:DisassociateIamInstanceProfile
                 - ec2:DisassociateRouteTable
                 - ec2:ModifyInstanceAttribute
+                - ec2:ModifyInstanceMetadataOptions
                 - ec2:ModifySecurityGroupRules
                 - ec2:ModifySubnetAttribute
                 - ec2:ModifyVolume
                 - ec2:ModifyVpcAttribute
                 - ec2:ReplaceIamInstanceProfileAssociation
                 - ec2:ReplaceRoute
+                - ec2:ReleaseAddress
                 - ec2:ReplaceRouteTableAssociation
                 - ec2:RevokeSecurityGroupEgress
                 - ec2:RevokeSecurityGroupIngress
@@ -487,8 +518,8 @@ Resources:
                 StringEquals:
                   aws:ResourceTag/ManagedBy: Clutter
 
-            # API Gateway does not list request validators, method responses
-            # and integration responses among the children that inherit a
+            # API Gateway does not list method responses and integration
+            # responses (B's CORS answers) among the children that inherit a
             # REST API's tags, so these carry no tag condition. On an API
             # Clutter did not make they change nothing callers see: a change
             # goes live only with a new deployment, which needs the tag.
@@ -500,7 +531,6 @@ Resources:
                 - apigateway:POST
                 - apigateway:PUT
               Resource:
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/requestvalidators*"
                 - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/responses/*"
                 - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/integration/responses/*"
 
@@ -552,6 +582,7 @@ Resources:
               Action:
                 - dynamodb:DeleteTable
                 - dynamodb:UntagResource
+                - dynamodb:UpdateContinuousBackups
                 - dynamodb:UpdateTable
                 - dynamodb:UpdateTimeToLive
               Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
@@ -559,7 +590,7 @@ Resources:
                 StringEquals:
                   aws:ResourceTag/ManagedBy: Clutter
 
-            # ---------- S3: buckets, never their objects ----------
+            # ---------- S3: buckets, and objects only to empty B's ----------
             # No tag condition here: S3 checks a bucket's tags only on a
             # bucket with ABAC switched on (s3:PutBucketAbac), which the AWS
             # provider ~> 5.0 cannot do, and A's bucket names are the user's
@@ -567,7 +598,7 @@ Resources:
             # any bucket are deleting an empty bucket and setting its tags,
             # versioning and public access block; none reads or writes an
             # object, and none can make one public without a bucket policy
-            # or ACL, which this role cannot set.
+            # or ACL, which this role can set on no bucket but B's (below).
             - Sid: S3Buckets
               Effect: Allow
               Action:
@@ -592,6 +623,75 @@ Resources:
                 - s3:PutBucketTagging
                 - s3:PutBucketVersioning
               Resource: !Sub "arn:${AWS::Partition}:s3:::*"
+
+            # B's buckets only, named with a deployment prefix
+            # (connectors.PrefixFor): the policy that refuses requests not
+            # made over TLS (B's defaults template), which Block Public Access
+            # keeps from ever making a bucket public, and emptying a bucket
+            # whose "Delete files on destroy" field is on (force_destroy), so
+            # destroying it can delete it.
+            - Sid: S3DeploymentBucketPolicies
+              Effect: Allow
+              Action:
+                - s3:DeleteBucketPolicy
+                - s3:ListBucketVersions
+                - s3:PutBucketPolicy
+              Resource: !Sub "arn:${AWS::Partition}:s3:::c????????-*"
+
+            - Sid: S3EmptyDeploymentBuckets
+              Effect: Allow
+              Action:
+                - s3:DeleteObject
+                - s3:DeleteObjectVersion
+              Resource: !Sub "arn:${AWS::Partition}:s3:::c????????-*/*"
+
+            # ---------- CloudWatch Logs: each function's own log group ----------
+            # B creates /aws/lambda/<function> for every function it builds,
+            # all named with a deployment prefix, with a 30-day retention.
+            # DescribeLogGroups supports no resource. A new group must carry
+            # ManagedBy in its create request, and every change, tag or
+            # delete needs it on the group.
+            - Sid: LogsReads
+              Effect: Allow
+              Action: logs:DescribeLogGroups
+              Resource: "*"
+
+            - Sid: LogsReadDeploymentGroups
+              Effect: Allow
+              Action: logs:ListTagsForResource
+              Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+
+            - Sid: LogsCreateTagged
+              Effect: Allow
+              Action: logs:CreateLogGroup
+              Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+              Condition:
+                StringEquals:
+                  aws:RequestTag/ManagedBy: Clutter
+
+            # As for Lambda: a new group's tags are its aws:ResourceTag for
+            # the TagResource check its create makes.
+            - Sid: LogsTagClutterGroups
+              Effect: Allow
+              Action: logs:TagResource
+              Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+              Condition:
+                StringEquals:
+                  aws:ResourceTag/ManagedBy: Clutter
+                StringEqualsIfExists:
+                  aws:RequestTag/ManagedBy: Clutter
+
+            - Sid: LogsChangeClutterGroups
+              Effect: Allow
+              Action:
+                - logs:DeleteLogGroup
+                - logs:DeleteRetentionPolicy
+                - logs:PutRetentionPolicy
+                - logs:UntagResource
+              Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+              Condition:
+                StringEquals:
+                  aws:ResourceTag/ManagedBy: Clutter
 
             # ---------- IAM: only the roles and instance profiles the templates make ----------
             # The templates put every role and instance profile under the
@@ -707,20 +807,18 @@ Resources:
                 - iam:UntagInstanceProfile
               Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/clutter/*-ssm-profile"
 
-            # Only the AWS managed policies the templates attach: SSM access
-            # for instances (ec2 template) and log writing for functions (B's
-            # iam template). Attaching also needs the boundary on the role.
+            # Only the AWS managed policy the templates attach: SSM access for
+            # instances (ec2 template). Attaching also needs the boundary on
+            # the role. A function's log writing is an inline policy on its
+            # own log group (B's iam template); detaching still covers the
+            # managed policy B attached to functions before.
             - Sid: IamAttachTemplatePolicies
               Effect: Allow
               Action: iam:AttachRolePolicy
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
               Condition:
                 ArnEquals:
-                  iam:PolicyARN:
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                  iam:PolicyARN: !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
                   iam:PermissionsBoundary: !Ref PermissionsBoundary
 
             - Sid: IamDetachTemplatePolicies
@@ -875,4 +973,4 @@ Outputs:
   # Raise this whenever the role's trust or permissions change, so a connection
   # can tell which stacks need updating. B's AWS connector holds the same value.
   RoleTemplateVersion:
-    Value: "8"
+    Value: "9"

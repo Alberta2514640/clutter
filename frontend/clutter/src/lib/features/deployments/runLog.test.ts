@@ -25,7 +25,7 @@ describe("runResult", () => {
       "Plan: 19 to add, 0 to change, 0 to destroy.",
       "aws_s3_bucket.b: Creating...",
       "Apply complete! Resources: 19 added, 0 changed, 0 destroyed.",
-      "Apply complete: 6 blocks built.",
+      "Apply complete: 6 blocks built or changed.",
     ].join("\n");
     expect(runResult(log, "completed")?.text).toBe("Apply complete: 19 added");
   });
@@ -35,24 +35,25 @@ describe("runResult", () => {
       "Destroy complete: 4 destroyed",
     );
     expect(
-      runResult("No changes. Your infrastructure matches the configuration.\nApply complete! Resources: 0 added, 0 changed, 0 destroyed.\nApply complete: 3 blocks built.\n", "completed")?.text,
+      runResult("No changes. Your infrastructure matches the configuration.\nApply complete! Resources: 0 added, 0 changed, 0 destroyed.\nApply complete: everything is up to date.\n", "completed")?.text,
     ).toBe("Apply complete: no changes");
   });
 
   it("reads B's block count when no Terraform ran", () => {
-    expect(runResult("Created mock-1 (vm).\nApply complete: 1 block built.\n", "completed")?.text).toBe("Apply complete: 1 block built");
+    expect(runResult("Created mock-1 (vm).\nApply complete: 1 block built or changed.\n", "completed")?.text).toBe("Apply complete: 1 block built or changed");
+    expect(runResult("Apply complete: everything is up to date.\n", "completed")?.text).toBe("Apply complete: everything is up to date");
   });
 
   it("gives each cloud of a split run its own line", () => {
     const log = [
       "== Lab (Mock cloud): apply ==",
-      "Lab (Mock cloud): apply complete, 4 blocks built.",
+      "Lab (Mock cloud): apply complete, everything is up to date.",
       "== Prod (AWS): apply ==",
       "Plan: 2 to add, 0 to change, 0 to destroy.",
       "Apply complete! Resources: 2 added, 0 changed, 0 destroyed.",
-      "Prod (AWS): apply complete, 1 block built.",
+      "Prod (AWS): apply complete, 1 block built or changed.",
     ].join("\n");
-    expect(runResult(log, "completed")?.text).toBe("Lab (Mock cloud): 4 blocks built; Prod (AWS): 1 block built");
+    expect(runResult(log, "completed")?.text).toBe("Lab (Mock cloud): everything is up to date; Prod (AWS): 1 block built or changed");
   });
 
   it("adds up a split destroy across its clouds, once per cloud", () => {
@@ -74,11 +75,11 @@ describe("runResult", () => {
       "Plan: 10 to add, 0 to change, 0 to destroy.",
       "Apply complete! Resources: 10 added, 0 changed, 0 destroyed.",
       "Apply complete! Resources: 10 added, 0 changed, 0 destroyed.",
-      "Lab (OpenStack): apply complete, 4 blocks built.",
+      "Lab (OpenStack): apply complete, 4 blocks built or changed.",
       "== Prod (Amazon Web Services): apply ==",
       "Plan: 7 to add, 1 to change, 0 to destroy.",
       "Apply complete! Resources: 7 added, 1 changed, 0 destroyed.",
-      "Prod (Amazon Web Services): apply complete, 3 blocks built.",
+      "Prod (Amazon Web Services): apply complete, 3 blocks built or changed.",
     ].join("\n");
     expect(runResult(log, "completed")?.text).toBe("Apply complete: 17 added, 1 changed");
   });

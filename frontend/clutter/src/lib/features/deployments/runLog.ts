@@ -12,7 +12,7 @@
 // Lab (Mock cloud): apply =="). B ends a split plan with its own total, so the
 // plan reads as above. Terraform's apply and destroy lines stand once per part
 // and are added up across the parts. B labels its apply line for each cloud
-// ("Lab (Mock cloud): apply complete, 4 blocks built."); when a cloud ran no
+// ("Lab (Mock cloud): apply complete, 4 blocks built or changed."); when a cloud ran no
 // Terraform, those lines stand for the apply instead, one per cloud.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
@@ -35,7 +35,12 @@ const DESTROY = ["destroyed"];
 const done = (kind: Kind, n: number[]) =>
   kind === "apply" ? `Apply complete: ${counts(n, APPLY)}` : `Destroy complete: ${counts(n, DESTROY)}`;
 
-const blocks = (n: string) => `${n} ${n === "1" ? "block" : "blocks"} built`;
+// What B's apply line counts: the blocks the run built or changed, or none.
+const UP_TO_DATE = "everything is up to date";
+const blocks = (n: string) => (n === UP_TO_DATE ? UP_TO_DATE : `${n} ${n === "1" ? "block" : "blocks"} built or changed`);
+const COUNT = `(?:(\\d+) blocks? built or changed|${UP_TO_DATE})\\.?$`;
+const BLOCKS = new RegExp(`^Apply complete: ${COUNT}`);
+const BLOCKS_SPLIT = new RegExp(`^(.+): apply complete, ${COUNT}`);
 
 // The header B writes before each cloud's part of a split run.
 const PART = /^== .+: (plan|apply|destroy|roll back) ==$/;
@@ -51,12 +56,13 @@ function summary(line: string): Summary | null {
   m = line.match(/Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/);
   if (m) return { kind: "plan", from: "terraform", text: `Plan: ${counts([+m[1], +m[2], +m[3]], ["to add", "to change", "to destroy"])}` };
   if (/No changes\. Your infrastructure matches the configuration\./.test(line)) return { kind: "none", from: "terraform", text: "No changes" };
-  // B's lines: "Apply complete: 6 blocks built." and, per cloud of a split
-  // run, "Lab (Mock cloud): apply complete, 4 blocks built."
-  m = line.match(/^(.+): apply complete, (\d+) blocks? built\.?$/);
-  if (m) return { kind: "apply", from: "blocks", cloud: m[1], text: `${m[1]}: ${blocks(m[2])}` };
-  m = line.match(/^Apply complete: (\d+) blocks? built\.?$/);
-  if (m) return { kind: "apply", from: "blocks", text: `Apply complete: ${blocks(m[1])}` };
+  // B's lines: "Apply complete: 6 blocks built or changed." or "Apply
+  // complete: everything is up to date." and, per cloud of a split run, "Lab
+  // (Mock cloud): apply complete, 4 blocks built or changed."
+  m = line.match(BLOCKS_SPLIT);
+  if (m) return { kind: "apply", from: "blocks", cloud: m[1], text: `${m[1]}: ${blocks(m[2] ?? UP_TO_DATE)}` };
+  m = line.match(BLOCKS);
+  if (m) return { kind: "apply", from: "blocks", text: `Apply complete: ${blocks(m[1] ?? UP_TO_DATE)}` };
   return null;
 }
 

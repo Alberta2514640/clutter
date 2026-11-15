@@ -10,13 +10,6 @@ import { Trash2 } from "lucide-react";
 import FieldInput, { inputClass } from "./FieldInput";
 import FunctionCodeUpload from "./FunctionCodeUpload";
 
-// A line under a field's label, for fields whose title alone does not say
-// what they do. The fields themselves come from the manifests.
-const FIELD_HELP: Record<string, string> = {
-  // connectors.FieldStartupScript: cloud-init runs it on every cloud.
-  startup_script: "Runs once as root when the VM first starts. Use it to install and start your app.",
-};
-
 type Props = {
   node: BlockNode;
   catalog: CatalogEntry[];
@@ -79,7 +72,6 @@ export default function BlockForm({ node, catalog, title, disabled, onChange, on
           field={f}
           value={node.data.fields[f.name]}
           disabled={disabled}
-          help={FIELD_HELP[f.name]}
           onChange={(v) => {
             const next = { ...node.data.fields };
             if (v === undefined) delete next[f.name];

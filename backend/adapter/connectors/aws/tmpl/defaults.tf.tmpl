@@ -1,0 +1,62 @@
+# Safe defaults and per-block resources A's templates have no input for.
+{{- range .Functions}}
+
+# The function's log group, kept 30 days. Lambda's default group name, made
+# here first so the function's role needs no right to create it.
+resource "aws_cloudwatch_log_group" "{{.Addr}}" {
+  name              = "/aws/lambda/{{.Name}}"
+  retention_in_days = 30
+}
+{{- end}}
+{{- range .Buckets}}
+
+# The bucket refuses any request not made over TLS.
+resource "aws_s3_bucket_policy" "{{.}}_tls_only" {
+  bucket = aws_s3_bucket.{{.}}.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "DenyInsecureTransport"
+      Effect    = "Deny"
+      Principal = "*"
+      Action    = "s3:*"
+      Resource = [
+        aws_s3_bucket.{{.}}.arn,
+        "${aws_s3_bucket.{{.}}.arn}/*",
+      ]
+      Condition = {
+        Bool = { "aws:SecureTransport" = "false" }
+      }
+    }]
+  })
+
+  # Block Public Access goes on first, so the policy is never checked
+  # against a bucket that has none.
+  depends_on = [aws_s3_bucket_public_access_block.{{.}}_public_access]
+}
+{{- end}}
+{{- range .APIs}}
+
+# Every method of the stage is throttled: {{$.RateLimit}} requests a second on
+# average, bursts of up to {{$.BurstLimit}}. More gets 429 Too Many Requests.
+resource "aws_api_gateway_method_settings" "{{.}}_throttle" {
+  rest_api_id = aws_api_gateway_rest_api.{{.}}.id
+  stage_name  = aws_api_gateway_stage.{{.}}_stage[0].stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = {{$.RateLimit}}
+    throttling_burst_limit = {{$.BurstLimit}}
+  }
+}
+{{- end}}
+{{- range .KeyPairs}}
+
+# The VM's SSH public key, as the block holds it. Marked sensitive only to
+# keep it out of the run's log.
+resource "aws_key_pair" "{{.Addr}}" {
+  key_name   = "{{.Name}}"
+  public_key = sensitive("{{.Key}}")
+}
+{{- end}}

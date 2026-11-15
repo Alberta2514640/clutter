@@ -98,6 +98,9 @@ type FieldSpec struct {
 	Required bool      `json:"required"`
 	Default  any       `json:"default,omitempty"`
 	Allowed  []string  `json:"allowed,omitempty"`
+	// Help is one short line the editor shows with the field, for a field
+	// whose title alone does not say what it does.
+	Help string `json:"help,omitempty"`
 }
 
 // EdgeSpec is a pair of block kinds a connector can wire together.

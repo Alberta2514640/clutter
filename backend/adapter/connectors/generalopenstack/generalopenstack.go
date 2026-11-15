@@ -333,8 +333,9 @@ func runPublicHosts(env map[string]string, allowPrivate bool) ([]string, error) 
 }
 
 // capture passes Terraform's output through to the run's log and keeps what
-// the connector reads back: the plan summary (terraform.PlanSummary) and the
-// id outputs.
+// the connector reads back: the plan summary (terraform.PlanSummary), the
+// id outputs, and the blocks whose main resource the apply created or
+// changed (terraform.ChangedResource).
 type capture struct {
 	mu    sync.Mutex
 	w     io.Writer
@@ -343,12 +344,17 @@ type capture struct {
 	plan     connectors.PlanResult
 	planSeen bool
 	ids      map[string]string // node id -> cloud id, from the id outputs
+	changed  map[string]bool   // node ids
 }
+
+// primaryTypes are the resource types that stand for a block in an apply's
+// count: each block kind's main resource, at the block's address (addr).
+var primaryTypes = []string{tInstance, tNetwork, tSecgroup, tVolume}
 
 var idOutput = regexp.MustCompile(`^` + outputIDPrefix + `([A-Za-z0-9_-]{1,64}) = "([^"\\]*)"\s*$`)
 
 func newCapture(w io.Writer) *capture {
-	c := &capture{w: w, ids: map[string]string{}}
+	c := &capture{w: w, ids: map[string]string{}, changed: map[string]bool{}}
 	c.lines = terraform.NewLineWriter(c.keep)
 	return c
 }
@@ -372,15 +378,25 @@ func (c *capture) keep(line string) error {
 	if m := idOutput.FindStringSubmatch(line); m != nil {
 		c.ids[m[1]] = m[2]
 	}
+	if a, _, ok := terraform.ChangedResource(line); ok {
+		for _, t := range primaryTypes {
+			if id, found := strings.CutPrefix(a, t+"."+addr("")); found {
+				c.changed[id] = true
+			}
+		}
+	}
 	return nil
 }
 
+// resources maps each block the apply created or changed to its cloud id.
 func (c *capture) resources() map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make(map[string]string, len(c.ids))
+	out := map[string]string{}
 	for k, v := range c.ids {
-		out[k] = v
+		if c.changed[k] {
+			out[k] = v
+		}
 	}
 	return out
 }

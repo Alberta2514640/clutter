@@ -25,6 +25,8 @@ export type FieldSpec = {
   required: boolean;
   default?: unknown;
   allowed?: string[];
+  // One short line shown with the field.
+  help?: string;
 };
 
 // connectors.BlockDisplay: the cloud's own name for the block and the key of

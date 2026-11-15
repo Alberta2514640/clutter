@@ -332,7 +332,7 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 		if err != nil {
 			return fail(failGeneric, err)
 		}
-		fmt.Fprintf(rw, "Apply complete: %s.\n", blocksBuilt(len(res.Resources)))
+		fmt.Fprintf(rw, "Apply complete: %s.\n", blocksChanged(len(res.Resources)))
 	case connectors.ActionDestroy:
 		if _, err := c.Destroy(ctx, run, d); err != nil {
 			return fail(failGeneric, err)
@@ -344,14 +344,18 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 	return "", nil
 }
 
-// blocksBuilt names what B's own apply line counts: the blocks a connector
-// reports built (RunResult.Resources, one per node). Terraform's own summary
-// line, earlier in the log, counts its resources, which are more.
-func blocksBuilt(n int) string {
-	if n == 1 {
-		return "1 block built"
+// blocksChanged names what B's own apply line counts: the blocks a connector
+// reports it built or changed in this run (RunResult.Resources, one per node).
+// Terraform's own summary line, earlier in the log, counts its resources,
+// which are more.
+func blocksChanged(n int) string {
+	switch n {
+	case 0:
+		return "everything is up to date"
+	case 1:
+		return "1 block built or changed"
 	}
-	return fmt.Sprintf("%d blocks built", n)
+	return fmt.Sprintf("%d blocks built or changed", n)
 }
 
 // preflight is what every cloud of a run passes before any cloud changes: its

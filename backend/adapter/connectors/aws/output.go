@@ -2,7 +2,6 @@ package aws
 
 import (
 	"io"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -10,8 +9,6 @@ import (
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/terraform"
 )
-
-var createdLine = regexp.MustCompile(`^([A-Za-z0-9_.-]+): (?:Creation|Modifications) complete after \S+ \[id=([^\]]+)\]`)
 
 // runLog passes Terraform's output to the run's log line by line
 // (terraform.LineWriter), removes the session keys this connector derived (the
@@ -25,7 +22,7 @@ type runLog struct {
 
 	plan     connectors.PlanResult
 	planSeen bool
-	created  map[string]string // Terraform address -> cloud id
+	created  map[string]string // Terraform address -> cloud id, for what the apply created or changed
 }
 
 func newRunLog(w io.Writer, keys SessionKeys) *runLog {
@@ -55,8 +52,8 @@ func (l *runLog) line(s string) error {
 	if res, ok := terraform.PlanSummary(s); ok {
 		l.plan, l.planSeen = res, true
 	}
-	if m := createdLine.FindStringSubmatch(strings.TrimSpace(s)); m != nil {
-		l.created[m[1]] = m[2]
+	if addr, id, ok := terraform.ChangedResource(s); ok {
+		l.created[addr] = id
 	}
 	_, err := io.WriteString(l.w, s)
 	return err

@@ -310,7 +310,9 @@ func TestRunsGoThroughTheSharedRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(res.Resources) != 2 || res.Resources["n1"] != "9b1d5a8e-0000-4000-8000-0000000000a1" {
+	// Only the blocks the apply built or changed count: n3 has an id but
+	// was left as it was.
+	if len(res.Resources) != 2 || res.Resources["n1"] != "9b1d5a8e-0000-4000-8000-0000000000a1" || res.Resources["n2"] == "" {
 		t.Fatalf("apply resources %v", res.Resources)
 	}
 

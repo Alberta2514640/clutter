@@ -460,7 +460,7 @@ func TestEveryBlockAppliesOnLocalStack(t *testing.T) {
 	destroyed := false
 	l.destroyAtEnd(t, g, d, func() bool { return destroyed })
 	applyLog := run(connectors.ActionApply)
-	if want := fmt.Sprintf("Apply complete: %d blocks built.", len(g.Blocks)); !strings.Contains(applyLog, want) {
+	if want := fmt.Sprintf("Apply complete: %d blocks built or changed.", len(g.Blocks)); !strings.Contains(applyLog, want) {
 		t.Errorf("not every block's main resource was reported built (want %q):\n%s", want, applyLog)
 	}
 	if s := store.waitDeployment(d.ID, jobs.DeploymentLive); s != jobs.DeploymentLive {

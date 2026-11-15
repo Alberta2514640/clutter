@@ -208,7 +208,8 @@ type PlanResult struct {
 
 // RunResult says what an apply or destroy did.
 type RunResult struct {
-	// Resources maps a node id to the cloud's id for what it built.
+	// Resources maps a node id to the cloud's id, for each block whose main
+	// resource the run created or changed. A block left as it was is not in it.
 	Resources map[string]string
 }
 

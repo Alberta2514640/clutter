@@ -12,6 +12,8 @@ var (
 	fieldSize   = connectors.StandardField(connectors.KindVM, "size")
 	fieldPublic = connectors.StandardField(connectors.KindVM, "public")
 	fieldCIDR   = connectors.StandardField(connectors.KindNetwork, "cidr")
+	// fieldPrivateInternet joins the network to the deployment's router.
+	fieldPrivateInternet = connectors.StandardField(connectors.KindNetwork, "private_internet")
 	// fieldIngress lists what may come in, such as "tcp/22,tcp/443,udp/1000-2000,icmp".
 	fieldIngress    = connectors.StandardField(connectors.KindFirewall, "ingress")
 	fieldSourceCIDR = connectors.StandardField(connectors.KindFirewall, "source_cidr")

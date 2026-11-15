@@ -41,14 +41,27 @@ func TestExamplesOnLocalStack(t *testing.T) {
 			l.destroyAtEnd(t, g, d, func() bool { return destroyed })
 
 			applyLog := l.run(t, connectors.ActionApply, g, d)
-			want := fmt.Sprintf("Apply complete: %d blocks built.", len(g.Blocks))
+			want := fmt.Sprintf("Apply complete: %d blocks built or changed.", len(g.Blocks))
 			if len(g.Blocks) == 1 {
-				want = "Apply complete: 1 block built."
+				want = "Apply complete: 1 block built or changed."
 			}
 			if !strings.Contains(applyLog, want) {
 				t.Errorf("not every block was reported built (want %q):\n%s", want, applyLog)
 			}
 			added := addedLine.FindStringSubmatch(applyLog)
+			// A second apply of the same diagram changes no block. Only where
+			// the example has no VM: LocalStack's EC2 keeps no instance's
+			// vpc_security_group_ids and says a private instance has a public
+			// address, so every apply sees an instance drift that AWS would not.
+			hasVM := false
+			for _, b := range g.Blocks {
+				hasVM = hasVM || b.Kind == connectors.KindVM
+			}
+			if !hasVM {
+				if again := l.run(t, connectors.ActionApply, g, d); !strings.Contains(again, "Apply complete: everything is up to date.") {
+					t.Errorf("a second apply changed blocks:\n%s", again)
+				}
+			}
 			destroyLog := l.run(t, connectors.ActionDestroy, g, d)
 			destroyed = true
 			gone := destroyedLine.FindStringSubmatch(destroyLog)
