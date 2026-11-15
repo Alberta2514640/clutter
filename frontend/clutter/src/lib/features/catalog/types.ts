@@ -27,6 +27,9 @@ export type FieldSpec = {
   allowed?: string[];
   // One short line shown with the field.
   help?: string;
+  // On a deployment setting: the block kinds it is about. Empty or missing
+  // means every deployment (settingsFor).
+  applies_to?: BlockKind[];
 };
 
 // connectors.BlockDisplay: the cloud's own name for the block and the key of

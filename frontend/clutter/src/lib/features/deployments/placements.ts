@@ -8,7 +8,7 @@
 // Relative imports: Vitest runs this file without the "@/" alias.
 import type { Connection } from "../connections/types";
 import type { BlockRef } from "./compatibility";
-import type { CloudReport, Compatibility, PartProgress, Placement, PlacementInput, Problem } from "./types";
+import { COST_NOTE, type CloudReport, type Compatibility, type PartProgress, type Placement, type PlacementInput, type Problem } from "./types";
 
 // blockCloud is the connection a block runs on: its placement's, or the
 // deployment's own.
@@ -53,6 +53,76 @@ export function movePlacement(
     else out.push({ connection_id: connectionId, node_ids: [blockId], settings: {} });
   }
   return out.filter((p) => p.node_ids.length > 0).map((p) => ({ ...p, node_ids: [...p.node_ids].sort() }));
+}
+
+// placeBlock is the change "run this block on that connection" makes: the
+// block moves there, and it is no longer left out. A deployment's left-out
+// blocks are left out of every cloud it builds on, so a block moved to a cloud
+// and still left out would be built nowhere.
+export function placeBlock(
+  primaryConnectionId: string,
+  placements: Placement[],
+  exclusions: string[],
+  blocks: BlockRef[],
+  blockId: string,
+  connectionId: string,
+): { placements: PlacementInput[]; exclusions: string[] } {
+  const ids = new Set(blocks.map((b) => b.id));
+  return {
+    placements: movePlacement(primaryConnectionId, placements, blocks, blockId, connectionId),
+    exclusions: exclusions.filter((x) => ids.has(x) && x !== blockId),
+  };
+}
+
+// cloudBlocks are the blocks that run on one connection of a deployment.
+export function cloudBlocks(primaryConnectionId: string, placements: Placement[], blocks: BlockRef[], connectionId: string): BlockRef[] {
+  return blocks.filter((b) => blockCloud(primaryConnectionId, placements, b.id) === connectionId);
+}
+
+// The connections a split deployment builds on, its own first: a placement
+// that holds no block is not one of them.
+const usedPlacements = (placements: Placement[] | null | undefined) => (placements ?? []).filter((p) => (p.node_ids ?? []).length > 0);
+
+// deploymentTitle names a deployment by its connections: "lab" on one cloud,
+// "devstack + Local AWS" over two.
+export function deploymentTitle(connectionName: string, placements: Placement[] | null | undefined): string {
+  const names = [connectionName];
+  for (const p of usedPlacements(placements)) if (!names.includes(p.connection_name)) names.push(p.connection_name);
+  return names.join(" + ");
+}
+
+// needsTwoClouds reports whether a deployment's blocks run, or need to run,
+// on more than its own cloud: some are placed on another connection, or its
+// own cloud cannot build some of them.
+export function needsTwoClouds(placements: Placement[] | null | undefined, unsupportedOnOwn: number): boolean {
+  return usedPlacements(placements).length > 0 || unsupportedOnOwn > 0;
+}
+
+// A connection that can run a block its deployment's own cloud cannot.
+export type PlacementSuggestion = { block: BlockRef; connection: Connection };
+
+// placementSuggestions pairs each block the deployment's own cloud cannot
+// build with the first other working connection whose cloud can, so the
+// panel offers "Run files on Local AWS" before "Leave it out".
+export function placementSuggestions(
+  unsupported: BlockRef[],
+  primaryConnectionId: string,
+  connections: Connection[],
+  offers: (connector: string, kind: string) => boolean,
+): PlacementSuggestion[] {
+  const others = connections.filter((c) => c.id !== primaryConnectionId && c.status === "working");
+  return unsupported.flatMap((block) => {
+    const connection = others.find((c) => offers(c.connector, block.kind));
+    return connection ? [{ block, connection }] : [];
+  });
+}
+
+// suggestedPlacements turns the blocks a new deployment runs on other
+// connections into what B's create takes, one placement per connection.
+export function suggestedPlacements(chosen: { blockId: string; connectionId: string }[]): PlacementInput[] {
+  const byConnection = new Map<string, string[]>();
+  for (const c of chosen) byConnection.set(c.connectionId, [...(byConnection.get(c.connectionId) ?? []), c.blockId]);
+  return [...byConnection].map(([connection_id, ids]) => ({ connection_id, node_ids: [...ids].sort(), settings: {} }));
 }
 
 // withPlacementSettings replaces one placed cloud's settings.
@@ -111,7 +181,7 @@ export function splitOnly(report: Compatibility): { problems: Problem[]; notes: 
   const inCloud = (p: Problem, pick: (c: CloudReport) => Problem[] | null) => clouds.some((c) => (pick(c) ?? []).some((q) => same(p, q)));
   return {
     problems: (report.problems ?? []).filter((p) => !inCloud(p, (c) => c.problems)),
-    notes: (report.notes ?? []).filter((n) => n.code !== KEY_NOTE && n.code !== ADDRESS_NOTE && !inCloud(n, (c) => c.notes)),
+    notes: (report.notes ?? []).filter((n) => n.code !== KEY_NOTE && n.code !== ADDRESS_NOTE && n.code !== COST_NOTE && !inCloud(n, (c) => c.notes)),
   };
 }
 

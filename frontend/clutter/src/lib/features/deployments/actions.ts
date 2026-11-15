@@ -4,7 +4,6 @@
 
 // Relative imports: Vitest runs this file without the "@/" alias.
 import type { Connection } from "../connections/types";
-import { joinAnd } from "./preview";
 import type { DeploymentStatus } from "./types";
 
 export type RowAction = "preview" | "plan" | "apply" | "destroy" | "remove";
@@ -64,18 +63,6 @@ export function actionReasons(s: RowState): Record<RowAction, string | null> {
     ),
     remove: first(s.running && REASON.running, s.saving && REASON.saving, !canOfferRemove(s.status) && REASON.live),
   };
-}
-
-// One line per distinct reason, naming the buttons it turns off, in the order
-// the buttons are shown: "Plan and Deploy are off. A run is in progress. ..."
-export function offLines(reasons: Partial<Record<RowAction, string | null>>, shown: RowAction[]): string[] {
-  const byReason = new Map<string, string[]>();
-  for (const a of shown) {
-    const r = reasons[a];
-    if (!r) continue;
-    byReason.set(r, [...(byReason.get(r) ?? []), ACTION_LABEL[a]]);
-  }
-  return [...byReason].map(([reason, labels]) => `${joinAnd(labels)} ${labels.length === 1 ? "is" : "are"} off. ${reason}`);
 }
 
 // What "Add deployment" can offer. "none": the organization has no

@@ -75,6 +75,14 @@ export function blockFields(catalog: CatalogEntry[], kind: BlockKind): FieldSpec
   return out;
 }
 
+// settingsFor keeps the deployment settings that are about the diagram's
+// blocks: a function runtime only when the diagram has a function. A setting
+// that names no kind is about every deployment.
+export function settingsFor(settings: FieldSpec[] | null | undefined, kinds: Iterable<BlockKind>): FieldSpec[] {
+  const present = new Set(kinds);
+  return (settings ?? []).filter((f) => !f.applies_to || f.applies_to.length === 0 || f.applies_to.some((k) => present.has(k)));
+}
+
 // defaultValues holds each field's default, leaving out fields with none.
 export function defaultValues(fields: FieldSpec[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};

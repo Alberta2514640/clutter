@@ -28,8 +28,13 @@ type Props = {
 export default function BlockPalette({ blocks, loading, error, onAdd, onDragKind, links }: Props) {
   return (
     <aside aria-label="Building blocks" className="flex h-full w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950">
-      <div className="border-b border-slate-800 px-4 py-3">
+      {/* "How linking works" sits up here: the bottom left corner is where
+          Next's dev indicator draws, and it covered the link. */}
+      <div className="space-y-0.5 border-b border-slate-800 px-4 pb-2 pt-3">
         <h2 className="text-sm font-semibold text-white">Building blocks</h2>
+        <div className="-ml-1.5">
+          <HowLinking links={links} />
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {loading ? (
@@ -92,9 +97,6 @@ export default function BlockPalette({ blocks, loading, error, onAdd, onDragKind
           </ul>
         )}
       </div>
-      <div className="border-t border-slate-800 px-3 py-2">
-        <HowLinking links={links} />
-      </div>
     </aside>
   );
 }
@@ -136,7 +138,7 @@ function HowLinking({ links }: { links: EdgeCard[] }) {
           role="dialog"
           aria-label="How linking works"
           data-testid="how-linking"
-          className="absolute bottom-9 left-0 z-50 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs shadow-2xl">
+          className="absolute left-0 top-8 z-50 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-slate-300">Drag from a block&apos;s dot onto another block.</p>
             <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="rounded p-0.5 text-slate-400 hover:text-white">

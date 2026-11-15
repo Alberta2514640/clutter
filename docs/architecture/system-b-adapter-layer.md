@@ -139,7 +139,7 @@ The first building blocks, and what each first connector maps them to:
 | Firewall rules | new template: security group (A's EC2 template has none) | security group and rules |
 | Block volume | new template: EBS volume and attachment | Cinder volume and attachment |
 | Bucket | S3 bucket (A's template) | removed (Swift later) |
-| Function | Lambda (A's template). Its code is the zip uploaded through B for that block, or placeholder code when there is none. Its handler is the block's `handler` field or the runtime's default (see § AWS) | removed |
+| Function | Lambda (A's template). Its code is the zip uploaded through B for that block, or, when there is none, Clutter's sample code, which answers every request with a small JSON message (`backend/adapter/README.md` § Function code). Its handler is the block's `handler` field or the runtime's default (see § AWS) | removed |
 | Key-value table | DynamoDB (A's template) | removed |
 | HTTP API | API Gateway REST API (A's template, which has no Lambda integration). B's own files add the routes and integrations for each HTTP API to function edge | removed |
 | Server setup | the VM's startup script, run by cloud-init at first boot (it replaces A's Ansible over SSM for B) | the VM's startup script, run by cloud-init at first boot |

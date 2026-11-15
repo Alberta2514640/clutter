@@ -16,7 +16,14 @@ const (
 	ResultURL            = "url"
 	ResultBucket         = "bucket"
 	ResultTable          = "table"
+	// ResultCode is what a function runs. Its one value, ResultCodeSample,
+	// says the function still runs Clutter's sample code, which answers every
+	// request, because no code was uploaded for it.
+	ResultCode = "code"
 )
+
+// ResultCodeSample is ResultCode's value for a function that runs the sample.
+const ResultCodeSample = "sample"
 
 // ResultNames are the results a block of a kind can have, in the order the
 // deploy panel lists them. A connector renders an output for each one it can
@@ -31,6 +38,8 @@ func ResultNames(kind BlockKind) []string {
 		return []string{ResultBucket}
 	case KindTable:
 		return []string{ResultTable}
+	case KindFunction:
+		return []string{ResultCode}
 	}
 	return nil
 }

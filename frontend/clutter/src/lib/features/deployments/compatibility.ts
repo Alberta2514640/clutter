@@ -5,7 +5,7 @@
 // Relative imports: Vitest runs this file without the "@/" alias.
 import { manifestOffers } from "../catalog/forms";
 import type { Manifest } from "../catalog/types";
-import type { Compatibility, Problem } from "./types";
+import { COST_NOTE, type Compatibility, type Problem } from "./types";
 
 export type BlockRef = { id: string; kind: string; name: string };
 
@@ -80,7 +80,8 @@ export function compatibilityLine(
     summary: `${cloudTitle}: ${parts.join(", ")}`,
     choices,
     problems: other.map((p) => `${where(p, byId)}${p.message}`),
-    notes: (report.notes ?? []).map((p) => `${where(p, byId)}${p.message}`),
+    // A cost note is said once, in the deploy confirmation (confirm.ts).
+    notes: (report.notes ?? []).filter((p) => p.code !== COST_NOTE).map((p) => `${where(p, byId)}${p.message}`),
   };
 }
 

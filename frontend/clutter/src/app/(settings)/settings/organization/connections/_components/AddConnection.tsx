@@ -7,15 +7,17 @@ import { cloudLook } from "@/lib/features/catalog/display";
 import { useLinkedAccounts } from "@/lib/features/catalog/hooks";
 import type { CatalogEntry, LinkedAccount } from "@/lib/features/catalog/types";
 import { fitsCloudsYaml } from "@/lib/features/connections/cloudsYaml";
-import { useCreateConnection } from "@/lib/features/connections/hooks";
+import { useConnections, useCreateConnection } from "@/lib/features/connections/hooks";
 import { chosenLinkedAccount, startRegion } from "@/lib/features/connections/linkedAccount";
 import { offersLocalDevstack } from "@/lib/features/connections/localDevstack";
+import { localConnectionName } from "@/lib/features/connections/localName";
 import { DEFAULT_AWS_REGION, isLocalDevApi } from "@/lib/features/organization/api";
-import { Link2, Loader2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Link2, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import AwsLinkFlow from "../../aws-account/_components/AwsLinkFlow";
 import CloudsYamlUpload from "./CloudsYamlUpload";
+import ConnectLocalAccount from "./ConnectLocalAccount";
 import { Loading, Notice } from "./ConnectionsPage";
 import UseLocalDevstack from "./UseLocalDevstack";
 
@@ -23,8 +25,10 @@ import UseLocalDevstack from "./UseLocalDevstack";
 // page that lists and removes its links, and the region the flow opens the
 // cloud in, which a new connection starts on. AWS links through A's
 // CloudFormation flow (AwsLinkFlow).
-const LINK_FLOWS: Record<string, { page: string; pageLabel: string; region: string }> = {
-  aws: { page: "/settings/organization/aws-account", pageLabel: "Manage AWS account links", region: DEFAULT_AWS_REGION },
+// local: on a developer's machine, A2 links a fake account of this cloud
+// (ADR-011), so Connect local can link and connect it in one step.
+const LINK_FLOWS: Record<string, { page: string; pageLabel: string; region: string; local: boolean }> = {
+  aws: { page: "/settings/organization/aws-account", pageLabel: "Manage AWS account links", region: DEFAULT_AWS_REGION, local: true },
 };
 
 const inputClass =
@@ -129,6 +133,17 @@ function ConnectionForm({
   const linkedAccounts = linkedQ.data ?? [];
   const linked = chosenLinkedAccount(linkedAccounts, picked, justLinked);
   const fields = credentials.fields ?? [];
+
+  // On a developer's machine the cloud running locally comes first, in one
+  // click; the form for a cloud of one's own sits behind a toggle.
+  const connectionsQ = useConnections(token, organizationId);
+  const shortName = manifest.display?.short_name || manifest.title;
+  const localName = localConnectionName(shortName, (connectionsQ.data ?? []).map((c) => c.name));
+  const localDevstack = offersLocalDevstack(isLocalDevApi, fields.map((f) => f.name), mode, linkedOnly);
+  const localAccount = isLocalDevApi && linkedOnly && !!linkFlow?.local;
+  const localFirst = localDevstack || localAccount;
+  const [ownOpen, setOwnOpen] = useState(false);
+  const showOwn = !localFirst || ownOpen;
   // With no linked account yet, linking one is the only way forward, so the flow is open.
   const showLinkFlow = !!linkFlow && linkedQ.isSuccess && (linkOpen || linkedAccounts.length === 0);
   // The flow closes once the new account is listed, taking its own notice
@@ -182,7 +197,32 @@ function ConnectionForm({
         Connect {manifest.title}
       </h4>
 
-      {entry.has_linked_accounts && !linkedOnly && (
+      {localDevstack && (
+        <UseLocalDevstack token={token} organizationId={organizationId} connector={manifest.connector} cloudName={shortName} name={localName} onLinked={onAdded} />
+      )}
+      {localAccount && linkFlow && (
+        <ConnectLocalAccount
+          token={token}
+          organizationId={organizationId}
+          connector={manifest.connector}
+          cloudName={shortName}
+          name={localName}
+          region={linkFlow.region}
+          onAdded={onAdded}
+        />
+      )}
+      {localFirst && (
+        <button
+          type="button"
+          aria-expanded={ownOpen}
+          onClick={() => setOwnOpen((o) => !o)}
+          className="flex items-center gap-1 text-sm text-slate-300 hover:text-white">
+          {ownOpen ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+          {linkedOnly ? `I have my own ${shortName} account` : `I have my own ${shortName}`}
+        </button>
+      )}
+
+      {showOwn && entry.has_linked_accounts && !linkedOnly && (
         <div className="flex gap-2" role="tablist" aria-label="How to connect">
           {(["linked", "credentials"] as const).map((m) => (
             <button
@@ -198,7 +238,7 @@ function ConnectionForm({
         </div>
       )}
 
-      {mode === "linked" && (
+      {showOwn && mode === "linked" && (
         <div className="space-y-2">
           {linkedOnly && <p className="text-sm text-slate-300">Use a linked {manifest.title} account.</p>}
           {linkedOnly && !entry.has_linked_accounts ? (
@@ -234,12 +274,6 @@ function ConnectionForm({
               {justLinkedAccount.name} is linked and chosen above. Check the name of the connection, then choose Check and connect.
             </Notice>
           )}
-          {linkFlow && linkedQ.isSuccess && linkedAccounts.length > 0 && !linkOpen && (
-            <button type="button" onClick={() => setLinkOpen(true)} className="inline-flex items-center gap-1 text-sm text-teal-300 hover:underline">
-              <Plus className="h-3.5 w-3.5" aria-hidden />
-              Link a new {manifest.title} account
-            </button>
-          )}
           {showLinkFlow && (
             <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
               <h5 className="text-sm font-semibold text-white">Link a new {manifest.title} account</h5>
@@ -258,17 +292,22 @@ function ConnectionForm({
             </div>
           )}
           {linkFlow && (
-            <Link href={linkFlow.page} className="inline-block text-xs text-slate-400 underline underline-offset-2 hover:text-white">
-              {linkFlow.pageLabel}
-            </Link>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              {linkedQ.isSuccess && linkedAccounts.length > 0 && !linkOpen && (
+                <button type="button" onClick={() => setLinkOpen(true)} className="inline-flex items-center gap-1 text-sm text-teal-300 hover:underline">
+                  <Plus className="h-3.5 w-3.5" aria-hidden />
+                  Link a new {manifest.title} account
+                </button>
+              )}
+              <Link href={linkFlow.page} className="inline-block text-xs text-slate-400 underline underline-offset-2 hover:text-white">
+                {linkFlow.pageLabel}
+              </Link>
+            </div>
           )}
         </div>
       )}
 
-      {offersLocalDevstack(isLocalDevApi, fields.map((f) => f.name), mode, linkedOnly) && (
-        <UseLocalDevstack token={token} organizationId={organizationId} connector={manifest.connector} onLinked={onAdded} />
-      )}
-
+      {showOwn && (
       <form onSubmit={submit} className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm text-slate-300">
@@ -343,6 +382,7 @@ function ConnectionForm({
         )}
       </Button>
       </form>
+      )}
     </section>
   );
 }

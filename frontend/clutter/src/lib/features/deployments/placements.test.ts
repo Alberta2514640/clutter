@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { Connection } from "../connections/types";
 import {
   blockCloud,
+  cloudBlocks,
   cloudChoices,
   cloudsLine,
   crossNotes,
+  deploymentTitle,
   movePlacement,
+  needsTwoClouds,
   orderedClouds,
   partLines,
+  placeBlock,
   placementReason,
+  placementSuggestions,
   splitOnly,
+  suggestedPlacements,
   withPlacementSettings,
 } from "./placements";
 import type { Compatibility, Placement } from "./types";
@@ -168,5 +174,69 @@ describe("partLines", () => {
       ]).map((l) => l.text),
     ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed"]);
     expect(partLines(null)).toEqual([]);
+  });
+});
+
+describe("placeBlock", () => {
+  it("moves a block to a cloud and puts it back in the deployment, so it is built somewhere", () => {
+    expect(placeBlock("c-os", [], ["files", "gone"], blocks, "files", "c-aws")).toEqual({
+      placements: [{ connection_id: "c-aws", node_ids: ["files"], settings: {} }],
+      exclusions: [],
+    });
+  });
+
+  it("keeps the other left-out blocks", () => {
+    expect(placeBlock("c-aws", [lab], ["web", "files"], blocks, "db", "c-aws").exclusions).toEqual(["web", "files"]);
+  });
+});
+
+describe("cloudBlocks", () => {
+  it("lists the blocks one connection of a deployment runs", () => {
+    expect(cloudBlocks("c-aws", [lab], blocks, "c-lab").map((b) => b.id)).toEqual(["db"]);
+    expect(cloudBlocks("c-aws", [lab], blocks, "c-aws").map((b) => b.id)).toEqual(["web", "files"]);
+  });
+});
+
+describe("deploymentTitle", () => {
+  it("names every connection a split deployment builds on", () => {
+    expect(deploymentTitle("devstack", [{ ...lab, connection_name: "Local AWS" }])).toBe("devstack + Local AWS");
+    expect(deploymentTitle("devstack", [{ ...lab, node_ids: [] }])).toBe("devstack");
+    expect(deploymentTitle("devstack", null)).toBe("devstack");
+  });
+});
+
+describe("needsTwoClouds", () => {
+  it("is true when blocks are placed elsewhere or the own cloud cannot build some", () => {
+    expect(needsTwoClouds([lab], 0)).toBe(true);
+    expect(needsTwoClouds([], 1)).toBe(true);
+    expect(needsTwoClouds([{ ...lab, node_ids: [] }], 0)).toBe(false);
+    expect(needsTwoClouds(null, 0)).toBe(false);
+  });
+});
+
+describe("placementSuggestions", () => {
+  const offers = (connector: string, kind: string) => connector === "aws" || kind !== "bucket";
+  const files = blocks[2];
+
+  it("suggests the first other working connection whose cloud can build the block", () => {
+    const connections = [conn("c-os", "general-openstack"), conn("c-broken", "aws", "failed"), conn("c-aws", "aws")];
+    expect(placementSuggestions([files], "c-os", connections, offers)).toEqual([{ block: files, connection: connections[2] }]);
+  });
+
+  it("suggests nothing when no other connection can build it", () => {
+    expect(placementSuggestions([files], "c-os", [conn("c-os", "general-openstack"), conn("c-os2", "general-openstack")], offers)).toEqual([]);
+  });
+
+  it("groups the chosen blocks into one placement per connection", () => {
+    expect(
+      suggestedPlacements([
+        { blockId: "files", connectionId: "c-aws" },
+        { blockId: "db", connectionId: "c-aws" },
+        { blockId: "web", connectionId: "c-lab" },
+      ]),
+    ).toEqual([
+      { connection_id: "c-aws", node_ids: ["db", "files"], settings: {} },
+      { connection_id: "c-lab", node_ids: ["web"], settings: {} },
+    ]);
   });
 });

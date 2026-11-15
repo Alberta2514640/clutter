@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Connection } from "../connections/types";
-import { actionReasons, addDeploymentChoice, offLines, REASON, type RowState } from "./actions";
+import { actionReasons, addDeploymentChoice, REASON, type RowState } from "./actions";
 
 const base: RowState = { status: "new", running: false, saving: false, unsaved: null, checking: false, checkFailed: false, ready: true };
 const unsaved = "Save the diagram first. Deployments use the saved version.";
@@ -41,21 +41,6 @@ describe("actionReasons", () => {
     const r = actionReasons({ ...base, status: "destroyed" });
     expect(r.remove).toBeNull();
     expect(r.destroy).toBe(REASON.destroyed);
-  });
-});
-
-describe("offLines", () => {
-  it("groups buttons by reason, in button order", () => {
-    const lines = offLines(actionReasons({ ...base, running: true }), ["preview", "plan", "apply", "destroy"]);
-    expect(lines).toEqual([`Plan, Deploy and Destroy are off. ${REASON.running}`]);
-  });
-
-  it("says nothing when every button works", () => {
-    expect(offLines(actionReasons({ ...base, status: "live" }), ["preview", "plan", "apply", "destroy"])).toEqual([]);
-  });
-
-  it("uses is for one button", () => {
-    expect(offLines({ destroy: REASON.nothingBuilt }, ["plan", "destroy"])).toEqual([`Destroy is off. ${REASON.nothingBuilt}`]);
   });
 });
 

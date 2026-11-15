@@ -86,6 +86,10 @@ export type Problem = {
   message: string;
 };
 
+// connectors.CodeCost: a note that names what a deployment costs beyond its
+// blocks. The deploy confirmation says it; the compatibility lines do not.
+export const COST_NOTE = "cost";
+
 // Problems stop a run; notes do not.
 export type Report = {
   ready: boolean;

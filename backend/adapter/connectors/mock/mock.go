@@ -45,14 +45,14 @@ func (*Connector) Manifest() connectors.Manifest {
 		Regions:   []string{"mock-1", "mock-2"},
 		Display:   connectors.Display{ShortName: "Mock", Logo: "logo"},
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM, "VM").WithDisplay("VM", ""),
-			connectors.StandardBlock(connectors.KindNetwork, "Network").WithDisplay("Network", ""),
-			connectors.StandardBlock(connectors.KindFirewall, "Firewall").WithDisplay("Firewall", ""),
-			connectors.StandardBlock(connectors.KindVolume, "Volume").WithDisplay("Volume", ""),
-			{Kind: connectors.KindBucket, Treatment: connectors.TreatmentRemoved, Title: "Bucket"},
-			{Kind: connectors.KindFunction, Treatment: connectors.TreatmentRemoved, Title: "Function"},
-			{Kind: connectors.KindTable, Treatment: connectors.TreatmentRemoved, Title: "Table"},
-			{Kind: connectors.KindHTTPAPI, Treatment: connectors.TreatmentRemoved, Title: "HTTP API"},
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("VM", ""),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("Network", ""),
+			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Firewall", ""),
+			connectors.StandardBlock(connectors.KindVolume).WithDisplay("Volume", ""),
+			connectors.RemovedBlock(connectors.KindBucket),
+			connectors.RemovedBlock(connectors.KindFunction),
+			connectors.RemovedBlock(connectors.KindTable),
+			connectors.RemovedBlock(connectors.KindHTTPAPI),
 		},
 		Edges: []connectors.EdgeSpec{
 			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network", Why: "Servers in one network can talk to each other privately."},
@@ -61,7 +61,8 @@ func (*Connector) Manifest() connectors.Manifest {
 			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts", Why: "Your app on the server can find the other server, such as its database."},
 		},
 		Settings: []connectors.FieldSpec{
-			{Name: "image", Title: "Image", Type: connectors.FieldEnum, Default: "ubuntu-24.04", Allowed: []string{"ubuntu-24.04", "debian-12"}},
+			{Name: "image", Title: "Image", Type: connectors.FieldEnum, Default: "ubuntu-24.04", Allowed: []string{"ubuntu-24.04", "debian-12"},
+				AppliesTo: []connectors.BlockKind{connectors.KindVM}},
 		},
 	}
 }

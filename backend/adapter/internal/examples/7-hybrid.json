@@ -2,7 +2,7 @@
   "id": "hybrid",
   "name": "Hybrid",
   "level": "advanced",
-  "description": "Server, network and firewall on OpenStack, reading a bucket on AWS.",
+  "description": "A VM on OpenStack that reads a bucket on AWS, in one deployment.",
   "clouds": ["general-openstack", "aws"],
   "placements": [{ "connector": "aws", "node_ids": ["files"] }],
   "document": {

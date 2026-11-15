@@ -27,15 +27,21 @@ const counted = (kind: string, n: number, titleOf: (kind: string) => string) => 
   return `${n} ${n === 1 ? one : many}`;
 };
 
-// diagramSummary groups the blocks by kind, standard kinds in their fixed
-// order, then the others by title.
-export function diagramSummary(blocks: { kind: string; name: string }[], titleOf: (kind: string) => string): DiagramSummary {
+// countedKinds groups the blocks by kind ("2 servers"), standard kinds in
+// their fixed order, then the others by title. The deploy confirmation reads
+// it too (deployments/confirm.ts).
+export function countedKinds(blocks: { kind: string; name: string }[], titleOf: (kind: string) => string): SummaryGroup[] {
   const byKind = new Map<string, string[]>();
   for (const b of blocks) byKind.set(b.kind, [...(byKind.get(b.kind) ?? []), b.name || "(no name)"]);
   const kinds = [
     ...STANDARD_BLOCKS.filter((k) => byKind.has(k)),
     ...[...byKind.keys()].filter((k) => !STANDARD_BLOCKS.includes(k)).sort((a, b) => titleOf(a).localeCompare(titleOf(b))),
   ];
-  const groups = kinds.map((kind) => ({ kind, label: counted(kind, byKind.get(kind)!.length, titleOf), names: byKind.get(kind)! }));
+  return kinds.map((kind) => ({ kind, label: counted(kind, byKind.get(kind)!.length, titleOf), names: byKind.get(kind)! }));
+}
+
+// diagramSummary is the canvas's one line and the groups it opens to.
+export function diagramSummary(blocks: { kind: string; name: string }[], titleOf: (kind: string) => string): DiagramSummary {
+  const groups = countedKinds(blocks, titleOf);
   return { line: groups.length === 0 ? "Nothing to build yet" : `Builds ${groups.map((g) => g.label).join(", ")}`, groups };
 }

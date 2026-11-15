@@ -132,8 +132,15 @@ func rendered(t *testing.T, reg *connectors.Registry, e examples.Example) []targ
 			d := connectors.Deployment{ID: depID, Prefix: connectors.PrefixFor(depID),
 				Connection: connectors.Connection{ID: uuid.NewString(), ConnectorID: id, Region: regions[id]}}
 			rep := capability.CheckConnector(c, g, d)
-			if !rep.Ready || len(rep.Problems)+len(rep.Notes) > 0 {
-				t.Fatalf("%s on %s: problems %+v, notes %+v", e.ID, id, rep.Problems, rep.Notes)
+			// A cost note (a NAT gateway) is expected; any other note is not.
+			var notes []connectors.Problem
+			for _, n := range rep.Notes {
+				if n.Code != connectors.CodeCost {
+					notes = append(notes, n)
+				}
+			}
+			if !rep.Ready || len(rep.Problems)+len(notes) > 0 {
+				t.Fatalf("%s on %s: problems %+v, notes %+v", e.ID, id, rep.Problems, notes)
 			}
 			files, err := c.(connectors.Previewer).Preview(ctx, g, d)
 			if err != nil {

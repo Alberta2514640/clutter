@@ -105,6 +105,11 @@ type FieldSpec struct {
 	// Help is one short line the editor shows with the field, for a field
 	// whose title alone does not say what it does.
 	Help string `json:"help,omitempty"`
+	// AppliesTo, on a deployment setting, names the block kinds the setting
+	// is about (a function runtime is about functions), so the editor shows it
+	// only for a diagram that has one. Empty means it is about every
+	// deployment. A block field leaves it empty.
+	AppliesTo []BlockKind `json:"applies_to,omitempty"`
 }
 
 // EdgeSpec is a pair of block kinds a connector can wire together.
@@ -276,6 +281,20 @@ func (m Manifest) Check() error {
 	}
 
 	errs = append(errs, checkFields("settings", m.Settings)...)
+	for _, f := range m.Settings {
+		for _, k := range f.AppliesTo {
+			if _, ok := seen[k]; !ok {
+				errs = append(errs, fmt.Errorf("setting %q applies to undeclared block %q", f.Name, k))
+			}
+		}
+	}
+	for _, b := range m.Blocks {
+		for _, f := range b.Fields {
+			if len(f.AppliesTo) > 0 {
+				errs = append(errs, fmt.Errorf("block %q: field %q names blocks it applies to, which only a setting does", b.Kind, f.Name))
+			}
+		}
+	}
 
 	regions := map[string]bool{}
 	for _, r := range m.Regions {

@@ -28,12 +28,13 @@ export default function FieldInput({
   const hint = field.default !== undefined && field.default !== null ? `Default: ${String(field.default)}` : undefined;
   const help = field.help;
 
-  const tip = help ? <HelpTip text={help} label={`About ${field.title}`} align="end" /> : null;
+  // The card spans the label row, so it stays inside the panel wherever the "?" is.
+  const tip = help ? <HelpTip text={help} label={`About ${field.title}`} align="row" /> : null;
 
   return (
     <div className="space-y-1">
       {control.control === "checkbox" ? (
-        <div className="flex items-center gap-2">
+        <div className="relative flex items-center gap-2">
           <label htmlFor={id} className="flex items-center gap-2 text-sm text-slate-200">
             <input
               id={id}
@@ -49,7 +50,7 @@ export default function FieldInput({
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <label htmlFor={id} className="block text-xs font-medium text-slate-300">
               {field.title}
               {field.required ? "" : " (optional)"}

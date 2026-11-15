@@ -178,10 +178,30 @@ func TestLinkDevstackMakesAConnectionWithoutShowingTheSecret(t *testing.T) {
 		t.Fatalf("B got Authorization %q, want the caller's token", b.auth)
 	}
 	creds, _ := b.got["credentials"].(map[string]any)
-	if b.got["connector"] != "general-openstack" || b.got["name"] != "devstack-"+short || b.got["region"] != "RegionOne" ||
+	if short == "" || b.got["connector"] != "general-openstack" || b.got["name"] != devstackName || b.got["region"] != "RegionOne" ||
 		creds["auth_url"] != "http://192.168.105.3/identity/v3" || creds["application_credential_id"] != "abc123" ||
 		creds["application_credential_secret"] != testSecret {
 		t.Fatalf("B got %v", b.got)
+	}
+}
+
+// The website names the connection when "Local OpenStack" is taken; a name
+// that is not plain is refused before anything runs in the VM.
+func TestLinkDevstackTakesTheWebsitesName(t *testing.T) {
+	vm, b := healthyVM(), &fakeB{status: http.StatusCreated, answer: `{"id":"c1","name":"Local OpenStack 2"}`}
+	rec, _, _ := runDevstack(t, devstackCase{enabled: true, member: true, vm: vm, b: b,
+		body: `{"organizationId":"` + testOrg + `","connector":"general-openstack","name":"Local OpenStack 2"}`})
+	if rec.Code != http.StatusOK || b.got["name"] != "Local OpenStack 2" {
+		t.Fatalf("status %d: %s; B got name %v", rec.Code, rec.Body, b.got["name"])
+	}
+
+	for _, name := range []string{" Local", "Local\nOpenStack", "${x}", strings.Repeat("a", 65)} {
+		vm, b := healthyVM(), &fakeB{status: http.StatusCreated}
+		body, _ := json.Marshal(map[string]string{"organizationId": testOrg, "connector": "general-openstack", "name": name})
+		rec, _, _ := runDevstack(t, devstackCase{enabled: true, member: true, vm: vm, b: b, body: string(body)})
+		if rec.Code != http.StatusBadRequest || len(vm.calls) != 0 || b.hits != 0 {
+			t.Fatalf("name %q: status %d, VM %v, B %d", name, rec.Code, vm.calls, b.hits)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import {
   fieldError,
   paletteBlocks,
   parseInput,
+  settingsFor,
   valuesErrors,
 } from "./forms";
 import type { CatalogEntry, FieldSpec } from "./types";
@@ -62,6 +63,19 @@ const catalog: CatalogEntry[] = [
     },
   },
 ];
+
+describe("settingsFor", () => {
+  const runtime: FieldSpec = { name: "function_runtime", title: "Function runtime", type: "enum", required: false, allowed: ["a"], applies_to: ["function"] };
+  const type: FieldSpec = { name: "instance_type", title: "Instance type", type: "enum", required: false, allowed: ["t3.micro"], applies_to: ["vm"] };
+  const region: FieldSpec = { name: "zone", title: "Zone", type: "string", required: false };
+
+  it("keeps only the settings about the diagram's blocks, and those about every deployment", () => {
+    expect(settingsFor([runtime, type, region], ["vm", "network"]).map((f) => f.name)).toEqual(["instance_type", "zone"]);
+    expect(settingsFor([runtime, type, region], ["function"]).map((f) => f.name)).toEqual(["function_runtime", "zone"]);
+    expect(settingsFor([runtime, type], []).map((f) => f.name)).toEqual([]);
+    expect(settingsFor(null, ["vm"])).toEqual([]);
+  });
+});
 
 describe("paletteBlocks", () => {
   it("lists every block some cloud builds, standard blocks first in their fixed order, with the clouds that build it", () => {

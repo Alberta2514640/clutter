@@ -2,7 +2,7 @@
   "id": "web-server",
   "name": "Web server",
   "level": "intermediate",
-  "description": "A public server with a firewall and a data disk.",
+  "description": "A public VM that serves your site on port 80, behind a firewall.",
   "clouds": ["aws", "general-openstack"],
   "document": {
     "engine": "blocks",

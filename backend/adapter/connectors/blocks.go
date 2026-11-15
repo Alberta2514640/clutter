@@ -25,7 +25,7 @@ const (
 // ca-central-1, about $40 for a 730-hour month (AWS Price List API, the
 // AmazonEC2 and AmazonVPC offers for ca-central-1, read 2026-11-14). Data
 // through the gateway costs $0.05 a GB more.
-const privateInternetHelp = "Lets servers without a public address reach the internet. Costs about $40 a month plus data on AWS."
+const privateInternetHelp = "Lets servers without a public address reach the internet. Not needed when your servers are public. Costs about $40 a month plus data on AWS."
 
 // standardFields owns the portable fields of each building block. A diagram
 // holds only these, so one diagram can pass every connector's manifest; what is
@@ -103,6 +103,24 @@ func StandardField(kind BlockKind, name string) FieldSpec {
 	panic("connectors: no standard field " + string(kind) + "." + name)
 }
 
+// standardTitles owns what each building block is called. Every connector
+// names a standard block the same way (StandardBlock, RemovedBlock); the
+// cloud's own product name is its BlockDisplay.
+var standardTitles = map[BlockKind]string{
+	KindVM:       "VM",
+	KindNetwork:  "Network",
+	KindFirewall: "Firewall",
+	KindVolume:   "Volume",
+	KindBucket:   "Bucket",
+	KindFunction: "Function",
+	KindTable:    "Table",
+	KindHTTPAPI:  "HTTP API",
+}
+
+// StandardTitle returns a building block's title, or "" for a kind that is
+// not standard.
+func StandardTitle(kind BlockKind) string { return standardTitles[kind] }
+
 // standardSummaries owns what each building block is for, in a few plain
 // words for a person with no cloud background. Every connector that builds a
 // standard block shows the same line.
@@ -121,10 +139,16 @@ var standardSummaries = map[BlockKind]string{
 // is not standard.
 func StandardSummary(kind BlockKind) string { return standardSummaries[kind] }
 
-// StandardBlock is a block a connector offers as-is, with the portable fields
-// and summary.
-func StandardBlock(kind BlockKind, title string) BlockSpec {
-	return BlockSpec{Kind: kind, Treatment: TreatmentAsIs, Title: title, Summary: StandardSummary(kind), Fields: StandardFields(kind)}
+// StandardBlock is a block a connector offers as-is, with the standard title,
+// portable fields and summary.
+func StandardBlock(kind BlockKind) BlockSpec {
+	return BlockSpec{Kind: kind, Treatment: TreatmentAsIs, Title: StandardTitle(kind), Summary: StandardSummary(kind), Fields: StandardFields(kind)}
+}
+
+// RemovedBlock is a standard block a connector cannot build, under its
+// standard title.
+func RemovedBlock(kind BlockKind) BlockSpec {
+	return BlockSpec{Kind: kind, Treatment: TreatmentRemoved, Title: StandardTitle(kind)}
 }
 
 // FunctionCode is a zip a user uploaded for one function block through B

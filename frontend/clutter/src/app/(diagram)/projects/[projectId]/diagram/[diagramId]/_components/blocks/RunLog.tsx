@@ -2,18 +2,32 @@
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { useRunLogs } from "@/lib/features/deployments/hooks";
-import { runResult } from "@/lib/features/deployments/runLog";
+import { runHeadline } from "@/lib/features/deployments/runLog";
 import type { Run } from "@/lib/features/deployments/types";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-// A run's log, polled while the run is active, with its result line above it.
-// It opens scrolled to the end and follows new output unless the reader has
-// scrolled up. B removes credential values from it before it is stored.
+// RunHeadline is the one line a run's card leads with: what a finished
+// deploy built ("Built 4 blocks (18 cloud resources)"), or a run's summary or
+// first error. It reads the same log query as RunLog, so the log is fetched
+// once. Nothing shows until there is a line to show.
+export function RunHeadline({ token, organizationId, run, blocks }: { token: string | null; organizationId: string | null; run: Run; blocks: number }) {
+  const logQ = useRunLogs(token, organizationId, run.id, run.status);
+  const result = logQ.data ? runHeadline(logQ.data, run.status, run.action, blocks) : null;
+  if (!result) return null;
+  return (
+    <p data-testid="run-result" className={`text-xs font-medium ${result.tone === "ok" ? "text-emerald-300" : "text-red-300"}`}>
+      {result.text}
+    </p>
+  );
+}
+
+// A run's log, polled while the run is active. It opens scrolled to the end
+// and follows new output unless the reader has scrolled up. B removes
+// credential values from it before it is stored.
 export default function RunLog({ token, organizationId, run }: { token: string | null; organizationId: string | null; run: Run }) {
   const logQ = useRunLogs(token, organizationId, run.id, run.status);
   const text = logQ.data ?? "";
-  const result = runResult(text, run.status);
   const preRef = useRef<HTMLPreElement>(null);
   const following = useRef(true);
 
@@ -33,11 +47,6 @@ export default function RunLog({ token, organizationId, run }: { token: string |
   if (logQ.isError) return <p className="text-xs text-red-400">Could not load the log: {adapterErrorMessage(logQ.error)}</p>;
   return (
     <div className="space-y-1">
-      {result && (
-        <p data-testid="run-result" className={`truncate text-xs font-medium ${result.tone === "ok" ? "text-emerald-300" : "text-red-300"}`} title={result.text}>
-          {result.text}
-        </p>
-      )}
       <pre
         ref={preRef}
         data-testid="run-log"

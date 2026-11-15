@@ -32,6 +32,7 @@ import { diagramSummary } from "@/lib/features/diagram/summary";
 import type { Diagram } from "@/lib/features/diagram/types";
 import { problemsByBlock, type BlockRef } from "@/lib/features/deployments/compatibility";
 import { useCompatibility, useDiagramDeployments, useInvalidateDeploymentChecks } from "@/lib/features/deployments/hooks";
+import { servesWeb } from "@/lib/features/deployments/results";
 import { BLOCKS_VIEW, nodeLook, resolveView, viewClouds, viewSummary } from "@/lib/features/deployments/views";
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useProjectOrganization } from "@/lib/features/projects/hooks";
@@ -208,6 +209,12 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     () => saved.doc.nodes.map((n) => ({ id: n.id, kind: n.type, name: n.data.name })),
     [saved],
   );
+  const currentBlocks: BlockRef[] = useMemo(() => nodes.map((n) => ({ id: n.id, kind: n.data.kind, name: n.data.name })), [nodes]);
+  // The saved servers that are a website, for "What was built".
+  const webServers = useMemo(
+    () => servesWeb(saved.doc.nodes.map((n) => ({ id: n.id, kind: n.type, fields: n.data.fields })), saved.doc.edges),
+    [saved],
+  );
 
   const saveProblem = (() => {
     if (!name.trim()) return "Give the diagram a name.";
@@ -350,21 +357,23 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
     setEdges((cur) => cur.filter((e) => e.source !== id && e.target !== id));
   };
 
-  const onSave = () => {
-    if (saveProblem || !token) return;
+  // save stores the canvas; it answers false when it could not (the header
+  // says why: the save problem or the failed save).
+  const save = async (): Promise<boolean> => {
+    if (saveProblem || !token) return false;
     const trimmed = name.trim();
     const document = toBlocksDocument(nodes, edges);
-    saveM.mutate(
-      { projectId, diagramId: diagram.id, name: trimmed, document },
-      {
-        onSuccess: () => {
-          setName(trimmed);
-          setSaved({ name: trimmed, doc: document });
-          invalidateChecks();
-        },
-      },
-    );
+    try {
+      await saveM.mutateAsync({ projectId, diagramId: diagram.id, name: trimmed, document });
+    } catch {
+      return false;
+    }
+    setName(trimmed);
+    setSaved({ name: trimmed, doc: document });
+    invalidateChecks();
+    return true;
   };
+  const onSave = () => void save();
 
   const onBack = () => {
     if (dirty && !window.confirm(LEAVE_PROMPT)) return;
@@ -557,8 +566,11 @@ export default function BlocksEditor({ projectId, diagram }: { projectId: string
                 diagramId={diagram.id}
                 catalog={catalog}
                 savedBlocks={savedBlocks}
+                currentBlocks={currentBlocks}
+                webServers={webServers}
                 blockTitle={blockTitle}
                 dirty={dirty}
+                save={save}
               />
             )}
           </div>

@@ -89,14 +89,14 @@ func manifest() connectors.Manifest {
 		// Icons are AWS Architecture Icons. AWS publishes no security group
 		// icon, so the firewall keeps its neutral icon.
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM, "VM").WithDisplay("EC2", "ec2"),
-			connectors.StandardBlock(connectors.KindNetwork, "Network").WithDisplay("VPC", "vpc"),
-			connectors.StandardBlock(connectors.KindFirewall, "Firewall").WithDisplay("Security group", ""),
-			connectors.StandardBlock(connectors.KindVolume, "Volume").WithDisplay("EBS", "ebs"),
-			connectors.StandardBlock(connectors.KindBucket, "Bucket").WithDisplay("S3", "s3"),
-			connectors.StandardBlock(connectors.KindFunction, "Function").WithDisplay("Lambda", "lambda"),
-			connectors.StandardBlock(connectors.KindTable, "Table").WithDisplay("DynamoDB", "dynamodb"),
-			connectors.StandardBlock(connectors.KindHTTPAPI, "HTTP API").WithDisplay("API Gateway", "api-gateway"),
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("EC2", "ec2"),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("VPC", "vpc"),
+			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
+			connectors.StandardBlock(connectors.KindVolume).WithDisplay("EBS", "ebs"),
+			connectors.StandardBlock(connectors.KindBucket).WithDisplay("S3", "s3"),
+			connectors.StandardBlock(connectors.KindFunction).WithDisplay("Lambda", "lambda"),
+			connectors.StandardBlock(connectors.KindTable).WithDisplay("DynamoDB", "dynamodb"),
+			connectors.StandardBlock(connectors.KindHTTPAPI).WithDisplay("API Gateway", "api-gateway"),
 		},
 		// Each rule matches a problem this connector's Validate reports
 		// (CodeVMTwoNetworks, connectors.CodeVolumeTwoVMs).
@@ -124,9 +124,12 @@ func manifest() connectors.Manifest {
 				Why: "Your app on the server can look up data such as users or orders."},
 		},
 		Settings: []connectors.FieldSpec{
-			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes},
-			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: "provided.al2023", Allowed: runtimes()},
-			{Name: settingArchitecture, Title: "Function processor", Type: connectors.FieldEnum, Default: "arm64", Allowed: []string{"arm64", "x86_64"}},
+			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes,
+				AppliesTo: []connectors.BlockKind{connectors.KindVM}},
+			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: "provided.al2023", Allowed: runtimes(),
+				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},
+			{Name: settingArchitecture, Title: "Function processor", Type: connectors.FieldEnum, Default: "arm64", Allowed: []string{"arm64", "x86_64"},
+				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},
 		},
 	}
 }

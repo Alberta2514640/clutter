@@ -64,6 +64,15 @@ type DevstackConfig struct {
 // connectorID matches B's connector ids.
 var connectorID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
+// devstackName is the connection's name when the website names none. The
+// website picks a free one ("Local OpenStack 2" when the first is taken),
+// since only it holds the organization's list of connections.
+const devstackName = "Local OpenStack"
+
+// connectionName is a plain name the website may choose: letters, digits,
+// spaces, dots, hyphens and underscores, at most 64, as B's name cap.
+var connectionName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`)
+
 // LinkDevstackHandler makes a new OpenStack application credential in this
 // machine's DevStack VM and creates a connection from it in B, for one
 // organization and the signed-in caller. The caller's token proves
@@ -88,11 +97,21 @@ func (s *Server) LinkDevstackHandler(cfg DevstackConfig) http.Handler {
 		var body struct {
 			OrganizationID string `json:"organizationId"`
 			Connector      string `json:"connector"`
+			// Name is the new connection's name; empty means devstackName.
+			Name string `json:"name"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil ||
 			uuid.Validate(body.OrganizationID) != nil || !connectorID.MatchString(body.Connector) {
 			writeDevJSON(w, http.StatusBadRequest, "a valid organizationId and connector are required")
 			return
+		}
+		connName := devstackName
+		if body.Name != "" {
+			if !connectionName.MatchString(body.Name) || strings.TrimSpace(body.Name) != body.Name {
+				writeDevJSON(w, http.StatusBadRequest, "the connection name must be plain letters, digits, spaces, dots, hyphens or underscores, at most 64")
+				return
+			}
+			connName = body.Name
 		}
 		org := url.PathEscape(body.OrganizationID)
 
@@ -132,7 +151,7 @@ func (s *Server) LinkDevstackHandler(cfg DevstackConfig) http.Handler {
 			return
 		}
 		short := strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
-		credName, connName := "clutter-"+short, "devstack-"+short
+		credName := "clutter-" + short
 		inVM := func(ctx context.Context, mode string) ([]byte, error) {
 			return runStep(ctx, cfg.Run, script, "limactl", "shell", "--workdir", "/", cfg.VM,
 				"sudo", "-u", "stack", "-i", "bash", "-s", "--", mode, credName)

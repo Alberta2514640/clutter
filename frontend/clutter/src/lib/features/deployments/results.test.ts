@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseResults, resultRows } from "./results";
+import { leadLines, parseResults, resultRows, sampleNote, servesWeb } from "./results";
 
 const log = [
   "Run r1: apply on deployment d1.",
@@ -68,5 +68,88 @@ describe("resultRows", () => {
   it("never links an address that is not a web address", () => {
     const rows = resultRows(new Map([["api", [{ name: "url", value: "javascript:alert(1)" }]]]), blocks.slice(2, 3), became);
     expect(rows[0].items[0].href).toBeNull();
+  });
+
+  it("does not list a function's sample marker as a value", () => {
+    const rows = resultRows(new Map([["fn", [{ name: "code", value: "sample" }]]]), [{ id: "fn", kind: "function", name: "items" }], became);
+    expect(rows[0].items).toEqual([]);
+  });
+});
+
+describe("leadLines", () => {
+  const blocks = [
+    { id: "web", kind: "vm", name: "web" },
+    { id: "db", kind: "vm", name: "db" },
+    { id: "api", kind: "http_api", name: "items-api" },
+    { id: "files", kind: "bucket", name: "files" },
+  ];
+  const results = new Map([
+    ["web", [{ name: "private_address", value: "10.0.0.5" }, { name: "public_address", value: "203.0.113.9" }]],
+    ["db", [{ name: "private_address", value: "10.0.0.6" }]],
+    ["api", [{ name: "url", value: "https://abc.execute-api.ca-central-1.amazonaws.com/v1/items" }]],
+    ["files", [{ name: "bucket", value: "c1-files" }]],
+  ]);
+
+  it("leads with a website for a public server that serves the web, and the API's full address", () => {
+    expect(leadLines(results, blocks, new Set(["web"]))).toEqual([
+      { kind: "website", id: "web", label: "Your website", url: "http://203.0.113.9" },
+      { kind: "api", id: "api", label: "Your API", url: "https://abc.execute-api.ca-central-1.amazonaws.com/v1/items" },
+    ]);
+  });
+
+  it("calls a public server that does not serve the web a server, and never leads with a private address", () => {
+    expect(leadLines(results, blocks, new Set())[0]).toEqual({ kind: "server", id: "web", label: "Your server", address: "203.0.113.9" });
+    expect(leadLines(results, blocks, new Set()).some((l) => l.id === "db")).toBe(false);
+  });
+
+  it("names each block when two lines share a label, and skips left-out blocks", () => {
+    const two = new Map([...results, ["db", [{ name: "public_address", value: "203.0.113.10" }]]]);
+    expect(leadLines(two, blocks, new Set(["web", "db"])).map((l) => l.label)).toEqual(["Your website (web)", "Your website (db)", "Your API"]);
+    expect(leadLines(results, blocks, new Set(["web"]), ["web", "api"])).toEqual([]);
+  });
+
+  it("does not lead with an address that is not a web address", () => {
+    expect(leadLines(new Map([["api", [{ name: "url", value: "javascript:alert(1)" }]]]), blocks, new Set())).toEqual([]);
+  });
+});
+
+describe("sampleNote", () => {
+  const fns = [
+    { id: "a", kind: "function", name: "items" },
+    { id: "b", kind: "function", name: "orders" },
+  ];
+  const sample = [{ name: "code", value: "sample" }];
+
+  it("says once that the function answers with a sample, by name when it stands alone", () => {
+    expect(sampleNote(new Map([["a", sample]]), fns, true)).toBe("Answers with a sample until you upload your code.");
+    expect(sampleNote(new Map([["a", sample]]), fns, false)).toBe("items answers with a sample until you upload your code.");
+    expect(sampleNote(new Map([["a", sample], ["b", sample]]), fns, true)).toBe("items and orders answer with a sample until you upload your code.");
+  });
+
+  it("says nothing once the code is uploaded or the function is left out", () => {
+    expect(sampleNote(new Map(), fns, true)).toBeNull();
+    expect(sampleNote(new Map([["a", sample]]), fns, true, ["a"])).toBeNull();
+  });
+});
+
+describe("servesWeb", () => {
+  const vm = (id: string, pub: boolean) => ({ id, kind: "vm", fields: { public: pub } });
+  const fw = (id: string, ingress: string) => ({ id, kind: "firewall", fields: { ingress } });
+
+  it("is a public server with a firewall that lets the web in on port 80", () => {
+    const blocks = [vm("web", true), vm("db", false), vm("ssh", true), vm("range", true), fw("web-fw", "tcp/22, tcp/80"), fw("ssh-fw", "tcp/22, tcp/443"), fw("all", "tcp/1-1024")];
+    const lines = [
+      { source: "web-fw", target: "web" },
+      { source: "web-fw", target: "db" },
+      { source: "ssh-fw", target: "ssh" },
+      { source: "all", target: "range" },
+    ];
+    expect([...servesWeb(blocks, lines)].sort()).toEqual(["range", "web"]);
+  });
+
+  it("does not count udp, a server without a firewall, or a line the other way", () => {
+    expect(servesWeb([vm("web", true), fw("f", "udp/80")], [{ source: "f", target: "web" }]).size).toBe(0);
+    expect(servesWeb([vm("web", true), fw("f", "tcp/80")], [{ source: "web", target: "f" }]).size).toBe(0);
+    expect(servesWeb([vm("web", true)], []).size).toBe(0);
   });
 });

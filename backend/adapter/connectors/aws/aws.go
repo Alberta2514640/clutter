@@ -311,6 +311,23 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 	return nil
 }
 
+// natCost is what a NAT gateway costs, for the deploy confirmation; the
+// source of the figure is connectors.privateInternetHelp.
+const natCost = "Internet access for private servers adds a NAT gateway on AWS: about $40 a month plus data."
+
+// Advice implements connectors.Advisor: each network that gets a NAT gateway
+// (a private server in it, with internet access for private servers on).
+func (c *Connector) Advice(g connectors.Graph, d connectors.Deployment) []connectors.Problem {
+	m := newModel(g, d)
+	var out []connectors.Problem
+	for _, id := range m.order {
+		if m.blocks[id].Kind == connectors.KindNetwork && m.networkNAT(id) {
+			out = append(out, connectors.Problem{NodeID: id, Code: connectors.CodeCost, Message: natCost})
+		}
+	}
+	return out
+}
+
 // Plan implements connectors.Connector.
 func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.PlanResult, error) {
 	log, err := c.run(ctx, run, &g, d, nil)

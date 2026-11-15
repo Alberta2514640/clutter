@@ -3,13 +3,14 @@
 import CloudMark from "@/components/clouds/CloudMark";
 import { adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor } from "@/lib/features/catalog/display";
-import { cleanValues, defaultValues, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, defaultValues, manifestOffers, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import { addDeploymentChoice } from "@/lib/features/deployments/actions";
 import { unsupportedBlocks, type BlockRef } from "@/lib/features/deployments/compatibility";
 import { useCreateDeployment } from "@/lib/features/deployments/hooks";
-import { Loader2, Plus } from "lucide-react";
+import { placementSuggestions, suggestedPlacements } from "@/lib/features/deployments/placements";
+import { ChevronDown, ChevronRight, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import ConnectionsLink from "./ConnectionsLink";
 import FieldInput from "./FieldInput";
@@ -23,15 +24,19 @@ type Props = {
   connections: Connection[];
   usedConnectionIds: ReadonlySet<string>;
   catalog: CatalogEntry[];
+  // The blocks on the canvas, saved or not: the deployment is for them.
   blocks: BlockRef[];
   blockTitle: (kind: string) => string;
-  disabledReason: string | null;
+  // Saves the canvas before the deployment is added, when it has changes;
+  // false when the save failed or cannot run (the editor says why).
+  saveFirst: (() => Promise<boolean>) | null;
 };
 
 const linkClass = "text-teal-300 hover:underline";
 
 // "Add deployment": bind this diagram to one of the organization's working
-// connections, with that cloud's settings and the blocks it leaves out.
+// connections, with that cloud's settings, and for each block it cannot
+// build, another connection that runs it or leaving it out.
 export default function AddDeployment({
   token,
   organizationId,
@@ -41,7 +46,7 @@ export default function AddDeployment({
   catalog,
   blocks,
   blockTitle,
-  disabledReason,
+  saveFirst,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [connectionId, setConnectionId] = useState("");
@@ -136,9 +141,11 @@ export default function AddDeployment({
           diagramId={diagramId}
           connection={connection}
           entry={entry}
+          catalog={catalog}
+          connections={connections}
           blocks={blocks}
           blockTitle={blockTitle}
-          disabledReason={disabledReason}
+          saveFirst={saveFirst}
           onDone={() => {
             setOpen(false);
             setConnectionId("");
@@ -158,9 +165,11 @@ function DeploymentForm({
   diagramId,
   connection,
   entry,
+  catalog,
+  connections,
   blocks,
   blockTitle,
-  disabledReason,
+  saveFirst,
   onDone,
 }: {
   token: string | null;
@@ -168,62 +177,131 @@ function DeploymentForm({
   diagramId: string;
   connection: Connection;
   entry: CatalogEntry;
+  catalog: CatalogEntry[];
+  connections: Connection[];
   blocks: BlockRef[];
   blockTitle: (kind: string) => string;
-  disabledReason: string | null;
+  saveFirst: (() => Promise<boolean>) | null;
   onDone: () => void;
 }) {
   const settingsSpec = entry.manifest.settings ?? [];
   const unsupported = unsupportedBlocks(entry.manifest, blocks);
+  const offers = (connector: string, kind: string) => {
+    const m = catalog.find((e) => e.manifest.connector === connector)?.manifest;
+    return !!m && manifestOffers(m, kind);
+  };
+  const suggested = new Map(placementSuggestions(unsupported, connection.id, connections, offers).map((s) => [s.block.id, s.connection]));
+  // Settings about blocks the new deployment's own cloud runs, in Advanced.
+  const ownKinds = new Set(blocks.filter((b) => !unsupported.includes(b)).map((b) => b.kind));
+  const shownSettings = settingsFor(settingsSpec, ownKinds);
   const [settings, setSettings] = useState<Record<string, unknown>>(() => defaultValues(settingsSpec));
-  const [leaveOut, setLeaveOut] = useState<string[]>([]);
+  // For each block this cloud cannot build: "run" on the suggested
+  // connection (the default when there is one), or "out".
+  const [choice, setChoice] = useState<Record<string, "run" | "out" | "keep">>({});
+  const choiceOf = (id: string) => choice[id] ?? (suggested.has(id) ? "run" : "keep");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const createM = useCreateDeployment(token);
-  const errors = valuesErrors(settingsSpec, settings);
+  const errors = valuesErrors(shownSettings, settings);
 
-  const submit = () =>
+  const submit = async () => {
+    if (saveFirst) {
+      setSaving(true);
+      const ok = await saveFirst();
+      setSaving(false);
+      if (!ok) return;
+    }
+    const run = unsupported.filter((b) => choiceOf(b.id) === "run" && suggested.has(b.id));
     createM.mutate(
       {
         organizationId,
-        data: { diagram_id: diagramId, connection_id: connection.id, settings: cleanValues(settingsSpec, settings), exclusions: leaveOut },
+        data: {
+          diagram_id: diagramId,
+          connection_id: connection.id,
+          settings: cleanValues(settingsSpec, settings),
+          exclusions: unsupported.filter((b) => choiceOf(b.id) === "out").map((b) => b.id),
+          placements: suggestedPlacements(run.map((b) => ({ blockId: b.id, connectionId: suggested.get(b.id)!.id }))),
+        },
       },
       { onSuccess: onDone },
     );
+  };
+
+  const n = unsupported.length;
+  const busy = saving || createM.isPending;
 
   return (
     <div className="space-y-3">
-      {unsupported.length === 0 ? (
+      {n === 0 ? (
         <p className="text-xs text-emerald-300">{entry.manifest.title} can build every block in this diagram.</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <p className="text-xs text-amber-300">
-            {entry.manifest.title} cannot build {unsupported.length === 1 ? "1 block" : `${unsupported.length} blocks`}. Leave them out of
-            this deployment, or remove them from the diagram.
+            {entry.manifest.title} cannot build {n === 1 ? "1 block" : `${n} blocks`}.{" "}
+            {suggested.size > 0
+              ? `Choose where ${n === 1 ? "it runs" : "they run"}.`
+              : `Leave ${n === 1 ? "it" : "them"} out of this deployment, or remove ${n === 1 ? "it" : "them"} from the diagram.`}
           </p>
-          {unsupported.map((b) => (
-            <label key={b.id} className="flex items-center gap-2 text-xs text-slate-200">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-teal-500"
-                checked={leaveOut.includes(b.id)}
-                onChange={(e) => setLeaveOut((cur) => (e.target.checked ? [...cur, b.id] : cur.filter((x) => x !== b.id)))}
-              />
-              Leave out {b.name} ({blockTitle(b.kind)})
-            </label>
-          ))}
+          {unsupported.map((b) => {
+            const there = suggested.get(b.id);
+            if (!there) {
+              return (
+                <label key={b.id} className="flex items-center gap-2 text-xs text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-500"
+                    checked={choiceOf(b.id) === "out"}
+                    onChange={(e) => setChoice((c) => ({ ...c, [b.id]: e.target.checked ? "out" : "keep" }))}
+                  />
+                  Leave out {b.name} ({blockTitle(b.kind)})
+                </label>
+              );
+            }
+            return (
+              <fieldset key={b.id} className="space-y-1">
+                <legend className="sr-only">
+                  Where {b.name} ({blockTitle(b.kind)}) runs
+                </legend>
+                {(["run", "out"] as const).map((v) => (
+                  <label key={v} className="flex items-center gap-2 text-xs text-slate-200">
+                    <input
+                      type="radio"
+                      name={`placement-${connection.id}-${b.id}`}
+                      className="h-4 w-4 accent-teal-500"
+                      checked={choiceOf(b.id) === v}
+                      onChange={() => setChoice((c) => ({ ...c, [b.id]: v }))}
+                    />
+                    {v === "run" ? `Run ${b.name} on ${there.name}` : `Leave ${b.name} out`}
+                  </label>
+                ))}
+              </fieldset>
+            );
+          })}
         </div>
       )}
-      {settingsSpec.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{entry.manifest.title} settings</h4>
-          {settingsSpec.map((f) => (
-            <FieldInput
-              key={f.name}
-              id={`new-deployment-${connection.id}-${f.name}`}
-              field={f}
-              value={settings[f.name]}
-              onChange={(v) => setSettings((s) => ({ ...s, [f.name]: v }))}
-            />
-          ))}
+      {shownSettings.length > 0 && (
+        <div>
+          <button
+            type="button"
+            aria-expanded={advancedOpen}
+            onClick={() => setAdvancedOpen((o) => !o)}
+            className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
+            {advancedOpen ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+            Advanced
+          </button>
+          {advancedOpen && (
+            <div className="mt-2 space-y-2">
+              {shownSettings.map((f) => (
+                <FieldInput
+                  key={f.name}
+                  id={`new-deployment-${connection.id}-${f.name}`}
+                  field={f}
+                  value={settings[f.name]}
+                  onChange={(v) => setSettings((s) => ({ ...s, [f.name]: v }))}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
       {createM.isError && (
@@ -231,14 +309,13 @@ function DeploymentForm({
           {adapterErrorMessage(createM.error)}
         </p>
       )}
-      {disabledReason && <p className="text-xs text-amber-300">{disabledReason}</p>}
       <button
         type="button"
-        disabled={createM.isPending || errors.length > 0 || !!disabledReason}
-        onClick={submit}
+        disabled={busy || errors.length > 0}
+        onClick={() => void submit()}
         className="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50">
-        {createM.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-        Add deployment to {connection.name}
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+        {saving ? "Saving the diagram…" : `Add deployment to ${connection.name}`}
       </button>
     </div>
   );

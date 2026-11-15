@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runResult } from "./runLog";
+import { runHeadline, runResult } from "./runLog";
 
 describe("runResult", () => {
   it("reads Terraform's apply summary and drops the zero counts", () => {
@@ -93,5 +93,35 @@ describe("runResult", () => {
     expect(runResult("Apply complete! Resources: 1 added, 0 changed, 0 destroyed.", "running")).toBeNull();
     expect(runResult("Initializing the backend...", "completed")).toBeNull();
     expect(runResult("no error here", "failed")).toBeNull();
+  });
+});
+
+describe("runHeadline", () => {
+  it("leads a finished deploy with its blocks and the cloud resources behind them", () => {
+    expect(runHeadline("Apply complete! Resources: 18 added, 0 changed, 0 destroyed.", "completed", "apply", 4)).toEqual({
+      tone: "ok",
+      text: "Built 4 blocks (18 cloud resources)",
+    });
+    expect(runHeadline("Apply complete! Resources: 1 added, 2 changed, 1 destroyed.", "completed", "apply", 1)?.text).toBe(
+      "Built 1 block (1 cloud resource added, 2 changed, 1 removed)",
+    );
+    expect(runHeadline("Apply complete! Resources: 0 added, 0 changed, 0 destroyed.", "completed", "apply", 3)?.text).toBe("Built 3 blocks. Nothing needed to change.");
+    expect(runHeadline("Apply complete: 3 blocks built or changed.", "completed", "apply", 3)?.text).toBe("Built 3 blocks");
+  });
+
+  it("adds up each cloud of a split deploy", () => {
+    const log = [
+      "== lab (OpenStack): apply ==",
+      "Apply complete! Resources: 12 added, 0 changed, 0 destroyed.",
+      "== Local AWS (Amazon Web Services): apply ==",
+      "Apply complete! Resources: 7 added, 0 changed, 0 destroyed.",
+    ].join("\n");
+    expect(runHeadline(log, "completed", "apply", 4)?.text).toBe("Built 4 blocks (19 cloud resources)");
+  });
+
+  it("is runResult's line for anything but a finished deploy", () => {
+    expect(runHeadline("Destroy complete! Resources: 5 destroyed.", "completed", "destroy", 4)?.text).toBe("Destroy complete: 5 destroyed");
+    expect(runHeadline("Error: boom", "failed", "apply", 4)).toEqual({ tone: "error", text: "Error: boom" });
+    expect(runHeadline("", "running", "apply", 4)).toBeNull();
   });
 });

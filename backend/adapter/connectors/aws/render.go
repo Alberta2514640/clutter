@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -26,10 +29,91 @@ type TemplateSource interface {
 //go:embed tmpl/*.tf.tmpl
 var ownTemplates embed.FS
 
-// placeholderCode is Clutter's placeholder code, which a function gets until
-// code is uploaded for it. It is the same text as
-// backend/infra/modules/s3/uploads/bootstrap.zip.
-const placeholderCode = "Welcome to your Lambda! You can upload your own code and take it from there."
+// sampleMessage is what a function answers until code is uploaded for it.
+const sampleMessage = "Hello from Clutter. Upload your code to replace this."
+
+// placeholderCode is the one file a function gets when Clutter has no sample
+// code for its runtime and handler: it does not answer.
+const placeholderCode = "Clutter has no sample code for this runtime and handler. Upload your code to run the function."
+
+// sampleAnswer is the sample code's answer, in the shape API Gateway's proxy
+// integration reads: status 200 and a small JSON body. It holds no single
+// quote, so the shell sample can quote it whole.
+var sampleAnswer = func() string {
+	body, _ := json.Marshal(map[string]string{"message": sampleMessage})
+	out, _ := json.Marshal(map[string]any{
+		"statusCode": 200,
+		"headers":    map[string]string{"Content-Type": "application/json"},
+		"body":       string(body),
+	})
+	if strings.ContainsRune(string(out), '\'') {
+		panic("aws: the sample answer holds a single quote")
+	}
+	return string(out)
+}()
+
+// sampleHandler is a handler the Python and Node.js samples can serve: one
+// file name and one function name, both plain identifiers.
+var sampleHandler = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$`)
+
+// sampleFile is one file of a function's sample code.
+type sampleFile struct{ Name, Content string }
+
+// sampleCode is the code a function with no upload runs: a few lines that
+// answer every request with sampleAnswer, for the deployment's runtime and the
+// function's handler. A custom runtime (provided.*) runs its bootstrap file
+// whatever the handler; it uses only sh and curl, which the provided.al2023
+// image holds (AWS's custom runtime tutorial uses the same). ok is false for
+// a runtime or handler Clutter has no sample for.
+func sampleCode(runtime, handler string) (files []sampleFile, ok bool) {
+	switch {
+	case strings.HasPrefix(runtime, "provided."):
+		return []sampleFile{{Name: "bootstrap", Content: `#!/bin/sh
+# Clutter's sample code. Upload your own code to replace it.
+set -eu
+api="http://${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime/invocation"
+answer='` + sampleAnswer + `'
+while true; do
+  headers="$(mktemp)"
+  curl -sS -o /dev/null -D "$headers" "$api/next"
+  id=$(grep -Fi Lambda-Runtime-Aws-Request-Id "$headers" | tr -d '[:space:]' | cut -d: -f2)
+  rm -f "$headers"
+  curl -sS -o /dev/null -X POST "$api/$id/response" -d "$answer"
+done
+`}}, true
+	case strings.HasPrefix(runtime, "python"):
+		m := sampleHandler.FindStringSubmatch(handler)
+		if m == nil {
+			return nil, false
+		}
+		return []sampleFile{{Name: m[1] + ".py", Content: `# Clutter's sample code. Upload your own code to replace it.
+import json
+
+
+def ` + m[2] + `(event, context):
+    return json.loads(` + strconv.Quote(sampleAnswer) + `)
+`}}, true
+	case strings.HasPrefix(runtime, "nodejs"):
+		m := sampleHandler.FindStringSubmatch(handler)
+		if m == nil {
+			return nil, false
+		}
+		return []sampleFile{{Name: m[1] + ".mjs", Content: `// Clutter's sample code. Upload your own code to replace it.
+export const ` + m[2] + ` = async () => (` + sampleAnswer + `);
+`}}, true
+	}
+	return nil, false
+}
+
+// functionSample is a function's code when nothing is uploaded for it: the
+// sample, or the one file that says there is none. answers is true for a
+// sample that answers requests.
+func (m *model) functionSample(b *block) (files []sampleFile, answers bool) {
+	if files, ok := sampleCode(m.runtime, m.handler(b)); ok {
+		return files, true
+	}
+	return []sampleFile{{Name: "welcome.txt", Content: placeholderCode}}, false
+}
 
 // kindTemplates maps a block kind to its template folder under templates/aws.
 // vm, bucket, function, table and http_api are A's templates, unchanged;
@@ -187,20 +271,23 @@ func (m *model) render(ctx context.Context, src TemplateSource) (map[string][]by
 		"override.tf": []byte(override),
 		"defaults.tf": []byte(defaults),
 	}
-	// An override file cannot add a block, so the placeholder zips are in
+	// An override file cannot add a block, so the sample code's zips are in
 	// their own primary file. A function with uploaded code needs none.
-	var placeholders []functionVars
-	fns, _ := ov["Functions"].([]functionVars)
-	for _, f := range fns {
-		if f.Hash == "" {
-			placeholders = append(placeholders, f)
+	var samples []sampleVars
+	for _, id := range m.order {
+		b := m.blocks[id]
+		if b.Kind != connectors.KindFunction || b.Code != nil {
+			continue
 		}
+		files, _ := m.functionSample(b)
+		v := sampleVars{Addr: b.Addr, Zip: b.Addr + ".zip"}
+		for _, f := range files {
+			v.Files = append(v.Files, sampleFile{Name: hclsafe.Escape(f.Name), Content: hclsafe.Escape(f.Content)})
+		}
+		samples = append(samples, v)
 	}
-	if len(placeholders) > 0 {
-		code, err := executeOwn("code.tf.tmpl", map[string]any{
-			"Functions":       placeholders,
-			"PlaceholderText": hclsafe.Escape(placeholderCode),
-		})
+	if len(samples) > 0 {
+		code, err := executeOwn("code.tf.tmpl", map[string]any{"Functions": samples})
 		if err != nil {
 			return nil, err
 		}
@@ -527,10 +614,17 @@ type instanceVars struct {
 	UserData string
 }
 
-// functionVars is one function's code: the zip code.tf builds from the
-// placeholder text, or, when Hash is set, the uploaded zip the Terraform
-// runner stages as Zip.
+// functionVars is one function's code: the zip code.tf builds from its sample
+// code, or, when Hash is set, the uploaded zip the Terraform runner stages as
+// Zip.
 type functionVars struct{ Addr, Zip, Hash string }
+
+// sampleVars is one function's sample code as code.tf zips it: each file's
+// name and content already escaped for an HCL string.
+type sampleVars struct {
+	Addr, Zip string
+	Files     []sampleFile
+}
 
 // handler is a function's entry point: its own field, or the runtime's
 // default when the field is empty.
@@ -656,6 +750,12 @@ func (m *model) resultOutputs(endpoint string) []resultOutput {
 			add(id, connectors.ResultPrivateAddress, "aws_instance."+b.Addr+".private_ip")
 			if b.boolean(fieldPublic) {
 				add(id, connectors.ResultPublicAddress, "aws_instance."+b.Addr+".public_ip")
+			}
+		case connectors.KindFunction:
+			if b.Code == nil {
+				if _, answers := m.functionSample(b); answers {
+					add(id, connectors.ResultCode, `"`+connectors.ResultCodeSample+`"`)
+				}
 			}
 		case connectors.KindBucket:
 			add(id, connectors.ResultBucket, "aws_s3_bucket."+b.Addr+".bucket")

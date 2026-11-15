@@ -66,15 +66,38 @@ function summary(line: string): Summary | null {
   return null;
 }
 
+// Terraform colours its output; the stored log may keep the escape codes.
+const logLines = (log: string) => log.replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim());
+
 export function runResult(log: string, status: RunStatus): RunResult | null {
-  // Terraform colours its output; the stored log may keep the escape codes.
-  const lines = log.replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim());
+  const lines = logLines(log);
   if (status === "failed") {
     const error = lines.find((l) => /\bError:/.test(l));
     return error ? { tone: "error", text: error.slice(error.indexOf("Error:")) } : null;
   }
   if (status !== "completed") return null;
+  const { found } = summaries(lines);
+  return found.length > 0 ? { tone: "ok", text: found.map((s) => s.text).join("; ") } : null;
+}
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+// runHeadline is the first line a person reads after a run: for a finished
+// deploy, the blocks it built and the cloud resources behind them ("Built 4
+// blocks (18 cloud resources)"); for anything else, runResult's line.
+export function runHeadline(log: string, status: RunStatus, action: string, blocks: number): RunResult | null {
+  if (action !== "apply" || status !== "completed") return runResult(log, status);
+  const n = summaries(logLines(log)).totals.get("apply");
+  const built = `Built ${plural(blocks, "block", "blocks")}`;
+  if (!n) return { tone: "ok", text: built };
+  const [added, changed, destroyed] = n;
+  if (added + changed + destroyed === 0) return { tone: "ok", text: `${built}. Nothing needed to change.` };
+  if (changed === 0 && destroyed === 0) return { tone: "ok", text: `${built} (${plural(added, "cloud resource", "cloud resources")})` };
+  const parts = [added > 0 && `${plural(added, "cloud resource", "cloud resources")} added`, changed > 0 && `${changed} changed`, destroyed > 0 && `${destroyed} removed`];
+  return { tone: "ok", text: `${built} (${parts.filter(Boolean).join(", ")})` };
+}
+
+function summaries(lines: string[]): { found: Summary[]; totals: Map<Kind, number[]> } {
   // A Map keeps each key where it was first seen; set replaces the value.
   const byKey = new Map<string, Summary>();
   let part = 0;
@@ -103,5 +126,5 @@ export function runResult(log: string, status: RunStatus): RunResult | null {
   found = found.filter((s, i) => !s.n || found.findIndex((t) => t.n && t.kind === s.kind) === i);
   found = found.map((s) => (s.n ? { ...s, text: done(s.kind, totals.get(s.kind)!) } : s));
   if (found.some((s) => s.kind === "apply" || s.kind === "destroy")) found = found.filter((s) => s.kind === "apply" || s.kind === "destroy");
-  return found.length > 0 ? { tone: "ok", text: found.map((s) => s.text).join("; ") } : null;
+  return { found, totals };
 }

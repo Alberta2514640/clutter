@@ -95,14 +95,17 @@ resource "aws_dynamodb_table" "{{.}}" {
 {{- range .APIs}}
 
 # Redeploy the API when a route or its CORS answer changes, and only after
-# they exist.
+# they exist. A renamed function changes its route's path and target in place,
+# keeping their ids, so the path and the target are in the trigger too.
 resource "aws_api_gateway_deployment" "{{.Addr}}_deployment" {
   triggers = {
     redeployment = sha1(jsonencode([
 {{- range .Routes}}
       aws_api_gateway_resource.{{.}}.id,
+      aws_api_gateway_resource.{{.}}.path_part,
       aws_api_gateway_method.{{.}}.id,
       aws_api_gateway_integration.{{.}}.id,
+      aws_api_gateway_integration.{{.}}.uri,
 {{- end}}
 {{- if .CORS}}
 {{- range .Routes}}

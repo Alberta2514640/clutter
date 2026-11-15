@@ -112,8 +112,8 @@ export const useLinkDevstack = (token?: string | null) => {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { organizationId: string; connector: string }) =>
-      organizationApi.linkDevstack(token as string, input.organizationId, input.connector),
+    mutationFn: (input: { organizationId: string; connector: string; name: string }) =>
+      organizationApi.linkDevstack(token as string, input.organizationId, input.connector, input.name),
     onSuccess: (_name, input) => {
       qc.invalidateQueries({ queryKey: connectionKeys.list(input.organizationId) });
     },

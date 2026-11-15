@@ -102,12 +102,12 @@ export const organizationApi = {
   },
 
   // POST /dev/link-devstack (local dev gateway only). Makes a credential in
-  // this machine's DevStack and a connection in B from it, and answers with
-  // the connection's name. The secret never reaches the browser.
-  linkDevstack: async (token: string, organizationId: string, connector: string): Promise<string> => {
+  // this machine's DevStack and a connection in B from it, named name, and
+  // answers with the connection's name. The secret never reaches the browser.
+  linkDevstack: async (token: string, organizationId: string, connector: string, name: string): Promise<string> => {
     const json = await apiFetch<{ message: string; connectionName?: string }>("/dev/link-devstack", token, {
       method: "POST",
-      body: JSON.stringify({ organizationId, connector }),
+      body: JSON.stringify({ organizationId, connector, name }),
     });
 
     return json.connectionName ?? "";

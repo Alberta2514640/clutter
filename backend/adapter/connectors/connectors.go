@@ -280,6 +280,14 @@ type Previewer interface {
 	Preview(ctx context.Context, g Graph, d Deployment) (map[string][]byte, error)
 }
 
+// Advisor is optional. A connector whose cloud bills for something the
+// diagram does not show as a block (a gateway charged by the hour) says so
+// before a run, as notes with code CodeCost, so the deploy confirmation can
+// name the cost. The core finds it by type assertion. Notes never stop a run.
+type Advisor interface {
+	Advice(g Graph, d Deployment) []Problem
+}
+
 // LinkedAccount is an account an organization already linked to Clutter in
 // the cloud's own way (for AWS, a role from Clutter's CloudFormation stack),
 // offered as a ready connection. It holds no secret.

@@ -2,7 +2,7 @@
   "id": "serverless-api",
   "name": "Serverless API",
   "level": "intermediate",
-  "description": "An API that runs a function, which reads a table.",
+  "description": "An HTTP API that runs a function, which reads a table. It answers out of the box.",
   "clouds": ["aws"],
   "document": {
     "engine": "blocks",

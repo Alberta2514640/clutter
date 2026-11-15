@@ -102,7 +102,12 @@ func TestCORSAnswersOnEveryRoute(t *testing.T) {
 		t.Error("a request validator that no method uses is rendered")
 	}
 	dep := resourceBlock(override, "aws_api_gateway_deployment", p+"_api_deployment")
-	for _, want := range []string{"aws_api_gateway_method." + on + "_options.id", "aws_api_gateway_integration_response." + on + "_options.id"} {
+	// A renamed function changes its route's path and target in place, with
+	// the same ids, so both are in the trigger or the stage keeps the old route.
+	for _, want := range []string{
+		"aws_api_gateway_method." + on + "_options.id", "aws_api_gateway_integration_response." + on + "_options.id",
+		"aws_api_gateway_resource." + on + ".path_part", "aws_api_gateway_integration." + on + ".uri",
+	} {
 		if !strings.Contains(dep, want) {
 			t.Errorf("the deployment's trigger lacks %s:\n%s", want, dep)
 		}

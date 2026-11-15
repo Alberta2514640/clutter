@@ -17,13 +17,19 @@ type Props = {
   catalog: CatalogEntry[];
   // The blocks as last saved: B checks and runs the saved diagram.
   savedBlocks: BlockRef[];
+  // The blocks on the canvas now, which a new deployment is for.
+  currentBlocks: BlockRef[];
+  // The saved servers the diagram makes a website (results.servesWeb).
+  webServers: ReadonlySet<string>;
   blockTitle: (kind: string) => string;
   dirty: boolean;
+  // Saves the canvas; false when it could not.
+  save: () => Promise<boolean>;
 };
 
 // The deploy panel: one row per deployment of this diagram (one per linked
 // cloud), each with its compatibility, settings, preview, runs and log.
-export default function DeployPanel({ token, organizationId, diagramId, catalog, savedBlocks, blockTitle, dirty }: Props) {
+export default function DeployPanel({ token, organizationId, diagramId, catalog, savedBlocks, currentBlocks, webServers, blockTitle, dirty, save }: Props) {
   const deploymentsQ = useDiagramDeployments(token, organizationId, diagramId);
   const connectionsQ = useConnections(token, organizationId);
 
@@ -71,8 +77,8 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
     <div className="space-y-3">
       {deployments.length === 0 ? (
         <p className="text-sm text-slate-400">
-          {savedBlocks.length === 0
-            ? "Add building blocks and save the diagram. Then add a deployment for each cloud it should run in."
+          {currentBlocks.length === 0
+            ? "Add building blocks. Then add a deployment for each cloud it should run in."
             : "No deployments yet. Add one for each cloud this diagram should run in."}
         </p>
       ) : (
@@ -89,6 +95,7 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
               connections={connections}
               blocks={savedBlocks}
               blockTitle={blockTitle}
+              webServers={webServers}
               blockedReason={blockedReason}
             />
           ))}
@@ -109,9 +116,9 @@ export default function DeployPanel({ token, organizationId, diagramId, catalog,
           connections={connections}
           usedConnectionIds={used}
           catalog={catalog}
-          blocks={savedBlocks}
+          blocks={currentBlocks}
           blockTitle={blockTitle}
-          disabledReason={blockedReason}
+          saveFirst={dirty ? save : null}
         />
       )}
     </div>

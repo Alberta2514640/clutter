@@ -25,6 +25,9 @@ const (
 	CodeCrossNeedsPublic = "cross_needs_public"
 	// CodeCrossInvalid is a cross-cloud edge this cloud cannot serve.
 	CodeCrossInvalid = "cross_invalid"
+	// CodeCost is a note (Advisor) naming what a deployment costs beyond its
+	// blocks, such as a gateway billed by the hour.
+	CodeCost = "cost"
 )
 
 // Messages every connector shows for the same event.

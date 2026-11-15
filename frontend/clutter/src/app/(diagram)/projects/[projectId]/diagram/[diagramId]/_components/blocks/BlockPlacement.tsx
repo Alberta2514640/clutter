@@ -1,12 +1,12 @@
 "use client";
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { cleanValues, defaultValues, valuesErrors } from "@/lib/features/catalog/forms";
+import { cleanValues, defaultValues, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
 import { useUpdateDeployment } from "@/lib/features/deployments/hooks";
-import { blockCloud, cloudChoices, movePlacement, placementReason, withPlacementSettings } from "@/lib/features/deployments/placements";
+import { blockCloud, cloudBlocks, cloudChoices, placeBlock, placementReason, withPlacementSettings } from "@/lib/features/deployments/placements";
 import type { DeploymentListItem, Placement } from "@/lib/features/deployments/types";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
@@ -22,16 +22,21 @@ type Props = {
   blocks: BlockRef[];
   blockTitle: (kind: string) => string;
   running: boolean;
+  // Open until the user closes it: the diagram's blocks need two clouds.
+  defaultOpen: boolean;
 };
 
 // BlockPlacement is a deployment's "Cloud" choice per block (ADR-020): each
 // block runs on the deployment's own connection unless it is placed on
 // another of the organization's connections, which has its own settings. B
 // checks that every connection is the organization's and that each edge can
-// cross clouds; the compatibility line above says what it found.
-export default function BlockPlacement({ token, organizationId, diagramId, item, catalog, connections, blocks, blockTitle, running }: Props) {
+// cross clouds; the compatibility line above says what it found. Moving a
+// block to a cloud also puts it back in the deployment, so it is never left
+// out of every cloud.
+export default function BlockPlacement({ token, organizationId, diagramId, item, catalog, connections, blocks, blockTitle, running, defaultOpen }: Props) {
   const updateM = useUpdateDeployment(token);
-  const [open, setOpen] = useState(false);
+  const [chosenOpen, setOpen] = useState<boolean | null>(null);
+  const open = chosenOpen ?? defaultOpen;
   const placements: Placement[] = item.placements ?? [];
   const entryOf = (connector: string) => catalog.find((e) => e.manifest.connector === connector) ?? null;
   const primary = connections.find((c) => c.id === item.connection_id);
@@ -47,7 +52,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
       organizationId,
       diagramId,
       deploymentId: item.id,
-      data: { placements: movePlacement(item.connection_id, placements, blocks, blockId, connectionId) },
+      data: placeBlock(item.connection_id, placements, item.exclusions ?? [], blocks, blockId, connectionId),
     });
 
   return (
@@ -55,7 +60,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
         {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         Where each block runs
@@ -129,6 +134,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
               item={item}
               placement={p}
               entry={entryOf(p.connector)}
+              kinds={new Set(cloudBlocks(item.connection_id, placements, blocks, p.connection_id).map((b) => b.kind))}
               disabled={running}
             />
           ))}
@@ -139,7 +145,8 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
 }
 
 // PlacedCloudSettings edits one placed cloud's own settings (its image, its
-// instance type). They may change while the deployment is live.
+// instance type), only those about the blocks placed there. They may change
+// while the deployment is live.
 function PlacedCloudSettings({
   token,
   organizationId,
@@ -147,6 +154,7 @@ function PlacedCloudSettings({
   item,
   placement,
   entry,
+  kinds,
   disabled,
 }: {
   token: string | null;
@@ -155,14 +163,16 @@ function PlacedCloudSettings({
   item: DeploymentListItem;
   placement: Placement;
   entry: CatalogEntry | null;
+  kinds: ReadonlySet<string>;
   disabled: boolean;
 }) {
   const spec = entry?.manifest.settings ?? [];
+  const shown = settingsFor(spec, kinds);
   const updateM = useUpdateDeployment(token);
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, unknown>>(() => ({ ...defaultValues(spec), ...(placement.settings ?? {}) }));
-  if (spec.length === 0) return null;
-  const errors = valuesErrors(spec, values);
+  if (shown.length === 0) return null;
+  const errors = valuesErrors(shown, values);
   return (
     <div>
       <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
@@ -176,7 +186,7 @@ function PlacedCloudSettings({
             organizationId={organizationId}
             connectionId={placement.connection_id}
             idPrefix={`deployment-${item.id}-${placement.connection_id}`}
-            spec={spec}
+            spec={shown}
             values={values}
             disabled={disabled}
             onChange={(name, v) => setValues((s) => ({ ...s, [name]: v }))}
