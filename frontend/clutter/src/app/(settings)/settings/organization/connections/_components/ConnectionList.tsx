@@ -45,7 +45,7 @@ function ConnectionRow({ token, organizationId, connection, cloud }: { token: st
         <div className="flex min-w-0 items-start gap-3">
           <CloudMark cloud={cloud} size={28} className="mt-0.5" />
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <span className="min-w-0 truncate font-medium text-white" title={connection.name}>
                 {connection.name}
               </span>

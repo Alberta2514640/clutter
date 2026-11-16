@@ -69,7 +69,12 @@ type Runner struct {
 	WorkDir string
 	// StateDir holds one folder per deployment with its state file.
 	StateDir string
-	// PluginCacheDir is shared by runs so providers download once.
+	// PluginCacheDir is shared by local runs so providers download once.
+	// Terraform does not promise the cache is safe for two installs at once,
+	// so local runs take initLock for init, and use a cached provider without
+	// downloading it again (TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE), so
+	// a run's plan or apply never reads a provider another run is rewriting.
+	// The run task in the cloud keeps a cache of its own per run.
 	PluginCacheDir string
 	Launcher       runtask.Launcher
 	// Code is where uploaded function code is kept. A job with archives needs it.
@@ -78,8 +83,9 @@ type Runner struct {
 	// proxy. They must hold no secret.
 	PassEnv []string
 
-	mu    sync.Mutex
-	locks map[string]chan struct{}
+	mu       sync.Mutex
+	locks    map[string]chan struct{}
+	initLock chan struct{}
 }
 
 // registryHost is the only registry a run installs providers from.
@@ -455,7 +461,15 @@ func (r *Runner) Run(ctx context.Context, j Job) (err error) {
 			// Sensitive values: stdout to Outputs only, errors to the log.
 			t.Output, t.Stderr = j.Outputs, j.Log
 		}
-		if err := r.Launcher.Launch(ctx, t); err != nil {
+		unlock := func() {}
+		if args[0] == "init" {
+			if unlock, err = r.lockInit(ctx); err != nil {
+				return err
+			}
+		}
+		err := r.Launcher.Launch(ctx, t)
+		unlock()
+		if err != nil {
 			return fmt.Errorf("terraform %s: %w", args[0], err)
 		}
 	}
@@ -572,8 +586,28 @@ func (r *Runner) env(dir, cliConfigPath string, creds map[string]string) map[str
 	env["TF_INPUT"] = "0"
 	env["CHECKPOINT_DISABLE"] = "1"
 	env["TF_PLUGIN_CACHE_DIR"] = r.PluginCacheDir
+	// A run's folder never has a lock file, so without this every init
+	// downloads each provider again and rewrites the shared cache.
+	env["TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE"] = "1"
 	env["TF_CLI_CONFIG_FILE"] = cliConfigPath
 	return env
+}
+
+// lockInit lets one local run at a time run init, which installs providers
+// into the shared plugin cache, waiting until ctx ends.
+func (r *Runner) lockInit(ctx context.Context) (func(), error) {
+	r.mu.Lock()
+	if r.initLock == nil {
+		r.initLock = make(chan struct{}, 1)
+	}
+	ch := r.initLock
+	r.mu.Unlock()
+	select {
+	case ch <- struct{}{}:
+		return func() { <-ch }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // lock takes the deployment's lock, waiting until ctx ends.

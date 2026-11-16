@@ -184,6 +184,14 @@ resource "aws_vpc_security_group_ingress_rule" "{{$group}}_from_{{.Part}}" {
   security_group_id = aws_security_group.{{$group}}.id
   ip_protocol       = "-1"
   cidr_ipv4         = "${aws_instance.{{.Addr}}.private_ip}/32"
+
+  # A new source VM gets a new rule rather than an in-place change. AWS does
+  # either; LocalStack 4.14 refuses the in-place change of an all-protocol
+  # rule ("Must specify both from and to ports"), which made every local
+  # redeploy that replaced the source VM fail.
+  lifecycle {
+    replace_triggered_by = [aws_instance.{{.Addr}}.id]
+  }
 }
 {{- end}}
 

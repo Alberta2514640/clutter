@@ -187,11 +187,19 @@ func TestVMEdgesOnOneCloudUseTheInstanceRoleAndReferences(t *testing.T) {
 		`CLUTTER_ORDERS_TABLE='${aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name}'`,
 		`CLUTTER_FILES_REGION='ca-central-1'`,
 		`user_data_base64            = base64encode(`,
-		`replace_triggered_by = [aws_instance.` + m.blocks["db"].Addr + `.private_ip, aws_s3_bucket.` + m.blocks["files"].Addr + `.bucket, aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name]`,
 	} {
 		if !strings.Contains(override, want) {
 			t.Errorf("override.tf lacks %q\n%s", want, override)
 		}
+	}
+	// Terraform drops replace_triggered_by from an override file, so it must
+	// be in the instance's own block (ADR-026).
+	if strings.Contains(override, "replace_triggered_by") {
+		t.Errorf("override.tf sets replace_triggered_by, which Terraform ignores there\n%s", override)
+	}
+	trigger := `replace_triggered_by = [aws_instance.` + m.blocks["db"].Addr + `.private_ip, aws_s3_bucket.` + m.blocks["files"].Addr + `.bucket, aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name]`
+	if !strings.Contains(joined(files), trigger) {
+		t.Errorf("no file holds %q", trigger)
 	}
 	if strings.Contains(override, "sensitive(") {
 		t.Fatal("nothing secret, yet the user data is sensitive")

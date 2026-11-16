@@ -32,7 +32,9 @@ export default function PreviewDialog({
   const [pickedGroup, setPickedGroup] = useState<string | null>(null);
   const group = groups.find((g) => g.connection === pickedGroup) ?? groups[0] ?? null;
   const [pickedFile, setPickedFile] = useState<string | null>(null);
-  const current = group?.files.find((f) => f.path === pickedFile) ?? group?.files[0] ?? null;
+  // main.tf first: it holds the blocks, while the files before it in name
+  // order (defaults.tf) hold only settings.
+  const current = group?.files.find((f) => f.path === pickedFile) ?? group?.files.find((f) => f.name === "main.tf") ?? group?.files[0] ?? null;
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();

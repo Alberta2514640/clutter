@@ -396,18 +396,44 @@ func (m *model) crossVars() map[string]any {
 	}
 }
 
+// replaceTriggers is the replace_triggered_by list of a VM: the references
+// its startup values read (vmEnv), joined for HCL, or "" for none. When one of
+// them is unknown at plan time because its resource is being replaced, the
+// provider plans an update and only finds the replacement during apply, which
+// Terraform refuses as an inconsistent final plan. Listing them puts the
+// replacement in the plan. It goes in A's ec2 template, not override.tf,
+// because Terraform drops replace_triggered_by from an override file (ADR-026).
+func (m *model) replaceTriggers(id string) (string, error) {
+	env, err := m.vmEnv(id)
+	if err != nil {
+		return "", err
+	}
+	var refs []string
+	for _, e := range env {
+		if e.Ref != "" {
+			refs = append(refs, e.Ref)
+		}
+	}
+	return strings.Join(refs, ", "), nil
+}
+
 // vars is one block's variable map for its template. Every value is either
 // built by B from checked parts (addresses, names, numbers, allow-listed
 // values) or escaped for an HCL string.
 func (m *model) vars(b *block) (map[string]any, error) {
 	switch b.Kind {
 	case connectors.KindVM:
+		triggers, err := m.replaceTriggers(b.ID)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"InstanceType": m.vmInstanceType(b),
 			// A key pair the block names is set in override.tf, as a
 			// reference, so the instance waits for it.
-			"KeyName": "",
+			"KeyName":            "",
+			"ReplaceTriggeredBy": triggers,
 		}, nil
 	case connectors.KindNetwork:
 		cidr, err := networkCIDR(b.str(fieldCIDR))
@@ -668,12 +694,6 @@ type instanceVars struct {
 	// string of base64, or an expression that builds the startup wrapper, or
 	// "" for none.
 	UserData string
-	// Triggers are the references UserData reads. When one of them is
-	// unknown at plan time (its resource is being replaced), the provider
-	// plans an update and only finds the replacement during apply, which
-	// Terraform refuses as an inconsistent final plan. Listing them in
-	// replace_triggered_by puts that replacement in the plan.
-	Triggers []string
 }
 
 // functionVars is one function's code: the zip code.tf builds from its sample
@@ -756,15 +776,6 @@ func (m *model) overrideVars() (map[string]any, error) {
 				return nil, err
 			}
 			v.UserData = ud
-			env, err := m.vmEnv(id)
-			if err != nil {
-				return nil, err
-			}
-			for _, e := range env {
-				if e.Ref != "" {
-					v.Triggers = append(v.Triggers, e.Ref)
-				}
-			}
 			instances = append(instances, v)
 		case connectors.KindFunction:
 			f := functionVars{Addr: b.Addr, Zip: b.Addr + ".zip"}

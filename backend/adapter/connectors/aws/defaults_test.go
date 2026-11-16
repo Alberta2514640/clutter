@@ -187,6 +187,7 @@ func TestVMToVMOpensAPath(t *testing.T) {
 		`name        = "` + p + `-worker.peers"`,
 		`vpc_id      = aws_vpc.` + p + `_net1.id`,
 		`cidr_ipv4         = "${aws_instance.` + p + `_web.private_ip}/32"`,
+		`replace_triggered_by = [aws_instance.` + p + `_web.id]`,
 		`resource "aws_vpc_security_group_egress_rule" "` + group + `_out_all"`,
 	} {
 		if !strings.Contains(iam, want) {

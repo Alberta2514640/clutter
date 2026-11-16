@@ -20,14 +20,6 @@ resource "aws_instance" "{{.Addr}}" {
   # makes the whole argument sensitive, so Terraform never prints it.
   user_data_base64            = {{.UserData}}
   user_data_replace_on_change = true
-{{- if .Triggers}}
-
-  # A value above that turns unknown, because its resource is being
-  # replaced, replaces this VM in the plan rather than during apply.
-  lifecycle {
-    replace_triggered_by = [{{range $i, $r := .Triggers}}{{if $i}}, {{end}}{{$r}}{{end}}]
-  }
-{{- end}}
 {{- end}}
 
   # The block's name, as every other resource is named. ManagedBy stays

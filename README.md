@@ -223,7 +223,7 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 - `localstack` and `devstack` return when they are ready, so run them in a second terminal. DevStack can start at any time. The VM takes 12 GiB of memory, so on a 16 GB machine run one of the two at a time.
 - The **Mock cloud** on Connections, and the `Mock` tags in the palette, are a local test cloud. It builds nothing.
 - Three ways to run Clutter: `npm run dev` (all of it, in one terminal); `npm run dev:backend`, then `npm run dev:frontend` in a second terminal; or the website alone with no backend (`frontend/clutter/README.md` § Run it).
-- One copy of Clutter runs per machine. Every clone shares the ports and the database, so a second clone starts with `npm run stop -- --wipe`.
+- One copy of Clutter runs per machine. Every clone shares the ports and the database, so a second clone starts with `npm run stop -- --wipe`, which deletes the first clone's organizations, diagrams and connections.
 
 #### AWS, on LocalStack
 
@@ -237,9 +237,9 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 8. Open the project and press **New diagram**, then **Blank**: the building-block editor. (The other choices are seven built-in examples, from Starter to Advanced, which open with their blocks and links in place.)
 9. Click **Network** in the palette: a dashed box labelled `network · 10.0.0.0/24`. Drag **VM** from the palette onto the box: it lights up and says `Drop to run it in network`. Drop it: a VM inside a box runs in that network. Every other link is a line: drag from a block's dot, and only the blocks it can link to light up. Hover a line, a block's `?` or a setting's `?` to see what it does. Press **Save**: the top bar says `Saved`.
 10. The **Deploy** tab, **Add deployment**, the AWS connection, then **Add deployment to Local AWS**: `Amazon Web Services: every block can be built here`. (With unsaved changes, it saves the diagram first.)
-11. **Preview Terraform**: six files, `main.tf` and `results.tf` among them.
-12. **Plan**: `Plan: 6 to add`. **Deploy**, then **Deploy** in the confirmation that says what it builds: `Built 2 blocks (6 cloud resources)`, the badge says `Deployed`, and **What was built** lists each block, what it became (`EC2`, `VPC`) and the server's private address. A public server leads it as `Your server` (or `Your website` with a firewall that lets in port 80), and an HTTP API as `Your API` with Copy and Open. The log is under **Show log**.
-13. **Destroy**, then **Destroy for good**: `Destroy complete: 6 destroyed`, and the badge says `Destroyed`.
+11. **Preview Terraform**: seven files, `main.tf` and `results.tf` among them.
+12. **Plan**: `Plan: 14 to add`. **Deploy**, then **Deploy** in the confirmation that says what it builds: `Built 2 blocks (14 cloud resources)`, the badge says `Deployed`, and **What was built** lists each block, what it became (`EC2`, `VPC`) and the server's private address. A public server leads it as `Your server` (or `Your website` with a firewall that lets in port 80), and an HTTP API as `Your API` with Copy and Open. The log is under **Show log**.
+13. **Destroy**, then **Destroy for good**: `Destroy complete: 14 destroyed`, and the badge says `Destroyed`.
 
 #### OpenStack, on DevStack
 
