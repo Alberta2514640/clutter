@@ -187,6 +187,7 @@ func TestVMEdgesOnOneCloudUseTheInstanceRoleAndReferences(t *testing.T) {
 		`CLUTTER_ORDERS_TABLE='${aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name}'`,
 		`CLUTTER_FILES_REGION='ca-central-1'`,
 		`user_data_base64            = base64encode(`,
+		`replace_triggered_by = [aws_instance.` + m.blocks["db"].Addr + `.private_ip, aws_s3_bucket.` + m.blocks["files"].Addr + `.bucket, aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name]`,
 	} {
 		if !strings.Contains(override, want) {
 			t.Errorf("override.tf lacks %q\n%s", want, override)

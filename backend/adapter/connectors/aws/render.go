@@ -668,6 +668,12 @@ type instanceVars struct {
 	// string of base64, or an expression that builds the startup wrapper, or
 	// "" for none.
 	UserData string
+	// Triggers are the references UserData reads. When one of them is
+	// unknown at plan time (its resource is being replaced), the provider
+	// plans an update and only finds the replacement during apply, which
+	// Terraform refuses as an inconsistent final plan. Listing them in
+	// replace_triggered_by puts that replacement in the plan.
+	Triggers []string
 }
 
 // functionVars is one function's code: the zip code.tf builds from its sample
@@ -750,6 +756,15 @@ func (m *model) overrideVars() (map[string]any, error) {
 				return nil, err
 			}
 			v.UserData = ud
+			env, err := m.vmEnv(id)
+			if err != nil {
+				return nil, err
+			}
+			for _, e := range env {
+				if e.Ref != "" {
+					v.Triggers = append(v.Triggers, e.Ref)
+				}
+			}
 			instances = append(instances, v)
 		case connectors.KindFunction:
 			f := functionVars{Addr: b.Addr, Zip: b.Addr + ".zip"}
