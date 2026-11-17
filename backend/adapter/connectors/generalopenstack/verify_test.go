@@ -100,14 +100,22 @@ func TestVerifyRefusesPrivateTargetsByDefault(t *testing.T) {
 		"metadata":             {"https://169.254.169.254/v3", "does not connect to"},
 		"IPv6 loopback":        {"https://[::1]:5000/v3", "does not connect to"},
 		"IPv6 unique local":    {"https://[fd12:3456::1]/v3", "does not connect to"},
-		"IPv4 mapped in IPv6":  {"https://[::ffff:10.0.0.5]/v3", "does not connect to"},
-		"this network":         {"https://0.0.0.1/v3", "does not connect to"},
-		"IPv6 metadata":        {"https://[fd00:ec2::254]/v3", "does not connect to"},
+		// Go 1.25.3's url.Parse rejects this host ("invalid IPv6 host") and
+		// Go 1.26 parses it, so the refusal comes from the URL check or the
+		// address check. Either way nothing is reached; netguard's own test
+		// covers the address on every Go version.
+		"IPv4 mapped in IPv6": {"https://[::ffff:10.0.0.5]/v3", "does not connect to|must be an https address"},
+		"this network":        {"https://0.0.0.1/v3", "does not connect to"},
+		"IPv6 metadata":       {"https://[fd00:ec2::254]/v3", "does not connect to"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			err := c.VerifyConnection(context.Background(), connectors.Connection{Region: testRegion, Credentials: creds(tc.url)})
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
+			refused := false
+			for _, want := range strings.Split(tc.want, "|") {
+				refused = refused || (err != nil && strings.Contains(err.Error(), want))
+			}
+			if !refused {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
