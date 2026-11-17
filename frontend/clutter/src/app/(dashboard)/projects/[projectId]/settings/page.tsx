@@ -1,5 +1,6 @@
 "use client";
 
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useDeleteProject, useUpdateProject } from "@/lib/features/projects/hooks";
 import { useProjectSettingsDraft } from "@/lib/features/projects/uiStore";
-import { AlertTriangle, Layers, Loader2, X } from "lucide-react";
+import { isConflict } from "@/lib/features/user/session";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useProjectContext } from "../_contexts/ProjectContext";
@@ -25,39 +27,37 @@ export default function ProjectSettingsPage() {
   const setDescription = useProjectSettingsDraft((s) => s.setDescription);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentProject) return;
     if (draft.projectId === currentProject.id) return;
     startDraft(currentProject.id, currentProject.name, currentProject.description || "");
-  }, [currentProject?.id, draft.projectId, startDraft]);
+  }, [currentProject, draft.projectId, startDraft]);
 
   const isSaving = updateM.isPending || deleteM.isPending;
 
-  const error =
-    (updateM.isError ? updateM.error : null) ||
-    (deleteM.isError ? deleteM.error : null);
-
   const hasChanges = useMemo(() => {
     if (!currentProject) return false;
-    return (
-      draft.name !== currentProject.name ||
-      draft.description !== (currentProject.description || "")
-    );
+    return draft.name !== currentProject.name || draft.description !== (currentProject.description || "");
   }, [draft.name, draft.description, currentProject]);
 
   const handleSave = async () => {
     if (!currentProject || !projectId || !hasChanges) return;
     const name = draft.name.trim();
     const desc = draft.description.trim();
-    await updateM.mutateAsync({
-      projectId,
-      data: {
-        organizationId: currentProject.organizationId,
-        name,
-        ...(desc ? { description: desc } : {}),
-      },
-    });
+    try {
+      await updateM.mutateAsync({
+        projectId,
+        data: {
+          organizationId: currentProject.organizationId,
+          name,
+          ...(desc ? { description: desc } : {}),
+        },
+      });
+    } catch {
+      // Shown from updateM.isError below.
+    }
   };
 
   const handleCancel = () => {
@@ -67,11 +67,21 @@ export default function ProjectSettingsPage() {
 
   const handleDeleteConfirm = async () => {
     if (!projectId || !currentProject) return;
+    setDeleteError(null);
+    try {
+      await deleteM.mutateAsync({
+        projectId: currentProject.id,
+        organizationId: currentProject.organizationId,
+      });
+    } catch (err) {
+      setDeleteError(
+        isConflict(err)
+          ? "A diagram in this project still has live deployments. Destroy them on the diagram's Deploy tab, then delete the project."
+          : "Clutter could not delete the project. Try again.",
+      );
+      return;
+    }
     setShowDeleteModal(false);
-    await deleteM.mutateAsync({
-      projectId: currentProject.id,
-      organizationId: currentProject.organizationId,
-    });
     router.push("/dashboard");
   };
 
@@ -81,82 +91,51 @@ export default function ProjectSettingsPage() {
 
   return (
     <>
-      {/* ── Delete confirmation modal — outside content div to avoid stacking context ── */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md mx-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-red-900/30 border border-red-800/50 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
-              </div>
-              <div>
-                <h3 className="text-white font-semibold text-base mb-1">Delete project</h3>
-                <p className="text-slate-400 text-sm">
-                  Are you sure you want to delete{" "}
-                  <span className="text-white font-medium">&quot;{currentProject.name}&quot;</span>?
-                  All associated diagrams, credentials, and variables will be permanently removed.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                className="ml-auto flex-shrink-0 text-slate-500 hover:text-slate-300 transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                onClick={() => setShowDeleteModal(false)}
-                className="h-9 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleDeleteConfirm}
-                disabled={deleteM.isPending}
-                className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium">
-                {deleteM.isPending ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    Deleting…
-                  </>
-                ) : (
-                  "Delete project"
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete project"
+          confirmLabel="Delete project"
+          pendingLabel="Deleting…"
+          isPending={deleteM.isPending}
+          error={deleteError}
+          onCancel={() => setShowDeleteModal(false)}
+          onConfirm={() => void handleDeleteConfirm()}>
+          <p>
+            Delete <span className="text-white font-medium">&quot;{currentProject.name}&quot;</span> and all its diagrams? This cannot be undone.
+          </p>
+          <p>If a diagram has live deployments, Clutter refuses until you destroy them.</p>
+        </ConfirmDialog>
       )}
 
       <div className="max-w-4xl mx-auto py-12 space-y-12 text-white">
-        {error && (
+        {updateM.isError && (
           <Alert className="bg-red-900/20 border-red-800">
-            <AlertDescription>{String(error)}</AlertDescription>
+            <AlertDescription>Clutter could not save your changes. Try again.</AlertDescription>
           </Alert>
         )}
 
         {/* Project name */}
         <div className="space-y-3">
-          <Label className="text-gray-300">Icon and name</Label>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              className="w-12 h-12 rounded-xl bg-slate-800 border-slate-700 text-gray-300 hover:border-teal-400">
-              <Layers className="w-5 h-5" />
-            </Button>
-            <Input
-              className="bg-slate-800 border-slate-700 text-white"
-              value={isDraftForCurrentProject ? draft.name : ""}
-              onChange={(e) => setName(e.target.value)}
-              disabled={isSaving}
-              placeholder="Project name"
-            />
-          </div>
+          <Label htmlFor="project-settings-name" className="text-gray-300">
+            Name
+          </Label>
+          <Input
+            id="project-settings-name"
+            className="bg-slate-800 border-slate-700 text-white"
+            value={isDraftForCurrentProject ? draft.name : ""}
+            onChange={(e) => setName(e.target.value)}
+            disabled={isSaving}
+            placeholder="Project name"
+          />
         </div>
 
         {/* Project description */}
         <div className="space-y-3">
-          <Label className="text-gray-300">Description</Label>
+          <Label htmlFor="project-settings-description" className="text-gray-300">
+            Description
+          </Label>
           <Textarea
+            id="project-settings-description"
             className="bg-slate-800 border-slate-700 text-white"
             rows={3}
             value={isDraftForCurrentProject ? draft.description : ""}
@@ -169,24 +148,17 @@ export default function ProjectSettingsPage() {
         {/* Save/Cancel buttons */}
         {hasChanges && (
           <div className="flex gap-3">
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !draft.name.trim()}
-              className="bg-teal-500 hover:bg-teal-600 text-white">
+            <Button onClick={handleSave} disabled={isSaving || !draft.name.trim()} className="bg-teal-500 hover:bg-teal-600 text-white">
               {isSaving ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
                   Saving...
                 </>
               ) : (
                 "Save Changes"
               )}
             </Button>
-            <Button
-              onClick={handleCancel}
-              variant="outline"
-              disabled={isSaving}
-              className="border-slate-700 text-gray-300 hover:bg-slate-800">
+            <Button onClick={handleCancel} variant="outline" disabled={isSaving} className="border-slate-700 text-gray-300 hover:bg-slate-800">
               Cancel
             </Button>
           </div>
@@ -195,14 +167,15 @@ export default function ProjectSettingsPage() {
         {/* Danger zone */}
         <div className="space-y-4 pt-8 border-t border-slate-800">
           <h3 className="text-lg font-semibold text-red-400">Danger zone</h3>
-          <p className="text-gray-400 text-sm">
-            When deleting a project, all associated diagrams, credentials, and variables will be
-            permanently removed.
-          </p>
+          <p className="text-gray-400 text-sm">Deleting a project removes all its diagrams for good. Clutter refuses while any of them has live deployments.</p>
           <Button
-            onClick={() => setShowDeleteModal(true)}
+            onClick={() => {
+              setDeleteError(null);
+              setShowDeleteModal(true);
+            }}
             disabled={isSaving}
-            className="bg-red-600 hover:bg-red-700 text-white">
+            variant="outline"
+            className="border-red-800 bg-transparent text-red-300 hover:bg-red-950 hover:text-red-200">
             Delete this project
           </Button>
         </div>

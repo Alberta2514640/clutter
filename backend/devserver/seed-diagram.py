@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create a separate local diagram for dragging, connecting and saving nodes."""
+import argparse
 import json
 import sys
 import uuid
@@ -39,6 +40,7 @@ def main():
         "description": "Local sample data for testing node movement",
     })["id"]
     stack = api(f"/cloudformation-stack-url/{org}?accountName=playground{suffix}&region=us-west-2")
+    # Same as internal/gateway/fakeaccount.go (ParseStackURL, FakeRoleArn).
     parsed = urlparse(stack["url"])
     query = parsed.fragment.split("?", 1)[1] if "?" in parsed.fragment else parsed.query
     unique = parse_qs(query)["param_UniqueId"][0]
@@ -52,11 +54,12 @@ def main():
     nodes = []
     # The editor's Save accepts lowercase letters, numbers and hyphens only.
     samples = [
-        ("API Gateway", "demo-api", "/aws/apigateway.png", 0, 150),
-        ("Lambda", "demo-handler", "/aws/lambda.png", 300, 50),
-        ("Lambda", "demo-worker", "/aws/lambda.png", 300, 300),
-        ("S3", "demo-uploads", "/aws/s3.png", 650, 0),
-        ("DynamoDB", "demo-records", "/aws/dynamodb.png", 650, 300),
+        # y starts at 120, below the editor's floating toolbar.
+        ("API Gateway", "demo-api", "/aws/apigateway.png", 0, 270),
+        ("Lambda", "demo-handler", "/aws/lambda.png", 300, 170),
+        ("Lambda", "demo-worker", "/aws/lambda.png", 300, 420),
+        ("S3", "demo-uploads", "/aws/s3.png", 650, 120),
+        ("DynamoDB", "demo-records", "/aws/dynamodb.png", 650, 420),
     ]
     for label, name, image, x, y in samples:
         variables = {
@@ -82,6 +85,8 @@ def main():
         "projectId": project, "diagramId": diagram_id,
         "name": "Drag Me Around", "data": layout,
     }, "PUT")
+    # Generate after the save, as the editor does, so Preview Terraform has files.
+    api("/terraform-engine", {"projectId": project, "diagramId": diagram_id})
     saved = api(f"/diagram?projectId={project}&diagramId={diagram_id}")
     if isinstance(saved, list):
         saved = saved[0]
@@ -94,6 +99,16 @@ def main():
 
 
 if __name__ == "__main__":
+    argparse.ArgumentParser(
+        prog="npm run seed",
+        description=(
+            "Adds sample data to the local database through the running backend: a new "
+            "organization with a fake linked AWS account, a project, and an AWS diagram "
+            "with 5 nodes and 4 connections. It belongs to the local test user, so sign "
+            "in at http://localhost:3000/dev/login to see it. Each run adds a new set and "
+            "keeps the old ones. Start the app first with npm run dev."
+        ),
+    ).parse_args()
     try:
         main()
     except HTTPError as error:

@@ -1,0 +1,110 @@
+data "aws_availability_zones" "{{.ResourceName}}_azs" {
+  state = "available"
+}
+
+# VPC
+resource "aws_vpc" "{{.ResourceName}}" {
+  cidr_block           = "{{.CIDR}}"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "{{.NetworkName}}"
+  }
+}
+
+# Two subnets split the VPC's range in its first availability zone: the lower
+# half for private instances, the upper half for public ones and the NAT
+# gateway.
+resource "aws_subnet" "{{.ResourceName}}_subnet" {
+  vpc_id                  = aws_vpc.{{.ResourceName}}.id
+  cidr_block              = "{{.PrivateCIDR}}"
+  availability_zone       = data.aws_availability_zones.{{.ResourceName}}_azs.names[0]
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "{{.NetworkName}}-private"
+  }
+}
+
+resource "aws_subnet" "{{.ResourceName}}_public_subnet" {
+  vpc_id                  = aws_vpc.{{.ResourceName}}.id
+  cidr_block              = "{{.PublicCIDR}}"
+  availability_zone       = data.aws_availability_zones.{{.ResourceName}}_azs.names[0]
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "{{.NetworkName}}-public"
+  }
+}
+{{- if .Public}}
+
+# Internet gateway and default route for the public subnet
+resource "aws_internet_gateway" "{{.ResourceName}}_igw" {
+  vpc_id = aws_vpc.{{.ResourceName}}.id
+
+  tags = {
+    Name = "{{.NetworkName}}-igw"
+  }
+}
+
+resource "aws_route_table" "{{.ResourceName}}_rt" {
+  vpc_id = aws_vpc.{{.ResourceName}}.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.{{.ResourceName}}_igw.id
+  }
+
+  tags = {
+    Name = "{{.NetworkName}}-rt"
+  }
+}
+
+resource "aws_route_table_association" "{{.ResourceName}}_rta" {
+  subnet_id      = aws_subnet.{{.ResourceName}}_public_subnet.id
+  route_table_id = aws_route_table.{{.ResourceName}}_rt.id
+}
+{{- end}}
+{{- if .NAT}}
+
+# NAT gateway, so private instances reach the internet without being reached
+# from it. It and its address cost by the hour (the network block's
+# private_internet field).
+resource "aws_eip" "{{.ResourceName}}_nat" {
+  domain = "vpc"
+
+  tags = {
+    Name = "{{.NetworkName}}-nat"
+  }
+}
+
+resource "aws_nat_gateway" "{{.ResourceName}}_nat" {
+  allocation_id = aws_eip.{{.ResourceName}}_nat.id
+  subnet_id     = aws_subnet.{{.ResourceName}}_public_subnet.id
+
+  tags = {
+    Name = "{{.NetworkName}}-nat"
+  }
+
+  depends_on = [aws_internet_gateway.{{.ResourceName}}_igw]
+}
+
+resource "aws_route_table" "{{.ResourceName}}_private_rt" {
+  vpc_id = aws_vpc.{{.ResourceName}}.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.{{.ResourceName}}_nat.id
+  }
+
+  tags = {
+    Name = "{{.NetworkName}}-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "{{.ResourceName}}_private_rta" {
+  subnet_id      = aws_subnet.{{.ResourceName}}_subnet.id
+  route_table_id = aws_route_table.{{.ResourceName}}_private_rt.id
+}
+{{- end}}

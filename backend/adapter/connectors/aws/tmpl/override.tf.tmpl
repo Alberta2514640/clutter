@@ -1,0 +1,121 @@
+# Terraform override file: it adds arguments to blocks that A's unchanged
+# templates render, where those templates have no input for them.
+{{- range .Instances}}
+
+resource "aws_instance" "{{.Addr}}" {
+  associate_public_ip_address = {{.Public}}
+{{- if .Subnet}}
+  subnet_id                   = aws_subnet.{{.Subnet}}.id
+{{- end}}
+{{- if .SecurityGroups}}
+  vpc_security_group_ids      = [{{range $i, $sg := .SecurityGroups}}{{if $i}}, {{end}}aws_security_group.{{$sg}}.id{{end}}]
+{{- end}}
+{{- if .KeyPair}}
+  key_name                    = aws_key_pair.{{.KeyPair}}.key_name
+{{- end}}
+{{- if .UserData}}
+  # The block's startup script, which cloud-init runs once as root at first
+  # boot, behind the values the VM's connections hand it, if any. A changed
+  # script or value builds a new instance, so it runs again. A secret value
+  # makes the whole argument sensitive, so Terraform never prints it.
+  user_data_base64            = {{.UserData}}
+  user_data_replace_on_change = true
+{{- end}}
+
+  # The block's name, as every other resource is named. ManagedBy stays
+  # Ansible, as A's template sets it.
+  tags = {
+    Name      = "{{.Name}}"
+    ManagedBy = "Ansible"
+  }
+
+  # An encrypted root disk, with the account's default EBS key, the size of
+  # the Amazon Linux 2023 image's own (8 GiB). LocalStack refuses a root
+  # disk with no size; AWS refuses one smaller than the image's.
+  root_block_device {
+    encrypted   = true
+    volume_size = 8
+    volume_type = "gp3"
+  }
+
+  # Instance metadata only with a session token (IMDSv2).
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
+}
+{{- end}}
+{{- range .Functions}}
+{{- if .Hash}}
+
+# The function's code is the zip uploaded through Clutter, which the runner
+# stages in the run's folder. It logs to the group defaults.tf creates.
+resource "aws_lambda_function" "{{.Addr}}" {
+  filename         = "{{.Zip}}"
+  source_code_hash = "{{.Hash}}"
+
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.{{.Addr}}.name
+  }
+}
+{{- else}}
+
+# The function's code is the placeholder zip code.tf builds. It logs to the
+# group defaults.tf creates.
+resource "aws_lambda_function" "{{.Addr}}" {
+  filename         = data.archive_file.{{.Addr}}_code.output_path
+  source_code_hash = data.archive_file.{{.Addr}}_code.output_base64sha256
+
+  logging_config {
+    log_format = "Text"
+    log_group  = aws_cloudwatch_log_group.{{.Addr}}.name
+  }
+}
+{{- end}}
+{{- end}}
+{{- range .Buckets}}
+
+resource "aws_s3_bucket" "{{.Addr}}" {
+  # The block's "Delete files on destroy" field: without it, destroying a
+  # bucket that holds files fails.
+  force_destroy = {{.ForceDestroy}}
+}
+{{- end}}
+{{- range .Tables}}
+
+# Point-in-time recovery: the table can be restored to any second of the
+# last 35 days.
+resource "aws_dynamodb_table" "{{.}}" {
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+{{- end}}
+{{- range .APIs}}
+
+# Redeploy the API when a route or its CORS answer changes, and only after
+# they exist. A renamed function changes its route's path and target in place,
+# keeping their ids, so the path and the target are in the trigger too.
+resource "aws_api_gateway_deployment" "{{.Addr}}_deployment" {
+  triggers = {
+    redeployment = sha1(jsonencode([
+{{- range .Routes}}
+      aws_api_gateway_resource.{{.}}.id,
+      aws_api_gateway_resource.{{.}}.path_part,
+      aws_api_gateway_method.{{.}}.id,
+      aws_api_gateway_integration.{{.}}.id,
+      aws_api_gateway_integration.{{.}}.uri,
+{{- end}}
+{{- if .CORS}}
+{{- range .Routes}}
+      aws_api_gateway_method.{{.}}_options.id,
+      aws_api_gateway_integration.{{.}}_options.id,
+      aws_api_gateway_method_response.{{.}}_options.id,
+      aws_api_gateway_integration_response.{{.}}_options.id,
+{{- end}}
+{{- end}}
+    ]))
+  }
+}
+{{- end}}

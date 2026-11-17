@@ -4,8 +4,7 @@ FROM hashicorp/terraform:1.14.4
 RUN apk add --no-cache \
     bash \
     jq \
-    aws-cli \
-    postgresql-client
+    aws-cli
 
 WORKDIR /app
 

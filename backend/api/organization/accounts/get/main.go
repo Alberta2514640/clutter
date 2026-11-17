@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -21,7 +22,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	userId := userData.Id
@@ -49,38 +50,17 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	ctx := context.Background()
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("accounts get: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to connect to PostgreSQL database",
-			"error":   err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Fetch all account access roles for the organization
@@ -91,9 +71,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		organizationId,
 	)
 	if err != nil {
+		log.Printf("accounts get: query: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to query account access roles",
-			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -103,18 +83,18 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		var role internal.AccountAccessRole
 		err := rows.Scan(&role.Id, &role.AccountName, &role.RoleArn, &role.Status)
 		if err != nil {
+			log.Printf("accounts get: scan: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to scan account access role row",
-				"error":   err.Error(),
+				"message": "failed to query account access roles",
 			})
 		}
 		roles = append(roles, role)
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("accounts get: rows: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "error iterating account access role rows",
-			"error":   err.Error(),
+			"message": "failed to query account access roles",
 		})
 	}
 

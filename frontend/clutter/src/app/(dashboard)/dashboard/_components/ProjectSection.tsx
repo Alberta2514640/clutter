@@ -1,45 +1,52 @@
 "use client";
 
+import FirstSteps from "@/components/common/FirstSteps";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Project } from "@/lib/features/projects/types";
-import { Clock, FolderOpen, Plus, Users } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+
 interface ProjectsSectionProps {
   projects: Project[];
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
 }
 
-export default function ProjectsSection({ projects }: ProjectsSectionProps) {
-  const router = useRouter();
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+export default function ProjectsSection({ projects, isLoading, isError, onRetry }: ProjectsSectionProps) {
 
   return (
     <div className="mb-8">
       <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-        <FolderOpen className="w-6 h-6 text-teal-400" />
+        <FolderOpen className="w-6 h-6 text-teal-400" aria-hidden="true" />
         Your Projects
       </h2>
 
-      {projects.length === 0 ? (
+      {isLoading ? (
         <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FolderOpen className="w-16 h-16 text-gray-600 mb-4" />
-            <h3 className="text-xl font-semibold text-white mb-2">No projects yet</h3>
-            <p className="text-gray-400 text-center mb-6">Create your first project to start building infrastructure</p>
-            <Button onClick={() => router.push("/projects/new")} className="bg-teal-500 hover:bg-teal-600">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Project
+          <CardContent role="status" className="py-12 text-center text-gray-400">
+            Loading projects...
+          </CardContent>
+        </Card>
+      ) : isError ? (
+        <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <p className="text-red-300">Clutter could not load your projects.</p>
+            <Button variant="outline" onClick={onRetry} className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800">
+              Try again
             </Button>
+          </CardContent>
+        </Card>
+      ) : projects.length === 0 ? (
+        <Card className="bg-slate-900/50 backdrop-blur-xl border-slate-800/50">
+          <CardContent className="grid gap-8 py-10 md:grid-cols-[1fr_1.2fr] md:items-center">
+            <div className="flex flex-col items-center text-center">
+              <FolderOpen className="w-16 h-16 text-gray-600 mb-4" aria-hidden="true" />
+              <h3 className="text-xl font-semibold text-white mb-2">No projects yet</h3>
+              <p className="text-gray-400">Follow these steps to your first deploy.</p>
+            </div>
+            <FirstSteps />
           </CardContent>
         </Card>
       ) : (
@@ -51,21 +58,6 @@ export default function ProjectsSection({ projects }: ProjectsSectionProps) {
                   <CardTitle className="text-white group-hover:text-teal-400 transition-colors">{project.name}</CardTitle>
                   <CardDescription className="text-gray-400 line-clamp-2">{project.description || "No description"}</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between text-sm text-gray-500">
-                    {/* we dont have this data  */}
-                    {/* <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      {formatDate(project.updatedAt)}
-                    </span>
-                    {project.memberCount && (
-                      <span className="flex items-center gap-1">
-                        <Users className="w-4 h-4" />
-                        {project.memberCount}
-                      </span>
-                    )} */}
-                  </div>
-                </CardContent>
               </Card>
             </Link>
           ))}

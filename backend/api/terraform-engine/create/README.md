@@ -1,34 +1,41 @@
 # Terraform Engine - Create
 
-This Lambda function generates Terraform code from diagram data received via Supabase webhooks.
+This Lambda function generates Terraform code for one saved diagram. The editor calls it after each successful save (ADR-018).
 
-> **Checked against the code on 2026-11-04.** The Supabase webhook that calls this route is configured in Supabase, not in this repo, and nothing in the repo calls the route. The route has no authorizer, so anyone who can reach it can trigger generation. Locally, `backend/devserver` stands in for the webhook and S3, so saving a diagram runs this Lambda for real (`backend/devserver/README.md`). Corrections to the capstone text below are marked "Now:".
+> **Checked against the code on 2026-11-13.** The route sits behind the JWT authorizer. Locally, `backend/devserver` runs this Lambda for real against a local S3 (`backend/devserver/README.md`). Corrections to the capstone text below are marked "Now:".
 
 ## Architecture Overview
 
 ```
-Supabase Webhook → API Gateway → Lambda → Generate Terraform → S3 Output Bucket
-                                              ↓
-                                    S3 Templates Bucket
+Editor (after save) → API Gateway + JWT authorizer → Lambda → Postgres (ownership, diagram row)
+                                                        ↓
+                                  S3 Templates Bucket → Generate Terraform → S3 Output Bucket
 ```
 
 ## How It Works
 
-### 1. Webhook Trigger
-When a diagram is created/updated in Supabase, a webhook sends a POST request with:
+### 1. The Request
+After a save succeeds, the editor sends `POST /terraform-engine` with the user's token and only the two ids:
 ```json
 {
-  "type": "UPDATE",
-  "record": {
-    "id": "diagram-uuid",
-    "project_id": "project-uuid",
-    "data": {
-      "nodes": [...],
-      "edges": [...]
-    }
-  }
+  "projectId": "project-uuid",
+  "diagramId": "diagram-uuid"
 }
 ```
+
+The caller comes from the authorizer context. The handler checks, through the shared ownership helper in `generic`, that the diagram belongs to the project and that the caller is a member of the project's organization. A caller who is not gets 404, the same answer as for a diagram that does not exist. The diagram's nodes, edges and save time are then read from Postgres; the request never carries diagram data.
+
+Answers:
+
+| Status | When | Body |
+|--------|------|------|
+| 200 | the files are written | `message`, `diagram_id` |
+| 400 | the body is not JSON or the ids are not UUIDs, or the diagram cannot be generated | `message`; for a diagram that cannot be generated, `error` holds the same summary `status.json` records |
+| 401 | the authorizer passed no caller | `message` |
+| 403, 404 | the caller does not own the diagram, or it does not exist | `message` |
+| 500 | the database, the generator or S3 failed | a fixed `message`; the cause is only in the log |
+
+No body holds a bucket path, an SDK error or an internal message.
 
 ### 2. Node Processing
 Each node in the diagram is parsed:
@@ -59,8 +66,10 @@ Go's `text/template` package renders templates the variables passed into for eac
 ```
 
 ### 5. IAM Generation
-Edges between nodes generate IAM policies automatically:
-- Lambda → S3 edge creates S3 read/write permissions
+Edges between nodes generate IAM automatically (`internal/generator/iam`):
+- A Lambda to S3 or Lambda to DynamoDB edge means "reads": it adds an inline policy on the function's own role with read actions only (the same lists as B's AWS connector).
+- An API Gateway to Lambda edge adds an `aws_lambda_permission` so the API may invoke the function.
+- Any other edge generates nothing.
 
 ### 6. S3 Output
 Generated Terraform is uploaded to:
@@ -75,7 +84,7 @@ s3://clutter-us-west-2-..../
                 └── status.json  (whether the last run succeeded, read by the editor)
 ```
 
-Now: the `terraform/` folder is what the writer really uses; the `s3_path` in the Lambda's response omits it.
+Now: the `terraform/` folder is what the writer really uses.
 
 Every run writes `status.json`. A failed run leaves the older `.tf` files in place and records the failure, so the editor can warn that they are out of date. Errors caused by the diagram keep their real message; infrastructure errors are stored as a fixed sentence, with the cause in the log. If an upload fails partway, the status says the files may be incomplete. A status that cannot be written is logged and does not fail the run. `GET /terraform-engine/files` (`backend/api/generic/terraformfiles`) reads all of this for the editor.
 
@@ -87,7 +96,7 @@ Every run writes `status.json`. A failed run leaves the older `.tf` files in pla
 |----------|-------------|---------|
 | `TEMPLATE_BUCKET_NAME` | S3 bucket for templates | `clutter-templates-us-west-2-...` |
 | `S3_BUCKET_NAME` | S3 bucket for output | `clutter-us-west-2-...` |
-| `PSQL_CONNECTION_STRING` | Postgres connection string for org lookup | `postgres://...` |
+| `PSQL_CONNECTION_STRING` | Postgres connection string for the ownership check and the diagram row | `postgres://...` |
 
 ---
 
@@ -95,17 +104,17 @@ Every run writes `status.json`. A failed run leaves the older `.tf` files in pla
 
 ### Run Tests
 
-**Full end-to-end test (generates + uploads to S3):**
+The handler tests run offline: they replace the database with pgxmock and cover a caller with no identity, a body without ids, another organization's diagram, a diagram named under another project, the save time read from the row, and a template failure that stays out of the response body.
 ```bash
-cd backend/api/terraform-engine/create
-go test -v -run TestHandler
+go -C backend/api test ./terraform-engine/create/
 ```
 
-**Generation only (no S3 upload):** Now: this test also loads templates from live S3, so both tests fail without AWS credentials.
+**Generation only (no S3 upload):** loads templates from a live S3 bucket, so it skips unless `TEMPLATE_BUCKET_NAME` is set.
 ```bash
-cd backend/api/terraform-engine/create
-go test -v -run TestGenerateOnly
+go -C backend/api test -v -run TestGenerateOnly ./terraform-engine/create/
 ```
+
+The full path, with Postgres, the authorizer and a local S3, runs in the devserver smoke test (`npm run smoke`).
 
 ### Verify S3 Output
 ```bash
@@ -174,6 +183,8 @@ aws s3 ls s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
 | `architecture` | `{{.Architecture}}` | `arm64` |
 | `memory_size` | `{{.MemorySize}}` | `128` (Now: always 128 in practice; the config panel sends a string and the generator reads only numbers) |
 
+Now: every value is checked before rendering. Names must match the name rule in `generic/hclsafe`, enumerated fields (runtime, architecture, billing mode and others) must be in the allow-list beside each generator (runtimes in `generic.LambdaRuntimes`), and free text is escaped for HCL, including `${` and `%{`.
+
 ### S3 Node
 | Diagram Variable | Template Placeholder | Default |
 |-----------------|---------------------|---------|
@@ -185,7 +196,7 @@ aws s3 ls s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
 
 ## Code Structure
 
-Now: there is no local `templates/aws/` folder (see above), `resources/` holds a generator per type (`apigateway.go`, `dynamodb.go`, `ec2.go`, `lambda.go`, `s3.go`), and `data_clean.go`'s `HasDataChanged` is unused (its only call is commented out).
+Now: there is no local `templates/aws/` folder (see above); `resources/` holds a generator per type (`apigateway.go`, `dynamodb.go`, `ec2.go`, `lambda.go`, `s3.go`); and the template loader and renderer moved from `generator/template/` to `backend/api/generic/tftemplate`, which B's AWS connector shares. It reads S3 for A and disk for tests and B. The golden test (`TestGeneratedTerraformMatchesGolden`, fixtures in `internal/generator/testdata`) pins A's exact output.
 
 ```
 terraform-engine/create/

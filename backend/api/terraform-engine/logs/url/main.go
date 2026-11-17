@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -18,6 +20,17 @@ var allowedFiles = map[string]bool{
 	"init.log":    true,
 	"command.log": true,
 }
+
+// deploymentIDPattern is the command id terraform-command-runner writes
+// (generic.RandomID(8), stored in diagram_deployment_logs.command_id) and the
+// deployer uses as the log folder name.
+var deploymentIDPattern = regexp.MustCompile(`^[a-z0-9]{8}$`)
+
+// What the user reads when the URL cannot be made. The cause stays in the log.
+const urlFailure = "failed to generate the log URL"
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 	lambda.Start(handler)
@@ -42,49 +55,52 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		})
 	}
 
-	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
-		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"message": "failed to get user from authorizer context",
-			"error":   err.Error(),
+	// The id becomes a segment of the S3 key, so a slash or ".." must never
+	// reach it.
+	if !deploymentIDPattern.MatchString(deploymentID) {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "invalid deploymentId",
 		})
 	}
 
-	conn, err := generic.PsqlConnect()
+	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
+	if err != nil || userData.Id == "" {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+		})
+	}
+
+	conn, err := connect()
 	if err != nil {
+		log.Printf("log URL: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to verify organization membership",
-			"error":   err.Error(),
-		})
+	// The key below is built from these ids, so each must belong to the
+	// caller's organization, and the key uses the checked, canonical ids.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userData.Id, orgID, projID, diagramID)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
 
 	bucket := os.Getenv("S3_BUCKET_NAME")
 	if bucket == "" {
+		log.Printf("log URL: S3_BUCKET_NAME is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "S3_BUCKET_NAME is not configured",
+			"message": urlFailure,
 		})
 	}
 
-	key := orgID + "/" + projID + "/" + diagramID + "/terraform/logs/" + deploymentID + "/" + fileName
+	key := ids.OrgID + "/" + ids.ProjectID + "/" + ids.DiagramID + "/terraform/logs/" + deploymentID + "/" + fileName
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Printf("log URL: load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"message": urlFailure,
 		})
 	}
 
@@ -96,9 +112,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		Key:    aws.String(key),
 	}, s3.WithPresignExpires(15*time.Minute))
 	if err != nil {
+		log.Printf("log URL: presign: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to generate signed URL",
-			"error":   err.Error(),
+			"message": urlFailure,
 		})
 	}
 

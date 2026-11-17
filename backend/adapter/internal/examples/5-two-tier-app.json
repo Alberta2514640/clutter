@@ -1,0 +1,72 @@
+{
+  "id": "two-tier-app",
+  "name": "Two-tier app",
+  "level": "advanced",
+  "description": "A web server and a private database server that can find each other.",
+  "clouds": ["aws", "general-openstack"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "app-net",
+        "type": "network",
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 270,
+        "data": { "name": "app-net", "fields": { "cidr": "10.20.0.0/24" } }
+      },
+      {
+        "id": "web-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 30 },
+        "data": { "name": "web-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "web",
+        "type": "vm",
+        "position": { "x": 340, "y": 50 },
+        "data": {
+          "name": "web",
+          "fields": {
+            "size": "small",
+            "public": true,
+            "startup_script": "#!/bin/sh\n# Clutter puts the database server's private address in CLUTTER_DB_ADDRESS.\nmkdir -p /etc/app\necho \"DATABASE_HOST=$CLUTTER_DB_ADDRESS\" > /etc/app/database.env\n# Serve a page on port 80 with what the image has: python3 (Amazon Linux,\n# Ubuntu), else busybox httpd, else a busybox nc loop (cirros).\ndir=/var/www/clutter\nmkdir -p \"$dir\"\npage() { printf '<!doctype html><title>%s</title><h1>%s</h1><p>%s</p>\\n' \"$1\" \"$1\" \"$2\" > \"$dir/index.html\"; }\npage web \"Checking that web reaches db.\"\ncd \"$dir\"\nif command -v python3 >/dev/null 2>&1; then\n  nohup python3 -m http.server 80 >/var/log/clutter-web.log 2>&1 &\nelif busybox --list 2>/dev/null | grep -qx httpd; then\n  busybox httpd -p 80 -h \"$dir\"\nelse\n  while true; do { printf 'HTTP/1.0 200 OK\\r\\nContent-Type: text/html\\r\\n\\r\\n'; cat \"$dir/index.html\"; } | nc -l -p 80 >/dev/null 2>&1; done &\nfi\n# Check that this server reaches the database server, and say so on the page and the console.\nresult=\"web could not reach db\"\ni=0\nwhile [ \"$i\" -lt 30 ]; do\n  if ping -c 1 -W 2 \"$CLUTTER_DB_ADDRESS\" >/dev/null 2>&1; then\n    result=\"web reached db\"\n    break\n  fi\n  i=$((i + 1))\n  sleep 5\ndone\npage web \"$result\"\necho \"$result\"\necho \"$result\" >/dev/console 2>/dev/null\n"
+          }
+        }
+      },
+      {
+        "id": "db-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 170 },
+        "data": { "name": "db-fw", "fields": { "ingress": "tcp/22, tcp/5432, icmp", "source_cidr": "10.20.0.0/24" } }
+      },
+      {
+        "id": "db-data",
+        "type": "volume",
+        "position": { "x": 0, "y": 310 },
+        "data": { "name": "db-data", "fields": { "size_gb": 20 } }
+      },
+      {
+        "id": "db",
+        "type": "vm",
+        "position": { "x": 340, "y": 170 },
+        "data": {
+          "name": "db",
+          "fields": {
+            "size": "medium",
+            "public": false,
+            "startup_script": "#!/bin/sh\n# Install PostgreSQL where the image has a package manager for it.\nif command -v dnf >/dev/null 2>&1; then\n  dnf install -y postgresql15-server && postgresql-setup --initdb && systemctl enable --now postgresql\nelif command -v apt-get >/dev/null 2>&1; then\n  apt-get update && apt-get install -y postgresql\nfi\n"
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "web-on-net", "source": "web", "target": "app-net" },
+      { "id": "db-on-net", "source": "db", "target": "app-net" },
+      { "id": "web-fw-on-web", "source": "web-fw", "target": "web" },
+      { "id": "db-fw-on-db", "source": "db-fw", "target": "db" },
+      { "id": "data-on-db", "source": "db-data", "target": "db" },
+      { "id": "web-gets-db", "source": "web", "target": "db" }
+    ]
+  }
+}

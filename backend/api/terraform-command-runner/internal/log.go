@@ -3,13 +3,13 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func InsertIntoLogTable(conn *pgx.Conn, ctx context.Context, diagramId string, command string) (string, error) {
+func InsertIntoLogTable(conn generic.Conn, ctx context.Context, diagramId string, command string) (string, error) {
 
 	const maxRetries = 5
 	var commandId string
@@ -57,4 +57,23 @@ func InsertIntoLogTable(conn *pgx.Conn, ctx context.Context, diagramId string, c
 		return commandId, nil
 	}
 
+}
+
+// MarkRunNotStarted marks a run FAILED, with no duration, when its task never
+// started. The caller already answers with an error, so a failure here is
+// only logged.
+func MarkRunNotStarted(conn generic.Conn, ctx context.Context, diagramId string, commandId string) {
+	_, err := conn.Exec(
+		ctx,
+		`
+		UPDATE public.diagram_deployment_logs
+		SET status = 'FAILED', duration_seconds = 0
+		WHERE diagram_id = $1 AND command_id = $2 AND status = 'RUNNING';
+		`,
+		diagramId,
+		commandId,
+	)
+	if err != nil {
+		log.Printf("runner: mark the run that did not start as FAILED: %v", err)
+	}
 }

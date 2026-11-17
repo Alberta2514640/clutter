@@ -37,6 +37,22 @@ type SubmitJobRequest struct {
 	ExtraVars           map[string]string `json:"extra_vars,omitempty"`
 }
 
+// dbConn is the part of a Postgres connection this handler uses: the shared
+// Conn plus a transaction for the job row.
+type dbConn interface {
+	generic.Conn
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// connect opens the database. Tests replace it with a mock.
+var connect = func() (dbConn, error) {
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
 func main() {
 	lambda.Start(handler)
 }
@@ -45,7 +61,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// 1. Extract authenticated user from authorizer context
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		log.Printf("ERROR: unauthorized request: %v", err)
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
@@ -112,7 +128,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	for _, id := range body.TargetInstanceIDs {
 		if !ec2IDPattern.MatchString(id) {
 			return generic.Response(http.StatusBadRequest, generic.Json{
-				"message": "invalid instance ID format: " + id,
+				"message": "invalid instance ID format",
 			})
 		}
 	}
@@ -185,7 +201,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	s3Client := s3.NewFromConfig(cfg)
 
 	// Connect to PostgreSQL using shared helper
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
 		log.Printf("ERROR: failed to connect to database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
@@ -220,6 +236,21 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		}
 	}
 
+	// The playbook's organization, project and diagram must belong together and
+	// to the caller before anything is read from S3; the job, its log key and
+	// the account lookup use the checked, canonical ids from here on. Every
+	// refusal reads as a missing playbook, so another tenant's ids stay unknown.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userID, playbookOrgID, playbookProjectID, playbookDiagramID)
+	if err != nil {
+		var authErr *generic.AuthorizationError
+		if errors.As(err, &authErr) {
+			return generic.Response(http.StatusNotFound, generic.Json{"message": "playbook not found"})
+		}
+		log.Printf("ERROR: failed to check playbook ownership: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
+	}
+	playbookOrgID, playbookProjectID, playbookDiagramID = ids.OrgID, ids.ProjectID, ids.DiagramID
+
 	// Verify the playbook S3 object exists before accepting the job
 	_, err = s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s3BucketName),
@@ -230,16 +261,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusNotFound, generic.Json{
 			"message": "playbook not found: upload the playbook before submitting a job",
 		})
-	}
-
-	// Verify the authenticated user is a member of the org that owns the playbook
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, playbookOrgID); err != nil {
-		var authErr *generic.AuthorizationError
-		if errors.As(err, &authErr) {
-			return generic.Response(authErr.StatusCode, generic.Json{"message": authErr.Message})
-		}
-		log.Printf("ERROR: failed to check playbook org membership: %v", err)
-		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "internal server error"})
 	}
 
 	// Validate playbook content against the local-execution model used by the
@@ -268,9 +289,12 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			"message": "playbook is too large to validate",
 		})
 	}
+	// The validator's text can quote the playbook's own hosts value, so the
+	// response gives the rule and the log keeps the detail.
 	if err := uploadutils.ValidatePlaybookHostsConstraint(string(playbookBytes)); err != nil {
+		log.Printf("playbook %q refused: %v", body.PlaybookS3Key, err)
 		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": err.Error(),
+			"message": "a playbook needs at least one play, and every play must declare hosts: all or hosts: localhost",
 		})
 	}
 

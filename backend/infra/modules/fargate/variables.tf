@@ -19,12 +19,20 @@ variable "aws_region" {
   type        = string
 }
 variable "ansible_runner_image_tag" {
-  description = "Docker image tag for the Ansible runner container (avoid using 'latest' in production)"
+  description = "Version tag of the Ansible runner image (clutter-ansible-runner); never latest"
   type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", var.ansible_runner_image_tag)) && var.ansible_runner_image_tag != "latest"
+    error_message = "ansible_runner_image_tag must be a version tag such as v1, never latest."
+  }
 }
-variable "psql_connection_string" {
-  description = "DEPRECATED: Secret is now managed outside Terraform. This variable is kept for backward compatibility but is no longer used."
+variable "terraform_deployer_image_tag" {
+  description = "Version tag of the Terraform deployer image (clutter-terraform-deployer); never latest"
   type        = string
-  sensitive   = true
-  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", var.terraform_deployer_image_tag)) && var.terraform_deployer_image_tag != "latest"
+    error_message = "terraform_deployer_image_tag must be a version tag such as v1, never latest."
+  }
 }

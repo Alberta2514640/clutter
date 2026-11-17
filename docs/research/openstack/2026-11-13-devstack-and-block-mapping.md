@@ -41,6 +41,10 @@ One sample diagram in building blocks (VM, network, firewall, volume, bucket, fu
 
 So the mapping table in the design doc holds, with the corrections it now carries: the router needs the cloud's external network, the VM needs a floating IP when it must be reachable, and three AWS templates are new.
 
+## B's OpenStack connector against DevStack
+
+Run on 2026-11-13 inside the DevStack VM (the Mac could not reach the VM's address), with an application credential created for the `demo` project: `TestRealCloud` in `backend/b/connectors/generalopenstack` verified the credential with Keystone, planned 14 resources for a VM with a public address, a network with its router, a firewall and an attached volume, applied them (all four blocks got OpenStack ids), destroyed them, and left nothing in DevStack. It took 39 seconds. Two setup facts: DevStack must be installed with `HOST_IP` set to an address the runner can reach (a Lima `vzNAT` network gives one), and macOS asks for Local Network permission before an app on the Mac may reach that address.
+
 ## Defects in A found on the way
 
 Recorded in `.claude/findings/NOW.md` § Open defects: the API Gateway to Lambda edge never routes traffic, its fixed `statement_id` makes a second API on one function fail at apply time, A's Lambdas get no basic execution role so they cannot write logs, "reads" edges also grant Put and Delete, the EC2 template's x86 pin, and a dead `aws_apigatewayv2_api` reference.

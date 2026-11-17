@@ -22,6 +22,29 @@ export const useProject = (token?: string | null, organizationId?: string | null
   });
 };
 
+// useProjectOrganization finds the organization that owns a project among the
+// caller's organizations. Pages reached by project id (the diagram editor) must
+// act in the project's own organization, not the user's first one: the backend
+// refuses ids from another organization.
+export const useProjectOrganization = (
+  token?: string | null,
+  projectId?: string | null,
+  organizationIds?: string[] | null,
+) => {
+  return useQuery({
+    queryKey: projectId ? projectKeys.owner(projectId) : projectKeys.all,
+    queryFn: async (): Promise<string | null> => {
+      for (const organizationId of organizationIds ?? []) {
+        const projects = await projectsApi.listByOrganization(token as string, organizationId);
+        if (projects.some((project) => project.id === projectId)) return organizationId;
+      }
+      return null;
+    },
+    enabled: !!token && !!projectId && !!organizationIds && organizationIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useCreateProject = (token?: string | null) => {
   const qc = useQueryClient();
   return useMutation({

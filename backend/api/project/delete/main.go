@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 	lambda.Start(handler)
@@ -22,7 +26,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -55,26 +58,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// 4) Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("project delete: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
 	// 5) Authorization: user must be member of the organization
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// 6) Ensure project exists and belongs to org
@@ -90,9 +85,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "project not found",
 			})
 		}
+		log.Printf("project delete: read the project: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to fetch project",
-			"error":   err.Error(),
 		})
 	}
 
@@ -108,15 +103,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		WHERE id = $1 AND organization_id = $2
 	`
 	cmdTag, err := conn.Exec(ctx, queryDelete, projectID, orgID)
+	if generic.IsLiveDeploymentDelete(err) {
+		return generic.LiveDeploymentsResponse()
+	}
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "violates foreign key constraint") {
 			return generic.Response(http.StatusConflict, generic.Json{
 				"message": "cannot delete project because it has dependent resources (e.g., diagrams). delete dependent resources first.",
 			})
 		}
+		log.Printf("project delete: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to delete project",
-			"error":   err.Error(),
 		})
 	}
 

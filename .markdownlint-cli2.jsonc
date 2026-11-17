@@ -11,6 +11,7 @@
     "docs/research/patricloud/2026-10-26-second-research-run/c*.md",
     "docs/research/patricloud/2026-10-26-second-research-run/p*.md",
     "**/node_modules/**",
+    "**/.state/**",
     "backend/api/**/README.md"
   ]
 }

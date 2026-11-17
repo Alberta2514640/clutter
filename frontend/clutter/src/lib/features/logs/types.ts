@@ -38,9 +38,6 @@ export type LiveLogsEnvelope = {
     isComplete: boolean;
     taskStatus: string; // "RUNNING" | "STOPPED" | etc.
     nextToken: string | null; // cursor — pass on next poll to get only new lines
-    logGroup: string;
-    logStream: string;
-    taskArn: string;
   };
   message?: string;
 };

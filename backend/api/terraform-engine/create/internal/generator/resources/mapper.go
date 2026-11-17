@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Alberta2514640/clutter/backend/api/generic/tftemplate"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
-	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
 )
 
 // ParseResourceType extracts ResourceType from node label
@@ -28,7 +28,7 @@ func ParseResourceType(label string) (internal.ResourceType, error) {
 }
 
 // GetGenerator returns the appropriate generator for a resource type
-func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loader *template.TemplateLoader) (internal.ResourceGenerator, error) {
+func GetGenerator(ctx context.Context, resourceType internal.ResourceType, loader *tftemplate.TemplateLoader) (internal.ResourceGenerator, error) {
 	switch resourceType {
 	case internal.ResourceTypeLambda:
 		return NewLambdaGenerator(ctx, loader), nil

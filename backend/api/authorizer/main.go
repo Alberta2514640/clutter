@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
 	"time"
 
 	"github.com/Alberta2514640/clutter/backend/api/authorizer/internal"
+	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
@@ -26,47 +29,26 @@ func handler(_ context.Context, event events.APIGatewayCustomAuthorizerRequestTy
 		return internal.CreatePolicy("Unauthorized", "Deny", event.MethodArn), nil
 	}
 
-	// Decode JWT token
-	jwtTokenClaims, err := internal.ParseAndVerifyJWTClaims(jwtToken)
+	// Verify the JWT with the same check B uses (generic.VerifyUserJWT)
+	claims, err := generic.VerifyUserJWT(jwtToken, []byte(os.Getenv("JWT_SECRET")), time.Now().UTC())
 	if err != nil {
-		return internal.CreatePolicy("Unauthorized", "Deny", event.MethodArn), nil
-	}
-
-	// Iterate through required claims
-	requiredClaims := []string{"sub", "email", "full_name", "picture_url", "created_at"}
-	claimValues := make(map[string]string)
-
-	for _, claim := range requiredClaims {
-		value, ok := jwtTokenClaims[claim].(string)
-		if !ok {
-			return internal.CreatePolicy("Unauthorized", "Deny", event.MethodArn), nil
+		if !errors.Is(err, generic.ErrInvalidToken) {
+			log.Printf("authorizer: %v", err)
 		}
-		claimValues[claim] = value
-	}
-
-	// Check if accessToken is expired
-	exp, ok := jwtTokenClaims["exp"].(time.Time)
-	if !ok {
-		return events.APIGatewayCustomAuthorizerResponse{}, errors.New("exp claim is not a time.Time")
-	}
-	accessTokenExpiration := exp
-	timeNowUTC := time.Now().UTC()
-
-	if timeNowUTC.After(accessTokenExpiration) {
 		return internal.CreatePolicy("Unauthorized", "Deny", event.MethodArn), nil
 	}
 
 	// Include user data in context
 	context := map[string]interface{}{
-		"id":          claimValues["sub"],
-		"email":       claimValues["email"],
-		"name":        claimValues["full_name"],
-		"picture_url": claimValues["picture_url"],
-		"created_at":  claimValues["created_at"],
+		"id":          claims.ID,
+		"email":       claims.Email,
+		"name":        claims.FullName,
+		"picture_url": claims.PictureURL,
+		"created_at":  claims.CreatedAt,
 	}
 
 	// Return Allow policy on user ID (sub)
-	policyResponse := internal.CreatePolicy(claimValues["sub"], "Allow", event.MethodArn, context)
+	policyResponse := internal.CreatePolicy(claims.ID, "Allow", event.MethodArn, context)
 	return policyResponse, nil
 
 }

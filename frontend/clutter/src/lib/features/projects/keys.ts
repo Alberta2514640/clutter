@@ -7,4 +7,6 @@ export const projectKeys = {
   // single project
   details: () => [...projectKeys.all, "detail"] as const,
   detail: (organizationId: string, projectId: string) => [...projectKeys.details(), organizationId, projectId] as const,
+  // the organization that owns a project
+  owner: (projectId: string) => [...projectKeys.all, "owner", projectId] as const,
 };

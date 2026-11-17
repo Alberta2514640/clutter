@@ -1,0 +1,20 @@
+# Where the platform Terraform keeps its own state (docs/architecture/environments.md § Credentials day).
+# Copy to prod.backend.hcl, which git ignores. The deploy command passes it to terraform init:
+#   npm run deploy -- prod
+# backend/infra/check-config.sh prod reports what is still missing.
+
+# The state bucket backend/infra-state-bootstrap creates once per AWS account:
+# `aws s3 ls | grep tfstate-ca-central-1-` after its apply.
+bucket = "tfstate-ca-central-1-REPLACE"
+
+# The state file's key in that bucket. Keep it.
+key = "clutter/infra/terraform.tfstate"
+
+# The bucket's region, the same as aws_region in prod.tfvars.
+region = "ca-central-1"
+
+# The lock table backend/infra-state-bootstrap creates. Keep it.
+dynamodb_table = "tflock"
+
+# Encrypt the state at rest. Keep it.
+encrypt = true

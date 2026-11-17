@@ -19,7 +19,7 @@ export function ProjectNav() {
   };
   
   return (
-    <nav className="px-12 border-b border-slate-800">
+    <nav className="px-4 border-b border-slate-800 md:px-12">
       <div className="flex gap-8">
         {navigationItems.map((item) => {
           const active = isActive(item.href);

@@ -1,0 +1,18 @@
+# Sample code for each function with no code uploaded through Clutter,
+# zipped in the run's folder. Every file is executable, so a custom runtime
+# can start its bootstrap.
+{{- range .Functions}}
+
+data "archive_file" "{{.Addr}}_code" {
+  type             = "zip"
+  output_path      = "${path.root}/{{.Zip}}"
+  output_file_mode = "0755"
+{{- range .Files}}
+
+  source {
+    content  = "{{.Content}}"
+    filename = "{{.Name}}"
+  }
+{{- end}}
+}
+{{- end}}

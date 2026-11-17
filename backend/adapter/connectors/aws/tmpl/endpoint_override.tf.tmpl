@@ -1,0 +1,21 @@
+# Terraform override file, rendered only when the connector has an endpoint
+# (WithEndpoint): it sends every AWS call to that endpoint, such as LocalStack
+# on a laptop, and never to AWS. The run's keys still come from its
+# environment.
+provider "aws" {
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  s3_use_path_style           = true
+
+  endpoints {
+    apigateway = "{{.Endpoint}}"
+    dynamodb   = "{{.Endpoint}}"
+    ec2        = "{{.Endpoint}}"
+    iam        = "{{.Endpoint}}"
+    lambda     = "{{.Endpoint}}"
+    logs       = "{{.Endpoint}}"
+    s3         = "{{.Endpoint}}"
+    ssm        = "{{.Endpoint}}"
+    sts        = "{{.Endpoint}}"
+  }
+}

@@ -18,6 +18,10 @@ import {
   useUploadLambdaCodeToS3,
 } from "@/lib/features/codeUpload/hooks";
 import { useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import {
+  RESOURCE_NAME_INPUT_MAX_LENGTH,
+  resourceNameError,
+} from "@/lib/features/diagram/resourceName";
 import type { DiagramNode } from "@/lib/features/diagram/types";
 import {
   useDiagramEditor,
@@ -32,7 +36,6 @@ import {
 } from "@/lib/features/runs/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 
-const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HIDDEN_VARIABLE_NAMES = new Set([
   "label",
   "position",
@@ -58,8 +61,8 @@ const getVariableSelectOptions = (
   variableName: string
 ) => {
   if (resourceLabel === "DynamoDB") {
-    if (variableName === "billing_mode")
-      return ["PAY_PER_REQUEST", "PROVISIONED"];
+    // The generator accepts on-demand billing only (dynamoDBBillingModes).
+    if (variableName === "billing_mode") return ["PAY_PER_REQUEST"];
     if (variableName === "hash_key_type") return ["S", "N", "B"];
   }
   if (resourceLabel === "Lambda" && variableName === "architecture")
@@ -67,13 +70,15 @@ const getVariableSelectOptions = (
   if (resourceLabel === "Lambda" && variableName === "memory_size")
     return ["128", "256", "512", "1024", "1769"];
   if (resourceLabel === "Lambda" && variableName === "runtime") {
+    // Owned by generic.LambdaRuntimes (backend/api/generic/lambda_runtimes.go),
+    // which refuses any other runtime; this list must match it exactly.
+    // provided.al2 is the supported_resources seed's default.
     return [
-      "nodejs24.x",
       "nodejs22.x",
-      "python3.14",
       "python3.13",
       "python3.12",
       "provided.al2023",
+      "provided.al2",
     ];
   }
   return null;
@@ -114,38 +119,33 @@ const getVariableError = (name: string, value: unknown, required: boolean) => {
       (typeof value === "string" && stringValue === "");
     if (isMissing) return "This field is required.";
   }
-  if (
-    name === "resource_name" &&
-    stringValue &&
-    !RESOURCE_NAME_PATTERN.test(stringValue)
-  ) {
-    return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
-  }
+  if (name === "resource_name") return resourceNameError(stringValue);
   return null;
 };
 
+// Keyed by AnsibleJobStatus (runs/types.ts).
 const JOB_CARD_STYLES: Record<string, string> = {
   QUEUED: "border-slate-700 bg-slate-900/60",
+  STARTING: "border-slate-700 bg-slate-900/60",
   RUNNING: "border-amber-500/20 bg-amber-500/10",
-  SUCCESS: "border-emerald-500/20 bg-emerald-500/10",
+  COMPLETED: "border-emerald-500/20 bg-emerald-500/10",
   FAILED: "border-red-500/20 bg-red-500/10",
-  CANCELLED: "border-slate-700 bg-slate-900/60",
 };
 
 const JOB_DOT_STYLES: Record<string, string> = {
   QUEUED: "bg-slate-400 animate-pulse",
+  STARTING: "bg-slate-400 animate-pulse",
   RUNNING: "bg-amber-400 animate-pulse",
-  SUCCESS: "bg-emerald-400",
+  COMPLETED: "bg-emerald-400",
   FAILED: "bg-red-400",
-  CANCELLED: "bg-slate-500",
 };
 
 const JOB_TEXT_STYLES: Record<string, string> = {
   QUEUED: "text-slate-200",
+  STARTING: "text-slate-200",
   RUNNING: "text-amber-200",
-  SUCCESS: "text-emerald-200",
+  COMPLETED: "text-emerald-200",
   FAILED: "text-red-200",
-  CANCELLED: "text-slate-400",
 };
 
 type FinishedJobSnapshot = {
@@ -230,7 +230,7 @@ export default function ConfigPanel({
   );
 
   const formatDateTime = useCallback((value?: string | null) => {
-    if (!value) return "—";
+    if (!value) return "Unknown";
     return new Date(value).toLocaleString();
   }, []);
 
@@ -779,7 +779,9 @@ export default function ConfigPanel({
                             <Input
                               type={v.type === "number" ? "number" : "text"}
                               maxLength={
-                                v.name === "resource_name" ? 32 : undefined
+                                v.name === "resource_name"
+                                  ? RESOURCE_NAME_INPUT_MAX_LENGTH
+                                  : undefined
                               }
                               className={[
                                 "h-10 rounded-lg bg-slate-950/70 text-sm text-white placeholder:text-slate-500",
@@ -995,7 +997,7 @@ export default function ConfigPanel({
                           <span
                             className={[
                               "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-                              latestFinishedJob.status === "SUCCESS"
+                              latestFinishedJob.status === "COMPLETED"
                                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
                                 : latestFinishedJob.status === "FAILED"
                                 ? "border-red-500/30 bg-red-500/10 text-red-200"

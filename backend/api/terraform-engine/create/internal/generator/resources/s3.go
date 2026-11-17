@@ -6,15 +6,15 @@ import (
 	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
-	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
+	"github.com/Alberta2514640/clutter/backend/api/generic/tftemplate"
 )
 
 type S3Generator struct {
-	templateLoader *template.TemplateLoader
+	templateLoader *tftemplate.TemplateLoader
 	ctx            context.Context
 }
 
-func NewS3Generator(ctx context.Context, loader *template.TemplateLoader) *S3Generator {
+func NewS3Generator(ctx context.Context, loader *tftemplate.TemplateLoader) *S3Generator {
 	return &S3Generator{
 		templateLoader: loader,
 		ctx:            ctx,
@@ -38,7 +38,7 @@ func (g *S3Generator) ValidateVariables(variables map[string]interface{}) error 
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required variables: %v", missing)
 	}
-	return nil
+	return checkResourceName(variables)
 }
 
 func (g *S3Generator) Generate(node generic.DiagramNode, resourceName string) (string, error) {
@@ -47,7 +47,7 @@ func (g *S3Generator) Generate(node generic.DiagramNode, resourceName string) (s
 	}
 
 	// Load main template from S3
-	templatePath := template.GetTemplatePath("s3", "main.tf.tmpl")
+	templatePath := tftemplate.GetTemplatePath("s3", "main.tf.tmpl")
 	tmpl, err := g.templateLoader.Load(g.ctx, templatePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to load s3 template: %w", err)
@@ -68,25 +68,20 @@ func (g *S3Generator) Generate(node generic.DiagramNode, resourceName string) (s
 	}
 
 	// Render template
-	return template.Render(tmpl, vars)
+	return tftemplate.Render(tmpl, vars)
 }
 
-func (g *S3Generator) GetOutputs(resourceName string) string {
+func (g *S3Generator) GetOutputs(resourceName string) (string, error) {
 	// Load outputs template from S3
-	templatePath := template.GetTemplatePath("s3", "outputs.tf.tmpl")
+	templatePath := tftemplate.GetTemplatePath("s3", "outputs.tf.tmpl")
 	tmpl, err := g.templateLoader.Load(g.ctx, templatePath)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to load s3 outputs template: %w", err)
 	}
 
 	vars := map[string]interface{}{
 		"ResourceName": resourceName,
 	}
 
-	output, err := template.Render(tmpl, vars)
-	if err != nil {
-		return ""
-	}
-
-	return output
+	return tftemplate.Render(tmpl, vars)
 }

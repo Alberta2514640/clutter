@@ -11,7 +11,7 @@ import (
 // Returns orgID and error
 func GetProjectOrganizationPSQL(
 	ctx context.Context,
-	conn *pgx.Conn,
+	conn Querier,
 	projectID string,
 ) (string, error) {
 	if projectID == "" {
@@ -39,7 +39,7 @@ func GetProjectOrganizationPSQL(
 // Returns projectID and error
 func GetDiagramProjectPSQL(
 	ctx context.Context,
-	conn *pgx.Conn,
+	conn Querier,
 	diagramID string,
 ) (string, error) {
 	if diagramID == "" {

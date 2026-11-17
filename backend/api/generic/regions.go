@@ -1,6 +1,22 @@
 package generic
 
-var DefaultRegion = "us-west-2"
+import "os"
+
+// PlatformRegion is the region Clutter itself runs in (world 1). Lambda and A2
+// always set AWS_REGION; the fallback is the cloud environment's region (ADR-015)
+// and only matters in tests.
+func PlatformRegion() string {
+	if region := os.Getenv("AWS_REGION"); region != "" {
+		return region
+	}
+	return "ca-central-1"
+}
+
+// DefaultRegion is the region a user's deploy uses when they choose none: the
+// region Clutter runs in.
+func DefaultRegion() string {
+	return PlatformRegion()
+}
 
 var SupportedRegions = map[string]struct{}{
 	// United States

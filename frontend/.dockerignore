@@ -6,7 +6,10 @@
 node_modules
 npm-debug.log
 yarn.lock
-pnpm-lock.yaml
+
+# A developer's env files: the image's values come only from its build arguments
+clutter/.env*
+!clutter/.env.example
 
 # Docker & CI stuff
 Dockerfile*

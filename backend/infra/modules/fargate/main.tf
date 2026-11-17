@@ -132,14 +132,6 @@ resource "aws_iam_policy" "terraform_deployer_task_policy" {
           "ssmmessages:OpenDataChannel"
         ]
         Resource = "*"
-      },
-      # ----------- PostgreSQL (Ansible runner - Supabase job status updates) -----------
-      {
-        Effect = "Allow"
-        Action = [
-          "rds:DescribeDBInstances"
-        ]
-        Resource = "*"
       }
     ]
   })
@@ -173,13 +165,13 @@ resource "aws_ecs_task_definition" "terraform_deployer" {
   container_definitions = jsonencode([
     {
       name  = "terraform-deployer"
-      image = "${aws_ecr_repository.terraform_deployer.repository_url}:latest"
+      image = "${aws_ecr_repository.terraform_deployer.repository_url}:${var.terraform_deployer_image_tag}"
 
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           awslogs-group         = "/ecs/terraform-deployer"
-          awslogs-region        = "us-west-2"
+          awslogs-region        = var.aws_region
           awslogs-stream-prefix = "ecs"
         }
       }
@@ -240,7 +232,7 @@ resource "aws_ecs_task_definition" "ansible_runner" {
   container_definitions = jsonencode([
     {
       name  = "ansible-executor"
-      image = "${aws_ecr_repository.ansible_runner.repository_url}:latest"
+      image = "${aws_ecr_repository.ansible_runner.repository_url}:${var.ansible_runner_image_tag}"
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -251,10 +243,11 @@ resource "aws_ecs_task_definition" "ansible_runner" {
         }
       }
 
+      # No database access: the runner reports a job's result in a status
+      # file beside its log, which the API records (generic/job_status.go).
       environment = [
         { name = "S3_BUCKET_NAME", value = var.s3_clutter_name },
-        { name = "AWS_DEFAULT_REGION", value = var.aws_region },
-        { name = "PSQL_CONNECTION_STRING", value = var.psql_connection_string }
+        { name = "AWS_DEFAULT_REGION", value = var.aws_region }
       ]
 
       essential = true
@@ -266,7 +259,7 @@ resource "aws_security_group" "ansible_runner" {
   name   = "ansible-runner"
   vpc_id = data.aws_vpc.default.id
 
-  # DNS egress for AWS and database hostname resolution.
+  # DNS egress for AWS hostname resolution.
   egress {
     from_port   = 53
     to_port     = 53
@@ -285,14 +278,6 @@ resource "aws_security_group" "ansible_runner" {
   egress {
     from_port   = 443
     to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # PostgreSQL egress for job status updates (Supabase)
-  egress {
-    from_port   = 5432
-    to_port     = 5432
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -39,7 +40,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -64,31 +64,22 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid request body",
-			"error":   err.Error(),
 		})
 	}
 
 	// 5) Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("project update: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
 	// 6) Authorization: user must be member of the organization
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, body.OrganizationID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// 7) Ensure project exists and belongs to organizationId
@@ -104,9 +95,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "project not found",
 			})
 		}
+		log.Printf("project update: read the project: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to fetch project",
-			"error":   err.Error(),
 		})
 	}
 
@@ -146,9 +137,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "a project with this name already exists in the organization",
 			})
 		}
+		log.Printf("project update: update: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to update project",
-			"error":   err.Error(),
 		})
 	}
 

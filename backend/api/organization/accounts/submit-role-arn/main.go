@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -22,7 +23,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	userId := userData.Id
@@ -32,7 +33,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	err = json.Unmarshal([]byte(request.Body), &body)
 	if err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
+		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request"})
 	}
 	roleArn := body.RoleArn
 
@@ -72,47 +73,32 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		)
 	}
 
+	// Only the role Clutter's stack created can be linked. Its UniqueId MUST
+	// match the one this account's stack was made with (the update below).
+	_, uniqueId, ok := generic.ParseStackRoleARN(roleArn)
+	if !ok {
+		return generic.Response(
+			http.StatusBadRequest,
+			generic.Json{"message": "role_arn is not the role Clutter's CloudFormation stack creates: " + generic.StackRoleARNShape},
+		)
+	}
+
 	// Connect to PostgreSQL
 	ctx := context.Background()
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("submit role ARN: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to connect to PostgreSQL database",
-			"error":   err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
-
-	// Get unique ID from the role ARN the user passed in.
-	// This MUST match what is on the database!
-	uniqueId := internal.GetUniqueIdFromArn(roleArn)
 
 	// Insertion query
 	query := `
@@ -132,9 +118,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		uniqueId,
 	)
 	if err != nil {
+		log.Printf("submit role ARN: update: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to update role arn in database",
-			"error":   err.Error(),
 		})
 	}
 	if cmdTag.RowsAffected() == 0 {

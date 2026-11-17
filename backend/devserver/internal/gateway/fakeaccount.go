@@ -12,35 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
-// LinkFakeAccountPath is the dev-only route behind the editor's Link fake
-// account button.
+// LinkFakeAccountPath is the dev-only route behind the website's Link fake
+// account button (A's "AWS account required" popup and the AWS link flow).
 const LinkFakeAccountPath = "/dev/link-fake-account"
 
-// fakeRoleArn is what the Link fake account button submits: a role in no real account,
-// in the form the submit-role-arn Lambda and the API Gateway model accept.
-const fakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-"
+// FakeRoleArn is what the Link fake account button submits, followed by the
+// stack URL's unique id: a role in no real account, in the form the
+// submit-role-arn Lambda and the API Gateway model accept. The smoke test
+// submits the same, and seed-diagram.py keeps a copy.
+const FakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-"
 
 // LinkFakeAccountHandler links a fake account for one
 // organization, for the signed-in caller. Every step is a call to the real
 // route with the caller's own token, so the real authorizer and each Lambda's
 // membership check decide, and a refusal is returned as it stands. Only
-// Postgres is written; no AWS call is made.
+// Postgres is written; no AWS call is made. An organization that already has
+// a linked account gets no second one. Either way the answer names the linked
+// account (accountName).
 func (s *Server) LinkFakeAccountHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowed := setCORS(w, r)
-		if r.Header.Get("Origin") != "" && !allowed {
-			writeDevJSON(w, http.StatusForbidden, "this route answers loopback origins only")
-			return
-		}
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", "POST,OPTIONS")
-			writeDevJSON(w, http.StatusMethodNotAllowed, "use POST")
+		if !devPost(w, r) {
 			return
 		}
 
@@ -61,7 +52,9 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 		}
 		var accounts struct {
 			Data struct {
-				Complete []json.RawMessage `json:"complete"`
+				Complete []struct {
+					AccountName string `json:"account_name"`
+				} `json:"complete"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(raw, &accounts); err != nil {
@@ -69,7 +62,7 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 			return
 		}
 		if len(accounts.Data.Complete) > 0 {
-			writeDevJSON(w, http.StatusOK, "the organization already has a linked account")
+			writeLinked(w, "the organization already has a linked account", accounts.Data.Complete[0].AccountName)
 			return
 		}
 
@@ -79,25 +72,55 @@ func (s *Server) LinkFakeAccountHandler() http.Handler {
 			writeRouteRefusal(w, status, raw)
 			return
 		}
-		accountID, uniqueID, err := parseStackURL(raw)
+		accountID, uniqueID, err := ParseStackURL(raw)
 		if err != nil {
 			writeDevJSON(w, http.StatusBadGateway, err.Error())
 			return
 		}
 
-		role, _ := json.Marshal(map[string]string{"role_arn": fakeRoleArn + uniqueID})
+		role, _ := json.Marshal(map[string]string{"role_arn": FakeRoleArn + uniqueID})
 		status, raw = s.callRoute(r, http.MethodPost, "/organization/"+org+"/accounts/"+url.PathEscape(accountID), role)
 		if status < 200 || status >= 300 {
 			writeRouteRefusal(w, status, raw)
 			return
 		}
-		writeDevJSON(w, http.StatusOK, "linked a fake account")
+		writeLinked(w, "linked a fake account", name)
 	})
 }
 
-// parseStackURL pulls the account id and the unique id out of the stack-url
-// Lambda's answer. The URL's query sits after the console's #/ fragment.
-func parseStackURL(raw []byte) (accountID, uniqueID string, err error) {
+// devPost answers what every dev-only POST route answers the same way: a
+// foreign origin, a CORS preflight and a method other than POST. It reports
+// whether the request is a POST the route should handle.
+func devPost(w http.ResponseWriter, r *http.Request) bool {
+	allowed := setCORS(w, r)
+	if r.Header.Get("Origin") != "" && !allowed {
+		writeDevJSON(w, http.StatusForbidden, "this route answers loopback origins only")
+		return false
+	}
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
+		w.WriteHeader(http.StatusNoContent)
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST,OPTIONS")
+		writeDevJSON(w, http.StatusMethodNotAllowed, "use POST")
+		return false
+	}
+	return true
+}
+
+// writeLinked answers a successful link with the linked account's name, so
+// the website can choose that account.
+func writeLinked(w http.ResponseWriter, message, accountName string) {
+	writeDevAnswer(w, http.StatusOK, map[string]string{"message": message, "accountName": accountName})
+}
+
+// ParseStackURL pulls the account id and the unique id out of the stack-url
+// Lambda's answer (the raw body, with its data envelope). The URL's query sits
+// after the console's #/ fragment.
+func ParseStackURL(raw []byte) (accountID, uniqueID string, err error) {
 	var stack struct {
 		Data struct {
 			URL       string `json:"url"`
@@ -151,10 +174,15 @@ func (b *bufferedResponse) WriteHeader(status int)      { b.status = status }
 func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }
 
 func writeDevJSON(w http.ResponseWriter, status int, message string) {
+	writeDevAnswer(w, status, map[string]string{"message": message})
+}
+
+// writeDevAnswer writes every dev-only route's JSON answer, which no cache keeps.
+func writeDevAnswer(w http.ResponseWriter, status int, body map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func writeRouteRefusal(w http.ResponseWriter, status int, raw []byte) {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -20,6 +21,10 @@ type SupportedResource struct {
 	CreatedAt   time.Time       `json:"createdAt"`
 }
 
+// What the caller reads when the catalog cannot be read. The cause stays in
+// the log.
+const catalogFailure = "failed to fetch supported resources"
+
 func main() {
 	lambda.Start(handler)
 }
@@ -27,9 +32,9 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("resources: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
@@ -40,9 +45,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		ORDER BY display_name ASC
 	`)
 	if err != nil {
+		log.Printf("resources: query: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to fetch supported resources",
-			"error":   err.Error(),
+			"message": catalogFailure,
 		})
 	}
 	defer rows.Close()
@@ -52,9 +57,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		var r SupportedResource
 		var rawVariables []byte
 		if err := rows.Scan(&r.ID, &r.Label, &r.DisplayName, &r.Description, &rawVariables, &r.CreatedAt); err != nil {
+			log.Printf("resources: scan: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to scan resource row",
-				"error":   err.Error(),
+				"message": catalogFailure,
 			})
 		}
 		r.Variables = json.RawMessage(rawVariables)
@@ -66,9 +71,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("resources: rows: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to read resource data",
-			"error":   err.Error(),
+			"message": catalogFailure,
 		})
 	}
 

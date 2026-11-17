@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,7 +39,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -75,24 +75,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// 3) Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("project get: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
 	// 4) Authorization: user must be member of this organization
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// 5) Branch: single project vs list
@@ -135,16 +127,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 					"message": "project not found",
 				})
 			}
+			log.Printf("project get: read the project: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to fetch project",
-				"error":   err.Error(),
 			})
 		}
 
 		if err := json.Unmarshal(diagramsJson, &p.Diagrams); err != nil {
+			log.Printf("project get: parse diagrams of project %s: %v", p.ID, err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to parse diagrams data",
-				"error":   err.Error(),
 			})
 		}
 
@@ -178,9 +170,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	rows, err := conn.Query(ctx, query, orgID)
 	if err != nil {
+		log.Printf("project get: list projects: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to fetch projects",
-			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -199,16 +191,16 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			&p.CreatedAt,
 			&diagramsJson,
 		); err != nil {
+			log.Printf("project get: scan a project row: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to parse projects",
-				"error":   err.Error(),
 			})
 		}
 
 		if err := json.Unmarshal(diagramsJson, &p.Diagrams); err != nil {
+			log.Printf("project get: parse diagrams of project %s: %v", p.ID, err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "failed to parse diagrams data",
-				"error":   err.Error(),
 			})
 		}
 
@@ -216,9 +208,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("project get: read project rows: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to iterate projects",
-			"error":   err.Error(),
 		})
 	}
 

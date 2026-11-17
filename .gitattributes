@@ -1,0 +1,4 @@
+# A's golden Terraform files mix line endings on purpose: four of A's templates
+# are CRLF, so their rendered lines are too. Store the bytes as they are, or a
+# clone gets LF files and TestGeneratedTerraformMatchesGolden fails.
+backend/api/terraform-engine/create/internal/generator/testdata/golden/*.tf.golden -text

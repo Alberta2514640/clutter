@@ -1,6 +1,3 @@
-export type RunAction = "plan" | "apply";
-export type RunStatus = "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED";
-
 export type CreatePlaybookUploadUrlInput = {
   file_name: string;
   project_id: string;
@@ -37,9 +34,12 @@ export type SubmitAnsibleJobResponse = {
 
 // ─── Ansible job status ───────────────────────────────────────────────────────
 
-export type AnsibleJobStatus = "QUEUED" | "RUNNING" | "SUCCESS" | "FAILED" | "CANCELLED" | string;
+// The statuses A writes for an Ansible job, owned by the backend's
+// AllowedJobStatuses (backend/api/generic/job_statuses.go and job_status.go).
+// A finished job is COMPLETED or FAILED.
+export type AnsibleJobStatus = "QUEUED" | "STARTING" | "RUNNING" | "COMPLETED" | "FAILED" | string;
 
-export const ANSIBLE_TERMINAL_STATUSES = new Set<string>(["SUCCESS", "FAILED", "CANCELLED"]);
+export const ANSIBLE_TERMINAL_STATUSES = new Set<string>(["COMPLETED", "FAILED"]);
 
 export type AnsibleJob = {
   id: string;

@@ -27,6 +27,22 @@ export default function ActivitySection({
     }
   };
 
+  // The user's words for the runner's commands.
+  const commandLabel = (command: string) => {
+    switch (command.toLowerCase()) {
+      case "plan":
+        return "Plan";
+      case "apply":
+        return "Deploy";
+      case "destroy":
+        return "Destroy";
+      default:
+        return command;
+    }
+  };
+
+  const statusLabel = (status: string) => status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
@@ -39,10 +55,11 @@ export default function ActivitySection({
 
   return (
     <div>
-      <h2 className="mb-4 flex items-center gap-2 text-2xl font-bold">
-        <Activity className="h-6 w-6 text-teal-400" />
-        Recent Activity
+      <h2 className="mb-1 flex items-center gap-2 text-2xl font-bold">
+        <Activity className="h-6 w-6 text-teal-400" aria-hidden="true" />
+        Runs from the older AWS editor
       </h2>
+      <p className="mb-4 text-sm text-gray-400">Building-block diagrams show their runs on each diagram&apos;s Deploy tab.</p>
 
       {isLoading ? (
         <Card className="border-slate-800/50 bg-slate-900/50 backdrop-blur-xl">
@@ -54,10 +71,8 @@ export default function ActivitySection({
         <Card className="border-slate-800/50 bg-slate-900/50 backdrop-blur-xl">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Activity className="mb-4 h-16 w-16 text-gray-600" />
-            <h3 className="mb-2 text-xl font-semibold text-white">No activity yet</h3>
-            <p className="text-center text-gray-400">
-              Run your first terraform command to see activity here
-            </p>
+            <h3 className="mb-2 text-xl font-semibold text-white">No runs yet</h3>
+            <p className="text-center text-gray-400">Plan, Deploy and Destroy runs of your older AWS diagrams show here.</p>
           </CardContent>
         </Card>
       ) : (
@@ -70,26 +85,23 @@ export default function ActivitySection({
                   href={`/projects/${item.projectId}/diagram/${item.diagramId}`}
                   className="block p-4 transition-colors hover:bg-slate-800/30"
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div
-                        className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(item.status)}`}
-                      />
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div
+                      className={`h-2 w-2 shrink-0 rounded-full ${getStatusDotColor(item.status)}`}
+                      aria-hidden="true"
+                    />
 
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-white">
-                          {item.projectName}
-                        </p>
-                        <p className="truncate text-sm text-gray-400">
-                          {item.command.toUpperCase()} • {item.diagramName}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {formatDate(item.createdAt)}
-                        </p>
-                      </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-white">
+                        {item.projectName}
+                      </p>
+                      <p className="truncate text-sm text-gray-400">
+                        {commandLabel(item.command)} • {item.diagramName} • {statusLabel(item.status)}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDate(item.createdAt)}
+                      </p>
                     </div>
-
-                    <div className="shrink-0 text-right" />
                   </div>
                 </Link>
               ))}

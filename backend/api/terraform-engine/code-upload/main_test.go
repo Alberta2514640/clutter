@@ -1,0 +1,99 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/Alberta2514640/clutter/backend/api/generic"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/pashagolub/pgxmock/v4"
+)
+
+const (
+	userID    = "44444444-4444-4444-8444-444444444444"
+	orgID     = "33333333-3333-4333-8333-333333333333"
+	otherOrg  = "55555555-5555-4555-8555-555555555555"
+	projectID = "11111111-1111-4111-8111-111111111111"
+	diagramID = "22222222-2222-4222-8222-222222222222"
+)
+
+func TestCodeUploadRefusesAnotherOrganizationsProject(t *testing.T) {
+	mock, err := pgxmock.NewConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect = func() (generic.Conn, error) { return mock, nil }
+	t.Cleanup(func() { connect = generic.PsqlConnectConn })
+	t.Setenv("S3_BUCKET_NAME", "test-bucket")
+
+	// The caller is a member of orgID, but the diagram's project is in otherOrg.
+	mock.ExpectQuery(`FROM organizations WHERE id`).WithArgs(orgID).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`FROM organization_members`).WithArgs(orgID, userID).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery(`SELECT project_id\s+FROM diagrams`).WithArgs(diagramID).
+		WillReturnRows(pgxmock.NewRows([]string{"project_id"}).AddRow(projectID))
+	mock.ExpectQuery(`SELECT organization_id\s+FROM projects`).WithArgs(projectID).
+		WillReturnRows(pgxmock.NewRows([]string{"organization_id"}).AddRow(otherOrg))
+
+	raw, _ := json.Marshal(map[string]string{
+		"org_id": orgID, "project_id": projectID, "diagram_id": diagramID,
+		"lambda_resource_name": "fn", "runtime": "python3.13",
+	})
+	res, err := handler(context.Background(), events.APIGatewayProxyRequest{
+		Body:           string(raw),
+		RequestContext: events.APIGatewayProxyRequestContext{Authorizer: map[string]any{"id": userID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCodeUploadRefusesANameThatIsNotATerraformName(t *testing.T) {
+	// The connection is never opened: the name is refused first.
+	connect = func() (generic.Conn, error) { t.Fatal("connected"); return nil, nil }
+	t.Cleanup(func() { connect = generic.PsqlConnectConn })
+
+	for _, name := range []string{"../other-org/key", "Fn", "1fn", "fn name"} {
+		raw, _ := json.Marshal(map[string]string{
+			"org_id": orgID, "project_id": projectID, "diagram_id": diagramID,
+			"lambda_resource_name": name, "runtime": "python3.13",
+		})
+		res, err := handler(context.Background(), events.APIGatewayProxyRequest{
+			Body:           string(raw),
+			RequestContext: events.APIGatewayProxyRequestContext{Authorizer: map[string]any{"id": userID}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%q: status %d: %s", name, res.StatusCode, res.Body)
+		}
+	}
+}
+
+func TestCodeUploadErrorsEchoNoInput(t *testing.T) {
+	raw, _ := json.Marshal(map[string]string{
+		"org_id": orgID, "project_id": projectID, "diagram_id": diagramID,
+		"lambda_resource_name": "fn", "runtime": "<script>",
+	})
+	res, err := handler(context.Background(), events.APIGatewayProxyRequest{
+		Body:           string(raw),
+		RequestContext: events.APIGatewayProxyRequestContext{Authorizer: map[string]any{"id": userID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusBadRequest || strings.Contains(res.Body, "script") {
+		t.Fatalf("status %d: %s", res.StatusCode, res.Body)
+	}
+}

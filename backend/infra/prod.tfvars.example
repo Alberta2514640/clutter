@@ -1,0 +1,46 @@
+# Inputs for the platform Terraform in the cloud (docs/architecture/environments.md § Credentials day).
+# Copy to prod.tfvars, which git ignores, and replace every value. Never commit the copy: it holds secrets.
+# backend/infra/check-config.sh prod reports what is still missing, without printing any value.
+# Local development does not use this file: backend/devserver generates what it needs.
+
+# The region everything runs in (ADR-015). Keep it.
+aws_region = "ca-central-1"
+
+# Clutter's own AWS account id, 12 digits: the AWS console's account menu (top right), or
+# `aws sts get-caller-identity --query Account --output text`. The deploy command refuses any other account.
+clutter_account_id = "123456789012"
+
+# The secret A's log-in signs tokens with and B checks them with. Generate it: `openssl rand -hex 32`.
+jwt_secret = "REPLACE_WITH_64_HEX_CHARACTERS"
+
+# Supabase's session pooler address (IPv4, port 5432): the project's Connect button, "Session pooler".
+# Put the database password in place of PASSWORD, percent-encoded.
+psql_connection_string = "postgres://postgres.PROJECT-REF:PASSWORD@aws-0-ca-central-1.pooler.supabase.com:5432/postgres"
+
+# The site's one DNS name: lower case, no https://, no path. The load balancer serves the website and
+# B API (its paths /v1/* and /healthz) on it. The platform derives the site's origin
+# (https://app.example.com), which A and B answer CORS for alone, and the deploy builds the site for it.
+site_domain = "app.example.com"
+
+# Version tags for A's two runner images; a new one for each push, never latest
+# (npm run deploy -- prod --a-images builds and pushes both with these tags).
+ansible_runner_image_tag     = "v1"
+terraform_deployer_image_tag = "v1"
+
+# The Google OAuth client id: Google Cloud console, APIs & Services, Credentials, the Web client's "Client ID".
+google_client_id = "NUMBER-ID.apps.googleusercontent.com"
+
+# The address people write to: the website's footer, FAQ, privacy policy and terms show it
+# (npm run deploy -- prod --site-image builds the site with it). The client's real contact address.
+contact_email = "hello@example.com"
+
+# A version tag for B's two images; a new one for each push, never latest (npm run deploy -- prod --adapter-images).
+adapter_image_tag = "v1"
+
+# A version tag for the website's image; a new one for each push, never latest
+# (npm run deploy -- prod --site-image).
+site_image_tag = "v1"
+
+# The certificate for site_domain: AWS Certificate Manager in ca-central-1, "Request", public,
+# that one name, DNS validation; copy its ARN once it shows "Issued".
+certificate_arn = "arn:aws:acm:ca-central-1:123456789012:certificate/REPLACE"

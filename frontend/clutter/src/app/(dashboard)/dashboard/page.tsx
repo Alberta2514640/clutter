@@ -1,6 +1,6 @@
 "use client";
 
-import { useOrganizations } from "@/lib/features/organization/hooks";
+import { useCurrentOrganization } from "@/lib/features/organization/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -13,8 +13,8 @@ export default function DashboardPageClient() {
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
 
-  const orgQ = useOrganizations(token);
-  const organization = orgQ.data?.[0] ?? null;
+  const orgQ = useCurrentOrganization(token);
+  const organization = orgQ.organization;
 
   //  redirect logic after render
   useEffect(() => {
@@ -32,12 +32,12 @@ export default function DashboardPageClient() {
 
   const isLoading = meQ.isLoading || (token ? orgQ.isLoading : false);
 
-  const error = (meQ.isError ? meQ.error : null) || (orgQ.isError ? orgQ.error : null);
+  const error = meQ.isError || orgQ.isError ? "Clutter could not load your organization. Reload the page to try again." : null;
 
   if (isLoading && !meQ.data) return <DashboardLoading />;
 
   // While redirecting (no org), avoid flashing dashboard
-  if (token && !orgQ.isLoading && !organization) return <DashboardLoading />;
+  if (token && !orgQ.isLoading && !orgQ.isError && !organization) return <DashboardLoading />;
 
-  return <DashboardContent userData={meQ.data ?? null} organization={organization} error={error ? String(error) : null} />;
+  return <DashboardContent organization={organization} error={error} />;
 }
