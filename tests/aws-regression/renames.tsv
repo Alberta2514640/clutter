@@ -1,0 +1,6 @@
+# Tests of the baseline suite whose names changed since BASELINE, reviewed by
+# hand. compare.py judges the old test by the new ones: it passes when every
+# test named on the right ran and passed. Keep a row only with a reason.
+# old test (package test)	new tests (package test, comma separated)	reason
+terraform-engine/create TestRecordFailureStopsAtAnEmptyDiagramID	terraform-engine/create TestRecordFailureStopsAtAMissingID,terraform-engine/create/internal/generator/writer TestFailureRecordingWritesNothingForAnEmptyDiagramID	Stage 1 (phase 0 item 10) moved the failure status from Postgres to an S3 status file and added the organization id; the guard now checks all three ids, and the writer refuses an empty diagram id
+terraform-engine/create TestHandler	terraform-engine/create TestGenerationRefusesACallerWithNoIdentity,terraform-engine/create TestGenerationRefusesAnotherOrganizationsDiagram,terraform-engine/create TestGenerationSkipsABuildingBlockDiagram	Skipped at the baseline (it needed a live database and AWS); stage 1 replaced it with handler tests that run offline

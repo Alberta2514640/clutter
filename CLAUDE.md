@@ -46,6 +46,7 @@ Run from the repo root with absolute paths; no `cd dir && cmd`. The commands liv
 | Does the devserver itself pass? | `go -C backend/devserver vet ./...` and `go -C backend/devserver test ./...` | Its route test fails if `backend/infra/main.tf` changes a route; update `internal/routes/routes.go` with it. |
 | Do our docs and scripts lint? | `npx -y markdownlint-cli2@0.18.1 "**/*.md"`, and `docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.10.0 -S warning .claude/hooks/*.sh backend/devserver/*.sh backend/devserver/devstack/*.sh backend/infra/*.sh backend/adapter/images/*.sh frontend/build-image.sh` | Both must stay clean. |
 | Do the hooks still work? | `.claude/hooks/test-hooks.sh` | Run after changing any hook. |
+| Does the team's test plan pass? | `bash tests/run-all.sh` (one type: `bash tests/<type>/run.sh`) | Linux or WSL. The live security checks and `e2e-browser` need `npm run dev` first. What each type covers: `tests/README.md`. |
 | Do A2's scripts still work? | `bash backend/devserver/test-scripts.sh` | Runs `dev.sh`, `stop.sh`, `doctor.sh`, `devstack.sh` and the rest against stubs, so nothing real starts or changes. Run after changing any script in `backend/devserver`. |
 | How is it deployed to AWS? | `npm run deploy:plan -- prod`, `npm run deploy -- prod` (a person runs these); `docs/architecture/environments.md` § Credentials day | Not run yet; needs the client's account, and phase 0 on the `main` it deploys from. After changing `backend/infra/deploy.sh`, run `backend/infra/test-deploy.sh`. |
 

@@ -1,0 +1,24 @@
+# id	defect fixed in System A (from .claude/findings/NOW.md § Open defects in A)	module	package	tests (Go regex, anchored)
+D01	POST /terraform-engine generated code for anyone, with no sign-in	api	./terraform-engine/create/	TestGenerationRefusesACallerWithNoIdentity|TestGenerationRefusesABodyWithoutIDs|TestGenerationRefusesAnotherOrganizationsDiagram|TestGenerationRefusesADiagramNamedUnderAnotherProject
+D02	Canvas values reached templates unescaped (${...} and %{ injection)	api	./generic/hclsafe/	TestEscape|TestEscapeRoundTripsThroughTerraform|TestCheckName|TestAllowList
+D03	Generator accepted out-of-list values and bad names, and free text broke HCL	api	./terraform-engine/create/internal/generator/	TestFreeTextIsEscaped|TestOutOfListValuesAndBadNamesAreRefused
+D04	Log-in skipped the Google audience and email_verified checks, and panicked on a missing claim	api	./log-in/internal/	TestCheckGoogleToken
+D05	JWT check was hand-rolled per Lambda; an empty secret was accepted	api	./tests/generic/	TestVerifyUserJWT
+D06	Ownership checks stopped at membership (shared helper)	api	./tests/generic/	TestOwnership.*|TestMembershipMessagesNameNoID
+D07	recent-activity read another organization's diagram	api	./terraform-engine/logs/recent-activity/	TestRecentActivityRefusesAnotherOrganizationsDiagram
+D08	terraform-command-runner ran another organization's project	api	./terraform-command-runner/	TestRunnerRefusesAnotherOrganizationsProject|TestRunnerRefusesAMissingDiagramID
+D09	code-upload signed URLs for another organization's project, and put an unchecked name in the S3 key	api	./terraform-engine/code-upload/	TestCodeUploadRefusesAnotherOrganizationsProject|TestCodeUploadRefusesANameThatIsNotATerraformName|TestCodeUploadErrorsEchoNoInput
+D10	logs/live read another organization's task	api	./terraform-engine/logs/live/	TestLiveLogsRefuseAnotherOrganizationsDiagram
+D11	ansible list-jobs, submit-job and playbook upload reached another organization	api	./ansible/...	TestListJobsRefusesAnotherOrganization|TestListJobsIsScopedToTheOrganization|TestSubmitJobRefusesAPlaybookKeyNamingAnotherOrganizationsDiagram|TestPlaybookUploadRefusesAnotherOrganizationsDiagram
+D12	Deployment logs and log URLs reached another organization's diagram	api	./terraform-engine/logs/...	TestDeploymentLogsRefuseAnotherOrganizationsDiagram|TestLogURLRefusesAnotherOrganizationsDiagram|TestLogURLRefusesADeploymentIDThatIsNotACommandID
+D13	Diagram CRUD answered for another organization's project	api	./diagram/...	TestDiagramGetGivesAnotherOrganizationsProjectTheSameNotFound|TestDiagramUpdateGivesAnotherOrganizationsDiagramTheSameNotFound|TestDiagramDeleteRefusesAnotherOrganizationsDiagram|TestDiagramCreateGivesAnotherOrganizationsProjectTheSameNotFound
+D14	Generation's files route answered without a caller, and bad requests reached the database	api	./tests/terraform-engine/	TestNoAuthorizerContextIs401|TestBadRequestsNeverReachTheDatabase|TestAnOutsiderGets404AndTheBucketIsNeverRead
+D15	Error bodies leaked paths and SDK text	api	./...	TestErrorsNeverEchoTheCause|TestSummarizeErrorsHidesTemplateFailures|TestSanitizeError_RedactsSensitiveKeywords
+D16	Both runners were handed the database string, and the runner could see other runs' roles	api	./...	TestRunnerTaskGetsOnlyThisRunsRoleAndNoDatabase|TestAnsibleTaskGetsOnlyThisJobsRoleAndNoDatabase|TestBuildAnsibleRunTaskInput_PassesNoDatabaseString
+D17	A deploy row stayed RUNNING after a failed start	api	./terraform-command-runner/	TestRunnerMarksARunThatDidNotStartFailed
+D18	A "reads" edge granted writes in the generated IAM policy	api	./terraform-engine/create/internal/generator/	TestEdgesGrantReadsAsInlinePolicies
+D19	Roles the generator creates had no permissions boundary	api	./terraform-engine/create/internal/generator/	TestEveryRoleCarriesTheStackBoundary
+D20	submit-role-arn stored a role the Clutter stack did not create	api	./organization/accounts/submit-role-arn/	TestHandlerRefusesARoleTheStackDidNotCreate
+D21	API Gateway with CORS off rendered invalid Terraform	api	./terraform-engine/create/internal/generator/	TestAnAPIGatewayWithCORSOffNamesNoOptionsResource
+D22	GetOutputs hid template failures	api	./terraform-engine/create/internal/generator/	TestAFailedOutputTemplateFailsTheRun
+D23	Generated Terraform drifted from the reviewed output (golden test)	api	./terraform-engine/create/internal/generator/	TestGeneratedTerraformMatchesGolden

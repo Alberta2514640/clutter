@@ -83,6 +83,22 @@ jobs:
         env:
           NEXT_PUBLIC_API_ENDPOINT: http://localhost:8787
 
+  platform:
+    # The platform and version check (tests/platform-version): toolchains and
+    # images are pinned, the pins agree, and this job's tools meet them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/api/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check pinned versions
+        run: bash tests/platform-version/run.sh
+
   docs-and-scripts:
     runs-on: ubuntu-latest
     steps:
@@ -90,7 +106,7 @@ jobs:
       - name: Markdown lint
         run: npx -y markdownlint-cli2@0.18.1 "**/*.md"
       - name: Shellcheck our scripts
-        run: shellcheck -S warning .claude/hooks/*.sh backend/devserver/*.sh backend/devserver/devstack/*.sh backend/infra/*.sh backend/adapter/images/*.sh frontend/build-image.sh
+        run: shellcheck -S warning .claude/hooks/*.sh backend/devserver/*.sh backend/devserver/devstack/*.sh backend/infra/*.sh backend/adapter/images/*.sh frontend/build-image.sh tests/*.sh tests/*/*.sh tests/lib/*.sh
       - name: Devserver script checks
         run: backend/devserver/test-scripts.sh
       - name: Deploy script checks
