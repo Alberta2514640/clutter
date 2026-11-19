@@ -11,7 +11,7 @@ The whole user workflow in a real browser, against the running app, once each in
 7. Deploy, then watch the status and the log.
 8. Destroy what was built.
 
-The cloud is B's mock connector, which builds nothing, so no account is needed. The test makes its own organization and project through A's API and deletes them at the end, so it leaves the local data alone. The index of every suite is [tests/README.md](../../../tests/README.md).
+The cloud is B's mock connector, which builds nothing, so no account is needed. The test makes its own organization and project through A's API and deletes them at the end, so it leaves the local data alone. The index of every suite is [test-suites/README.md](../../../test-suites/README.md).
 
 ## Run it
 
@@ -22,7 +22,7 @@ npm run dev
 bash frontend/clutter/tests/scripts/e2e-browser.sh
 ```
 
-The script uses the frontend's own Playwright, so it needs `npm ci` in `frontend/clutter` first (it runs it if Playwright is missing). The first run installs Playwright's three browsers and, on Linux, their system libraries, which needs sudo; set `E2E_INSTALL_DEPS=0` to skip the libraries. Any extra arguments go to Playwright, for example `--project=firefox` or `--repeat-each=5`. Results go to `tests/results/e2e-browser.json`, with a screenshot and a trace of any failure in `tests/results/e2e-browser-artifacts/`.
+The script uses the frontend's own Playwright, so it needs `npm ci` in `frontend/clutter` first (it runs it if Playwright is missing). The first run installs Playwright's three browsers and, on Linux, their system libraries, which needs sudo; set `E2E_INSTALL_DEPS=0` to skip the libraries. Any extra arguments go to Playwright, for example `--project=firefox` or `--repeat-each=5`. Results go to `test-suites/results/e2e-browser.json`, with a screenshot and a trace of any failure in `test-suites/results/e2e-browser-artifacts/`.
 
 ## What is here
 

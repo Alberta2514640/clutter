@@ -1,4 +1,4 @@
-# Tests
+# Test suites
 
 The team's test plan has ten test types. Each suite sits beside the code it tests, in that code's `tests/` folder, with its scripts in a `scripts/` subfolder and a README that says what it covers and how to run it. This folder holds what the suites share and the one test that covers the whole repo.
 
@@ -8,10 +8,10 @@ From the repo root, in Linux or WSL (the scripts are bash):
 
 ```sh
 npm run dev                       # optional: the live security checks and the browser suite need the app running
-bash tests/scripts/run-all.sh     # every suite, then a table of results
+bash test-suites/scripts/run-all.sh     # every suite, then a table of results
 ```
 
-Each suite writes its results to `tests/results/` (ignored by git), or to `RESULTS_DIR` if it is set. `run-all.sh` keeps going past a failed suite and exits 1 if any failed. A suite that needs the running app and does not find it says it skipped.
+Each suite writes its results to `test-suites/results/` (ignored by git), or to `RESULTS_DIR` if it is set. `run-all.sh` keeps going past a failed suite and exits 1 if any failed. A suite that needs the running app and does not find it says it skipped.
 
 ## Where each suite lives
 
@@ -25,7 +25,7 @@ Each suite writes its results to `tests/results/` (ignored by git), or to `RESUL
 | Security regression testing | A's own tests, listed in `defects.tsv`, and `backend/devserver/tests/crosstenant` | `backend/api/tests/scripts/security-regression/run.sh` | [backend/api/tests](../backend/api/tests/README.md) |
 | AWS regression testing | A's whole suite, at `BASELINE` and now | `backend/api/tests/scripts/aws-regression/run.sh` | [backend/api/tests](../backend/api/tests/README.md) |
 | End-to-end and browser compatibility testing | `frontend/clutter/tests/e2e` | `frontend/clutter/tests/scripts/e2e-browser.sh` | [frontend/clutter/tests](../frontend/clutter/tests/README.md) |
-| Platform and version check | the whole repo's pins | `tests/scripts/platform-version/run.sh` | below |
+| Platform and version check | the whole repo's pins | `test-suites/scripts/platform-version/run.sh` | below |
 | Patrii Cloud integration testing | not built yet | | below |
 
 ## What is in this folder
@@ -33,7 +33,7 @@ Each suite writes its results to `tests/results/` (ignored by git), or to `RESUL
 - `scripts/run-all.sh` runs every suite in order.
 - `scripts/lib/common.sh` holds the settings every suite's script shares: where the repo and the results are, and `run_go_suite`, which runs one Go package with `-json`.
 - `scripts/lib/gotest_summary.py` turns `go test -json` output into one results file per suite.
-- `scripts/platform-version/` is the **platform and version check**. It checks that the toolchains and images are pinned, that the pins agree (Go in all three modules, Node, Postgres, Terraform, the OpenStack and AWS providers), that CI builds on them, and that this machine meets them. Each check is PASS, WARN (pinned loosely) or FAIL. CI runs it on every pull request (the checks workflow's `platform` job). Run it with `bash tests/scripts/platform-version/run.sh`.
+- `scripts/platform-version/` is the **platform and version check**. It checks that the toolchains and images are pinned, that the pins agree (Go in all three modules, Node, Postgres, Terraform, the OpenStack and AWS providers), that CI builds on them, and that this machine meets them. Each check is PASS, WARN (pinned loosely) or FAIL. CI runs it on every pull request (the checks workflow's `platform` job). Run it with `bash test-suites/scripts/platform-version/run.sh`.
 
 ## Not built yet: Patrii Cloud integration testing
 

@@ -7,9 +7,9 @@
 #     test (one user tries to read or change another organization's
 #     projects, diagrams and Terraform through A's real Lambdas) and the
 #     row-level security test (Postgres's anon role reads no tenant row).
-# Writes tests/results/security-regression.json.
+# Writes test-suites/results/security-regression.json.
 set -euo pipefail
-source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/tests/scripts/lib/common.sh"
+source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/test-suites/scripts/lib/common.sh"
 HERE="${REPO}/backend/api/tests/scripts/security-regression"
 OUT="${RESULTS}/security-regression"
 mkdir -p "${OUT}"
@@ -21,7 +21,7 @@ while IFS=$'\t' read -r id what module pkg regex; do
   set +e
   go -C "${REPO}/backend/${module}" test -count=1 -json -run "^(${regex})\$" "${pkg}" >"${OUT}/${id}.jsonl" 2>/dev/null
   set -e
-  python3 "${REPO}/tests/scripts/lib/gotest_summary.py" "${id}" "${OUT}/${id}.jsonl" "${OUT}/${id}.json" >/dev/null || true
+  python3 "${REPO}/test-suites/scripts/lib/gotest_summary.py" "${id}" "${OUT}/${id}.jsonl" "${OUT}/${id}.json" >/dev/null || true
   python3 - "${OUT}/${id}.json" "${id}" "${what}" <<'PY' || status=1
 import json, sys
 s = json.load(open(sys.argv[1]))
@@ -49,7 +49,7 @@ if [[ -s "${DEV}/.state/pg_password" ]]; then
     CLUTTER_API_URL="http://${API_ADDR}" PSQL_CONNECTION_STRING="${PSQL_CONNECTION_STRING}" JWT_SECRET="${JWT_SECRET}" \
       go -C "${DEV}" test -count=1 -v -json ./tests/crosstenant/ >"${OUT}/live.jsonl" 2>"${OUT}/live.stderr"
     set -e
-    python3 "${REPO}/tests/scripts/lib/gotest_summary.py" security-live "${OUT}/live.jsonl" "${OUT}/live.json" || status=1
+    python3 "${REPO}/test-suites/scripts/lib/gotest_summary.py" security-live "${OUT}/live.jsonl" "${OUT}/live.json" || status=1
   else
     echo "  the gateway is not answering; live checks skipped" | tee "${OUT}/live.skipped"
   fi

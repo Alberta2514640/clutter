@@ -1,10 +1,10 @@
-# System B's test-plan suites
+# System B's test suites
 
-Five of the team's test types test System B (the adapter layer). Their Go tests are here, beside the code, because they use B's `internal/` packages, which Go only lets code under `backend/adapter` import. CI runs them on every pull request through the checks workflow's `go -C backend/adapter test ./...`. The index of every suite is [tests/README.md](../../../tests/README.md).
+Five of the team's test types test System B (the adapter layer). Their Go tests are here, beside the code, because they use B's `internal/` packages, which Go only lets code under `backend/adapter` import. CI runs them on every pull request through the checks workflow's `go -C backend/adapter test ./...`. The index of every suite is [test-suites/README.md](../../../test-suites/README.md).
 
 ## Run them
 
-From the repo root, in Linux or WSL. Each script writes `tests/results/<suite>.json`:
+From the repo root, in Linux or WSL. Each script writes `test-suites/results/<suite>.json`:
 
 ```sh
 bash backend/adapter/tests/scripts/unit.sh

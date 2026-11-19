@@ -11,4 +11,4 @@ npm run dev:backend
 bash backend/api/tests/scripts/security-regression/run.sh
 ```
 
-What the suite covers is in [backend/api/tests/README.md](../../api/tests/README.md); the index of every suite is [tests/README.md](../../../tests/README.md).
+What the suite covers is in [backend/api/tests/README.md](../../api/tests/README.md); the index of every suite is [test-suites/README.md](../../../test-suites/README.md).

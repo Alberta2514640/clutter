@@ -5,7 +5,7 @@
 # first); the first run installs Playwright's browsers (and, on Linux, their
 # system libraries, which needs sudo). See frontend/clutter/tests/README.md.
 set -euo pipefail
-source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/tests/scripts/lib/common.sh"
+source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/test-suites/scripts/lib/common.sh"
 FRONTEND="${REPO}/frontend/clutter"
 # shellcheck source=/dev/null
 source "${REPO}/backend/devserver/lib.sh"

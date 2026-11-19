@@ -8,7 +8,7 @@
 # script exits 1. Tests that are new, or that failed at the baseline, are
 # listed but do not fail the run.
 set -euo pipefail
-source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/tests/scripts/lib/common.sh"
+source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/test-suites/scripts/lib/common.sh"
 HERE="${REPO}/backend/api/tests/scripts/aws-regression"
 BASE="$(grep -v '^#' "${HERE}/BASELINE" | head -1 | tr -d '[:space:]')"
 WT="$(mktemp -d)/baseline"
@@ -33,6 +33,6 @@ env -u AWS_PROFILE -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY \
   go -C "${REPO}/backend/api" test -count=1 -json ./... >"${RESULTS}/aws-regression-current.jsonl" 2>"${RESULTS}/aws-regression-current.stderr"
 set -e
 
-python3 "${REPO}/tests/scripts/lib/gotest_summary.py" aws-regression-baseline "${RESULTS}/aws-regression-baseline.jsonl" "${RESULTS}/aws-regression-baseline.json" || true
-python3 "${REPO}/tests/scripts/lib/gotest_summary.py" aws-regression-current "${RESULTS}/aws-regression-current.jsonl" "${RESULTS}/aws-regression-current.json" || true
+python3 "${REPO}/test-suites/scripts/lib/gotest_summary.py" aws-regression-baseline "${RESULTS}/aws-regression-baseline.jsonl" "${RESULTS}/aws-regression-baseline.json" || true
+python3 "${REPO}/test-suites/scripts/lib/gotest_summary.py" aws-regression-current "${RESULTS}/aws-regression-current.jsonl" "${RESULTS}/aws-regression-current.json" || true
 python3 "${HERE}/compare.py" "${BASE}" "${RESULTS}/aws-regression-baseline.json" "${RESULTS}/aws-regression-current.json" "${RESULTS}/aws-regression.json" "${HERE}/renames.tsv"

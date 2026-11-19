@@ -1,6 +1,6 @@
 # System A's tests
 
-This folder holds Go tests of A's shared packages (`generic/`, `ansible/`, `terraform-engine/`, `user-information/`), beside the tests that sit next to each Lambda. It also holds the scripts for the two test-plan suites that test A: security regression and AWS regression. The index of every suite is [tests/README.md](../../../tests/README.md).
+This folder holds Go tests of A's shared packages (`generic/`, `ansible/`, `terraform-engine/`, `user-information/`), beside the tests that sit next to each Lambda. It also holds the scripts for the two test suites that test A: security regression and AWS regression. The index of every suite is [test-suites/README.md](../../../test-suites/README.md).
 
 ## Run them
 
@@ -12,7 +12,7 @@ bash backend/api/tests/scripts/security-regression/run.sh       # security regre
 bash backend/api/tests/scripts/aws-regression/run.sh            # AWS regression
 ```
 
-Both scripts write their results to `tests/results/`. For the live part of the security regression suite, start the app first (`npm run dev:backend`, or `npm run dev`).
+Both scripts write their results to `test-suites/results/`. For the live part of the security regression suite, start the app first (`npm run dev:backend`, or `npm run dev`).
 
 ## Security regression testing (`scripts/security-regression/`)
 

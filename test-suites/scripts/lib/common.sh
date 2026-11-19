@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Shared settings for every test suite's scripts (see tests/README.md).
+# Shared settings for every test suite's scripts (see test-suites/README.md).
 # Source it; do not run it.
 
 # REPO is the repository root; RESULTS is where suites write their results
-# (tests/results unless RESULTS_DIR says otherwise).
+# (test-suites/results unless RESULTS_DIR says otherwise).
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-RESULTS="${RESULTS_DIR:-${REPO}/tests/results}"
+RESULTS="${RESULTS_DIR:-${REPO}/test-suites/results}"
 mkdir -p "${RESULTS}"
 export REPO RESULTS
 
@@ -20,5 +20,5 @@ run_go_suite() {
   set +e
   go -C "${module}" test -count=1 -json "$@" "${pkg}" >"${raw}" 2>"${RESULTS}/${name}.stderr"
   set -e
-  python3 "${REPO}/tests/scripts/lib/gotest_summary.py" "${name}" "${raw}" "${RESULTS}/${name}.json"
+  python3 "${REPO}/test-suites/scripts/lib/gotest_summary.py" "${name}" "${raw}" "${RESULTS}/${name}.json"
 }
