@@ -44,6 +44,13 @@ const (
 	DeploymentDestroyed DeploymentStatus = "destroyed"
 )
 
+// DeploymentChange is a deployment's new status, recorded with the end of one
+// of its runs.
+type DeploymentChange struct {
+	ID     string
+	Status DeploymentStatus
+}
+
 // Errors from Enqueue.
 var (
 	ErrQueueFull = errors.New("the run queue is full")
@@ -69,7 +76,12 @@ const (
 // Store records run and deployment states.
 type Store interface {
 	RunStarted(ctx context.Context, runID string, at time.Time) error
-	RunFinished(ctx context.Context, runID string, status Status, failure string, at time.Time) error
+	// RunFinished records a run's end. A non-nil change is the run's
+	// deployment's new status, written in the same transaction: a reader that
+	// sees the run finished must see the deployment's new status too, or the
+	// deploy panel, which stops polling once no run is active, keeps showing
+	// the old one.
+	RunFinished(ctx context.Context, runID string, status Status, failure string, at time.Time, change *DeploymentChange) error
 	SetDeploymentStatus(ctx context.Context, deploymentID string, status DeploymentStatus) error
 }
 
@@ -223,19 +235,18 @@ func (r *Runner) run(j Job) {
 	if err != nil {
 		status = StatusFailed
 	}
-	if err := r.cfg.Store.RunFinished(recordCtx, j.RunID, status, failure, r.cfg.Now()); err != nil {
-		log.Error("could not record the run's end", "err", err)
-	}
 	// A run that failed before Terraform touched the cloud changed nothing, so
 	// the deployment keeps its status. A split run that rolled back has
-	// recorded the deployment's status itself.
-	if errors.Is(err, connectors.ErrNothingBuilt) || errors.Is(err, errStatusRecorded) {
-		return
-	}
-	if ds, ok := deploymentAfter(j.Action, status); ok {
-		if err := r.cfg.Store.SetDeploymentStatus(recordCtx, j.Deployment.ID, ds); err != nil {
-			log.Error("could not record the deployment's status", "err", err)
+	// recorded the deployment's status itself, while the run still showed as
+	// running.
+	var change *DeploymentChange
+	if !errors.Is(err, connectors.ErrNothingBuilt) && !errors.Is(err, errStatusRecorded) {
+		if ds, ok := deploymentAfter(j.Action, status); ok {
+			change = &DeploymentChange{ID: j.Deployment.ID, Status: ds}
 		}
+	}
+	if err := r.cfg.Store.RunFinished(recordCtx, j.RunID, status, failure, r.cfg.Now(), change); err != nil {
+		log.Error("could not record the run's end", "err", err)
 	}
 }
 

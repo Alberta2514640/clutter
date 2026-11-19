@@ -889,7 +889,7 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 	err = a.Jobs.Enqueue(job)
 	if err != nil {
 		ctx := context.WithoutCancel(r.Context())
-		if ferr := a.Store.RunFinished(ctx, run.ID, jobs.StatusFailed, queueBusy, time.Now()); ferr != nil {
+		if ferr := a.Store.RunFinished(ctx, run.ID, jobs.StatusFailed, queueBusy, time.Now(), nil); ferr != nil {
 			a.Logger.Error("could not fail an unqueued run", "run_id", run.ID, "err", ferr)
 		}
 		a.Logger.Warn("could not queue a run", "run_id", run.ID, "err", err)

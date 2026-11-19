@@ -551,11 +551,14 @@ func (r *Recorder) RunStarted(_ context.Context, runID string, _ time.Time) erro
 }
 
 // RunFinished implements jobs.Store.
-func (r *Recorder) RunFinished(_ context.Context, runID string, s jobs.Status, failure string, _ time.Time) error {
+func (r *Recorder) RunFinished(_ context.Context, runID string, s jobs.Status, failure string, _ time.Time, change *jobs.DeploymentChange) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.history[runID] = append(r.history[runID], s)
 	r.failures[runID] = failure
+	if change != nil {
+		r.deployments[change.ID] = change.Status
+	}
 	if ch, ok := r.done[runID]; ok {
 		close(ch)
 		delete(r.done, runID)

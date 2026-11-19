@@ -142,9 +142,12 @@ type lsStore struct {
 
 func (s *lsStore) RunStarted(context.Context, string, time.Time) error { return nil }
 
-func (s *lsStore) RunFinished(_ context.Context, runID string, status jobs.Status, failure string, _ time.Time) error {
+func (s *lsStore) RunFinished(_ context.Context, runID string, status jobs.Status, failure string, _ time.Time, change *jobs.DeploymentChange) error {
 	s.mu.Lock()
 	s.runs[runID], s.failures[runID] = status, failure
+	if change != nil {
+		s.deployments[change.ID] = change.Status
+	}
 	s.mu.Unlock()
 	s.done <- runID
 	return nil
@@ -158,7 +161,7 @@ func (s *lsStore) SetDeploymentStatus(_ context.Context, id string, status jobs.
 }
 
 // waitDeployment waits for the deployment's status, which the job runner
-// records just after the run's end.
+// records with the run's end.
 func (s *lsStore) waitDeployment(id string, want jobs.DeploymentStatus) jobs.DeploymentStatus {
 	var got jobs.DeploymentStatus
 	for i := 0; i < 50; i++ {

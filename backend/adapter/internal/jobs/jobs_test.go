@@ -73,6 +73,9 @@ type store struct {
 	fail        map[string]string
 	done        chan string
 	deployments map[string]DeploymentStatus
+	// apart holds the deployments whose status was written apart from a
+	// run's end (only a split run's roll-back may do that).
+	apart map[string]bool
 }
 
 func newStore() *store {
@@ -86,10 +89,16 @@ func (s *store) RunStarted(_ context.Context, id string, _ time.Time) error {
 	return nil
 }
 
-func (s *store) RunFinished(_ context.Context, id string, st Status, failure string, _ time.Time) error {
+func (s *store) RunFinished(_ context.Context, id string, st Status, failure string, _ time.Time, change *DeploymentChange) error {
 	s.mu.Lock()
 	s.runs[id] = append(s.runs[id], st)
 	s.fail[id] = failure
+	if change != nil {
+		if s.deployments == nil {
+			s.deployments = map[string]DeploymentStatus{}
+		}
+		s.deployments[change.ID] = change.Status
+	}
 	s.mu.Unlock()
 	s.done <- id
 	return nil
@@ -100,8 +109,13 @@ func (s *store) SetDeploymentStatus(_ context.Context, id string, st DeploymentS
 	defer s.mu.Unlock()
 	if s.deployments == nil {
 		s.deployments = map[string]DeploymentStatus{}
+		s.apart = map[string]bool{}
+	}
+	if s.apart == nil {
+		s.apart = map[string]bool{}
 	}
 	s.deployments[id] = st
+	s.apart[id] = true
 	return nil
 }
 
@@ -409,9 +423,15 @@ func TestOnlyAFailureAfterTheCloudMarksTheDeploymentFailed(t *testing.T) {
 			}
 			st.mu.Lock()
 			got, set := st.deployments[j.Deployment.ID]
+			apart := st.apart[j.Deployment.ID]
 			st.mu.Unlock()
 			if set != c.set || got != c.want {
 				t.Fatalf("deployment status = %q (set %v), want %q (set %v)", got, set, c.want, c.set)
+			}
+			// The status must come with the run's end, in one write, never
+			// in a second one a reader could see the run finish before.
+			if apart {
+				t.Fatal("the deployment's status was written apart from the run's end")
 			}
 		})
 	}

@@ -562,6 +562,82 @@ func TestOneActiveRunPerDeployment(t *testing.T) {
 	}
 }
 
+// TestARunsEndAndItsDeploymentChangeTogether: while a run's end is recorded
+// again and again, a reader polling the run with its deployment, as the
+// deploy panel does, never sees a finished apply on a deployment that is not
+// live. The panel stops polling once no run is active, so such a read would
+// leave "Not deployed" on screen. A run's end with no deployment status
+// leaves the deployment alone.
+func TestARunsEndAndItsDeploymentChangeTogether(t *testing.T) {
+	e := newEnv(t)
+	tn := e.tenant(t, blocksDoc)
+	connID := e.connect(t, &tn, "together")
+	depID := e.deploy(t, &tn, connID, []string{"n3"})
+	runID := uuid.NewString()
+	ctx := context.Background()
+	if _, err := e.pool.Exec(ctx, `INSERT INTO runs (id, deployment_id, action, status, log_key) VALUES ($1, $2, 'apply', 'running', $3)`,
+		runID, depID, logstore.KeyForRun(runID)); err != nil {
+		t.Fatal(err)
+	}
+	st := &store.Store{Pool: e.pool}
+
+	stop := make(chan struct{})
+	var torn, reads int
+	readerDone := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				readerDone <- nil
+				return
+			default:
+			}
+			var run, dep string
+			if err := e.pool.QueryRow(ctx, `SELECT r.status, d.status FROM deployments d
+				LEFT JOIN LATERAL (SELECT status FROM runs WHERE deployment_id = d.id ORDER BY created_at DESC LIMIT 1) r ON true
+				WHERE d.id = $1`, depID).Scan(&run, &dep); err != nil {
+				readerDone <- err
+				return
+			}
+			reads++
+			if run == string(jobs.StatusCompleted) && dep != string(jobs.DeploymentLive) {
+				torn++
+			}
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		// Back to "running" first and "new" second, so this reset never
+		// shows a finished run on a deployment that is not live.
+		if _, err := e.pool.Exec(ctx, `UPDATE runs SET status = 'running', finished_at = NULL WHERE id = $1`, runID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `UPDATE deployments SET status = 'new' WHERE id = $1`, depID); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.RunFinished(ctx, runID, jobs.StatusCompleted, "", time.Now(), &jobs.DeploymentChange{ID: depID, Status: jobs.DeploymentLive}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	close(stop)
+	if err := <-readerDone; err != nil {
+		t.Fatal(err)
+	}
+	if torn > 0 {
+		t.Fatalf("%d of %d reads saw the run completed on a deployment that was not live", torn, reads)
+	}
+
+	if _, err := e.pool.Exec(ctx, `UPDATE deployments SET status = 'new' WHERE id = $1`, depID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RunFinished(ctx, runID, jobs.StatusFailed, "refused", time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	var dep string
+	if err := e.pool.QueryRow(ctx, `SELECT status FROM deployments WHERE id = $1`, depID).Scan(&dep); err != nil || dep != "new" {
+		t.Fatalf("a run's end with no deployment status changed the deployment to %q (%v)", dep, err)
+	}
+}
+
 // TestOneOrganizationCannotFillTheQueue: an organization with
 // DefaultMaxRunsPerOrg runs queued or running is refused another with 429,
 // and another organization can still start one.
