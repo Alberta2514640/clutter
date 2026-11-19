@@ -1,44 +1,44 @@
 # Tests
 
-One folder per test type from the team's test plan. Each folder has a `run.sh` that runs that type and writes its results to `tests/results/` (ignored by git). `run-all.sh` runs them all in order and prints a table.
+The team's test plan has ten test types. Each suite sits beside the code it tests, in that code's `tests/` folder, with its scripts in a `scripts/` subfolder and a README that says what it covers and how to run it. This folder holds what the suites share and the one test that covers the whole repo.
 
-Run everything from the repo root, in Linux or WSL (the scripts are bash):
+## Run them
+
+From the repo root, in Linux or WSL (the scripts are bash):
 
 ```sh
-npm run dev                 # optional: the live security checks and the browser suite need the app running
-bash tests/run-all.sh       # or one type: bash tests/unit/run.sh
+npm run dev                       # optional: the live security checks and the browser suite need the app running
+bash tests/scripts/run-all.sh     # every suite, then a table of results
 ```
 
-## Where each type lives
+Each suite writes its results to `tests/results/` (ignored by git), or to `RESULTS_DIR` if it is set. `run-all.sh` keeps going past a failed suite and exits 1 if any failed. A suite that needs the running app and does not find it says it skipped.
 
-The Go suites for System B use B's internal packages, which Go only lets code under `backend/adapter` import. So their test code is in `backend/adapter/tests/<suite>`, and the folder here holds the script that runs them. CI runs that code on every pull request through the checks workflow's `go -C backend/adapter test ./...`.
+## Where each suite lives
 
-| Test type | Folder | Test code | Needs |
+| Test type | Tests | Script | README |
 | --- | --- | --- | --- |
-| Unit testing | `unit/` | `backend/adapter/tests/unit` | Go |
-| Connector contract testing | `connector-contract/` | `backend/adapter/tests/contract` | Go |
-| Input and capability validation testing | `input-validation/` | `backend/adapter/tests/validation` | Go; Docker for the API cases |
-| State isolation and security testing | `state-isolation/` | `backend/adapter/tests/isolation` | Go, Docker |
-| Performance testing | `performance/` | `backend/adapter/tests/performance` | Go, Docker |
-| Security regression testing | `security-regression/` | `defects.tsv` (A's own tests), `check_role.py`, `backend/devserver/tests/crosstenant` | Go, Python 3; the running backend for the live part |
-| AWS regression testing | `aws-regression/` | A's whole suite, at `BASELINE` and now | Go, Python 3, git |
-| End-to-end and browser compatibility testing | `e2e-browser/` | `workflow.spec.ts` (Playwright) | Node, the running app |
-| Platform and version check | `platform-version/` | `check_versions.py` | Python 3; CI runs it on every pull request |
+| Unit testing | `backend/adapter/tests/unit` | `backend/adapter/tests/scripts/unit.sh` | [backend/adapter/tests](../backend/adapter/tests/README.md) |
+| Connector contract testing | `backend/adapter/tests/contract` | `backend/adapter/tests/scripts/connector-contract.sh` | [backend/adapter/tests](../backend/adapter/tests/README.md) |
+| Input and capability validation testing | `backend/adapter/tests/validation` | `backend/adapter/tests/scripts/input-validation.sh` | [backend/adapter/tests](../backend/adapter/tests/README.md) |
+| State isolation and security testing | `backend/adapter/tests/isolation` | `backend/adapter/tests/scripts/state-isolation.sh` | [backend/adapter/tests](../backend/adapter/tests/README.md) |
+| Performance testing | `backend/adapter/tests/performance` | `backend/adapter/tests/scripts/performance.sh` | [backend/adapter/tests](../backend/adapter/tests/README.md) |
+| Security regression testing | A's own tests, listed in `defects.tsv`, and `backend/devserver/tests/crosstenant` | `backend/api/tests/scripts/security-regression/run.sh` | [backend/api/tests](../backend/api/tests/README.md) |
+| AWS regression testing | A's whole suite, at `BASELINE` and now | `backend/api/tests/scripts/aws-regression/run.sh` | [backend/api/tests](../backend/api/tests/README.md) |
+| End-to-end and browser compatibility testing | `frontend/clutter/tests/e2e` | `frontend/clutter/tests/scripts/e2e-browser.sh` | [frontend/clutter/tests](../frontend/clutter/tests/README.md) |
+| Platform and version check | the whole repo's pins | `tests/scripts/platform-version/run.sh` | below |
+| Patrii Cloud integration testing | not built yet | | below |
 
-Shared pieces: `testkit` in `backend/adapter/tests/testkit` (a stand-in for the terraform binary, a fake Keystone, a fake STS, and B API in-process on a throwaway Postgres), and `lib/` here (the results summarizer and shared settings).
+## What is in this folder
 
-## Not implementable yet
+- `scripts/run-all.sh` runs every suite in order.
+- `scripts/lib/common.sh` holds the settings every suite's script shares: where the repo and the results are, and `run_go_suite`, which runs one Go package with `-json`.
+- `scripts/lib/gotest_summary.py` turns `go test -json` output into one results file per suite.
+- `scripts/platform-version/` is the **platform and version check**. It checks that the toolchains and images are pinned, that the pins agree (Go in all three modules, Node, Postgres, Terraform, the OpenStack and AWS providers), that CI builds on them, and that this machine meets them. Each check is PASS, WARN (pinned loosely) or FAIL. CI runs it on every pull request (the checks workflow's `platform` job). Run it with `bash tests/scripts/platform-version/run.sh`.
 
-**Patrii Cloud integration testing** has no folder. Patrii publishes no customer API, OpenStack endpoint or Terraform provider (`docs/research/patricloud/`), so there is no connector and no sandbox to script against. The contract suite keeps a Patrii row that skips with that reason. When Patrii opens OpenStack endpoints it becomes a connection of `general-openstack`, and the lifecycle script is that connector's real-cloud test (`TestRealCloud`, today run against DevStack) pointed at a Patrii sandbox project.
+## Not built yet: Patrii Cloud integration testing
 
-## What each suite proves
+Patrii publishes no customer API, OpenStack endpoint or Terraform provider (`docs/research/patricloud/`), so there is no connector and no sandbox to script against. The contract suite keeps a Patrii row that skips with that reason. When Patrii opens OpenStack endpoints it becomes a connection of `general-openstack`, and the lifecycle script is that connector's real-cloud test (`TestRealCloud`, run today against DevStack) pointed at a Patrii sandbox project.
 
-- **Unit:** the translator, manifest handling, the capability check's rules, the connector registry's lookups, and the job runner's status tracking, one component at a time.
-- **Connector contract:** the one shared suite (`connectors/contract`) passes for General's OpenStack connector, the AWS connector and the mock, side by side, through B's real job runner.
-- **Input and capability validation:** the approved set of invalid inputs (V01 to V32: missing images or flavors, invalid dependencies, AWS-only resources elsewhere, unknown providers, malformed network data) is refused before anything runs, and nothing from it reaches a preview.
-- **State isolation and security:** four applies at once, two organizations by two providers. Each run sees only its own credentials and state, neither organization can reach the other, and seeded secrets appear in no diagram, row, response, log, file or repository change. The per-organization run cap holds.
-- **Performance:** 20 Capability Check requests and 5 deployments through B API, with the median and maximum.
-- **Security regression:** each fixed System A defect has tests that still pass; the customer role has no wildcard grant; one user cannot read or change another organization's projects, diagrams or Terraform through A's real Lambdas; Postgres's `anon` role reads no tenant row.
-- **AWS regression:** A's whole AWS suite at the recorded revision before B was integrated, and now, compared test by test.
-- **End-to-end and browser:** sign in, create, save and reopen a diagram, connect a cloud and choose it for a deployment, deploy, watch the status and log, and destroy, in Chromium, Firefox and WebKit.
-- **Platform and version:** toolchains and images are pinned, the pins agree, CI builds on them, and the machine meets them.
+## Results
+
+The results of the 2026-11-18 run, with what each one means, are in `docs/reports/2026-11-18-test-plan-results.pdf`. The open bug that run found is in [frontend/clutter/tests/BUG-deploy-status-stays-not-deployed.md](../frontend/clutter/tests/BUG-deploy-status-stays-not-deployed.md).

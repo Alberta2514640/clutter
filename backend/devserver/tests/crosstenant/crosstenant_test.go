@@ -4,7 +4,7 @@
 // attempt must be refused, with the owner's data left as it was.
 //
 // It needs the running backend (npm run dev:backend) and is started by
-// tests/security-regression/run.sh, which supplies CLUTTER_API_URL,
+// backend/api/tests/scripts/security-regression/run.sh, which supplies CLUTTER_API_URL,
 // PSQL_CONNECTION_STRING and JWT_SECRET. Without them it skips.
 package crosstenant
 
@@ -116,7 +116,7 @@ func newUser(t *testing.T, c client, conn, secret, label string) user {
 func TestOneOrganizationCannotReachAnother(t *testing.T) {
 	base, conn, secret := os.Getenv("CLUTTER_API_URL"), os.Getenv("PSQL_CONNECTION_STRING"), os.Getenv("JWT_SECRET")
 	if base == "" || conn == "" || secret == "" {
-		t.Skip("the backend is not running: start it with npm run dev:backend and use tests/security-regression/run.sh")
+		t.Skip("the backend is not running: start it with npm run dev:backend and use backend/api/tests/scripts/security-regression/run.sh")
 	}
 	c := client{t: t, base: strings.TrimRight(base, "/")}
 	owner := newUser(t, c, conn, secret, "owner")
@@ -224,7 +224,7 @@ func normalize(b []byte) []byte { return bytes.TrimSpace(b) }
 func TestAnonymousDatabaseRoleReadsNoTenantRows(t *testing.T) {
 	conn := os.Getenv("PSQL_CONNECTION_STRING")
 	if conn == "" {
-		t.Skip("the backend is not running: use tests/security-regression/run.sh")
+		t.Skip("the backend is not running: use backend/api/tests/scripts/security-regression/run.sh")
 	}
 	ctx := context.Background()
 	db, err := pgx.Connect(ctx, conn)
