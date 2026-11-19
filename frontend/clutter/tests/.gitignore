@@ -1,0 +1,5 @@
+# What Playwright writes when it runs without scripts/e2e-browser.sh, which
+# sends results to test-suites/results instead.
+e2e/results.json
+e2e/test-results/
+e2e/playwright-report/
