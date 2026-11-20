@@ -42,3 +42,50 @@ func TestGoogleClientIDMatchesTheFrontend(t *testing.T) {
 		t.Fatalf("GOOGLE_CLIENT_ID = %q, %v", got, err)
 	}
 }
+
+// Real AWS from this machine (real-aws.sh): the account-link flow names
+// Clutter's real account and template only when both are given, in their
+// exact forms; otherwise it keeps the local stand-ins.
+func TestRealAWSAccountAndTemplate(t *testing.T) {
+	const account = "123456789012"
+	const tmpl = "https://clutter-dev-templates-123456789012-ca-central-1.s3.ca-central-1.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"
+	base := Config{
+		JWTSecret:      LocalSecretPrefix + strings.Repeat("a", 64),
+		PSQLConnString: "postgres://u:p@127.0.0.1:54329/clutter?sslmode=disable",
+		AWSEndpoint:    "http://127.0.0.1:9",
+		HomeDir:        "/tmp/x",
+	}
+	for key, want := range map[string]string{"CLUTTER_ACCOUNT_ID": localAccountID, "CLOUDFORMATION_TEMPLATE_URL": "https://devserver.invalid/client_side_terraform_deployer_role.yaml"} {
+		if got, err := lambdaEnvValue(key, base); err != nil || got != want {
+			t.Fatalf("%s without real AWS = %q (%v), want %q", key, got, err, want)
+		}
+	}
+
+	real := base
+	real.ClutterAccountID, real.TemplateURL = account, tmpl
+	if err := ValidateConfig(real); err != nil {
+		t.Fatalf("real AWS config refused: %v", err)
+	}
+	for key, want := range map[string]string{"CLUTTER_ACCOUNT_ID": account, "CLOUDFORMATION_TEMPLATE_URL": tmpl} {
+		if got, err := lambdaEnvValue(key, real); err != nil || got != want {
+			t.Fatalf("%s with real AWS = %q (%v), want %q", key, got, err, want)
+		}
+	}
+
+	for name, c := range map[string]Config{
+		"account alone":       func() Config { c := base; c.ClutterAccountID = account; return c }(),
+		"template alone":      func() Config { c := base; c.TemplateURL = tmpl; return c }(),
+		"short account":       func() Config { c := real; c.ClutterAccountID = "12345"; return c }(),
+		"plain http template": func() Config { c := real; c.TemplateURL = strings.Replace(tmpl, "https://", "http://", 1); return c }(),
+		"another host": func() Config {
+			c := real
+			c.TemplateURL = "https://example.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"
+			return c
+		}(),
+		"another file": func() Config { c := real; c.TemplateURL = strings.Replace(tmpl, "client_side", "other", 1); return c }(),
+	} {
+		if err := ValidateConfig(c); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

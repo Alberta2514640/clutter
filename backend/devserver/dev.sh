@@ -183,6 +183,26 @@ quietly compose up -d --wait postgres
 quietly go -C "${DEVSERVER_DIR}" build -o "${STATE_DIR}/gateway" ./cmd/gateway
 quietly go -C "${REPO_DIR}/backend/adapter" build -o "${STATE_DIR}/adapter-api" ./cmd/api
 
+# Real AWS from this machine (npm run real-aws): with real-aws.conf, B's AWS
+# runs go to real accounts, and the account-link flow names Clutter's real
+# account and template. Without it, both keep their local stand-ins.
+real_aws=false
+gateway_aws=()
+if [[ -f "${REAL_AWS_CONF}" ]]; then
+  read_real_aws_conf "${REAL_AWS_CONF}" || {
+    echo "Fix backend/devserver/real-aws.conf (npm run real-aws -- setup writes it), or delete it to use LocalStack." >&2
+    exit 1
+  }
+  aws_config="${AWS_CONFIG_FILE:-${HOME}/.aws/config}"
+  if ! grep -qxF "[profile ${REAL_AWS_PROFILE}]" "${aws_config}" 2>/dev/null; then
+    echo "Real AWS is on (backend/devserver/real-aws.conf), but ${aws_config} has no [profile ${REAL_AWS_PROFILE}]." >&2
+    echo "Add the profile npm run real-aws -- setup printed, or delete backend/devserver/real-aws.conf to use LocalStack." >&2
+    exit 1
+  fi
+  real_aws=true
+  gateway_aws=(-clutter-account-id "${REAL_AWS_ACCOUNT_ID}" -template-url "${REAL_AWS_TEMPLATE_URL}")
+fi
+
 # B accepts an OpenStack auth URL over plain http at a private address
 # (DevStack's) only with this flag. The gateway reads the same flag, and its
 # DevStack link route refuses without it.
@@ -205,6 +225,7 @@ nohup env -i \
     -devstack-vm "${DEVSTACK_VM}" \
     -front-addr "${FRONT_ADDR}" \
     -frontend-upstream "${FRONTEND_UPSTREAM}" \
+    ${gateway_aws[@]+"${gateway_aws[@]}"} \
   > "${STATE_DIR}/gateway.log" 2>&1 &
 gateway_pid=$!
 write_pid_file gateway "${gateway_pid}" "${STATE_DIR}/gateway"
@@ -239,12 +260,23 @@ again="npm run dev"
 ${backend_only} && again="npm run dev:backend"
 # The second line of the AWS start message: how to get real local AWS runs.
 aws_next="For real AWS deploys here: npm run localstack -- start, then ${again} again (it restarts Clutter)."
-if curl -fs --max-time 1 "${LOCALSTACK_ENDPOINT}/_localstack/health" >/dev/null; then
+nl=$'\n'
+if ${real_aws}; then
+  # B reads the runner profile from ~/.aws (so HOME), and nothing else from
+  # this shell's AWS settings except where the config files are.
+  adapter_aws=(ADAPTER_AWS_STS=sts "HOME=${HOME}" "AWS_PROFILE=${REAL_AWS_PROFILE}" "AWS_REGION=${REAL_AWS_REGION}")
+  [[ -n "${AWS_CONFIG_FILE:-}" ]] && adapter_aws+=("AWS_CONFIG_FILE=${AWS_CONFIG_FILE}")
+  [[ -n "${AWS_SHARED_CREDENTIALS_FILE:-}" ]] && adapter_aws+=("AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE}")
+  aws_mode="AWS runs build in REAL AWS accounts, as ${REAL_AWS_RUNNER_ROLE} in ${REAL_AWS_ACCOUNT_ID} (profile ${REAL_AWS_PROFILE}); they cost money"
+  aws_next="Destroy what you build. Back to LocalStack: delete backend/devserver/real-aws.conf, then ${again} again."
+  if command -v aws >/dev/null && ! aws --profile "${REAL_AWS_PROFILE}" --region "${REAL_AWS_REGION}" sts get-caller-identity >/dev/null 2>&1; then
+    aws_next="The profile ${REAL_AWS_PROFILE} cannot sign in, so AWS connections will not verify: run aws sso login, then npm run real-aws -- status.${nl}             ${aws_next}"
+  fi
+elif curl -fs --max-time 1 "${LOCALSTACK_ENDPOINT}/_localstack/health" >/dev/null; then
   adapter_aws=(ADAPTER_AWS_STS=localstack "ADAPTER_AWS_ENDPOINT=${LOCALSTACK_ENDPOINT}")
   aws_mode="AWS runs apply against LocalStack on ${LOCALSTACK_ENDPOINT}"
   aws_next=""
 fi
-nl=$'\n'
 mkdir -p "${ADAPTER_DATA_DIR}"
 chmod 700 "${ADAPTER_DATA_DIR}"
 nohup env -i \

@@ -1,0 +1,18 @@
+# Real AWS from this machine. `npm run real-aws -- setup` writes the real file,
+# backend/devserver/real-aws.conf (ignored by git), with these four settings.
+# While that file exists, `npm run dev` sends B's AWS runs to real AWS accounts
+# instead of LocalStack. No value here is a secret: the keys stay in ~/.aws.
+# The values below are examples.
+
+# Clutter's own AWS account (world 1): the account users' roles trust.
+CLUTTER_AWS_ACCOUNT_ID=123456789012
+
+# Where CloudFormation reads the account-link template, in Clutter's account.
+CLUTTER_TEMPLATE_URL=https://clutter-dev-templates-123456789012-ca-central-1.s3.ca-central-1.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml
+
+# The profile in ~/.aws/config that acts as ClutterAdapterRunnerRole, the role
+# B uses to get a user's short-lived keys.
+CLUTTER_RUNNER_PROFILE=clutter-dev-runner
+
+# The region B's STS calls use.
+CLUTTER_AWS_REGION=ca-central-1

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -28,7 +29,18 @@ type Config struct {
 	// HomeDir is an empty directory used as each Lambda's HOME, so no shared
 	// AWS config or credentials file under the real home is ever read.
 	HomeDir string
+	// ClutterAccountID and TemplateURL are Clutter's real AWS account and the
+	// account-link template's address, for real AWS from this machine
+	// (real-aws.sh). Empty, the link flow gets the local stand-ins. Only the
+	// stack-URL Lambda reads them; no Lambda gets AWS keys either way.
+	ClutterAccountID string
+	TemplateURL      string
 }
+
+var (
+	accountIDPattern   = regexp.MustCompile(`^[0-9]{12}$`)
+	templateURLPattern = regexp.MustCompile(`^https://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.[a-z0-9-]+\.amazonaws\.com/templates/cloudformation/client_side_terraform_deployer_role\.yaml$`)
+)
 
 // Fixed stand-ins for the platform values main.tf passes to the Lambdas. None
 // of them name a real resource.
@@ -63,8 +75,14 @@ func lambdaEnvValue(key string, c Config) (string, error) {
 	case "CORS_ALLOWED_ORIGIN":
 		return c.FrontendOrigin, nil
 	case "CLOUDFORMATION_TEMPLATE_URL":
+		if c.TemplateURL != "" {
+			return c.TemplateURL, nil
+		}
 		return "https://devserver.invalid/client_side_terraform_deployer_role.yaml", nil
 	case "CLUTTER_ACCOUNT_ID":
+		if c.ClutterAccountID != "" {
+			return c.ClutterAccountID, nil
+		}
 		return localAccountID, nil
 	case "S3_BUCKET_NAME":
 		return LocalDataBucket, nil
@@ -146,6 +164,15 @@ func ValidateConfig(c Config) error {
 	}
 	if c.HomeDir == "" {
 		return errors.New("HomeDir is empty")
+	}
+	if (c.ClutterAccountID == "") != (c.TemplateURL == "") {
+		return errors.New("-clutter-account-id and -template-url go together")
+	}
+	if c.ClutterAccountID != "" && !accountIDPattern.MatchString(c.ClutterAccountID) {
+		return errors.New("-clutter-account-id must be a 12-digit AWS account id")
+	}
+	if c.TemplateURL != "" && !templateURLPattern.MatchString(c.TemplateURL) {
+		return errors.New("-template-url must be the account-link template's S3 address")
 	}
 	return nil
 }

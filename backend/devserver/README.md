@@ -19,6 +19,7 @@ It runs the real, unchanged Lambdas from `backend/api`. Each one is built for th
 | `stop.sh` | `stop` | stops the website, the backend and Postgres, even when `dev.sh` runs in another terminal or a script; `--wipe` also deletes the database, the local S3 files and B's data |
 | `localstack.sh` | `localstack` | see [AWS on LocalStack](#aws-on-localstack) |
 | `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, starts, stops or shows the VM, and routes DevStack's public network to it (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
+| `real-aws.sh` | `real-aws` | sets up Clutter's own AWS account so this machine can deploy into real AWS accounts, checks that setup, and removes it (see [Real clouds from this machine](#real-clouds-from-this-machine)) |
 
 The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack and DevStack's public network, and says when the route to that network is missing or the VM's side of it is down. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, the route's dry runs and refusals, on macOS and Linux). It also runs every script's `--help`. CI runs it.
 
@@ -240,6 +241,51 @@ go -C backend/adapter test ./connectors/generalopenstack/ -run TestRealCloud -v 
 ```
 
 Optional: `CLUTTER_OPENSTACK_IMAGE` (default `cirros`), `CLUTTER_OPENSTACK_FLAVOR` (default `m1.tiny`) and `CLUTTER_OPENSTACK_EXTERNAL_NETWORK` (default `public`). A failed apply is destroyed before the test ends.
+
+## Real clouds from this machine
+
+Clutter runs here as always (`npm run dev`), and what it builds goes to real clouds: a real AWS account and a real OpenStack cloud, each playing a user's account (world 2). Nothing of Clutter is hosted; that is world 1, later (`docs/architecture/environments.md` § Credentials day). Every run builds real resources that cost money, so destroy what you build the same day.
+
+| Part | Where |
+| --- | --- |
+| The website, A, B and Postgres | this machine |
+| Terraform runs | this machine, with keys for the user's account that last at most one hour |
+| What a deployment builds | the user's real AWS account or OpenStack project |
+| Clutter's own AWS account | only the stack `clutter-dev-real-aws`: the role `ClutterAdapterRunnerRole`, which B acts as, and a bucket that serves the account-link template |
+
+### Real AWS
+
+A user's account trusts exactly one identity: the role `ClutterAdapterRunnerRole` in Clutter's account, with the user's own external id. So B, on this machine, acts as that role, through a profile in `~/.aws/config`. Clutter's account and the user's account may be the same account for a first test; two accounts test the real cross-account path.
+
+1. **(person) Sign in to Clutter's account** with an administrator's profile, for example `aws sso login --profile clutter-admin`.
+2. **(person) `npm run real-aws -- setup --admin-profile clutter-admin`.** It deploys `real-aws/dev-account.yaml` as the stack `clutter-dev-real-aws`, uploads the account-link template to its bucket, and writes `backend/devserver/real-aws.conf` (ignored by git; `real-aws.conf.example` shows its four settings, none of them secret). Then add the profile it prints to `~/.aws/config`.
+3. **`npm run real-aws -- status`.** Success: one `ok` line for the profile acting as `ClutterAdapterRunnerRole`, and one for the template.
+4. **`npm run dev`.** Its `AWS:` line says `AWS runs build in REAL AWS accounts`. It stops before starting anything when the profile is missing from `~/.aws/config`.
+5. **(person) Link the user's account,** as a user does: Connections, Amazon Web Services, **I have my own AWS account**, then link a new account. The link opens CloudFormation in the user's account, signed in as that account, with the template and its parameters filled in; create the stack, and paste its role ARN back. Then add the AWS connection from the linked account. Success: the connection shows verified, which means B assumed the user's role with its external id. **Connect local AWS** links a made-up account, which real AWS refuses.
+6. **Deploy,** check in the AWS console, and **Destroy**, as in the checks below.
+
+Back to LocalStack: delete `real-aws.conf`, then `npm run dev` again. When finished: destroy every deployment, delete the user's account-link stack in the user's account, then `npm run real-aws -- teardown --admin-profile clutter-admin`. Tear down before the hosted platform is deployed into the same account: it makes a role of the same name.
+
+If the first role switch fails with `explicit deny in a service control policy`, the account belongs to an AWS Organization whose policy denies `sts:AssumeRole`. The fix is in the organization's management account (detach the policy from the account, or add an exception for Clutter's two roles), or use an account outside the organization.
+
+### A real OpenStack cloud
+
+Nothing to set up on this machine. The user's OpenStack project needs application credentials, an `https` Identity (Keystone v3) address, routers and floating IPs for public servers, Cinder volumes, and room for at least 1 server, 1 network, 1 router, 1 security group and 1 floating IP.
+
+1. **(person) In the cloud's dashboard,** pick a test project, then Identity, Application Credentials, **Create Application Credential**, and download its `clouds.yaml`. Keep that file out of the repo: it holds the secret.
+2. **Connections, OpenStack, I have my own OpenStack:** drop the `clouds.yaml` on the form, or type the auth URL, credential ID and secret, and region. Success: `Connected … Clutter checked it and it works.`
+3. **Add a deployment,** then open **Advanced**: the image, flavors and external network are lists read from the cloud. DevStack's defaults (`cirros`, `m1.tiny`, `public`) rarely match a provider's names.
+4. **Deploy,** check in the dashboard, and **Destroy.** When finished, delete the connection, then the application credential.
+
+`TestRealCloud` (above) runs the same check against any OpenStack cloud without the website.
+
+### What to check on a real cloud
+
+For each example deployed (Single server first, then Two-tier app and Full app on AWS, and Two-tier app on OpenStack):
+
+- **Clutter:** the badge says `Deployed` without a reload, **What was built** lists the results, and **Open** answers (a real server's page, or the API's sample answer).
+- **The cloud's own console:** EC2, VPC, S3, Lambda, DynamoDB and API Gateway in AWS, or Instances, Network Topology and Volumes in OpenStack, show the resources named with the deployment's id. In AWS, every IAM role Clutter made carries the permissions boundary, and CloudTrail shows the `AssumeRole` calls.
+- **Destroy:** `Destroy complete`, and the console shows nothing left.
 
 ## Without AWS
 

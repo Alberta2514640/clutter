@@ -1,2 +1,4 @@
 # Generated local secrets, built Lambda binaries, logs and pid files.
 .state/
+# Real AWS from this machine (real-aws.sh writes it; the .example beside it is committed).
+real-aws.conf
