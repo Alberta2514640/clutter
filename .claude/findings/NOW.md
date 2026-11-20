@@ -16,6 +16,7 @@ Clutter becomes one hosted product (B0) where users link their own clouds (world
 - The capstone's AWS hosting is gone (the API host is NXDOMAIN). A runs locally through `backend/devserver` (ADR-009), including a local S3: saving a diagram generates real Terraform, and all five resource types validate. The smoke test covers all 32 routes and B's main paths at 0 fail (counts in `backend/devserver/README.md`). Deploy and running Ansible need the client's AWS account (`docs/architecture/environments.md`, ADR-015).
 - All 24 `upstream` branches are merged into `main` or stale, except `dev` (CI `actions/checkout` v6) and `database-seed` (an abandoned DynamoDB seed).
 - Waiting on the client: the list in § What we need from the client. Only stage 7 waits on it.
+- The team's test plan has a suite per test type, each beside the code it tests and indexed in `test-suites/README.md` (branch `testing`), run on 2026-11-18 with results in `docs/reports/2026-11-18-test-plan-results.pdf`: everything passes except the browser workflow, which found an open defect in B. The job runner marks a run completed and its deployment live in two separate writes, so the deploy panel can read between them, stop polling, and keep showing "Not deployed" (5 of 12 browser runs). Fix: one transaction in `internal/jobs`, and a last list refresh in `useDiagramDeployments`. Patrii integration testing waits for a Patrii API.
 
 ## Next
 

@@ -1,0 +1,4 @@
+a9cc82b
+# The recorded source revision: the fork's main on 2026-11-13 (merge of PR #4),
+# A as it stood before stage 1's fixes and before System B was integrated
+# (PR #5, impl/b0). run.sh beside this file compares A's AWS suite there with the current tree.
