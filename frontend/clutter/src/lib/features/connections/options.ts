@@ -53,6 +53,33 @@ export function settingView(f: FieldSpec, state: OptionsState, value: unknown, t
   };
 }
 
+// applySuggestions puts the cloud's suggestion into each text setting the
+// user has not changed (unset, or still the manifest default) when that value
+// is not in the cloud's list and the suggestion is. A DevStack default on a
+// public cloud becomes a value that cloud has; a value the user chose stays.
+// picked names the settings it changed.
+export function applySuggestions(
+  spec: FieldSpec[],
+  values: Record<string, unknown>,
+  options: ConnectionOptions,
+): { values: Record<string, unknown>; picked: string[] } {
+  const out = { ...values };
+  const picked: string[] = [];
+  for (const f of spec) {
+    if (f.type !== "string") continue;
+    const s = options.suggested?.[f.name];
+    const choices = options.settings?.[f.name];
+    if (typeof s !== "string" || s === "" || !choices?.some((c) => c.value === s)) continue;
+    const v = values[f.name];
+    const untouched = v === undefined || v === null || v === "" || v === f.default;
+    const current = untouched ? f.default : v;
+    if (!untouched || choices.some((c) => c.value === current)) continue;
+    out[f.name] = s;
+    picked.push(f.name);
+  }
+  return { values: out, picked };
+}
+
 // optionsState maps the options query onto OptionsState. A query that has
 // not run (no token yet) has no lists and says nothing.
 export function optionsState(q: {

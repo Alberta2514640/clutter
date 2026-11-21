@@ -5,7 +5,9 @@ import { adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor } from "@/lib/features/catalog/display";
 import { cleanValues, cloudOffers, defaultValues, entryFor, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
-import type { Connection } from "@/lib/features/connections/types";
+import { useConnectionOptions } from "@/lib/features/connections/hooks";
+import { applySuggestions } from "@/lib/features/connections/options";
+import type { Connection, ConnectionOptions } from "@/lib/features/connections/types";
 import { addDeploymentChoice } from "@/lib/features/deployments/actions";
 import { unsupportedBlocks, type BlockRef } from "@/lib/features/deployments/compatibility";
 import { useCreateDeployment } from "@/lib/features/deployments/hooks";
@@ -14,7 +16,7 @@ import { useExamples } from "@/lib/features/examples/hooks";
 import { ChevronDown, ChevronRight, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import ConnectionsLink from "./ConnectionsLink";
-import FieldInput from "./FieldInput";
+import SettingsForm from "./SettingsForm";
 
 type Props = {
   token: string | null;
@@ -226,6 +228,25 @@ function DeploymentForm({
   const ownKinds = new Set(blocks.filter((b) => !unsupported.includes(b)).map((b) => b.kind));
   const shownSettings = settingsFor(settingsSpec, ownKinds);
   const [settings, setSettings] = useState<Record<string, unknown>>(() => defaultValues(settingsSpec));
+  // The connection's own lists, read as the form opens. A setting still at a
+  // default this cloud lacks (DevStack's cirros on a public cloud) takes the
+  // cloud's suggestion, so the first plan works without opening Advanced.
+  // Each answer is applied once; a value the user chose is never replaced.
+  const wantsLists = settingsSpec.some((f) => f.type === "string");
+  const optionsQ = useConnectionOptions(token, organizationId, wantsLists ? connection.id : null);
+  const [appliedFrom, setAppliedFrom] = useState<ConnectionOptions | null>(null);
+  const [picked, setPicked] = useState<Record<string, unknown>>({});
+  if (optionsQ.data && optionsQ.data !== appliedFrom) {
+    setAppliedFrom(optionsQ.data);
+    const s = applySuggestions(settingsSpec, settings, optionsQ.data);
+    if (s.picked.length > 0) {
+      setSettings(s.values);
+      setPicked((p) => ({ ...p, ...Object.fromEntries(s.picked.map((name) => [name, s.values[name]])) }));
+    }
+  }
+  // Shown settings that still hold the value picked from the cloud's list.
+  const pickedShown = shownSettings.filter((f) => f.name in picked && settings[f.name] === picked[f.name]);
+  const listing = wantsLists && optionsQ.isLoading;
   // For each block this cloud cannot build: "run" on the suggested
   // connection (the default when there is one), or "out".
   const [choice, setChoice] = useState<Record<string, "run" | "out" | "keep">>({});
@@ -326,15 +347,21 @@ function DeploymentForm({
           </button>
           {advancedOpen && (
             <div className="mt-2 space-y-2">
-              {shownSettings.map((f) => (
-                <FieldInput
-                  key={f.name}
-                  id={`new-deployment-${connection.id}-${f.name}`}
-                  field={f}
-                  value={settings[f.name]}
-                  onChange={(v) => setSettings((s) => ({ ...s, [f.name]: v }))}
-                />
-              ))}
+              {pickedShown.length > 0 && (
+                <p data-testid="settings-from-cloud" className="text-[11px] text-sky-200">
+                  {pickedShown.length === 1 ? "One value below comes" : "Some values below come"} from your cloud&apos;s own lists,
+                  because it lacks the usual defaults. You can change them.
+                </p>
+              )}
+              <SettingsForm
+                token={token}
+                organizationId={organizationId}
+                connectionId={connection.id}
+                idPrefix={`new-deployment-${connection.id}`}
+                spec={shownSettings}
+                values={settings}
+                onChange={(name, v) => setSettings((s) => ({ ...s, [name]: v }))}
+              />
             </div>
           )}
         </div>
@@ -344,9 +371,15 @@ function DeploymentForm({
           {adapterErrorMessage(createM.error)}
         </p>
       )}
+      {listing && (
+        <p role="status" className="flex items-center gap-1.5 text-[11px] text-slate-400">
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+          Reading the choices your cloud offers…
+        </p>
+      )}
       <button
         type="button"
-        disabled={busy || errors.length > 0}
+        disabled={busy || listing || errors.length > 0}
         onClick={() => void submit()}
         className="inline-flex items-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50">
         {busy && <Loader2 className="h-4 w-4 animate-spin" />}

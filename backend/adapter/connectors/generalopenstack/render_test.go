@@ -159,31 +159,32 @@ func TestHostileTextIsRefusedBeforeRendering(t *testing.T) {
 		}
 	}
 	cases := map[string]change{
-		"name with a quote":            rename("n1", "web\" }\nresource \"x\" \"y\" {"),
-		"name with interpolation":      rename("n2", "${file(\"/etc/passwd\")}"),
-		"name in capitals":             rename("n3", "Web"),
-		"image with a quote":           setSetting("image", "cirros\" } data \"external\" \"x\" {"),
-		"image with interpolation":     setSetting("image", "${path.module}"),
-		"image with a newline":         setSetting("image", "cirros\nprovisioner"),
-		"image with a backslash":       setSetting("image", `cirros\`),
-		"empty image":                  setSetting("image", "  "),
-		"flavor with a directive":      setSetting("flavor_small", "%{ if true }m1%{ endif }"),
-		"external network with braces": setSetting("external_network", "public}"),
-		"ingress with a shell command": setField("n3", "ingress", "tcp/22; rm -rf /"),
-		"ingress port out of range":    setField("n3", "ingress", "tcp/70000"),
-		"ingress range backwards":      setField("n3", "ingress", "tcp/90-80"),
-		"ingress unknown protocol":     setField("n3", "ingress", "sctp/22"),
-		"ingress with a quote":         setField("n3", "ingress", `tcp/22"`),
-		"source not a range":           setField("n3", "source_cidr", `0.0.0.0/0" }`),
-		"source with host bits":        setField("n3", "source_cidr", "10.0.0.1/24"),
-		"cidr not a range":             setField("n2", "cidr", "${var.x}"),
-		"cidr is IPv6":                 setField("n2", "cidr", "fd00::/64"),
-		"cidr too wide":                setField("n2", "cidr", "10.0.0.0/4"),
-		"volume size zero":             setField("n4", "size_gb", float64(0)),
-		"volume size not whole":        setField("n4", "size_gb", 1.5),
-		"size not allowed":             setField("n1", "size", "huge"),
-		"unknown field":                setField("n1", "user_data", "#!/bin/sh"),
-		"unknown setting":              setSetting("cloud", "x"),
+		"name with a quote":             rename("n1", "web\" }\nresource \"x\" \"y\" {"),
+		"name with interpolation":       rename("n2", "${file(\"/etc/passwd\")}"),
+		"name in capitals":              rename("n3", "Web"),
+		"image with a quote":            setSetting("image", "cirros\" } data \"external\" \"x\" {"),
+		"image with interpolation":      setSetting("image", "${path.module}"),
+		"image with a newline":          setSetting("image", "cirros\nprovisioner"),
+		"image with a backslash":        setSetting("image", `cirros\`),
+		"image with brackets and a ref": setSetting("image", "Ubuntu [${var.x}]"),
+		"empty image":                   setSetting("image", "  "),
+		"flavor with a directive":       setSetting("flavor_small", "%{ if true }m1%{ endif }"),
+		"external network with braces":  setSetting("external_network", "public}"),
+		"ingress with a shell command":  setField("n3", "ingress", "tcp/22; rm -rf /"),
+		"ingress port out of range":     setField("n3", "ingress", "tcp/70000"),
+		"ingress range backwards":       setField("n3", "ingress", "tcp/90-80"),
+		"ingress unknown protocol":      setField("n3", "ingress", "sctp/22"),
+		"ingress with a quote":          setField("n3", "ingress", `tcp/22"`),
+		"source not a range":            setField("n3", "source_cidr", `0.0.0.0/0" }`),
+		"source with host bits":         setField("n3", "source_cidr", "10.0.0.1/24"),
+		"cidr not a range":              setField("n2", "cidr", "${var.x}"),
+		"cidr is IPv6":                  setField("n2", "cidr", "fd00::/64"),
+		"cidr too wide":                 setField("n2", "cidr", "10.0.0.0/4"),
+		"volume size zero":              setField("n4", "size_gb", float64(0)),
+		"volume size not whole":         setField("n4", "size_gb", 1.5),
+		"size not allowed":              setField("n1", "size", "huge"),
+		"unknown field":                 setField("n1", "user_data", "#!/bin/sh"),
+		"unknown setting":               setSetting("cloud", "x"),
 		"node id with a quote": func(g *connectors.Graph, _ *connectors.Deployment) {
 			b := g.Blocks["n4"]
 			delete(g.Blocks, "n4")
@@ -233,7 +234,7 @@ func TestValidAcceptedVariants(t *testing.T) {
 	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindNetwork, Name: "back", Fields: map[string]any{}}
 	g.Edges = append(g.Edges, connectors.Edge{Source: "n1", Target: "n5"})
 	d := testDeployment(fixedDeployment)
-	d.Settings = map[string]any{"image": "Ubuntu 24.04 (Noble)"}
+	d.Settings = map[string]any{"image": "Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]"}
 	if ps := c.Validate(g, d); len(ps) > 0 {
 		t.Fatalf("refused: %+v", ps)
 	}
@@ -243,7 +244,7 @@ func TestValidAcceptedVariants(t *testing.T) {
 	}
 	main := string(files["main.tf"])
 	for _, want := range []string{
-		`name_regex  = "^Ubuntu 24\\.04 \\(Noble\\)"`,
+		`name_regex  = "^Ubuntu 24\\.04\\.2 LTS \\(x86_64\\) \\[2025-04-03\\]"`,
 		`flavor_name     = "m1.tiny"`,
 		`cidr       = "10.0.0.0/24"`,
 		"depends_on = [openstack_networking_subnet_v2.b_n2, openstack_networking_subnet_v2.b_n5]",

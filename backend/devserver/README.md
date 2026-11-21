@@ -244,38 +244,54 @@ Optional: `CLUTTER_OPENSTACK_IMAGE` (default `cirros`), `CLUTTER_OPENSTACK_FLAVO
 
 ## Real clouds from this machine
 
-Clutter runs here as always (`npm run dev`), and what it builds goes to real clouds: a real AWS account and a real OpenStack cloud, each playing a user's account (world 2). Nothing of Clutter is hosted; that is world 1, later (`docs/architecture/environments.md` § Credentials day). Every run builds real resources that cost money, so destroy what you build the same day.
+Clutter runs here as always (`npm run dev`), and what it builds goes to real clouds: a real AWS account and a real OpenStack cloud, each playing a user's account (world 2). Nothing of Clutter is hosted; that is world 1, later (`docs/architecture/environments.md` § Credentials day). Every run builds real resources that cost money, so destroy what you build the same day. The first full run, with screenshots from Clutter and from each cloud, is `docs/reports/2026-11-20-real-cloud-verification.pdf`.
 
 | Part | Where |
 | --- | --- |
 | The website, A, B and Postgres | this machine |
 | Terraform runs | this machine, with keys for the user's account that last at most one hour |
 | What a deployment builds | the user's real AWS account or OpenStack project |
-| Clutter's own AWS account | only the stack `clutter-dev-real-aws`: the role `ClutterAdapterRunnerRole`, which B acts as, and a bucket that serves the account-link template |
+| Clutter's own AWS account | only the stack `clutter-dev-real-aws`: the role `ClutterAdapterRunnerRole`, which B acts as; a bucket that serves the account-link template; and an empty `TerraformDeployerFargateTaskRole`, because the link template's trust policy names it and AWS refuses a trust policy whose role does not exist |
+
+You need, besides the usual tools: Terraform 1.14.4 or newer (B runs it on this machine), the AWS CLI v2 for real AWS (`brew install awscli`; the doctor does not check it), and the OpenStack CLI only if you want to look at the cloud from a terminal (`pipx install python-openstackclient`). The first real plan downloads the cloud's Terraform provider (the AWS one is about 680 MB), so it takes a few minutes once.
+
+What it costs (USD, read 2026-11-20): on AWS `ca-central-1`, a small server (`t3.micro`) is $0.0116 an hour, a public IPv4 address $0.005 an hour, and a NAT gateway, which Clutter adds only when private servers need the internet, $0.05 an hour plus data; the deploy confirmation names that one. Functions, tables, APIs and buckets cost pennies at test volumes. On VEXXHOST, `v3-starter-1` is $0.0106 an hour and a floating IP $0.0028 an hour, billed per minute. One deploy of an example for a few minutes costs a few cents. Left running for a month, a Single server on AWS costs about $13, a Two-tier app on VEXXHOST about $20, and the Full app on AWS about $72, half of it the NAT gateway.
 
 ### Real AWS
 
 A user's account trusts exactly one identity: the role `ClutterAdapterRunnerRole` in Clutter's account, with the user's own external id. So B, on this machine, acts as that role, through a profile in `~/.aws/config`. Clutter's account and the user's account may be the same account for a first test; two accounts test the real cross-account path.
 
-1. **(person) Sign in to Clutter's account** with an administrator's profile, for example `aws sso login --profile clutter-admin`.
-2. **(person) `npm run real-aws -- setup --admin-profile clutter-admin`.** It deploys `real-aws/dev-account.yaml` as the stack `clutter-dev-real-aws`, uploads the account-link template to its bucket, and writes `backend/devserver/real-aws.conf` (ignored by git; `real-aws.conf.example` shows its four settings, none of them secret). Then add the profile it prints to `~/.aws/config`.
+Three identities take part, and only the first is an administrator:
+
+| Who | Identity | May do | Used for |
+| --- | --- | --- | --- |
+| The person setting up | an administrator in Clutter's account: an SSO login, or an IAM user with `AdministratorAccess` and an access key (not the root user) | anything | `npm run real-aws -- setup` and `teardown` once, and creating the link stack in the user's account (the user's own administrator, in real life) |
+| B on this machine | `ClutterAdapterRunnerRole`, through the profile `setup` prints | assume `AllowClutterToDeployTerraformRole-*` roles, with their external id | getting a run's keys, which last at most one hour |
+| Terraform, in the user's account | `AllowClutterToDeployTerraformRole-<id>`, which the link stack makes | change only what it tagged `ManagedBy = Clutter`; every role it makes carries the stack's boundary | every plan, deploy and destroy |
+
+A user never makes an IAM user or an access key for Clutter: linking needs an administrator's console sign-in for one minute, to create the stack. The CLI profile never touches the user's account; only the console, signed in as that account, creates the link stack. Hosted, B is `ClutterAdapterRunnerRole` itself (its Fargate task's role), so no person's credentials take part at run time.
+
+1. **(person) Make the administrator's CLI profile, once.** With SSO: `aws configure sso --profile clutter-admin`, then `aws sso login --profile clutter-admin`. With an IAM user: create an access key for it (IAM, the user, Security credentials), then `aws configure --profile clutter-admin` in your own terminal and type the key there, never in a chat; region `ca-central-1`. Check: `aws sts get-caller-identity --profile clutter-admin` shows the account you mean.
+2. **(person) `npm run real-aws -- setup --admin-profile clutter-admin`.** It deploys `real-aws/dev-account.yaml` as the stack `clutter-dev-real-aws`, uploads the account-link template to its bucket, and writes `backend/devserver/real-aws.conf` (ignored by git; `real-aws.conf.example` shows its four settings, none of them secret). Then add the profile it prints to `~/.aws/config`. Leave `--region` at its default, `ca-central-1`: the link flow opens CloudFormation there. Deployments choose their own region on the connection form.
 3. **`npm run real-aws -- status`.** Success: one `ok` line for the profile acting as `ClutterAdapterRunnerRole`, and one for the template.
-4. **`npm run dev`.** Its `AWS:` line says `AWS runs build in REAL AWS accounts`. It stops before starting anything when the profile is missing from `~/.aws/config`.
-5. **(person) Link the user's account,** as a user does: Connections, Amazon Web Services, **I have my own AWS account**, then link a new account. The link opens CloudFormation in the user's account, signed in as that account, with the template and its parameters filled in; create the stack, and paste its role ARN back. Then add the AWS connection from the linked account. Success: the connection shows verified, which means B assumed the user's role with its external id. **Connect local AWS** links a made-up account, which real AWS refuses.
+4. **`npm run dev`.** Its `AWS:` line says `AWS runs build in REAL AWS accounts`. When the profile is missing from `~/.aws/config`, it stops with a message before the backend starts.
+5. **(person) Link the user's account,** as a user does: Connections, Amazon Web Services, **I have my own AWS account**, then link a new account (the steps and the guide with screenshots are on that form). The link opens CloudFormation in the user's account, signed in as that account, with the template and its parameters filled in: tick the IAM acknowledgement, press **Create stack**, and when it shows `CREATE_COMPLETE` copy **RoleArn** from its **Outputs** tab, paste it under **2. Paste the role ARN**, and press **Link account**, then **Check and connect**. Success: `Connected … Clutter checked it and it works.`, which means B assumed the user's role with its external id. Use a new organization for real clouds: **Connect local AWS** (and a fake account linked during the LocalStack tour) is a made-up account that real AWS refuses.
 6. **Deploy,** check in the AWS console, and **Destroy**, as in the checks below.
 
-Back to LocalStack: delete `real-aws.conf`, then `npm run dev` again. When finished: destroy every deployment, delete the user's account-link stack in the user's account, then `npm run real-aws -- teardown --admin-profile clutter-admin`. Tear down before the hosted platform is deployed into the same account: it makes a role of the same name.
+Back to LocalStack: delete `real-aws.conf`, then `npm run dev` again.
 
-If the first role switch fails with `explicit deny in a service control policy`, the account belongs to an AWS Organization whose policy denies `sts:AssumeRole`. The fix is in the organization's management account (detach the policy from the account, or add an exception for Clutter's two roles), or use an account outside the organization.
+**Cleanup, in order:** destroy every deployment (Destroy in Clutter); delete the AWS connection on Connections (refused while a deployment on it is built); remove the account link (Connections, **Manage AWS account links**); delete the user's account-link stack in CloudFormation in the user's account; run `npm run real-aws -- teardown --admin-profile clutter-admin`; remove the `[profile clutter-dev-runner]` block from `~/.aws/config`; and delete the administrator's access key in IAM. Tear down before the hosted platform is deployed into the same account: it makes roles of the same names.
+
+If the first role switch fails with `explicit deny in a service control policy`, the account belongs to an AWS Organization whose policy denies `sts:AssumeRole`. That limits only identities inside the organization's accounts, so it matters when one account plays both Clutter's side and the user's side, as in a first test. The fix is in the organization's management account (detach the policy from the account, or add an exception for Clutter's two roles), or use an account outside the organization. If `status` says `the account-link template answers 403`, the account's S3 Block Public Access settings refuse the bucket's public read of `templates/*`; allow public policies for that one bucket.
 
 ### A real OpenStack cloud
 
-Nothing to set up on this machine. The user's OpenStack project needs application credentials, an `https` Identity (Keystone v3) address, routers and floating IPs for public servers, Cinder volumes, and room for at least 1 server, 1 network, 1 router, 1 security group and 1 floating IP.
+Nothing to set up on this machine. The user's OpenStack project needs application credentials, an `https` Identity (Keystone v3) address, routers and floating IPs for public servers, Cinder volumes, and room for at least 1 server, 1 network, 1 router, 1 security group and 1 floating IP. VEXXHOST, used on 2026-11-20, has all of these (`docs/research/openstack/2026-11-20-public-providers.md`): its order is reviewed before the account works, so sign up first; its Identity address is `https://auth.vexxhost.net/v3`; its regions include `ca-ymq-1` (Montreal).
 
-1. **(person) In the cloud's dashboard,** pick a test project, then Identity, Application Credentials, **Create Application Credential**, and download its `clouds.yaml`. Keep that file out of the repo: it holds the secret.
-2. **Connections, OpenStack, I have my own OpenStack:** drop the `clouds.yaml` on the form, or type the auth URL, credential ID and secret, and region. Success: `Connected … Clutter checked it and it works.`
-3. **Add a deployment,** then open **Advanced**: the image, flavors and external network are lists read from the cloud. DevStack's defaults (`cirros`, `m1.tiny`, `public`) rarely match a provider's names.
-4. **Deploy,** check in the dashboard, and **Destroy.** When finished, delete the connection, then the application credential.
+1. **(person) In the cloud's dashboard,** pick a test project, then Identity, Application Credentials, **Create Application Credential**, and download its `clouds.yaml`. Give it an expiry date later than your test: destroy needs a working credential. The file holds the secret: keep it out of the repo, in `~/.config/openstack/` (where the OpenStack CLI looks) or delete it when you finish. A dashboard's file can name another region than you want (VEXXHOST's came set to `ams1`): set the region on the form, or change it in the file, to `ca-ymq-1`.
+2. **Connections, OpenStack, I have my own OpenStack:** drop the `clouds.yaml` on the form (it is read in your browser and kept nowhere), or type the auth URL, credential ID and secret, and region. Success: `Connected … Clutter checked it and it works.`
+3. **Add a deployment.** Clutter reads the cloud's own images, flavors and external networks, and where DevStack's defaults (`cirros`, `m1.*`, `public`) are missing it pre-selects an Ubuntu image for the servers' processor and the smallest flavors with enough memory and the fewest vCPUs. Open **Advanced** to check or change them.
+4. **Deploy,** check in the dashboard, and **Destroy.** When finished, delete the connection, then the application credential, then the downloaded `clouds.yaml`.
 
 `TestRealCloud` (above) runs the same check against any OpenStack cloud without the website.
 

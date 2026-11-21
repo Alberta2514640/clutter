@@ -20,7 +20,18 @@ Not checked: Binero; any provider's cloud-init behaviour. terraform-provider-ope
 
 VEXXHOST `ca-ymq-1`: Canadian, per-minute billing, no minimum, application credentials documented. A test of a few hours costs cents. Trade-off: no free credit, and the order review may delay the account, so sign up first. If the review takes days, fall back to Rackspace Flex SJC or OVHcloud BHS, after confirming application credentials there.
 
-Still open, for VEXXHOST support: whether a new project has an external network, an Ubuntu image and quota for a router and a floating IP, and how long order review takes.
+A new project has an external network, Ubuntu images and quota for routers and floating IPs: see the account check below. Our account worked on the day it was registered.
+
+## Checked in a VEXXHOST account (2026-11-20)
+
+A new pay-as-you-go project, read with the OpenStack CLI 10.5.0 through an application credential (`auth_type: v3applicationcredential`, `https://auth.vexxhost.net/v3`), which signed in. Nothing was created.
+
+- Regions: `ams1`, `ca-east-1`, `ca-ymq-1`, `eu-west-1`, `sjc1`. A `clouds.yaml` downloaded from the dashboard names one region; it came set to `ams1`, and changing it to `ca-ymq-1` worked.
+- `ca-ymq-1` offers compute, network, `volumev3`, image, load balancer, DNS and object storage.
+- External network: `public`, the same name as DevStack's and the connector's default.
+- Images: plain Ubuntu 22.04 and 24.04, each built for both `arm64` and `x86_64` with the same date (for example `Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]`), so a name prefix such as `Ubuntu 24.04` can match the wrong processor. No `cirros`, the connector's default image.
+- Smallest suitable flavor: `v3-starter-1` (2 GB memory, 10 GB disk, 1 vCPU). The `m1.*` names are absent.
+- Quotas: 10 instances, 20 cores, 50 GB memory, 10 volumes and 1000 GB, 10 routers, 100 networks, 50 floating IPs, 10 security groups and 100 rules.
 
 ## Sources
 

@@ -342,8 +342,15 @@ type Choice struct {
 // deployment settings, keyed by setting name. A setting that is missing has
 // no list (the cloud could not list it); an empty list means the cloud has
 // none.
+//
+// Suggested holds, for a setting whose manifest default the cloud does not
+// offer, the value the connector recommends instead (an Ubuntu image on a
+// cloud without cirros). It is one of that setting's choices; a setting with
+// no suggestion is missing. Like the choices, it is shown to the user and
+// never holds a secret.
 type Options struct {
-	Settings map[string][]Choice `json:"settings"`
+	Settings  map[string][]Choice `json:"settings"`
+	Suggested map[string]string   `json:"suggested,omitempty"`
 }
 
 // OptionLister is optional. A connector whose settings name things that
@@ -354,7 +361,8 @@ type Options struct {
 // The connection it is handed carries credentials, filled by B's broker for
 // this one call. Values and labels are shown to the user, so they never hold
 // a secret, and errors follow the same rules as VerifyConnection's. The core
-// keeps only settings the manifest declares and values CheckValue accepts.
+// keeps only settings the manifest declares and values CheckValue accepts,
+// and only suggestions that are among the choices it keeps.
 type OptionLister interface {
 	Options(ctx context.Context, c Connection) (Options, error)
 }

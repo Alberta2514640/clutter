@@ -100,7 +100,10 @@ func TestBoundaryMatchesTheRoleStack(t *testing.T) {
 		`:table/c????????-*"`,
 		"Path: /clutter/",
 		"iam:PermissionsBoundary: !Ref PermissionsBoundary",
-		"- iam:DeleteRolePermissionsBoundary\n                - iam:DeleteUserPermissionsBoundary",
+		"- iam:DeleteRolePermissionsBoundary\n              - iam:DeleteUserPermissionsBoundary",
+		// The deployer role's permissions are managed policies: inline,
+		// they exceed IAM's 10,240-character limit for one role.
+		"ManagedPolicyArns:",
 		"aws:RequestTag/ManagedBy: Clutter",
 		`:role/clutter/*-lambda-role"`,
 		`:role/clutter/*-ssm-role"`,

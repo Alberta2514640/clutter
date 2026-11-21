@@ -76,8 +76,16 @@ func (a *API) connectionOptions(w http.ResponseWriter, r *http.Request) {
 
 // cleanOptions keeps only the settings the manifest declares and the values
 // CheckValue accepts for each, without repeats, with a plain one-line label.
+// A suggestion is kept only when it is one of the choices kept for its
+// setting, so it passes the same checks.
 func cleanOptions(m connectors.Manifest, in connectors.Options) connectors.Options {
 	out := connectors.Options{Settings: map[string][]connectors.Choice{}}
+	suggest := func(name, value string) {
+		if out.Suggested == nil {
+			out.Suggested = map[string]string{}
+		}
+		out.Suggested[name] = value
+	}
 	for _, f := range m.Settings {
 		choices, ok := in.Settings[f.Name]
 		if !ok {
@@ -100,6 +108,9 @@ func cleanOptions(m connectors.Manifest, in connectors.Options) connectors.Optio
 			kept = append(kept, connectors.Choice{Value: ch.Value, Label: label})
 		}
 		out.Settings[f.Name] = kept
+		if s, ok := in.Suggested[f.Name]; ok && seen[s] {
+			suggest(f.Name, s)
+		}
 	}
 	return out
 }

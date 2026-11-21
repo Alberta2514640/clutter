@@ -11,7 +11,7 @@
 #   status    checks real-aws.conf, the runner profile and the template address.
 #   teardown  deletes the stack, its bucket's objects and real-aws.conf. Run it
 #             before deploying the hosted platform (backend/infra) into the same
-#             account: the platform makes a role of the same name.
+#             account: the platform makes roles of the same names.
 #
 # Delete real-aws.conf to go back to LocalStack; then run npm run dev again.
 set -euo pipefail

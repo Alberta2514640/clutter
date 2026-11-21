@@ -17,6 +17,7 @@ import { ChevronDown, ChevronRight, Link2, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import AwsLinkFlow from "../../aws-account/_components/AwsLinkFlow";
+import BeforeYouStart from "./BeforeYouStart";
 import CloudsYamlUpload from "./CloudsYamlUpload";
 import ConnectLocalAccount from "./ConnectLocalAccount";
 import { inputClass, Loading, Notice } from "./Notice";
@@ -31,6 +32,19 @@ import UseLocalDevstack from "./UseLocalDevstack";
 const LINK_FLOWS: Record<string, { page: string; pageLabel: string; region: string; local: boolean }> = {
   aws: { page: "/settings/organization/aws-account", pageLabel: "Manage AWS account links", region: DEFAULT_AWS_REGION, local: true },
 };
+
+// What a cloud whose credentials are a clouds.yaml application credential
+// (OpenStack) needs before it is connected. Add deployment pre-selects an
+// image and server sizes from the cloud's own lists where DevStack's defaults
+// are missing (connections/options.ts, applySuggestions).
+const CLOUDS_YAML_BEFORE_YOU_START = [
+  {
+    lead: "You need:",
+    text: "an application credential for the project Clutter should build in (in your cloud's dashboard: Identity, then Application Credentials). Give it an expiry date.",
+  },
+  { text: "Your project needs routers, floating IPs and volumes, and room for the servers you deploy." },
+  { text: "When you deploy, Clutter picks an image and server sizes from your cloud's own lists. You can change them under Advanced." },
+];
 
 type Props = { token: string; organizationId: string; catalog: CatalogEntry[] };
 
@@ -131,6 +145,10 @@ function ConnectionForm({
   const linkedAccounts = linkedQ.data ?? [];
   const linked = chosenLinkedAccount(linkedAccounts, picked, justLinked);
   const fields = credentials.fields ?? [];
+  // A clouds.yaml application credential (OpenStack): the form takes the
+  // file and says what the cloud needs first.
+  const cloudsYaml = fitsCloudsYaml(fields.map((f) => f.name));
+  const enteringCredentials = mode === "credentials" && !linkedOnly;
 
   // On a developer's machine the cloud running locally comes first, in one
   // click; the form for a cloud of one's own sits behind a toggle.
@@ -307,6 +325,7 @@ function ConnectionForm({
 
       {showOwn && (
       <form onSubmit={submit} className="space-y-5">
+      {enteringCredentials && cloudsYaml && <BeforeYouStart items={CLOUDS_YAML_BEFORE_YOU_START} />}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm text-slate-300">
           <span>Connection name</span>
@@ -328,9 +347,9 @@ function ConnectionForm({
         </label>
       </div>
 
-      {mode === "credentials" && !linkedOnly && (
+      {enteringCredentials && (
         <div className="space-y-4">
-          {fitsCloudsYaml(fields.map((f) => f.name)) && (
+          {cloudsYaml && (
             <CloudsYamlUpload
               onFill={(filled, cloudRegion, cloudName) => {
                 setFormError(null);

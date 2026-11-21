@@ -61,7 +61,7 @@ The capstone's version is tagged `capstone-original`. This is what is different 
 | Row-level security | on for `supported_resources` only, with a policy that let the public `anon` role run every command | on for every table; `anon` may only read the resource catalog |
 | Google sign-in | `GOOGLE_CLIENT_ID` unset, so a token minted for any app passed; `email_verified` unchecked; a missing claim panicked | the audience is checked, an unverified email is refused, and every claim is read with a type check |
 | Sign-in check | inside the authorizer's own package | `generic.VerifyUserJWT`, shared by A's authorizer and B |
-| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary (`RoleTemplateVersion` 9). Real AWS must confirm it |
+| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary (`RoleTemplateVersion` 10). Real AWS must confirm it |
 | Runners | both handed the database string | neither holds it; each writes a status file to S3, and the API records it after its ownership checks. Real AWS must confirm the S3 writes |
 | Region | the generator's fixed `us-west-2` | the environment's region (`generic.PlatformRegion`; `ca-central-1` in the cloud) |
 | Template loading | inside the generator's `internal` package | `generic/tftemplate`, shared with B's AWS connector; a golden test keeps A's output byte-identical |

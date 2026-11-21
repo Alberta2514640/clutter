@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, ExternalLink } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import LinkFakeAccount from "@/components/common/LinkFakeAccount";
@@ -9,8 +9,21 @@ import { useCreateCloudFormationStackUrl, useOrganizationAccounts, useUpdateOrga
 import { awsAccountNameProblem, awsRoleArnExample, awsRoleArnPattern } from "@/lib/features/organization/rules";
 import type { CloudFormationStackUrlResponse } from "@/lib/features/organization/types";
 import { ApiError, apiErrorMessage } from "@/lib/features/user/session";
+import BeforeYouStart from "../../connections/_components/BeforeYouStart";
 import AwsRoleSetupCard from "./AwsRoleSetupCard";
 import AwsRoleVerificationForm from "./AwsRoleVerificationForm";
+
+const AWS_SETUP_GUIDE_URL = "/guide/AWS_Account_Link_Steps.pdf";
+
+// What the CloudFormation stack (client_side_terraform_deployer_role.yaml)
+// needs and creates. Change this with the stack.
+const AWS_BEFORE_YOU_START = [
+  { lead: "You need:", text: "to be signed in to AWS as someone who can create a CloudFormation stack that makes IAM roles (an administrator)." },
+  { lead: "What it creates:", text: "one role Clutter uses, the policies that limit it, and limits on anything Clutter creates. It is free." },
+  {
+    text: "Clutter changes only what it created (tagged ManagedBy = Clutter), except that it can delete an empty bucket and change a bucket's tags, versioning and public access settings. It never asks for access keys, and gets keys that last at most one hour. To remove Clutter's access, destroy your deployments, then delete the stack.",
+  },
+];
 
 export type LinkStatus = "idle" | "creating-template-link" | "awaiting-role-arn" | "saving" | "submitted" | "error";
 
@@ -27,9 +40,11 @@ type Props = {
 
 // AwsLinkFlow links an AWS account in two steps: open AWS to create the role
 // (a CloudFormation stack Clutter fills in), then paste the role's ARN. It
-// resumes the organization's first unfinished link. Used by the AWS account
-// page and inline on Connections. Locally, while the organization has no
-// linked account, it also offers the Link fake account button.
+// opens with what the person needs and what the stack creates, and the guide
+// with screenshots. It resumes the organization's first unfinished link. Used
+// by the AWS account page and inline on Connections. Locally, while the
+// organization has no linked account, it also offers the Link fake account
+// button.
 export default function AwsLinkFlow({ token, organizationId, onLinked, afterLink, wide = "lg" }: Props) {
   const createStackUrl = useCreateCloudFormationStackUrl(token);
   const accountsQ = useOrganizationAccounts(token, organizationId);
@@ -142,6 +157,16 @@ export default function AwsLinkFlow({ token, organizationId, onLinked, afterLink
 
   return (
     <div className="space-y-4">
+      <BeforeYouStart
+        items={AWS_BEFORE_YOU_START}
+        footer={
+          <a href={AWS_SETUP_GUIDE_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-teal-300 hover:underline">
+            Open the guide with screenshots
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </a>
+        }
+      />
+
       {status === "submitted" && linkedName && (
         <Alert role="status" className="border-teal-500/30 bg-teal-500/10 text-teal-50">
           <CheckCircle2 className="h-4 w-4 text-teal-300" />

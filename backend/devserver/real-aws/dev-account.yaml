@@ -6,7 +6,8 @@ Description: >-
   default), and a bucket that serves the account-link template to CloudFormation
   in user accounts. `npm run real-aws -- setup` deploys it as the stack
   clutter-dev-real-aws; `npm run real-aws -- teardown` removes it. The hosted
-  platform (backend/infra) makes a role of the same name as B API's task role:
+  platform (backend/infra) makes roles of the same names (B API's task role and
+  A's runner task role):
   tear this stack down before deploying the platform into the same account.
 
 Resources:
@@ -36,6 +37,23 @@ Resources:
               - Effect: Allow
                 Action: sts:AssumeRole
                 Resource: !Sub "arn:${AWS::Partition}:iam::*:role/AllowClutterToDeployTerraformRole-*"
+
+  # The account-link template's trust policy names A's deployer role too, and
+  # IAM refuses a trust policy whose principal does not exist. The hosted
+  # platform makes the real one; here it only has to exist. It has no
+  # permissions, and only ECS tasks could use it.
+  ADeployerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: TerraformDeployerFargateTaskRole
+      Description: Development only. Exists so users' account-link roles can name it; it has no permissions.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
 
   # CloudFormation in a user's account reads the template from here, as it does
   # from the hosted platform's templates bucket. Only templates/ is readable.

@@ -104,10 +104,15 @@ data "openstack_networking_port_v2" "b_n1" {
   network_id = openstack_compute_instance_v2.b_n1.network[0].uuid
 }
 
+resource "time_sleep" "b_n1" {
+  create_duration = "30s"
+  triggers        = { instance = openstack_compute_instance_v2.b_n1.id }
+}
+
 resource "openstack_networking_floatingip_associate_v2" "b_n1" {
   floating_ip = openstack_networking_floatingip_v2.b_n1.address
   port_id     = data.openstack_networking_port_v2.b_n1.id
-  depends_on  = [openstack_networking_router_interface_v2.b_n2]
+  depends_on  = [openstack_networking_router_interface_v2.b_n2, time_sleep.b_n1]
 }
 
 resource "openstack_blockstorage_volume_v3" "b_n4" {
@@ -159,6 +164,10 @@ terraform {
     openstack = {
       source  = "terraform-provider-openstack/openstack"
       version = "~> 3.4"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.14"
     }
   }
 }

@@ -229,9 +229,9 @@ func TestOnlyPrivateVMsBringANATGateway(t *testing.T) {
 	}
 }
 
-// The two-tier app proves its link: the web VM pings the database VM at the
-// address Clutter hands it and says on its console whether it got through,
-// with commands both cirros and Amazon Linux have.
+// The two-tier app proves its link: the web VM connects to the database VM's
+// PostgreSQL port at the address Clutter hands it (a ping on cirros, which
+// has no python3) and says on its console whether it got through.
 func TestTwoTierWebSaysWhetherItReachedTheDatabase(t *testing.T) {
 	for _, e := range all(t) {
 		if e.ID != "two-tier-app" {
@@ -244,6 +244,8 @@ func TestTwoTierWebSaysWhetherItReachedTheDatabase(t *testing.T) {
 		script, _ := g.Blocks["web"].Fields[connectors.FieldStartupScript].(string)
 		for _, want := range []string{
 			`ping -c 1 -W 2 "$` + connectors.EnvName("db", connectors.ValueAddress) + `"`,
+			`socket.create_connection((sys.argv[1], 5432), 3)' "$` + connectors.EnvName("db", connectors.ValueAddress) + `"`,
+			`result="web reached db on port 5432"`,
 			`result="web reached db"`,
 			`result="web could not reach db"`,
 			`>/dev/console`,
@@ -310,5 +312,37 @@ func TestExamplesTerraformValidates(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A database VM in an example takes connections from private addresses, so
+// the firewall's tcp/5432 rule reaches PostgreSQL, on Amazon Linux and Ubuntu.
+func TestExampleDatabasesListenOnThePrivateNetwork(t *testing.T) {
+	found := 0
+	for _, e := range all(t) {
+		g, err := e.Graph()
+		if err != nil {
+			t.Fatal(err)
+		}
+		db, ok := g.Blocks["db"]
+		if !ok {
+			continue
+		}
+		found++
+		script, _ := db.Fields[connectors.FieldStartupScript].(string)
+		for _, want := range []string{
+			"conf=/var/lib/pgsql/data",
+			"/etc/postgresql/*/main/postgresql.conf",
+			`echo "listen_addresses = '*'"`,
+			"scram-sha-256",
+			"systemctl restart postgresql",
+		} {
+			if !strings.Contains(script, want) {
+				t.Errorf("%s: the db VM's script lacks %q", e.ID, want)
+			}
+		}
+	}
+	if found < 2 {
+		t.Fatalf("found %d examples with a db VM, want at least 2", found)
 	}
 }

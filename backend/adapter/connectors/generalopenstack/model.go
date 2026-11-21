@@ -29,8 +29,11 @@ const (
 
 // cloudNamePattern is the shape of a name that already exists in the cloud:
 // an image, a flavor or the external network. OpenStack allows more; this
-// keeps quotes, braces, backslashes and newlines out.
-var cloudNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:()+-]*$`)
+// keeps quotes, braces, dollar and percent signs, backslashes and newlines
+// out. Parentheses and square brackets stay in: public clouds name images
+// like "Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]" (VEXXHOST), and the image's
+// name_regex escapes them (regexp.QuoteMeta).
+var cloudNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:()\[\]+-]*$`)
 
 // model is a checked deployment: only included blocks, every value parsed.
 type model struct {
@@ -387,7 +390,7 @@ func settingName(settings map[string]any, f connectors.FieldSpec, add func(conne
 	}
 	if !validCloudName(s) {
 		add(connectors.Problem{Field: f.Name, Code: connectors.CodeInvalidValue,
-			Message: fmt.Sprintf("%s must start with a letter or digit and use only letters, digits, spaces and . _ : ( ) + - (at most %d characters).", f.Title, maxCloudNameLength)})
+			Message: fmt.Sprintf("%s must start with a letter or digit and use only letters, digits, spaces and . _ : ( ) [ ] + - (at most %d characters).", f.Title, maxCloudNameLength)})
 		return ""
 	}
 	return s

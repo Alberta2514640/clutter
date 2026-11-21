@@ -118,7 +118,7 @@ From the repo:
 4. **Data:** Postgres (Supabase, 11 tables) and S3 (templates, .tf files, state, logs, playbooks, code uploads and run status files).
 5. **Deploy path:**
    - The **terraform-engine** reads the saved diagram and fills Go templates from S3 to produce `main.tf` and `outputs.tf`, generating IAM policies from the diagram's edges.
-   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack, role version 9) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
+   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack, role version 10) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
    - **Ansible jobs** go through SQS (with a dead-letter queue) to the `ansible/run-task` Lambda, which starts a **Fargate ansible-runner** that uses SSM Run Command to configure EC2. It also holds no database string.
    - The customer role changes only resources tagged `ManagedBy`, and every role and user it creates sits under a permissions boundary.
 
