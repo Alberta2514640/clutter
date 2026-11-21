@@ -44,18 +44,7 @@ Each node in the diagram is parsed:
 - `variables.*` → Mapped to template placeholders
 
 ### 3. Template Loading
-Templates are fetched from S3 and cached in memory. The bucket name below is the capstone account's. Now: the template files live in `backend/infra/modules/s3/uploads/aws/<type>/` for all five types (`apigateway`, `dynamodb`, `ec2`, `lambda`, `s3`), and the platform Terraform uploads each one with its own `aws_s3_object` in `backend/infra/modules/s3/main.tf`.
-
-```
-s3://clutter-templates-us-west-2-b35a3c5c/
-└── templates/aws/
-    ├── lambda/
-    │   ├── main.tf.tmpl
-    │   └── outputs.tf.tmpl
-    └── s3/
-        ├── main.tf.tmpl
-        └── outputs.tf.tmpl
-```
+Templates are fetched from S3 and cached in memory. Their source is `backend/infra/modules/s3/uploads/aws/<type>/` (`main.tf.tmpl` and `outputs.tf.tmpl`): A's five types (`apigateway`, `dynamodb`, `ec2`, `lambda`, `s3`), beside the three B's AWS connector adds (`network`, `firewall`, `volume`). The platform Terraform uploads each file with its own `aws_s3_object` in `backend/infra/modules/s3/main.tf`, to `templates/aws/<type>/` in the template bucket.
 
 ### 4. Template Rendering
 Go's `text/template` package renders templates the variables passed into for each Node in the Diagram Layout:
@@ -116,17 +105,9 @@ go -C backend/api test -v -run TestGenerateOnly ./terraform-engine/create/
 
 The full path, with Postgres, the authorizer and a local S3, runs in the devserver smoke test (`npm run smoke`).
 
-### Verify S3 Output
-```bash
-# List generated files
-aws s3 ls s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-diagram-123/
+### See the generated files
 
-# View main.tf content
-aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-diagram-123/main.tf -
-
-# View outputs.tf content
-aws s3 cp s3://clutter-us-west-2-b35a3c5c/test-org-123/test-project-456/test-diagram-123/outputs.tf -
-```
+Locally (`npm run dev`), the editor's Terraform tab shows a diagram's files (`GET /terraform-engine/files`), and `npm run generated -- <diagram-id>` runs `terraform validate` on them. In the cloud they are at `s3://<S3_BUCKET_NAME>/<org-id>/<project-id>/<diagram-id>/terraform/`.
 
 ---
 
@@ -155,19 +136,9 @@ resource "aws_s3_bucket" "{{.ResourceName}}" {
 }
 ```
 
-### Upload Templates to S3
+### How templates reach S3
 
-Now: templates are uploaded by `terraform apply` in `backend/infra` (one `aws_s3_object` per file), not by hand. The capstone command, which points at a folder and a bucket that no longer exist:
-
-```bash
-cd backend/api/terraform-engine/create
-aws s3 cp templates/aws/ s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
-```
-
-### List Templates in S3
-```bash
-aws s3 ls s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
-```
+`terraform apply` in `backend/infra` uploads them (one `aws_s3_object` per file); nobody copies them by hand. A new template file that is not added there does not exist in production.
 
 ---
 
@@ -196,37 +167,9 @@ Now: every value is checked before rendering. Names must match the name rule in 
 
 ## Code Structure
 
-Now: there is no local `templates/aws/` folder (see above); `resources/` holds a generator per type (`apigateway.go`, `dynamodb.go`, `ec2.go`, `lambda.go`, `s3.go`); and the template loader and renderer moved from `generator/template/` to `backend/api/generic/tftemplate`, which B's AWS connector shares. It reads S3 for A and disk for tests and B. The golden test (`TestGeneratedTerraformMatchesGolden`, fixtures in `internal/generator/testdata`) pins A's exact output.
-
-```
-terraform-engine/create/
-├── main.go                          # Lambda handler entry point
-├── main_test.go                     # Test file
-├── templates/aws/                   # Local template files (upload to S3)
-│   ├── lambda/
-│   │   ├── main.tf.tmpl
-│   │   └── outputs.tf.tmpl
-│   └── s3/
-│       ├── main.tf.tmpl
-│       └── outputs.tf.tmpl
-└── internal/
-    ├── structs.go                   # Data types
-    ├── data_clean.go                # Node sanitization
-    └── generator/
-        ├── generator.go             # Main generation logic
-        ├── template/
-        │   ├── loader.go            # S3 template fetching + caching
-        │   ├── renderer.go          # Go text/template rendering
-        │   └── config.go            # Template path helpers
-        ├── resources/
-        │   ├── mapper.go            # Resource type → Generator mapping
-        │   ├── lambda.go            # Lambda generator
-        │   └── s3.go                # S3 generator
-        ├── iam/
-        │   └── policy.go            # IAM policy generation from edges
-        └── writer/
-            └── writer.go            # S3 upload with encryption
-```
+- `main.go`: the Lambda handler (sign-in, ownership check, generate, write).
+- `internal/generator/`: `generator.go` (the main path), `resources/` (one generator per type, `mapper.go` from node label to generator, `validate.go` for the allow-lists), `iam/` (IAM from edges), `writer/` (the S3 upload and `status.json`), and the tests: the golden test (`TestGeneratedTerraformMatchesGolden`, fixtures in `testdata/golden`), render tests and the LocalStack apply test.
+- The template loader and renderer are `backend/api/generic/tftemplate`, shared with B's AWS connector; it reads S3 for A and disk for tests and B.
 
 ---
 
@@ -234,8 +177,4 @@ terraform-engine/create/
 
 ### "NoSuchKey" Error
 
-Template file doesn't exist in S3. Now: re-apply `backend/infra`, which uploads every template. The capstone command:
-
-```bash
-aws s3 cp templates/aws/ s3://clutter-templates-us-west-2-b35a3c5c/templates/aws/ --recursive
-```
+The template file is not in the template bucket. Re-apply `backend/infra`, which uploads every template; a new template must be listed in `backend/infra/modules/s3/main.tf`.

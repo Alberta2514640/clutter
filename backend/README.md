@@ -33,7 +33,7 @@ A's lint results, recorded and not fixed (ADR-006 limits changes to A):
 
 | Linter | Result on 2026-10-30 |
 | --- | --- |
-| `gofmt -l backend/api` | 59 of 97 files: 52 because they use CRLF line endings (stored that way in git), 7 for a trailing blank line |
+| `gofmt -l backend/api` | 52 of 144 files (2026-11-20), 50 of them because they use CRLF line endings (stored that way in git) |
 | staticcheck (`go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` in `backend/api`) | 6: 4 nil contexts in `tests/generic`, 2 simplifications in `terraform-command-runner` |
 | shellcheck (`build.sh`, `build_linux.sh`, the two runner `entrypoint.sh` and `build-and-push.sh`) | 6 warnings: unused variables, and `local x=$(...)` masking exit codes in the terraform deployer's entrypoint |
 | devserver (`go -C backend/devserver vet ./...`, `test ./...`, shellcheck) | clean |

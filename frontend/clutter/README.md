@@ -30,7 +30,7 @@ Without `NEXT_PUBLIC_ADAPTER_API_ENDPOINT`, A's screens work and B's screens say
 ```bash
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter     # 0 errors
 npm --prefix frontend/clutter run lint                             # 0 errors, 3 warnings (unused variables in A's logs panel and in useCreateDiagram)
-(cd frontend/clutter && npx vitest run)                            # 31 files, 212 tests (2026-11-15)
+(cd frontend/clutter && npx vitest run)                            # 31 files, 218 tests (2026-11-20)
 NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790 npm --prefix frontend/clutter run build   # 21 routes
 ```
 
@@ -82,7 +82,7 @@ B's screens, with `npm run dev` and headless Chromium (Playwright 1.56.1), 2026-
 
 ## Where things are
 
-- The public pages: the landing page `/` (`src/app/page.tsx`), `/privacy` and `/terms`, built from `src/components/landing/` with product screenshots in `public/landing/`; with `robots.ts`, `sitemap.ts`, `opengraph-image.png` and `icon.png` in `src/app/`, they are the only pages search engines index. Their contact address is the build setting `NEXT_PUBLIC_CONTACT_EMAIL`.
+- The public pages: the landing page `/` (`src/app/page.tsx`), `/privacy` and `/terms`, built from `src/components/landing/` with product screenshots in `public/landing/`; with `robots.ts`, `sitemap.ts`, `opengraph-image.png` and `icon.svg` in `src/app/`, they are the only pages search engines index. Their contact address is the build setting `NEXT_PUBLIC_CONTACT_EMAIL`.
   - `public/landing/` holds WebP screenshots taken at device scale 2 from the running app (`npm run dev` with LocalStack, so the AWS deploy and What was built come from a real apply) and a muted demo clip (`demo.webm`, `demo.mp4`, about 18 seconds, 0.5 to 0.6 MB each, recorded with Playwright's video capture) with its still `demo-poster.webp`. `shots.ts` owns each file's size and alt text. Retake them all together when a screen they show changes.
   - The page's interactive parts are two small client components: `ViewAsDemo` (Blocks, AWS and OpenStack buttons with `aria-pressed` that swap three same-size screenshots) and `DemoClip` (plays only while on screen, never by itself under reduced motion, with a Play and Pause button). Motion is plain CSS in `motion.module.css`, and none runs under `prefers-reduced-motion`.
   - Lighthouse 13.6.0 on the production build, 2026-11-14: mobile performance 94 (three warm runs; 92 cold), desktop 100, and 100 for accessibility, best practices and SEO on both. `/` loads 453 KB in 31 requests on mobile before the clip plays. Google's sign-in script loads only on `/login` (its own layout), and Geist Mono is not preloaded. What is left is the render-blocking CSS (about 400 ms in Lighthouse's estimate); Next's experimental `inlineCss` would remove it, but it is global and costs returning users their cached stylesheet, so it is off.

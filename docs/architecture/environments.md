@@ -28,12 +28,12 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 | Sign in | Google, through the capstone's client for now | Google, the client's own client |
 | Organizations, projects, diagrams | works | works |
 | Canvas: drag, connect, configure, save | works | works |
-| Link an AWS account | fake account only | our test account, then real users' accounts |
+| Link an AWS account | fake account, or a real account with `npm run real-aws` | our test account, then real users' accounts |
 | Generate Terraform on save | works (the editor calls generation after each save) | works the same way |
 | Read and download Terraform in the editor | works | works, once generation runs |
 | Upload Lambda code or a playbook | stored on disk | real S3 |
 | Deploy and destroy from A's editor | does not run | the first real test happens here |
-| Deploy and destroy a building-block diagram through B | runs on the mock cloud, on DevStack for OpenStack, and on LocalStack for AWS (`backend/devserver/README.md`) | runs in the users' own clouds; the first real AWS test happens here |
+| Deploy and destroy a building-block diagram through B | runs on the mock cloud, on DevStack for OpenStack, and on LocalStack for AWS (`backend/devserver/README.md`) | runs in the users' own clouds from the hosted service (the same deploys already ran from a laptop on real AWS and VEXXHOST on 2026-11-20) |
 | Live deploy status, real deploy logs | does not run | runs with deploy |
 | Run Ansible on a server | does not run | runs, needs a real EC2 server |
 | `npm run smoke`, `npm run generated` | team tools | not available |
