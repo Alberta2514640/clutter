@@ -9,6 +9,7 @@ import {
   entryFor,
   fieldControl,
   fieldError,
+  fieldLabel,
   fieldShown,
   paletteBlocks,
   parseInput,
@@ -16,6 +17,21 @@ import {
   valuesErrors,
 } from "./forms";
 import type { CatalogEntry, FieldSpec } from "./types";
+
+describe("fieldLabel", () => {
+  it("moves a title's own example into the hint under the field", () => {
+    expect(fieldLabel("Allowed incoming traffic (for example tcp/22,tcp/443,udp/1000-2000)")).toEqual({
+      label: "Allowed incoming traffic",
+      hint: "For example tcp/22,tcp/443,udp/1000-2000.",
+    });
+  });
+
+  it("keeps any other title whole, a short note in brackets included", () => {
+    expect(fieldLabel("Allowed source addresses (CIDR)")).toEqual({ label: "Allowed source addresses (CIDR)", hint: null });
+    expect(fieldLabel("Handler (empty uses the runtime's default)")).toEqual({ label: "Handler (empty uses the runtime's default)", hint: null });
+    expect(fieldLabel("Size in GB")).toEqual({ label: "Size in GB", hint: null });
+  });
+});
 
 const size: FieldSpec = { name: "size", title: "Size", type: "enum", required: true, default: "small", allowed: ["small", "medium", "large"] };
 const sizeGB: FieldSpec = { name: "size_gb", title: "Size in GB", type: "int", required: true, default: 10 };
@@ -84,9 +100,9 @@ describe("connectedBuilders and fieldShown", () => {
 
   it("shows internet access for private servers only on a network with a private VM", () => {
     const field: FieldSpec = { name: "private_internet", title: "Internet access for private servers", type: "bool", required: false };
-    expect(fieldShown(field, { hasPrivateVM: false })).toBe(false);
-    expect(fieldShown(field, { hasPrivateVM: true })).toBe(true);
-    expect(fieldShown(cidr, { hasPrivateVM: false })).toBe(true);
+    expect(fieldShown(field, { hasVM: false })).toBe(false);
+    expect(fieldShown(field, { hasVM: true })).toBe(true);
+    expect(fieldShown(cidr, { hasVM: false })).toBe(true);
   });
 });
 

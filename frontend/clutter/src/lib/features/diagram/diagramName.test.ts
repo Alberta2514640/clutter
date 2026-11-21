@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { DIAGRAM_NAME_MAX, uniqueDiagramName } from "./diagramName";
+import { BLANK_DIAGRAM_NAME, DIAGRAM_NAME_MAX, diagramNameError, uniqueDiagramName } from "./diagramName";
 
 describe("uniqueDiagramName", () => {
   it("keeps a free name", () => {
-    expect(uniqueDiagramName("Web server", ["New Diagram"])).toBe("Web server");
+    expect(uniqueDiagramName("Web server", ["Untitled diagram"])).toBe("Web server");
+  });
+
+  it("refuses an empty or too long name", () => {
+    expect(diagramNameError("  ")).toBe("Give the diagram a name.");
+    expect(diagramNameError("A".repeat(DIAGRAM_NAME_MAX + 1))).toContain("at most");
+    expect(diagramNameError(BLANK_DIAGRAM_NAME)).toBeNull();
   });
 
   it("numbers a taken name from 2", () => {

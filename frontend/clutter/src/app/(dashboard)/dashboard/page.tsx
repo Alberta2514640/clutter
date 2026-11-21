@@ -1,43 +1,41 @@
 "use client";
 
+import ErrorState from "@/components/common/ErrorState";
+import PageSkeleton from "@/components/common/PageSkeleton";
+import { homePath } from "@/lib/features/organization/home";
 import { useCurrentOrganization } from "@/lib/features/organization/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import DashboardContent from "./_components/DashboardContent";
-import DashboardLoading from "./_components/DashboardLoading";
+import ProjectsHome from "./_components/ProjectsHome";
 
-export default function DashboardPageClient() {
+// Projects: the current team's home. A person without a team goes to Welcome.
+export default function ProjectsPage() {
   const router = useRouter();
-
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
+  const current = useCurrentOrganization(token);
 
-  const orgQ = useCurrentOrganization(token);
-  const organization = orgQ.organization;
-
-  //  redirect logic after render
   useEffect(() => {
     if (meQ.isLoading) return;
-
     if (!token) {
       router.replace("/login");
       return;
     }
+    if (current.isSuccess && !current.organization) router.replace(homePath(current.organizations));
+  }, [meQ.isLoading, token, current.isSuccess, current.organization, current.organizations, router]);
 
-    if (!orgQ.isLoading && !orgQ.isError && !organization) {
-      router.replace("/onboarding/create-org");
-    }
-  }, [meQ.isLoading, token, orgQ.isLoading, orgQ.isError, organization, router]);
+  if (current.isError) {
+    return (
+      <ErrorState
+        title="Your teams could not load"
+        description="Check your connection, then try again."
+        onRetry={() => void current.refetch()}
+        retrying={current.isFetching}
+      />
+    );
+  }
+  if (!token || !current.organization) return <PageSkeleton label="Loading your projects…" />;
 
-  const isLoading = meQ.isLoading || (token ? orgQ.isLoading : false);
-
-  const error = meQ.isError || orgQ.isError ? "Clutter could not load your organization. Reload the page to try again." : null;
-
-  if (isLoading && !meQ.data) return <DashboardLoading />;
-
-  // While redirecting (no org), avoid flashing dashboard
-  if (token && !orgQ.isLoading && !orgQ.isError && !organization) return <DashboardLoading />;
-
-  return <DashboardContent organization={organization} error={error} />;
+  return <ProjectsHome token={token} organization={current.organization} />;
 }

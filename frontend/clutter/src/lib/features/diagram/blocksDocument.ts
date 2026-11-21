@@ -33,6 +33,9 @@ export const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 // The box layout. A block card is about BLOCK_W by BLOCK_H; a box holds its
 // VMs in a column, PAD_X from its left side and PAD_TOP below its top, ROW apart.
+// A VM never sits closer than EDGE_LEFT to the box's left side, EDGE_TOP to
+// its top (the label), EDGE_RIGHT to its right side or PAD_BOTTOM to its
+// bottom (the switches).
 export const BOX = {
   width: 260,
   height: 160,
@@ -41,6 +44,9 @@ export const BOX = {
   padX: 40,
   padTop: 50,
   padBottom: 36,
+  edgeLeft: 8,
+  edgeTop: 34,
+  edgeRight: 24,
   row: 120,
   blockW: 180,
   blockH: 84,
@@ -145,15 +151,16 @@ export function toBlocksDocument(nodes: BlockNode[], edges: BlockEdge[]): Blocks
   };
 }
 
-// networksWithPrivateVM are the networks a VM that is not public runs in (its
-// VM-to-Network edge, which a box on the canvas stands for).
-export function networksWithPrivateVM(doc: BlocksDocument): Set<string> {
+// networksWithVM are the networks a VM runs in (its VM-to-Network edge,
+// which a box on the canvas stands for), public or not: on OpenStack a public
+// VM's first network needs internet access too.
+export function networksWithVM(doc: BlocksDocument): Set<string> {
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
   const out = new Set<string>();
   for (const e of doc.edges) {
     const vm = byId.get(e.source);
     const net = byId.get(e.target);
-    if (vm?.type === VM_KIND && net?.type === NETWORK_KIND && vm.data.fields.public !== true) out.add(net.id);
+    if (vm?.type === VM_KIND && net?.type === NETWORK_KIND) out.add(net.id);
   }
   return out;
 }
@@ -262,9 +269,10 @@ const cardSize = (n: BlockNode) => ({ w: n.measured?.width ?? BOX.blockW, h: n.m
 
 // placeIn puts a node whose top left corner is at topLeft on the canvas into
 // the box boxId, or onto the canvas itself when boxId is null. In a box the
-// node stays inside the box's padding and never covers another node of the
-// box: when it would, it goes below them. The box grows to hold it. A node
-// that changes box loses its saved edge id, so the save writes a new edge.
+// node stays inside the box's edges and never covers another node of the
+// box: when it would, it moves to the nearest free spot. The box grows to
+// hold it. A node that changes box loses its saved edge id, so the save
+// writes a new edge.
 export function placeIn(nodes: BlockNode[], nodeId: string, boxId: string | null, topLeft: XYPosition): BlockNode[] {
   const box = boxId ? nodes.find((n) => n.id === boxId && n.type === NETWORK_NODE_TYPE) : undefined;
   const node = nodes.find((n) => n.id === nodeId);
@@ -275,27 +283,44 @@ export function placeIn(nodes: BlockNode[], nodeId: string, boxId: string | null
     return parentsFirst(nodes.map((n) => (n.id === nodeId ? { ...unparented(n), data, position: { x: topLeft.x, y: topLeft.y } } : n)));
   }
 
-  const { width, height } = boxSize(box);
   const size = cardSize(node);
-  let x = Math.max(topLeft.x - box.position.x, 8);
-  let y = Math.max(topLeft.y - box.position.y, BOX.padTop - 16);
+  let x = Math.max(topLeft.x - box.position.x, BOX.edgeLeft);
+  let y = Math.max(topLeft.y - box.position.y, BOX.edgeTop);
+  // The box's other nodes, in the box's own coordinates.
   const others = nodes.filter((n) => n.parentId === box.id && n.id !== nodeId);
   const covers = (o: BlockNode) => {
     const s = cardSize(o);
     return x < o.position.x + s.w && x + size.w > o.position.x && y < o.position.y + s.h && y + size.h > o.position.y;
   };
   if (others.some(covers)) {
-    x = BOX.padX;
-    y = Math.max(...others.map((o) => o.position.y + cardSize(o).h)) + BOX.row - BOX.blockH;
+    const spot = freeSpot(others, { x: x + size.w / 2, y: y + size.h / 2 }, size, { x: BOX.edgeLeft, y: BOX.edgeTop });
+    x = spot.x;
+    y = spot.y;
   }
-  const grown = { width: Math.max(width, x + size.w + 24), height: Math.max(height, y + size.h + BOX.padBottom) };
-  return parentsFirst(
-    nodes.map((n) => {
-      if (n.id === nodeId) return { ...n, data, parentId: box.id, position: { x, y } };
-      if (n.id === box.id) return { ...n, ...grown };
-      return n;
-    }),
-  );
+  const placed = parentsFirst(nodes.map((n) => (n.id === nodeId ? { ...n, data, parentId: box.id, position: { x, y } } : n)));
+  return fitBoxToChildren(placed, box.id);
+}
+
+// fitBoxToChildren keeps a box around its nodes, after a node lands in it or
+// a resize: a box made smaller than its nodes grows back to hold them, and
+// one pulled past them from its left or top side moves back out, so every
+// node stays inside the box's edges, where it was on the canvas.
+export function fitBoxToChildren(nodes: BlockNode[], boxId: string): BlockNode[] {
+  const box = nodes.find((n) => n.id === boxId && n.type === NETWORK_NODE_TYPE);
+  const kids = nodes.filter((n) => n.parentId === boxId);
+  if (!box || kids.length === 0) return nodes;
+  // How far the box moves left and up (zero or less).
+  const dx = Math.min(0, Math.min(...kids.map((k) => k.position.x)) - BOX.edgeLeft);
+  const dy = Math.min(0, Math.min(...kids.map((k) => k.position.y)) - BOX.edgeTop);
+  const { width, height } = boxSize(box);
+  const w = Math.max(width - dx, ...kids.map((k) => k.position.x - dx + cardSize(k).w + BOX.edgeRight));
+  const h = Math.max(height - dy, ...kids.map((k) => k.position.y - dy + cardSize(k).h + BOX.padBottom));
+  if (dx === 0 && dy === 0 && w === width && h === height) return nodes;
+  return nodes.map((n) => {
+    if (n.id === boxId) return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy }, width: w, height: h };
+    if (n.parentId === boxId && (dx !== 0 || dy !== 0)) return { ...n, position: { x: n.position.x - dx, y: n.position.y - dy } };
+    return n;
+  });
 }
 
 // detachFrom takes every node out of the given boxes and onto the canvas, at
@@ -319,6 +344,38 @@ function unparented(n: BlockNode): BlockNode {
 // newBlockId returns a node id that fits NODE_ID_PATTERN.
 export function newBlockId(): string {
   return crypto.randomUUID();
+}
+
+// freeSpot returns the top left corner for a new card of size w by h as near
+// to center as it can be without covering any block or box (with a 20px gap),
+// searching outward in rings on the 20px grid. It never stacks a click-added
+// block on the one before it. With min, the corner is never left of min.x
+// or above min.y (inside a box, its edges).
+export function freeSpot(nodes: BlockNode[], center: XYPosition, size: { w: number; h: number }, min?: XYPosition): XYPosition {
+  const GAP = 20;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const rects = nodes.map((n) => {
+    const p = absolutePosition(n, byId);
+    const s = n.type === NETWORK_NODE_TYPE ? boxSize(n) : { width: cardSize(n).w, height: cardSize(n).h };
+    return { x: p.x - GAP, y: p.y - GAP, w: s.width + 2 * GAP, h: s.height + 2 * GAP };
+  });
+  const snap = (v: number) => Math.round(v / GAP) * GAP;
+  const origin = { x: snap(center.x - size.w / 2), y: snap(center.y - size.h / 2) };
+  const free = (x: number, y: number) =>
+    (!min || (x >= min.x && y >= min.y)) && rects.every((r) => x + size.w <= r.x || x >= r.x + r.w || y + size.h <= r.y || y >= r.y + r.h);
+  for (let ring = 0; ring <= 40; ring++) {
+    // The ring's cells, nearest to the centre first.
+    const cells: XYPosition[] = [];
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) cells.push({ x: origin.x + dx * GAP * 2, y: origin.y + dy * GAP * 2 });
+      }
+    }
+    cells.sort((a, b) => Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y));
+    const hit = cells.find((c) => free(c.x, c.y));
+    if (hit) return hit;
+  }
+  return origin;
 }
 
 // defaultBlockName returns the kind itself, or the kind with the lowest free

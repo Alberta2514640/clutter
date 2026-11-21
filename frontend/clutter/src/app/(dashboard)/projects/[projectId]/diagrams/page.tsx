@@ -1,176 +1,204 @@
 "use client";
 
+import IsoStack from "@/components/brand/IsoStack";
+import CloudLogo, { CLOUD_LOGOS } from "@/components/common/CloudLogo";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import EmptyState from "@/components/common/EmptyState";
+import StatusDot from "@/components/common/StatusDot";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "@/components/ui/sonner";
 import { isBlocksDocument } from "@/lib/features/diagram/blocksDocument";
 import { editedLabel } from "@/lib/features/diagram/edited";
 import { useDeleteDiagram, useDiagrams } from "@/lib/features/diagram/hooks";
+import { useOrgDeployments } from "@/lib/features/deployments/orgHooks";
+import { DEPLOYMENT_STATE, deploymentState } from "@/lib/features/deployments/runState";
+import { holdsResources } from "@/lib/features/projects/deploymentSummary";
 import { isConflict } from "@/lib/features/user/session";
-import { FileText, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ExternalLink, MoreHorizontal, PenTool, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import NewDiagramDialog from "../_components/NewDiagramDialog";
+import NewDiagramButton from "../_components/NewDiagramDialog";
 import { useProjectContext } from "../_contexts/ProjectContext";
 
 type DeleteTarget = { id: string; name: string } | null;
+type Row = NonNullable<ReturnType<typeof useOrgDeployments>["data"]>[number];
+
+// What a diagram's deployments say on its card: the clouds it deploys to,
+// and its one most telling state (a run in progress, else live, else failed).
+function DeployLine({ rows }: { rows: Row[] }) {
+  if (rows.length === 0) return <p className="text-muted-foreground text-xs">Not deployed yet</p>;
+  const states = rows.map(deploymentState);
+  const key =
+    states.find((s) => DEPLOYMENT_STATE[s].running) ?? states.find((s) => s === "live") ?? states.find((s) => s === "failed") ?? states[0];
+  const shown = DEPLOYMENT_STATE[key];
+  const live = states.filter((s) => s === "live").length;
+  const connectors = [...new Set(rows.flatMap((r) => [r.connector, ...(r.placements ?? []).map((p) => p.connector)]))];
+  const names = connectors.map((c) => CLOUD_LOGOS[c]?.shortName ?? c);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <span className="flex items-center gap-1" aria-label={`Deploys to ${names.join(", ")}`} role="img">
+        {connectors.map((c) => (
+          <CloudLogo key={c} connector={c} size={16} />
+        ))}
+      </span>
+      <StatusDot
+        tone={shown.tone}
+        pulse={shown.running}
+        label={key === "live" && live > 1 ? `${live} live` : shown.label}
+        className="text-muted-foreground text-xs"
+      />
+    </div>
+  );
+}
 
 export default function ProjectDiagramsPage() {
-  const { projectId, token, project } = useProjectContext();
-
-  const [choosing, setChoosing] = useState(false);
+  const { projectId, token, project, organizationId } = useProjectContext();
 
   // The project lists only ids and names; the diagrams themselves say which
-  // editor each one uses, for the "AWS only" mark.
+  // editor each one uses, for the older-editor mark.
   const diagramsQ = useDiagrams(token, projectId);
   const loadedById = useMemo(() => new Map((diagramsQ.data ?? []).map((d) => [d.id, d])), [diagramsQ.data]);
+  const deploymentsQ = useOrgDeployments(token, organizationId, projectId);
+  const rowsByDiagram = useMemo(() => {
+    const out = new Map<string, Row[]>();
+    for (const row of deploymentsQ.data ?? []) out.set(row.diagram_id, [...(out.get(row.diagram_id) ?? []), row]);
+    return out;
+  }, [deploymentsQ.data]);
   // Read once per render; the cards' "Edited 5 minutes ago" needs no ticking.
   const [now] = useState(() => new Date());
 
   const deleteDiagramM = useDeleteDiagram(token);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
-  const [showDeleted, setShowDeleted] = useState(false);
+
+  if (!project) return null;
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTarget || !project) return;
+    if (!deleteTarget) return;
     setDeleteError(null);
     try {
-      await deleteDiagramM.mutateAsync({
-        organizationId: project.organizationId,
-        projectId,
-        diagramId: deleteTarget.id,
-      });
+      await deleteDiagramM.mutateAsync({ organizationId: project.organizationId, projectId, diagramId: deleteTarget.id });
     } catch (err) {
       setDeleteError(
         isConflict(err)
-          ? "This diagram still has live deployments. Destroy them on the diagram's Deploy tab, then delete it."
+          ? "This diagram still has deployments that may hold resources. Destroy them in its Deploy view, then delete it."
           : "Clutter could not delete the diagram. Try again.",
       );
       return;
     }
+    toast.success(`Deleted "${deleteTarget.name}"`);
     setDeleteTarget(null);
-    setShowDeleted(true);
-    setTimeout(() => setShowDeleted(false), 2000);
   };
 
-  const diagrams = project?.diagrams ?? [];
-  const hasDiagrams = diagrams.length > 0;
+  const diagrams = project.diagrams ?? [];
 
-  if (!project) {
+  if (diagrams.length === 0) {
     return (
-      <div role="status" className="py-4 text-center text-gray-400">
-        Loading the project...
-      </div>
+      <EmptyState
+        illustration={<IsoStack preset="linked" accent="vm" size={24} assemble idle="lift" />}
+        title="No diagrams yet"
+        description="Draw what you want to build in plain building blocks, then deploy it to a connected cloud. Start blank or from an example."
+        action={<NewDiagramButton />}
+      />
     );
   }
 
   return (
-    // The main area's padding lines the grid up with the project header.
-    <div>
+    <>
       {deleteTarget && (
         <ConfirmDialog
-          title="Delete diagram"
-          confirmLabel="Delete"
+          title="Delete this diagram?"
+          confirmLabel="Delete diagram"
           pendingLabel="Deleting…"
           isPending={deleteDiagramM.isPending}
           error={deleteError}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => void handleDeleteConfirm()}>
           <p>
-            Delete <span className="text-white font-medium">&quot;{deleteTarget.name}&quot;</span>? This cannot be undone.
+            <span className="text-foreground font-medium">{deleteTarget.name}</span> is deleted for good. This cannot be undone.
           </p>
-          <p>If the diagram has live deployments, Clutter refuses until you destroy them on its Deploy tab.</p>
+          <p>Clutter refuses while one of its deployments may still hold resources in your cloud.</p>
         </ConfirmDialog>
       )}
 
-      {/* ── Delete toast ── */}
-      {showDeleted && (
-        <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-white shadow-lg flex items-center gap-2">
-          <Trash2 className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-          Diagram deleted
-        </div>
-      )}
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {diagrams.map((diagram) => {
+          const isDeleting = deleteDiagramM.isPending && deleteDiagramM.variables?.diagramId === diagram.id;
+          const loaded = loadedById.get(diagram.id);
+          // Unknown until the diagrams load; only a loaded, unmarked diagram is A's.
+          const isOlderAwsDiagram = !!loaded && !isBlocksDocument(loaded.data);
+          const edited = editedLabel(loaded?.latestUpdateAt ?? loaded?.createdAt, now);
+          const rows = rowsByDiagram.get(diagram.id) ?? [];
+          const holding = rows.some((r) => holdsResources(r.status));
+          const href = `/projects/${projectId}/diagram/${diagram.id}`;
 
-      {choosing && <NewDiagramDialog onClose={() => setChoosing(false)} />}
-
-      {/* ── Empty state ── */}
-      {!hasDiagrams && (
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-white mb-2">No diagrams yet</h2>
-          <p className="text-gray-400 text-lg">Draw your first diagram in building blocks, then deploy it to your connected clouds.</p>
-          <div className="mx-auto mt-12 max-w-md">
-            <Card className="bg-slate-800/50 border-slate-700/50 hover:border-teal-500/50 transition-all">
-              <CardContent className="p-8 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 mb-6 rounded-xl bg-slate-700/50">
-                  <FileText className="w-8 h-8 text-gray-400" aria-hidden="true" />
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Start a diagram</h3>
-                <p className="text-sm text-gray-400 mb-6">Begin blank or from an example.</p>
-                <Button onClick={() => setChoosing(true)} className="bg-teal-600 hover:bg-teal-500 text-white">
-                  New diagram
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
-
-      {/* ── Diagrams grid ── */}
-      {hasDiagrams && (
-        <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {diagrams.map((diagram) => {
-            const isDeleting = deleteDiagramM.isPending && deleteDiagramM.variables?.diagramId === diagram.id;
-            const loaded = loadedById.get(diagram.id);
-            // Unknown until the diagrams load; only a loaded, unmarked diagram is A's.
-            const isOlderAwsDiagram = !!loaded && !isBlocksDocument(loaded.data);
-            const edited = editedLabel(loaded?.latestUpdateAt ?? loaded?.createdAt, now);
-
-            return (
-              <li key={diagram.id}>
-                <Card className={`relative h-full bg-slate-900/40 border-slate-800 hover:border-teal-500/40 focus-within:border-teal-500/60 transition group ${isDeleting ? "opacity-50" : ""}`}>
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-slate-800 group-hover:bg-teal-500/20 transition-colors">
-                        <FileText className="w-6 h-6 text-gray-400 group-hover:text-teal-400 transition-colors" aria-hidden="true" />
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
+          return (
+            <li key={diagram.id} className="animate-fade-in">
+              <article
+                data-testid="diagram-card"
+                className={cn(
+                  "group surface-card surface-card-interactive text-card-foreground relative flex h-full flex-col p-5",
+                  isDeleting && "opacity-50",
+                )}>
+                <div className="flex items-start gap-3">
+                  <span className="bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-link flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors">
+                    <PenTool className="size-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    {/* The title link covers the card, so the whole card opens the diagram. */}
+                    <Link
+                      href={href}
+                      className="block truncate rounded-sm font-semibold outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:underline">
+                      {diagram.name}
+                    </Link>
+                    {edited && <p className="text-muted-foreground text-xs">{edited}</p>}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${diagram.name}`} disabled={isDeleting} className="relative z-10 -mt-1 -mr-2">
+                        <MoreHorizontal aria-hidden="true" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-44">
+                      <DropdownMenuItem asChild>
+                        <Link href={href}>
+                          <ExternalLink aria-hidden="true" />
+                          Open
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => {
                           setDeleteError(null);
                           setDeleteTarget({ id: diagram.id, name: diagram.name });
-                        }}
-                        disabled={isDeleting}
-                        aria-label={`Delete diagram ${diagram.name}`}
-                        className="relative z-10 h-8 w-8 p-0 hover:bg-red-900/30 hover:text-red-400 text-gray-400">
-                        <Trash2 className="w-4 h-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <div className="min-w-0 space-y-2">
-                      {/* The title link covers the card, so the whole card opens the diagram. */}
-                      <Link
-                        href={`/projects/${projectId}/diagram/${diagram.id}`}
-                        className="block truncate text-white font-semibold outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:underline">
-                        {diagram.name}
-                      </Link>
-                      {edited && <p className="text-xs text-gray-400">{edited}</p>}
-                      {isOlderAwsDiagram && (
-                        <span className="inline-block rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-200">AWS only, older editor</span>
-                      )}
-                    </div>
-                    {isDeleting && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 rounded-lg">
-                        <p className="text-sm text-gray-300">Deleting...</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+                        }}>
+                        <Trash2 aria-hidden="true" />
+                        Delete
+                        {holding && <span className="sr-only"> (it may still hold resources, so Clutter will refuse)</span>}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="mt-auto space-y-2 pt-4">
+                  {isOlderAwsDiagram && <Badge variant="warning">AWS only, older editor</Badge>}
+                  {!isOlderAwsDiagram && (deploymentsQ.isSuccess ? <DeployLine rows={rows} /> : <div className="h-4" />)}
+                </div>
+              </article>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

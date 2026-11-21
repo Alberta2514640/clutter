@@ -58,8 +58,17 @@ func (*Connector) Manifest() connectors.Manifest {
 		// license (frontend/clutter/public/clouds/README.md).
 		Display: connectors.Display{ShortName: "OpenStack", Logo: "logo"},
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM).WithDisplay("Server (Nova)", ""),
-			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("Network (Neutron)", ""),
+			// What replaces a deployed server here: Nova takes user data only
+			// at boot (render.go), and a new address range replaces the subnet
+			// and so its servers. A new SSH key replaces only the key pair, so
+			// it reaches new servers only.
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("Server (Nova)", "").WithHelp(
+				"Changing the startup script on a deployed server replaces the server; data on its own disk is lost.",
+				"A changed SSH key reaches new servers only; a running server keeps the key it started with.",
+				"Changing the size restarts the server. A startup script runs only at first start, so have it set up anything that must keep running as a service."),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("Network (Neutron)", "").WithHelp(
+				"Internet access for private servers joins the network to a router. A public server's first network needs it on.",
+				"Changing the address range of a deployed network replaces its servers; data on their own disks is lost."),
 			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
 			connectors.StandardBlock(connectors.KindVolume).WithDisplay("Volume (Cinder)", ""),
 			connectors.RemovedBlock(connectors.KindBucket),

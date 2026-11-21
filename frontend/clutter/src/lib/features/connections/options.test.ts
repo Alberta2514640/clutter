@@ -39,7 +39,7 @@ describe("settingView", () => {
     expect(v.control).toBe("list");
     if (v.control !== "list") return;
     expect(v.current).toBe("debian");
-    expect(v.choices[0]).toEqual({ value: "debian", label: "debian (typed, not in your cloud's list)" });
+    expect(v.choices[0]).toEqual({ value: "debian", label: "debian (typed name)" });
     expect(v.choices).toHaveLength(3);
   });
 

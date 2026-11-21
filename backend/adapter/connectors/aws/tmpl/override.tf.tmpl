@@ -3,9 +3,17 @@
 {{- range .Instances}}
 
 resource "aws_instance" "{{.Addr}}" {
+{{- if or .Public (not .Subnet)}}
+  # A private VM in a network takes its subnet's setting, which is off. The
+  # default VPC's subnets give a public address unless told not to.
   associate_public_ip_address = {{.Public}}
+{{- end}}
 {{- if .Subnet}}
   subnet_id                   = aws_subnet.{{.Subnet}}.id
+{{- end}}
+{{- if .Zone}}
+  # Pinned, so a new instance is in the zone its volumes are in.
+  availability_zone           = {{.Zone}}
 {{- end}}
 {{- if .SecurityGroups}}
   vpc_security_group_ids      = [{{range $i, $sg := .SecurityGroups}}{{if $i}}, {{end}}aws_security_group.{{$sg}}.id{{end}}]

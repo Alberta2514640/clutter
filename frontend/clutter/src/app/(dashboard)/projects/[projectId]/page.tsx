@@ -1,23 +1,8 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
-
-/**
- * Redirects /projects/[projectId] to /projects/[projectId]/diagrams
- * This is the default landing page for a project
- */
-export default function ProjectIndexPage() {
-  const params = useParams<{ projectId: string }>();
-  const router = useRouter();
-  const projectId = params.projectId;
-  
-  useEffect(() => {
-    if (projectId) {
-      router.replace(`/projects/${projectId}/diagrams`);
-    }
-  }, [projectId, router]);
-  
-  // No UI needed - immediate redirect
-  return null;
+// A project opens on its Diagrams tab. The redirect runs on the server, so
+// the address never renders a blank page.
+export default async function ProjectIndexPage({ params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  redirect(`/projects/${encodeURIComponent(projectId)}/diagrams`);
 }

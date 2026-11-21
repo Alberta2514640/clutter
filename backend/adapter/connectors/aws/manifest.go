@@ -106,6 +106,22 @@ func functionHelp() []string {
 	}
 }
 
+// vmHelp says which changes replace a deployed VM on AWS. In the AWS
+// provider (5.x), associate_public_ip_address, subnet_id and key_name force a
+// new instance, and user_data_base64 does with user_data_replace_on_change
+// (override.tf.tmpl); instance_type changes in place (stop, change, start),
+// and a changed key makes a new key pair under the same name (stableName), so
+// it does not. A rename changes only Name tags. A volume's zone never reads
+// the instance (vmZone), so attached volumes stay.
+func vmHelp() []string {
+	return []string{
+		"Changing Reachable from the internet, the startup script or the network replaces a deployed server: its own disk is lost; attached volumes move over.",
+		"Adding an SSH key, or a link that hands the server a value at first start, also replaces it.",
+		"A changed key reaches new servers only; a running server keeps the key it started with.",
+		"Changing the size restarts the server. A startup script runs only at first start, so have it set up anything that must keep running as a service.",
+	}
+}
+
 func manifest() connectors.Manifest {
 	return connectors.Manifest{
 		Connector: ID,
@@ -118,8 +134,9 @@ func manifest() connectors.Manifest {
 		// Icons are AWS Architecture Icons. AWS publishes no security group
 		// icon, so the firewall keeps its neutral icon.
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM).WithDisplay("EC2", "ec2"),
-			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("VPC", "vpc"),
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("EC2", "ec2").WithHelp(vmHelp()...),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("VPC", "vpc").
+				WithHelp("Internet access for private servers adds a NAT gateway: about $40 a month plus data. Not needed when your servers are public."),
 			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
 			connectors.StandardBlock(connectors.KindVolume).WithDisplay("EBS", "ebs"),
 			connectors.StandardBlock(connectors.KindBucket).WithDisplay("S3", "s3"),

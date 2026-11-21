@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <title>AWS</title>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6" fill="#1e293b" stroke="#64748b"/>
+  <text x="16" y="20.5" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="700" letter-spacing="0.2" fill="#f1f5f9">AWS</text>
+</svg>

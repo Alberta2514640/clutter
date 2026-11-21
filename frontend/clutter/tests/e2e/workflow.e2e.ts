@@ -61,7 +61,8 @@ test("create, save, reopen, choose a provider, deploy, watch, destroy", async ({
   try {
     await test.step("create a diagram from an example", async () => {
       await page.goto(`/projects/${f.projectId}`);
-      await page.getByRole("button", { name: "New diagram" }).first().click();
+      // The header keeps a hidden copy while the empty state shows its own.
+      await page.getByRole("button", { name: "New diagram" }).filter({ visible: true }).first().click();
       await expect(page.getByTestId("new-diagram-dialog")).toBeVisible();
       await page.getByTestId("new-diagram-example-single-server").click();
       await page.waitForURL(/\/diagram\/[0-9a-f-]{36}/);
@@ -119,15 +120,23 @@ test("create, save, reopen, choose a provider, deploy, watch, destroy", async ({
       await expect(row.getByTestId("run-status")).toContainText("Deploy");
       await row.getByRole("button", { name: "Show log" }).click();
       await expect(row.getByTestId("run-log")).toContainText(/\S/);
-      await expect(row).toContainText("Deployed");
+      await expect(row.getByTestId("deployment-state")).toHaveText("Live");
+      // With nothing changed since the deploy, the next action is off.
+      await expect(row.getByRole("button", { name: "Up to date" })).toHaveAttribute("aria-disabled", "true");
     });
 
     await test.step("destroy what was built", async () => {
       await row.getByRole("button", { name: "Destroy", exact: true }).click();
-      await row.getByRole("button", { name: "Destroy for good" }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Destroy for good" }).click();
       await expect(row.getByTestId("run-status")).toContainText("Destroy", { timeout: 60_000 });
       await expect(row.getByTestId("run-status")).toHaveAttribute("data-status", "completed", { timeout: 60_000 });
-      await expect(row).toContainText("Destroyed");
+      await expect(row.getByTestId("deployment-state")).toHaveText("Destroyed");
+    });
+
+    await test.step("remove the deployment from the diagram", async () => {
+      await row.getByRole("button", { name: "Remove from diagram" }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Remove it" }).click();
+      await expect(page.getByTestId("deployment-row")).toHaveCount(0);
     });
   } finally {
     await cleanup(request, f);

@@ -9,6 +9,7 @@ import {
   deploymentTitle,
   examplePresets,
   exampleSplitFor,
+  missingExampleClouds,
   movePlacement,
   needsTwoClouds,
   orderedClouds,
@@ -59,6 +60,54 @@ describe("example presets", () => {
     expect([...(split?.placed ?? [])]).toEqual([["files", "aws"]]);
     expect(exampleSplitFor([hybrid], [{ id: "files", kind: "vm", name: "files" }])).toBeNull();
     expect(exampleSplitFor([hybrid], [{ id: "x1", kind: "bucket", name: "files" }])).toBeNull();
+  });
+
+  it("names the example's clouds the team has no working connection to", () => {
+    const split = exampleSplitFor([hybrid], blocks);
+    expect(missingExampleClouds(split, [conn("a", "aws")])).toEqual(["general-openstack"]);
+    expect(missingExampleClouds(split, [conn("a", "aws"), conn("o", "general-openstack", "failed")])).toEqual(["general-openstack"]);
+    expect(missingExampleClouds(split, [conn("o", "general-openstack")])).toEqual(["aws"]);
+    expect(missingExampleClouds(split, [conn("a", "aws"), conn("o", "general-openstack")])).toEqual([]);
+    expect(missingExampleClouds(null, [])).toEqual([]);
+  });
+
+  // The examples as B serves them (backend/adapter/internal/examples): node
+  // ids and kinds only, which is all the match reads.
+  const doc = (nodes: [string, string][]) => ({ nodes: nodes.map(([id, type]) => ({ id, type })) });
+  const asBlocks = (nodes: [string, string][]) => nodes.map(([id, kind]) => ({ id, kind, name: id }));
+  const fileStorageNodes: [string, string][] = [["files", "bucket"]];
+  const fullAppNodes: [string, string][] = [
+    ["web-fw", "firewall"], ["web", "vm"], ["files", "bucket"], ["db-fw", "firewall"], ["db-data", "volume"],
+    ["db", "vm"], ["app-net", "network"], ["orders-api", "http_api"], ["orders", "function"], ["orders-table", "table"],
+  ];
+  const hybridNodes: [string, string][] = [["app-fw", "firewall"], ["app", "vm"], ["app-net", "network"], ["files", "bucket"]];
+  const served = [
+    { name: "File storage", clouds: ["aws"], document: doc(fileStorageNodes) },
+    { name: "Full app", clouds: ["aws"], document: doc(fullAppNodes) },
+    { name: "Hybrid", clouds: ["general-openstack", "aws"], placements: [{ connector: "aws", node_ids: ["files"] }], document: doc(hybridNodes) },
+  ];
+
+  it("matches the whole example document, so Full app and File storage are not Hybrid", () => {
+    expect(exampleSplitFor(served, asBlocks(fullAppNodes))).toBeNull();
+    expect(exampleSplitFor(served, asBlocks(fileStorageNodes))).toBeNull();
+  });
+
+  it("matches a diagram made from Hybrid, also after the user adds a block", () => {
+    const split = exampleSplitFor(served, asBlocks(hybridNodes));
+    expect(split?.name).toBe("Hybrid");
+    expect(split?.primary).toBe("general-openstack");
+    expect([...(split?.placed ?? [])]).toEqual([["files", "aws"]]);
+    expect(exampleSplitFor(served, [...asBlocks(hybridNodes), { id: "n-1a2b", kind: "table", name: "orders" }])?.name).toBe("Hybrid");
+  });
+
+  it("does not match Hybrid once one of its blocks is gone or changed kind", () => {
+    expect(exampleSplitFor(served, asBlocks(hybridNodes.filter(([id]) => id !== "app-fw")))).toBeNull();
+    expect(exampleSplitFor(served, asBlocks(hybridNodes.map(([id, k]) => [id, id === "app" ? "function" : k] as [string, string])))).toBeNull();
+  });
+
+  it("does not match a hand-drawn diagram", () => {
+    const drawn = asBlocks([["n-7f3c", "vm"], ["n-91d0", "bucket"], ["n-44aa", "network"], ["n-0b1e", "firewall"]]);
+    expect(exampleSplitFor(served, drawn)).toBeNull();
   });
 
   it("puts each placed block on a working connection of its cloud, only when the deployment is on the first cloud", () => {

@@ -1,6 +1,6 @@
 # Clutter
 
-Clutter is a drag-and-drop canvas for cloud architecture. You draw a diagram (a Lambda, an S3 bucket, an EC2 server, with lines between them), and Clutter turns it into Terraform and Ansible and runs it inside your own cloud account.
+Clutter is a drag-and-drop canvas for cloud architecture. You draw a diagram in plain building blocks (a server, a network, a firewall, a bucket, a function, with lines between them), and Clutter turns it into Terraform and runs it inside your own cloud account.
 
 It began as a University of Calgary capstone (team 500-MM-3, 2025 to 2026) for Alberta 2514640 Inc. A previous capstone team built that version, which works with AWS only. We are the new team. We are extending it into one hosted product where users link their own clouds and deploy one diagram to any of them: AWS, OpenStack (and Patrii Cloud once it opens), and more over time. The new part that talks to each cloud is the adapter layer.
 
@@ -21,20 +21,31 @@ npm run dev      # starts the database, the backend and the website; Ctrl+C stop
 
 What you should see:
 
-1. `npm run doctor` prints one line per tool and ends with `Ready`. Install whatever it marks `FAIL` (the line under it says how), open a new terminal, and run it again. It installs nothing itself.
+1. `npm run doctor` prints one line per tool and ends with `Ready`. Install whatever it marks `FAIL` (the line under it says how), open a new terminal, and run it again. It installs nothing. When the Postgres image is already pulled, it starts one throwaway container, with no network, to check that Docker works.
 2. `npm run setup` prints five numbered steps (the first runs the doctor again), and ends with `Ready. Run: npm run dev`. It is safe to run again.
-3. `npm run dev` prints where to go once the backend is up, and the website is ready when Next.js prints `Ready`. Open <http://localhost:3000>, and sign in at <http://localhost:3000/dev/login> as a local test user (Google sign-in works too). For sample data, run `npm run seed` in another terminal.
+3. `npm run dev` prints where to go once the backend is up, and the website is ready when Next.js prints `Ready`. Open <http://localhost:3000>, and sign in at <http://localhost:3000/dev/login> as a local test user. Google sign-in at `/login` works too, while the capstone team's Google client exists (`backend/devserver/README.md` § How sign-in works locally).
+4. `npm run seed`, in another terminal, adds one diagram for A's older AWS editor. For the building-block editor, choose an example under **New diagram**.
 
 Every command takes `--help`. The tools and their install commands are in [Set up](#set-up); what to do next in the app is in [A full local tour](#4-a-full-local-tour).
 
+## Ways to run Clutter
+
+| Mode | What it builds | What you need | How to start | Cost |
+| --- | --- | --- | --- | --- |
+| Local, Mock cloud (a test cloud) | Nothing real. Use it for the screens and flows. | Node, Go, Docker | `npm run setup` once, then `npm run dev` | Free |
+| AWS on LocalStack (a fake AWS in Docker) | AWS Terraform really applies, to a fake AWS on this machine. EC2 servers do not boot. | The local mode, and LocalStack (Docker) | `npm run localstack -- start`, then `npm run dev -- --aws localstack` | Free |
+| OpenStack on DevStack (OpenStack's own test install) | A real small OpenStack, in a Lima VM on a Mac | The local mode, Lima, and a Mac with 16 GB of memory or more | `npm run devstack -- create` once (10 to 20 minutes), then `npm run devstack -- start`. `npm run devstack -- route` (asks for your password) lets the Mac open DevStack's servers. `npm run devstack -- credential` prints the connection values. | Free. The VM takes 4 CPUs and 12 GiB of memory. |
+| Real clouds from a laptop | Real resources in your own AWS account and a real OpenStack project, such as VEXXHOST (a public OpenStack cloud) | Terraform, the AWS CLI v2 and an AWS administrator's profile; an OpenStack application credential | AWS: `npm run real-aws -- setup --admin-profile NAME` once, then `npm run dev -- --aws real`. OpenStack: add the application credential on Connections. | Costs money. Destroy what you build. |
+| Hosted (prod) | Clutter itself, in AWS, in `ca-central-1` | The client's accounts | A person runs `npm run deploy:plan -- prod`, then `npm run deploy -- prod`. | Costs money. Not run yet. |
+
+- **Which mode you are in:** `npm run dev` prints its AWS mode on its `AWS:` line at start. `npm run doctor` shows whether LocalStack and DevStack answer. `npm run real-aws -- status` shows whether this machine is set up for real AWS.
+- **Only AWS has a mode (`--aws`).** Mock and OpenStack (DevStack or a real cloud) are connections you add on Connections, in any local mode.
+- **`--aws`** takes `auto` (the default), `localstack` or `real`. With `auto`, `npm run dev` uses real AWS when `npm run real-aws -- setup` has run, then LocalStack when it answers. Otherwise AWS runs stop with "needs a real AWS account".
+- **Details:** `backend/devserver/README.md` § AWS on LocalStack, § OpenStack on this machine (DevStack) and § Real clouds from this machine. For the hosted mode: `docs/architecture/environments.md` § Credentials day.
+
 ## Where the project stands
 
-| | |
-| --- | --- |
-| **System A** (Clutter as built, AWS only) | Complete and tested by the capstone team. Its AWS hosting has been torn down. It runs locally through `backend/devserver`, except the parts that need AWS (deploy and running Ansible). Stage 1's security fixes are in code; the customer role and runner fixes still need a real AWS account to confirm them. |
-| **System B** (the adapter layer) | Built for stages 3 to 6: B's service in `backend/adapter`, the OpenStack and AWS connectors, B's editor, the Connections page and the deploy panel. The OpenStack connector's real test on DevStack and B's AWS test on LocalStack pass, and so do plan, deploy and destroy from the browser on both (2026-11-14). Stage 7 (the cloud) is written in the platform Terraform and waits for the client's accounts. The build order is `docs/architecture/implementation-plan.md`; each stage's status is in `.claude/findings/NOW.md`. |
-| **Local checks** (2026-11-15) | Every Go package, the frontend's unit tests, the local scripts' tests and the smoke test of A's 32 routes and B's main paths pass. Only `terraform fmt` fails, on 6 of A's platform files. The counts and expected output are in `backend/README.md`, `frontend/clutter/README.md` and `backend/devserver/README.md`. |
-| **Open defects** | Some defects in A are still open, including shared runner credentials. They are listed in `.claude/findings/NOW.md`. Read that before you build on any A code path. |
+Where each stage (one step of the build order in `docs/architecture/implementation-plan.md`) stands, and the open defects in A, are in `.claude/findings/NOW.md`. Read its open defects before you build on any A code path.
 
 ## How Clutter fits together
 
@@ -53,14 +64,14 @@ One hosted product. A user signs in, links the clouds they already have on the C
 
 ### The systems
 
-**C = A + A2 + B** (ADR-011).
+**C = A + A2 + B** (ADR-011). `docs/architecture/system-b-adapter-layer.md` § Names defines each name. In one line each:
 
-- **A** is Clutter as the previous team built it, AWS only: a Next.js website, 34 Go Lambdas (32 API routes, an authorizer and a queue consumer) behind AWS API Gateway, Postgres on Supabase, S3, and two Fargate runners. One runner runs Terraform in the customer's AWS account; the other runs Ansible on the customer's EC2 servers over SSM. A keeps serving existing AWS diagrams. Owner: `docs/architecture/system-a-as-built.md`.
-- **A2** runs A, and B beside it, on a laptop with no AWS (`backend/devserver`). It is for the team, not for users. Owner: `backend/devserver/README.md`.
-- **B** is the adapter layer: new code beside A, not a rewrite of A (Option 1, ADR-006). It is one Go service with its own `/v1` API, a connector interface, and one connector per kind of cloud: General's connectors (one per approved Terraform provider, OpenStack first, DigitalOcean next) and AWS, which reuses A's templates. Patrii and TierHive arrive when they have APIs, through General where they offer a standard provider. Owner: `docs/architecture/system-b-adapter-layer.md`; its code and settings: `backend/adapter/README.md`.
-- **Who runs world 1:** **B0** (us, as a hosted service) is what we build. **B1** (a customer runs Clutter on their own servers) comes later with the same connectors. **B2** (inside a company, with its own connectors) is later still, and a separate decision (ADR-007).
-- **Where it runs for us:** local (a laptop, no accounts) and one cloud environment in `ca-central-1` (ADR-015). Owner: `docs/architecture/environments.md`.
-- **Later:** A and B become one system, C, with one API and one deploy path, once B passes on real AWS (ADR-021).
+- **A** is Clutter as the previous team built it, AWS only (`docs/architecture/system-a-as-built.md`).
+- **A2** runs A, and B beside it, on a laptop with no AWS. It is for the team, not for users (`backend/devserver/README.md`).
+- **B** is the adapter layer: one Go service beside A, with one connector per kind of cloud (`backend/adapter/README.md`).
+- **B0** is B hosted by us, which is what we build. B1 and B2 come later (ADR-007).
+- **Where it runs for us:** local, and one cloud environment in `ca-central-1` (`docs/architecture/environments.md`).
+- **Later:** A's AWS path retires and C becomes one service and one website (ADR-021).
 
 ### The principles
 
@@ -69,7 +80,7 @@ One hosted product. A user signs in, links the clouds they already have on the C
 - **Terraform is the engine for every cloud** (ADR-002), and only Clutter writes the Terraform a run uses (ADR-017).
 - **Capabilities, not a lowest common denominator:** each connector says what it can build, and the user sees it before anything runs (ADR-001).
 - **B's core never names a connector;** a new cloud is a new connector, not a change to the core (`system-b-adapter-layer.md` § General).
-- **A changes only at named seams** (ADR-006, `system-b-adapter-layer.md` § The seams).
+- **A changes only at named seams,** the few places where B touches A (ADR-006, `system-b-adapter-layer.md` § The seams).
 - **One owner per fact,** in the code and in the docs (`docs/README.md`).
 - **A person deploys;** no script or AI session applies to a cloud on its own (root `CLAUDE.md` § Boundaries).
 
@@ -91,6 +102,19 @@ One hosted product. A user signs in, links the clouds they already have on the C
 | Isolated runs: one short-lived task per run, with only that run's credentials | B's run task (ADR-017) | `system-b-adapter-layer.md` § Isolating the runner |
 | Running everything on a laptop, with LocalStack for AWS and DevStack for OpenStack | A2 (`backend/devserver`) | `backend/devserver/README.md` |
 | Deploying Clutter itself to the cloud | the platform Terraform in `backend/infra` and `npm run deploy` | `docs/architecture/environments.md` |
+
+### What happens when you press Deploy
+
+One deploy through B, step by step. The design behind it is `docs/architecture/system-b-adapter-layer.md` § One deploy through B.
+
+1. The deploy panel's card (`DeploymentRow`, in the building-block editor's `_components/blocks/` folder) calls `useStartRun`.
+2. `startRun` in the frontend's `lib/features/deployments` sends `POST /v1/organizations/{orgID}/deployments/{deploymentID}/runs` to B.
+3. B's `internal/api` package routes it to `createRun`, which checks the caller and the deployment, then calls `Enqueue`.
+4. B's `internal/jobs` package queues the run, and a worker runs it in `execute`.
+5. `execute` calls the connector's `Apply`, in `connectors/aws` or `connectors/generalopenstack`.
+6. `Apply` renders the Terraform and hands it to the Terraform runner (`internal/terraform`).
+7. Locally, Terraform runs as a child process of B (`internal/runtask`, `Local`). In the cloud, the whole run is one ECS task (`internal/runtask`, `LaunchRun`, running `cmd/runtask`).
+8. The run's log goes to B's log store (`internal/logstore`). The deploy panel reads it from `GET /v1/organizations/{orgID}/runs/{runID}/logs`.
 
 AWS terms you will meet in A: Lambda (a function AWS runs on request), API Gateway (AWS's HTTP front door), Fargate (AWS running a container on demand), STS (AWS issuing short-lived credentials for another account's role), SSM (AWS running a command on a server without SSH), S3 (file storage), SQS (a queue).
 
@@ -120,12 +144,12 @@ docs/
     system-b-adapter-layer.md  B: the design, and its names
     implementation-plan.md     the build order: stages, tests, "done when"
     environments.md            local vs cloud: what differs and what each needs
-    figures/                   clutter-worlds.png and the editor screenshot (PNGs; no sources kept)
+    figures/                   clutter-worlds.png, clutter-c.png and the editor screenshot (PNGs; no sources kept)
     system-b-team-plan/        the team's own B plan: figures, PDF and the written explanation
-  reports/          dated test reports as PDFs: the local run (2026-11-15), the test plan (2026-11-18) and real clouds (2026-11-20)
+  reports/          dated test reports (PDF)
   decisions.md      every decision and why (ADR-001 onward; ADR means architecture decision record)
   research/
-    patricloud/     dated research on PatriCloud (and a second research run)
+    patricloud/     dated research on Patrii Cloud (and a second research run)
     tierhive/       dated research on TierHive
     openstack/      DevStack on a laptop, and one diagram rendered for two clouds
     aws/            LocalStack, an AWS stand-in on a laptop
@@ -178,7 +202,7 @@ brew install awscli                            # optional: only for your own AWS
 
 ### 2. Clone and set up
 
-We work in a fork (`origin`). Finished work merges into the client's repo (`upstream`) by pull request, never by a direct push. Clone the fork and run `npm run setup` as in [Quick start](#quick-start), and add the client's repo once:
+We work in a fork (`origin`). [How we work](#how-we-work) says where pull requests go. Clone the fork and run `npm run setup` as in [Quick start](#quick-start), and add the client's repo (`upstream`) once:
 
 ```bash
 git remote add upstream https://github.com/Alberta2514640/clutter
@@ -188,26 +212,40 @@ git remote add upstream https://github.com/Alberta2514640/clutter
 
 ### 3. Check that everything builds
 
-Run from the repo root.
+Run from the repo root. These are the checks GitHub runs on every pull request (`.github/workflows/checks.yml`), in the same form.
 
 ```bash
 go -C backend/api build ./...
 go -C backend/api vet ./...
 go -C backend/api test ./...
-go -C backend/adapter test ./...      # B; some tests skip without Docker or Terraform
+go -C backend/devserver vet ./...     # A2, the local run tool
+go -C backend/devserver test ./...
+go -C backend/adapter vet ./...       # B
+go -C backend/adapter test ./...
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
 npm --prefix frontend/clutter run lint
-NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build
-terraform -chdir=backend/infra fmt -check -recursive    # 6 of A's files fail today
-go -C backend/devserver test ./...     # A2, the local run tool
-backend/devserver/test-scripts.sh      # A2's scripts, against fake tools
 (cd frontend/clutter && npx vitest run)   # the frontend's unit tests
-bash test-suites/scripts/run-all.sh       # the team's test plan, every suite (test-suites/README.md)
+NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790 npm --prefix frontend/clutter run build
+bash test-suites/scripts/platform-version/run.sh   # the pinned versions agree
+npx -y markdownlint-cli2@0.18.1 "**/*.md"
+backend/devserver/test-scripts.sh     # A2's scripts, against fake tools
+backend/infra/test-deploy.sh          # npm run deploy's safety checks, against fake tools
+.claude/hooks/test-hooks.sh           # needs jq
+npm run dev:backend                   # then the smoke test, and stop
+npm run smoke
+npm run stop
 ```
 
-The expected result of each check, including the known `fmt` failure, is in `backend/README.md`, `frontend/clutter/README.md` and `backend/devserver/README.md`. Every Go package must pass.
+- **Shellcheck:** CI runs `shellcheck -S warning` on the scripts its `docs-and-scripts` job lists. Root `CLAUDE.md` § Commands runs it through Docker.
+- **B's Go tests** start a throwaway Postgres container on a random port. Without Docker, those tests skip. A few more skip without Terraform.
+- **Not in CI:** `terraform -chdir=backend/infra fmt -check -recursive` (it has known failures), and the team's test plan, `bash test-suites/scripts/run-all.sh`.
+- **The test plan needs a git clone,** not a copy of the files: each suite's script finds the repo with `git rev-parse --show-toplevel`. Its browser suite tests whatever answers at <http://localhost:3000>; set `CLUTTER_WEB_URL` to test another address (`test-suites/README.md`).
+
+The expected result of each check is with its folder: `backend/README.md` (with the known `fmt` failures), `backend/adapter/README.md`, `backend/devserver/README.md` and `frontend/clutter/README.md`. Every Go package must pass.
 
 ### 4. A full local tour
+
+To show Clutter to someone in about ten minutes, follow `docs/demo.md`.
 
 From a fresh clone to a real deploy and destroy on AWS (LocalStack) and OpenStack (DevStack), all on your machine. The details behind each step are in `backend/devserver/README.md`.
 
@@ -224,11 +262,21 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 | LocalStack, a stand-in for AWS | Docker, port 4566 | `npm run localstack -- start` | only for real AWS deploys |
 | DevStack, a small OpenStack | the Lima VM `devstack` | `npm run devstack -- start` | only for OpenStack deploys |
 
-- Start LocalStack before `npm run dev`: B chooses its AWS mode when it starts. If Clutter already runs, run `npm run dev` again; it restarts. If `backend/devserver/real-aws.conf` exists (made by `npm run real-aws -- setup`), `npm run dev` uses real AWS instead; delete it to go back to LocalStack.
+- Start LocalStack before `npm run dev`: B chooses its AWS mode when it starts. If Clutter already runs, run `npm run dev` again; it restarts. [Ways to run Clutter](#ways-to-run-clutter) says how `npm run dev` chooses between LocalStack and real AWS.
 - `localstack` and `devstack` return when they are ready, so run them in a second terminal. DevStack can start at any time. The VM takes 12 GiB of memory, so on a 16 GB machine run one of the two at a time.
-- The **Mock cloud** on Connections, and the `Mock` tags in the palette, are a local test cloud. It builds nothing.
-- Three ways to run Clutter: `npm run dev` (all of it, in one terminal); `npm run dev:backend`, then `npm run dev:frontend` in a second terminal; or the website alone with no backend (`frontend/clutter/README.md` § Run it).
+- The **Mock cloud** on Connections ("Test cloud (builds nothing, local only)") is a local test cloud, offered only in a development build such as `npm run dev`. It builds nothing, and its token is in `frontend/clutter/README.md`.
+- Three ways to start it: `npm run dev` (all of it, in one terminal); `npm run dev:backend`, then `npm run dev:frontend` in a second terminal; or the website alone with no backend (`frontend/clutter/README.md` § Run it).
 - One copy of Clutter runs per machine. Every clone shares the ports and the database, so a second clone starts with `npm run stop -- --wipe`, which deletes the first clone's organizations, diagrams and connections.
+
+#### Where things are while it runs
+
+Everything is under `backend/devserver/.state/`, which git ignores. `npm run dev` prints the two log paths at start, on its `Logs:` line.
+
+- **A's log** (the local API gateway and A's Lambdas): `backend/devserver/.state/gateway.log`.
+- **B's log:** `backend/devserver/.state/adapter.log`.
+- **Run logs,** one file per run, the same log the deploy panel shows: `backend/devserver/.state/adapter/logs/`.
+- **B's Terraform state,** one folder per deployment: `backend/devserver/.state/adapter/state/`.
+- **A's generated Terraform:** `backend/devserver/.state/s3/clutter-devserver-local/<org>/<project>/<diagram>/terraform/`. `npm run generated` lists it.
 
 #### AWS, on LocalStack
 
@@ -236,15 +284,14 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 2. `npm run setup`: five numbered steps, ending with `Ready. Run: npm run dev`.
 3. `npm run localstack -- start`: it downloads LocalStack the first time and ends with `LocalStack is ready`.
 4. `npm run dev`: a start message, then Next.js prints `Ready`. Its `AWS:` line says `AWS runs apply against LocalStack`.
-5. Open <http://localhost:3000/dev/login>: you are signed in as a local test user, on "Create your organization".
-6. Name the organization and press **Create organization**: the dashboard. Press **New Project**, name it, press **Create Project**: the project's page.
-7. **Connections** in the sidebar, then **Amazon Web Services**, then **Connect local AWS**: `Connected Local AWS. Clutter checked it and it works.` (It links the fake account and connects it in one step. **I have my own AWS account** opens the usual link flow.)
-8. Open the project and press **New diagram**, then **Blank**: the building-block editor. (The other choices are seven built-in examples, from Starter to Advanced, which open with their blocks and links in place.)
-9. Click **Network** in the palette: a dashed box labelled `network · 10.0.0.0/24`. Drag **VM** from the palette onto the box: it lights up and says `Drop to run it in network`. Drop it: a VM inside a box runs in that network. Every other link is a line: drag from a block's dot, and only the blocks it can link to light up. Hover a line, a block's `?` or a setting's `?` to see what it does. Press **Save**: the top bar says `Saved`.
-10. The **Deploy** tab, **Add deployment**, the AWS connection, then **Add deployment to Local AWS**: `Amazon Web Services: every block can be built here`. (With unsaved changes, it saves the diagram first.)
-11. **Preview Terraform**: seven files, `main.tf` and `results.tf` among them.
-12. **Plan**: `Plan: 14 to add`. **Deploy**, then **Deploy** in the confirmation that says what it builds: `Built 2 blocks (14 cloud resources)`, the badge says `Deployed`, and **What was built** lists each block, what it became (`EC2`, `VPC`) and the server's private address. A public server leads it as `Your server` (or `Your website` with a firewall that lets in port 80), and an HTTP API as `Your API` with Copy and Open. The log is under **Show log**.
-13. **Destroy**, then **Destroy for good**: `Destroy complete: 14 destroyed`, and the badge says `Destroyed`.
+5. Open <http://localhost:3000/dev/login>: you are signed in as a local test user. On a fresh database it opens onboarding, `Step 1 of 4`: "How much have you worked with cloud setups?" (A user who already has a team lands on Projects instead; `npm run stop -- --wipe` starts clean.)
+6. Answer the four steps. Choose an answer and press **Continue** (or **Skip**). Name the team (it starts as your first name's team) and press **Continue**. Choose **AWS** and press **Continue**. Choose **Blank**, then **Open the editor**: the building-block editor, on an empty diagram in a new project, "My first project". "Get to your first deploy" sits in the canvas's lower left. (The other starting points are seven built-in examples, from Starter to Advanced, which open with their blocks and links in place. Later, **New diagram** in a project offers the same choices.)
+7. Click **Network** in the palette: a dashed box labelled `network · 10.0.0.0/24`. Drag **VM** from the palette onto the box: it lights up and says `Drop to run it in network`. Drop it: a VM inside a box runs in that network. Every other link is a line: drag from a block's dot, and only the blocks it can link to light up. Hover a line, a block's `?` or a setting's `?` to see what it does. Press **Save**: the top bar says `Saved`.
+8. **Connect a cloud** in the checklist (or on the **Deploy** tab): a side sheet opens on **Amazon Web Services**, the cloud you chose. Press **Connect local AWS**: `Connected Local AWS`, and `Clutter checked it and it works.` Press **Done**. (It links a fake account and connects it in one step. The numbered steps under it link your own AWS account.)
+9. The **Deploy** tab, **Add deployment**, the AWS connection, then **Add deployment to Local AWS**: `Amazon Web Services: every block can be built here`. (With unsaved changes, it saves the diagram first.)
+10. **Preview code**: the code panel opens along the bottom of the canvas with seven files, `main.tf` and `results.tf` among them.
+11. **Plan**: `Plan: 14 to add`. **Deploy**, then **Deploy** in the dialog that says what it builds: `Built 2 blocks (14 cloud resources)`, the state says `Live`, the blocks on the canvas say `Live`, and the next action says `Up to date`. **What was built** lists each block, what it became (`EC2`, `VPC`) and the server's private address. A public server leads it as `Your server` (or `Your website` with a firewall that lets in port 80), and an HTTP API as `Your API` with Copy and Open. The log is under **Show log**, and **Recent runs** lists the runs.
+12. **Destroy**, then **Destroy for good**: `Destroyed 14 cloud resources`, and the state says `Destroyed`. **Remove from diagram** frees the connection; nothing in the cloud changes.
 
 #### OpenStack, on DevStack
 
@@ -253,8 +300,8 @@ Needs a Mac with 16 GB of memory or more (`backend/devserver/README.md` § OpenS
 1. `npm run devstack -- create`: once, 10 to 20 minutes. It ends with `DevStack runs in the devstack VM.`
 2. `npm run doctor`: a line says `DevStack answers at http://<the VM's address>/identity/v3`. If it does not, allow your terminal app in macOS's Local Network settings (§ Let this machine reach the VM (macOS) in the same README), then run the doctor again.
 3. `npm run devstack -- credential`, in a terminal: it prints a region, an auth URL, an application credential ID and a secret. The values to copy are in the right-hand column. The secret is shown once. If a credential exists, it asks `Replace it? [y/N]`: answer `y`. Running it again replaces the credential, so delete the OpenStack connection and add it again with the new values.
-4. **Connections**, then **OpenStack**: fill in a connection name and the four printed values, then **Check and connect**: `Connected …. Clutter checked it and it works.` The editor's **View as** now offers OpenStack too. Or skip step 3: **Connect local OpenStack**, first on that form, makes a new credential and the connection (`Local OpenStack`) in one step, and the secret is never shown. The form for the four values is under **I have my own OpenStack**.
-5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram (a VM that is not public): **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Built 2 blocks (5 cloud resources)` and **What was built** shows the server's address, and **Destroy** says `Destroy complete: 5 destroyed`. To open that address in your browser, run `npm run devstack -- route` once, and again after each restart of the Mac. It asks for your password in the terminal, or in macOS's password window when it runs without one (from an editor, for example).
+4. **Connections** in the sidebar, **Connect a cloud**, then **OpenStack**: open **I have my own OpenStack**, fill in a connection name and the four printed values, then **Check and connect**: `Connected …`, and `Clutter checked it and it works.` The editor's **View as** now offers OpenStack too. Or skip step 3: **Connect local OpenStack**, first on that form, makes a new credential and the connection (`Local OpenStack`) in one step, and the secret is never shown.
+5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram (a VM that is not public): **Preview code** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Built 2 blocks (5 cloud resources)` and **What was built** shows the server's address, and **Destroy** says `Destroyed 5 cloud resources`. To open that address in your browser, run `npm run devstack -- route` once, and again after each restart of the Mac. It asks for your password in the terminal, or in macOS's password window when it runs without one (from an editor, for example).
 6. Two clouds in one deployment: **New diagram**, then **Hybrid**. **Add deployment** with the OpenStack connection suggests `Run files on Local AWS`. **Where each block runs** opens by itself, the card is named `Local OpenStack + Local AWS`, and each block's badge shows the cloud it runs on.
 7. `npm run devstack -- dashboard`, in a terminal: the address of DevStack's own dashboard and the `demo` login, to see the servers Clutter built there.
 
@@ -262,12 +309,12 @@ In later sessions, `npm run devstack -- start` starts the VM, and `npm run docto
 
 #### Your own clouds
 
-The same tour works against your own AWS account and a real OpenStack project (such as VEXXHOST), with Clutter still running on your machine: `backend/devserver/README.md` § Real clouds from this machine says who needs what, the one-time `npm run real-aws -- setup`, what it costs and how to clean up. The results of the first full run are in `docs/reports/2026-11-20-real-cloud-verification.pdf`.
+The same tour works against your own AWS account and a real OpenStack project (such as VEXXHOST), with Clutter still running on your machine: `backend/devserver/README.md` § Real clouds from this machine says who needs what, the one-time `npm run real-aws -- setup`, what it costs and how to clean up.
 
 #### A's older editor, and the end
 
 1. `npm run seed`: it prints `Open diagram:` and a link. The link opens A's older AWS editor with 5 nodes. Press **Save** first: Preview and Deploy stay off until then. Deploy then shows `Clutter could not start the deploy.` locally; that is expected, because it needs real AWS.
-2. `npm run smoke`: A's summary ends with `FAIL 0`, and B's says `B checks: 34  PASS 34  FAIL 0`.
+2. `npm run smoke`: A's summary ends with `FAIL 0`, and so does B's.
 3. `npm run stop`, then `npm run localstack -- stop` (and `npm run devstack -- stop`): your data is kept. Add `-- --wipe` to `npm run stop` to delete it.
 
 Frontend edits reload by themselves. After editing Go code, run `npm run dev` again.
@@ -278,14 +325,14 @@ Every command below takes `--help`.
 | --- | --- |
 | `npm run doctor` | checks your tools, ports and disk, and says how to install what is missing |
 | `npm run setup` | installs the packages and fills the caches; safe to run again |
-| `npm run dev` | starts everything; Ctrl+C stops it and keeps your data; a second run restarts it |
+| `npm run dev` | starts everything; Ctrl+C stops it and keeps your data; a second run restarts it. `-- --aws` chooses where AWS runs go ([Ways to run Clutter](#ways-to-run-clutter)) |
 | `npm run dev:backend` | starts everything but the website, then returns |
 | `npm run dev:frontend` | runs only the website, against `npm run dev:backend`; Ctrl+C stops only the website |
-| `npm run seed` | creates a sample AWS diagram for the local test user |
+| `npm run seed` | creates a sample diagram in A's older AWS editor, for the local test user |
 | `npm run generated -- <diagram-id>` | for A's older diagrams: runs `terraform validate` on a diagram's generated files. The diagram id is the last part of the editor's address |
 | `npm run smoke` | calls all 32 routes and B's main paths, and prints what passed (with `npm run dev` running) |
 | `npm run stop` | stops whatever `npm run dev`, `dev:backend` or `dev:frontend` started, from any terminal |
-| `npm run stop -- --wipe` | also deletes the local database, to start clean |
+| `npm run stop -- --wipe` | also deletes the local database, the local S3 files and B's data, to start clean |
 | `npm run localstack -- start\|stop\|status` | LocalStack, so B's AWS deployments apply on your machine (`backend/devserver/README.md`) |
 | `npm run real-aws -- setup\|status\|teardown --admin-profile NAME` | lets this machine deploy into your own AWS account instead of LocalStack (`status` takes no profile; `backend/devserver/README.md` § Real clouds from this machine) |
 | `npm run devstack -- create\|credential\|dashboard\|start\|stop\|status\|route` | the Lima VM that runs DevStack, for B's OpenStack connector, the credential Clutter uses, and the route that lets this machine open DevStack servers' addresses (`route remove` takes it out; `backend/devserver/README.md`) |
@@ -299,6 +346,13 @@ B deploys into real clouds from this machine (§ Your own clouds). A's own deplo
 ## Do not run
 
 - `terraform plan` or `apply` in `backend/infra` by hand. A person deploys with `npm run deploy:plan` and `npm run deploy`, which pick the client's state backend and check the account first (`docs/architecture/environments.md` § Credentials day).
+- The deploy steps in `docs/old-capstone/backend-tutorial.md`. They run `terraform apply` by hand, the capstone's way.
+- `npm run stop -- --wipe`, unless you mean it. It deletes the local database, the local S3 files and B's data.
+- A plain `npm run dev` while `backend/devserver/real-aws.conf` exists. It deploys to real AWS, which costs money. Use `npm run dev -- --aws localstack` instead.
+- A push to `upstream`. Work reaches the client's repo only by pull request ([How we work](#how-we-work)).
+- A commit of `frontend/clutter/.env.local`, `backend/infra/prod.tfvars` or `backend/devserver/real-aws.conf`.
+
+The full rules are in root `CLAUDE.md` § Boundaries. They are written for AI agents, and they apply to people too.
 
 ## Your first day
 
@@ -313,22 +367,23 @@ Read in this order:
 7. `docs/decisions.md`: why things are the way they are.
 8. `CLAUDE.md`: skim it. It is written for AI agents, but its "What you will get wrong" list is the fastest way to learn the traps.
 
-Then pick a task from `NOW.md` § Next. Tell the team which one you are taking, so two people do not take the same one. A good first task is a minor defect from `NOW.md` § Open defects in A, such as making `application-tables.sql` safe to run twice: it is small, it touches no security path, and it teaches you the schema and the local run.
+Then take a task, as [How we work](#how-we-work) says. A good first task is a minor defect from `NOW.md` § Open defects in A, such as making `application-tables.sql` safe to run twice: it is small, it touches no security path, and it teaches you the schema and the local run.
 
 ## How we work
 
-- **Branches.** Branch off `main`. Never commit to `main` directly. Push your branch to our fork (`origin`), then open a pull request into the client's repo (`upstream`). Never push to `upstream` directly.
-- **Taking a task.** The tasks are the tables in `.claude/findings/NOW.md` § Next. Put your name in a task's Owner cell in your branch's first commit and open a draft pull request at once, so two people never take the same task. The rules for editing `NOW.md` without merge conflicts are at the top of that section.
+- **Access.** Ask a maintainer of the fork for collaborator access before you push.
+- **Branches.** Branch off `main`. Never commit to `main` directly. Push your branch to our fork (`origin`). Open your pull request against `origin/main`. The team carries `origin/main` into `upstream` by a separate pull request. Never push to `upstream` directly.
+- **Taking a task.** Pick an item from `.claude/findings/NOW.md` (§ The order or § Open defects in A) and tell the team you are on it, and open a draft pull request right away.
 - **Before you open a pull request:**
-  1. The checks in step 3 pass, and `npm run smoke` (with `npm run dev` running) shows 0 fail. GitHub runs these on every pull request too (`.github/workflows/checks.yml`).
+  1. The checks in step 3 pass, with the smoke test at 0 fail. GitHub runs them on every pull request too.
   2. Docs whose facts you changed are updated (`docs/README.md` says which file owns which fact).
   3. A decision you made is in `docs/decisions.md`.
 - **Decisions.** An ADR starts as "proposed" and becomes "accepted" when its pull request is approved by the team (and the client, for scope or hosting). Write it before the change it decides.
 - **Commits.** Say what changed and why. One commit per finished change, after the checks pass.
-- **Changing A.** New local and test abilities go in A2. Stage 1's changes to A are already decided (phase 0, and the moves in ADR-006's revision). Any other change to A is a decision: write it in `docs/decisions.md` first.
+- **Changing A.** New local and test abilities go in A2 (`backend/devserver`). A change to A needs a decision in `docs/decisions.md` first, unless `NOW.md` § Open defects in A already writes its fix. A defect there marked "No fix is chosen yet", or whose fix is a new design (a per-run role, team roles), needs that decision too. The changes to A that are already decided need none: `NOW.md` § Phase 0, and the moves in ADR-006's revision.
 - **Security rules.** Read the root `CLAUDE.md` § Boundaries before touching a handler or a template.
 - **Docs.** Each fact has one owner doc (`docs/README.md` has the map). When code changes a fact, update its owner in the same pull request. When a doc and the code disagree, the code wins and the doc gets fixed.
-- **Adding a cloud resource or a new cloud.** Follow `.claude/skills/add-cloud-resource/SKILL.md`, even without Claude Code. It lists every place a resource is defined, and how a new cloud joins as a General connector (`docs/architecture/system-b-adapter-layer.md` § General).
+- **Adding a cloud resource or a new cloud.** Follow `.claude/skills/add-cloud-resource/SKILL.md`, even without Claude Code. It lists every place a resource is defined, and how a new cloud joins as a General connector, one connector per approved Terraform provider (`docs/architecture/system-b-adapter-layer.md` § General).
 
 ### Claude Code
 
@@ -340,6 +395,6 @@ The `.claude/` folder sets up Claude Code for this repo. You do not need it. `.c
 
 ## History and license
 
-The previous capstone team (500-MM-3, 2025 to 2026), who built A: Santiago Garza Fuentes (project manager), Hamza Amar, Maitra Patel, Nimna Wiedasa, Syril Jacob and Akshpreet Singh, advised by Lorenzo De Carli, for Devin Atkin at Alberta 2514640 Inc. Their final report is in `docs/old-capstone/`: the cover is dated 2026-04-12, and it was committed on 2026-06-08. Its figures were never committed.
+The previous capstone team (500-MM-3, 2025 to 2026), who built A: Santiago Garza Fuentes (project manager), Hamza Amar, Maitra Patel, Nimna Wiedasa, Syril Jacob and Akshpreet Singh, advised by Lorenzo De Carli, for Devin Atkin at Alberta 2514640 Inc. Their final report is in `docs/old-capstone/`.
 
 The capstone code is released under the MIT License, copyright 2026 Alberta 2514640 Inc. The full text is at the end of the final report.

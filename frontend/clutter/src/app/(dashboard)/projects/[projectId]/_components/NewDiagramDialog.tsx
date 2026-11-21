@@ -1,28 +1,29 @@
 "use client";
 
-import CloudMark from "@/components/clouds/CloudMark";
-import { useDialogFocus } from "@/components/common/useDialogFocus";
+import CloudLogo from "@/components/common/CloudLogo";
+import LevelBadge from "@/components/common/LevelBadge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cloudLookFor } from "@/lib/features/catalog/display";
 import { useCatalog } from "@/lib/features/catalog/hooks";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
-import { fromBlocksDocument, toBlocksDocument } from "@/lib/features/diagram/blocksDocument";
-import { BLANK_DIAGRAM_NAME, uniqueDiagramName } from "@/lib/features/diagram/diagramName";
-import { useCreateDiagram } from "@/lib/features/diagram/hooks";
+import { BLANK_DIAGRAM_NAME, DIAGRAM_NAME_MAX, diagramNameError } from "@/lib/features/diagram/diagramName";
 import { useExamples } from "@/lib/features/examples/hooks";
-import { LEVEL_LABELS, type Example, type ExampleLevel } from "@/lib/features/examples/types";
-import { Loader2, Plus, X } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import type { Example } from "@/lib/features/examples/types";
+import { usePreferencesStore } from "@/lib/features/preferences/uiStore";
+import { orderExamplesForCloud } from "@/lib/features/projects/exampleOrder";
+import { useStartDiagram } from "@/lib/features/projects/startDiagram";
+import { cn } from "@/lib/utils";
+import { Loader2, Plus } from "lucide-react";
+import { NEW_DIAGRAM_QUERY } from "@/lib/features/projects/checklist";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useState } from "react";
 import { useProjectContext } from "../_contexts/ProjectContext";
 
-const LEVEL_STYLES: Record<ExampleLevel, string> = {
-  starter: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  intermediate: "border-sky-500/30 bg-sky-500/10 text-sky-300",
-  advanced: "border-violet-500/30 bg-violet-500/10 text-violet-300",
-};
-
 const CARD =
-  "group flex h-full w-full flex-col rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 disabled:cursor-not-allowed disabled:opacity-50";
+  "group surface-card surface-card-interactive focus-visible:ring-ring/50 flex h-full w-full flex-col p-4 text-left outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50";
 
 // The clouds an example fits: each alone, or, for a split example, all of
 // them together in one deployment.
@@ -34,9 +35,9 @@ function Clouds({ example, catalog }: { example: Example; catalog: CatalogEntry[
       <span className="sr-only">{together ? `Runs on ${looks.map((l) => l.title).join(" and ")} together` : `Runs on ${looks.map((l) => l.title).join(" or ")}`}</span>
       {looks.map((l, i) => (
         <span key={l.connector} className="flex items-center gap-1.5" aria-hidden>
-          {together && i > 0 && <span className="text-xs text-slate-500">+</span>}
-          <span className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800/60 px-1.5 py-0.5 text-[11px] text-slate-300">
-            <CloudMark cloud={l} size={14} />
+          {together && i > 0 && <span className="text-muted-foreground text-xs">+</span>}
+          <span className="bg-muted text-muted-foreground inline-flex items-center gap-1 rounded-full border py-0.5 pr-2 pl-1 text-[11px]">
+            <CloudLogo connector={l.connector} shortName={l.shortName} src={l.logoSrc} size={14} />
             {l.shortName}
           </span>
         </span>
@@ -45,36 +46,75 @@ function Clouds({ example, catalog }: { example: Example; catalog: CatalogEntry[
   );
 }
 
-// The new-diagram chooser: a blank canvas or one of B's built-in examples.
+// "New diagram": the project's one button for it, which opens the chooser.
+// The button is the dialog's trigger, so closing the dialog puts focus back
+// on it. The chooser mounts only while open, so its name starts fresh. The
+// one button with openFromLink (the project header's, always mounted) also
+// opens when the address asks (?new=diagram, from the Getting started
+// checklist), then drops the query so a reload does not ask again.
+export default function NewDiagramButton({ className, openFromLink = false }: { className?: string; openFromLink?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const asked = openFromLink && `new=${params.get("new")}` === NEW_DIAGRAM_QUERY;
+  const [seenAsk, setSeenAsk] = useState(false);
+  if (asked !== seenAsk) {
+    setSeenAsk(asked);
+    if (asked) setOpen(true);
+  }
+  useEffect(() => {
+    if (asked) router.replace(pathname, { scroll: false });
+  }, [asked, pathname, router]);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && busy) return;
+        setOpen(next);
+      }}>
+      <DialogTrigger asChild>
+        <Button type="button" className={className}>
+          <Plus aria-hidden />
+          New diagram
+        </Button>
+      </DialogTrigger>
+      {open && <NewDiagramDialog onBusyChange={setBusy} />}
+    </Dialog>
+  );
+}
+
+// The new-diagram chooser: a name, then a blank canvas or one of B's
+// built-in examples. A name left as it is takes the example's own name.
 // Choosing one creates the diagram, saved with the example's blocks and
 // links, and opens it.
-export default function NewDiagramDialog({ onClose }: { onClose: () => void }) {
+function NewDiagramDialog({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const router = useRouter();
   const { project, projectId, token } = useProjectContext();
   const examplesQ = useExamples(token);
   const catalogQ = useCatalog(token);
-  const createM = useCreateDiagram(token);
+  const firstCloud = usePreferencesStore((s) => s.firstCloud);
+  const { start, isPending: busy } = useStartDiagram(token);
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const busy = createM.isPending;
-  const close = () => {
-    if (!busy) onClose();
-  };
-  useDialogFocus(panelRef, close);
+  const [name, setName] = useState(BLANK_DIAGRAM_NAME);
+  const [named, setNamed] = useState(false);
+  const nameId = useId();
+  const nameProblem = named ? diagramNameError(name) : null;
 
-  const create = async (key: string, name: string, example: Example | null) => {
-    if (!token || !project || busy) return;
+  const create = async (key: string, example: Example | null) => {
+    if (!token || !project || busy || nameProblem) return;
     setChoice(key);
     setError(null);
     try {
-      const doc = example ? fromBlocksDocument(example.document) : null;
-      const created = await createM.mutateAsync({
+      const created = await start({
         organizationId: project.organizationId,
         projectId,
-        name: uniqueDiagramName(name, (project.diagrams ?? []).map((d) => d.name)),
-        document: doc ? toBlocksDocument(doc.nodes, doc.edges) : undefined,
+        takenNames: (project.diagrams ?? []).map((d) => d.name),
+        example,
+        // An untouched name takes the example's own name.
+        name: named ? name : undefined,
       });
       router.push(`/projects/${projectId}/diagram/${created.id}`);
     } catch {
@@ -83,53 +123,71 @@ export default function NewDiagramDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const examples = examplesQ.data ?? [];
+  // Examples that fit the cloud chosen at onboarding come first.
+  const examples = orderExamplesForCloud(examplesQ.data ?? [], firstCloud);
   const catalog = catalogQ.data ?? [];
-  const spinner = (key: string) => busy && choice === key && <Loader2 className="h-4 w-4 animate-spin text-teal-300" aria-hidden />;
+  const spinner = (key: string) => busy && choice === key && <Loader2 className="text-link size-4 animate-spin" aria-hidden />;
+
+  // While a diagram is being made, the dialog stays open (NewDiagramButton).
+  useEffect(() => onBusyChange(busy), [busy, onBusyChange]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={close}>
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        data-testid="new-diagram-dialog"
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl outline-none"
-        onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-          <h2 id={titleId} className="text-lg font-semibold text-white">
-            New diagram
-          </h2>
-          <button type="button" onClick={close} disabled={busy} aria-label="Close" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-40">
-            <X className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
+    <>
+      <DialogContent data-testid="new-diagram-dialog" className="flex max-h-[90dvh] max-w-3xl flex-col gap-0 p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b px-6 pt-5 pb-4">
+          <DialogTitle>New diagram</DialogTitle>
+          <DialogDescription>Name it, then start blank or from an example.</DialogDescription>
+        </DialogHeader>
 
-        <div className="overflow-y-auto p-6">
+        <div className="space-y-5 overflow-y-auto p-6">
+          <div className="space-y-1.5">
+            <label htmlFor={nameId} className="block text-sm font-medium">
+              Name
+            </label>
+            <Input
+              id={nameId}
+              value={name}
+              maxLength={DIAGRAM_NAME_MAX}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNamed(true);
+              }}
+              onFocus={(e) => {
+                if (!named) e.currentTarget.select();
+              }}
+              aria-invalid={!!nameProblem || undefined}
+              aria-describedby={`${nameId}-hint`}
+              className="max-w-sm"
+            />
+            <p id={`${nameId}-hint`} className={cn("text-xs", nameProblem ? "text-danger" : "text-muted-foreground")}>
+              {nameProblem ?? "Leave it as it is and an example keeps its own name."}
+            </p>
+          </div>
+
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <li>
               <button
                 type="button"
                 data-testid="new-diagram-blank"
-                disabled={busy}
-                onClick={() => void create("blank", BLANK_DIAGRAM_NAME, null)}
-                className={`${CARD} items-start border-dashed border-slate-600 bg-slate-900 hover:border-teal-500/60 hover:bg-slate-800/40`}>
+                disabled={busy || !!nameProblem}
+                onClick={() => void create("blank", null)}
+                className={cn(CARD, "border-dashed")}>
                 <span className="flex w-full items-center justify-between">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-teal-300 group-hover:bg-teal-500/15">
-                    <Plus className="h-5 w-5" aria-hidden />
+                  <span className="bg-primary/10 text-link flex size-9 items-center justify-center rounded-lg">
+                    <Plus className="size-5" aria-hidden />
                   </span>
                   {spinner("blank")}
                 </span>
-                <span className="mt-3 font-semibold text-white">Blank</span>
-                <span className="mt-1 text-sm text-slate-400">An empty canvas.</span>
+                <span className="mt-3 font-semibold">Blank</span>
+                <span className="text-muted-foreground mt-1 text-sm">An empty canvas.</span>
               </button>
             </li>
 
             {examplesQ.isLoading &&
               [0, 1, 2].map((i) => (
-                <li key={i} aria-hidden className="h-[132px] animate-pulse rounded-xl border border-slate-800 bg-slate-800/40" />
+                <li key={i} aria-hidden>
+                  <Skeleton className="h-[132px] rounded-xl" />
+                </li>
               ))}
 
             {examples.map((ex) => (
@@ -137,18 +195,14 @@ export default function NewDiagramDialog({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   data-testid={`new-diagram-example-${ex.id}`}
-                  disabled={busy}
-                  onClick={() => void create(ex.id, ex.name, ex)}
-                  className={`${CARD} border-slate-700 bg-slate-800/30 hover:border-teal-500/60 hover:bg-slate-800/60`}>
+                  disabled={busy || !!nameProblem}
+                  onClick={() => void create(ex.id, ex)}
+                  className={CARD}>
                   <span className="flex w-full items-center justify-between gap-2">
-                    <span className="font-semibold text-white">{ex.name}</span>
-                    {spinner(ex.id) || (
-                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${LEVEL_STYLES[ex.level] ?? LEVEL_STYLES.starter}`}>
-                        {LEVEL_LABELS[ex.level] ?? ex.level}
-                      </span>
-                    )}
+                    <span className="font-semibold">{ex.name}</span>
+                    {spinner(ex.id) || <LevelBadge level={ex.level} />}
                   </span>
-                  <span className="mt-1 text-sm text-slate-400">{ex.description}</span>
+                  <span className="text-muted-foreground mt-1 text-sm">{ex.description}</span>
                   <Clouds example={ex} catalog={catalog} />
                 </button>
               </li>
@@ -161,18 +215,18 @@ export default function NewDiagramDialog({ onClose }: { onClose: () => void }) {
             </p>
           )}
           {examplesQ.isError && (
-            <p role="alert" className="mt-4 text-sm text-amber-300">
+            <p role="alert" className="text-warning text-sm">
               Examples could not load. You can still start blank.
             </p>
           )}
-          {examplesQ.isSuccess && examples.length === 0 && <p className="mt-4 text-sm text-slate-400">No examples are available yet.</p>}
+          {examplesQ.isSuccess && examples.length === 0 && <p className="text-muted-foreground text-sm">No examples are available yet.</p>}
           {error && (
-            <p role="alert" className="mt-4 text-sm text-red-400">
+            <p role="alert" className="text-danger text-sm">
               {error}
             </p>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </>
   );
 }

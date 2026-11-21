@@ -13,7 +13,8 @@
 #             before deploying the hosted platform (backend/infra) into the same
 #             account: the platform makes roles of the same names.
 #
-# Delete real-aws.conf to go back to LocalStack; then run npm run dev again.
+# With real-aws.conf, npm run dev uses real AWS; npm run dev -- --aws localstack
+# uses LocalStack instead and keeps the file.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -30,8 +31,8 @@ Lets Clutter on this machine deploy into real AWS accounts instead of LocalStack
             account. REGION defaults to ca-central-1, NAME to clutter-dev-runner.
   status    checks the settings, the runner profile and the template address.
   teardown  removes the stack and real-aws.conf.
-Delete backend/devserver/real-aws.conf to go back to LocalStack. Restart npm run dev after
-either change.
+With real-aws.conf, npm run dev uses real AWS. For LocalStack instead, keep the file and
+run npm run dev -- --aws localstack.
 EOF
 }
 

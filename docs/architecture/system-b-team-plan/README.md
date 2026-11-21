@@ -1,31 +1,24 @@
 # The team's adapter-layer plan
 
-The team's plan, first written on 2026-10-30 and updated on 2026-11-13 to match the decisions made since (ADR-013 to ADR-017): B0 first, users' own clouds, one diagram with many deployments, and the staged build order. The figures were redrawn on 2026-11-14 to match the code as built. They are in `figures/` (also bound together in `diagrams.pdf`). The design that owns the details is `docs/architecture/system-b-adapter-layer.md`; the overall picture is `docs/architecture/figures/clutter-worlds.png`.
+The team's plan, redrawn to match the code. `docs/architecture/system-b-adapter-layer.md` owns the details. The figures are in `figures/` (also bound together in `diagrams.pdf`). The overall picture is `docs/architecture/figures/clutter-worlds.png`.
 
 ![Legend](figures/00-legend.png)
 
 ## The context
 
-**Clutter today** is a drag-and-drop canvas. A user places cloud resources on a diagram, Clutter turns that diagram into Terraform (plus Ansible for server setup) and deploys it into the user's own AWS account. It only works with AWS. It is built and tested, and today it runs locally (its AWS hosting was torn down).
+**Clutter today** is a drag-and-drop canvas. A user places cloud resources on a diagram, Clutter turns that diagram into Terraform (plus Ansible for server setup) and deploys it into the user's own AWS account. It only works with AWS. It is built and tested (`docs/architecture/system-a-as-built.md`).
 
-**The goal** is to expand that same codebase so it can deploy to targets other than AWS. First General, which reaches many clouds through approved Terraform providers (OpenStack first), then AWS through B, then PatriCloud, TierHive and whatever comes later. You're doing this by building an **adapter layer**: one standard way for Clutter to talk to any target, with a separate **connector** for each target. The people who come after you should be able to add new connectors without reworking what already exists.
+**The goal** is to expand that same codebase so it can deploy to targets other than AWS. First General, which reaches many clouds through approved Terraform providers (OpenStack first), then AWS through B, then PatriCloud, TierHive and whatever comes later. The team does this by building an **adapter layer**: one standard way for Clutter to talk to any target, with a separate **connector** for each target. Later teams can add new connectors without reworking what already exists.
 
-## The names
+## The letters in the figures
 
-The names the figures use. Every name is defined once in `docs/architecture/system-b-adapter-layer.md` § Names.
+Every name is defined once in `docs/architecture/system-b-adapter-layer.md` § Names. The figures use these letters:
 
 - **C**: the whole Clutter app, the big outer box in every diagram.
-- **A**: Clutter as it exists today. It is the AWS system and already a complete, tested application.
-- **A2**: the local extension that runs A, and B beside it, on a laptop with no AWS.
-- **B**: the adapter layer you're building. Its code is in `backend/adapter`, and its API is B API.
-- **1, 2, 3 … n**: **connectors**, one per target type (General's, one per approved Terraform provider with OpenStack first; AWS; then PatriCloud, TierHive and so on). There can be any number of them, and most new clouds arrive as General connectors.
-- **B0**: the adapter run by us as a hosted service (SaaS). **Built first.**
-- **B1**: the adapter shipped as a **self-hosted**, separate service that people can run and use. Later.
-- **B2**: the adapter as an **internal** thing a company runs inside its own setup, not self-hosted by you. In B2 the connectors become **instance connectors**. Later, and a separate decision.
-- **X**: a connector (X1, X2 … Xn).
-- **I**: a **connection**, one organization's linked cloud account for a connector (I1, I2 … In).
-- **Deployment**: one diagram bound to one connection. A diagram can have several.
-- **a, b, c, d … n**: the **building blocks** the diagram is drawn in (VM, network, firewall, volume, bucket, function, table, HTTP API), which each connector maps onto.
+- **A**, **A2**, **B**, **B0**, **B1**, **B2**: as in § Names.
+- **1, 2, 3 … n**, or **X1 … Xn**: connectors.
+- **I1 … In**: connections.
+- **a, b, c, d … n**: building blocks.
 
 ## Level 1: three ways to attach B to A
 
@@ -114,21 +107,21 @@ From the repo:
 
 1. The **browser** runs the website (Next.js and the React Flow canvas, on Fargate in the cloud), with Google sign-in.
 2. **API Gateway** checks requests with a JWT authorizer Lambda. Two routes have no authorizer on purpose: `POST /log-in` and `GET /resources` (the static catalog). Generation is signed in, and the editor calls it after each save (ADR-018).
-3. **Go Lambdas** each handle one domain: log-in, user information, organization and accounts, project, diagram, resources, terraform-engine, terraform-command-runner, ansible jobs and cloudformation-stack-url. That's 32 routes and 34 Lambdas. Each handler checks that the caller is a member of the organization and that the project, diagram or run belongs to it.
-4. **Data:** Postgres (Supabase, 11 tables) and S3 (templates, .tf files, state, logs, playbooks, code uploads and run status files).
+3. **Go Lambdas** each handle one domain: log-in, user information, organization and accounts, project, diagram, resources, terraform-engine, terraform-command-runner, ansible jobs and cloudformation-stack-url. Each handler checks that the caller is a member of the organization and that the project, diagram or run belongs to it.
+4. **Data:** Postgres (Supabase) and S3 (templates, .tf files, state, logs, playbooks, code uploads and run status files).
 5. **Deploy path:**
    - The **terraform-engine** reads the saved diagram and fills Go templates from S3 to produce `main.tf` and `outputs.tf`, generating IAM policies from the diagram's edges.
-   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack, role version 10) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
+   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
    - **Ansible jobs** go through SQS (with a dead-letter queue) to the `ansible/run-task` Lambda, which starts a **Fargate ansible-runner** that uses SSM Run Command to configure EC2. It also holds no database string.
    - The customer role changes only resources tagged `ManagedBy`, and every role and user it creates sits under a permissions boundary.
 
-The amber parts in the diagram are the AWS-only path. B brings its own for new diagrams, on every cloud. Still open: the deployer's Terraform state is not locked (phase 0 item 9).
+The amber parts in the diagram are the AWS-only path. B brings its own for new diagrams, on every cloud. A's open defects are in `.claude/findings/NOW.md` § Open defects in A.
 
 ### Fig 7 · System B: how the adapter layer works (as built)
 
 ![System B as built](figures/07-system-b-architecture.png)
 
-This is B as built, delivered as B0 in the cloud (stage 7 code; not deployed yet):
+This is B as built, delivered as B0 in the cloud:
 
 1. **One public name:** a load balancer sends `/v1/*` and `/healthz` to B API and every other path to the website (ADR-023).
 2. **Website:** one app for A and B (ADR-024), on its own Fargate cluster. Older AWS diagrams open in A's editor; building-block diagrams open in B's editor, with the deploy panel and the Connections page.
@@ -144,7 +137,7 @@ This is B as built, delivered as B0 in the cloud (stage 7 code; not deployed yet
    - **Run task:** in its own run subnets, whose network ACL refuses private addresses; it has no role, no database and no secret store. It runs `terraform init` against the S3 state bucket (locked by an S3 lock file), then plan, apply or destroy, and writes its log, result and outputs back to S3. The job runner reads its status from there.
    - **Connector interface:** validate, plan, apply and destroy, plus the optional preview, linked accounts, option lists and cross-cloud parts.
    - **Connectors:** General's OpenStack, AWS (A's 5 templates plus network, firewall and volume) and the mock (local only); more General providers, PatriCloud and TierHive later.
-5. **Shared Postgres:** A's 11 tables plus B's 5 (connections, deployments, runs, function code, placements). OpenStack credentials and B's own secrets sit in Secrets Manager.
+5. **Shared Postgres:** A's tables plus B's (connections, deployments, runs, function code, placements). OpenStack credentials and B's own secrets sit in Secrets Manager.
 
 Locally (A2), B runs on `127.0.0.1:8790`, each run is a child process, and state and logs sit in B's data folder.
 
@@ -174,51 +167,12 @@ Steps 1 to 3 are A's editor (older AWS diagrams); steps 4 to 15 are B's editor (
 
 A split deployment repeats steps 8 to 14 once per cloud, in dependency order, each in its own task with only that cloud's keys.
 
-### Fig 9 · Build order and where it stands
+### Fig 9 · Build order
 
 ![Build order](figures/09-build-order.png)
 
-The status on 2026-11-20, from `.claude/findings/NOW.md` § The order, which owns it:
+The build runs in stages 0 to 8. Stages 1 to 6 run and are tested on a laptop; stage 7 is the cloud; stage 8 adds more targets, B1 and B2, then retires A's AWS path and builds C (ADR-021). Each stage's work is in `docs/architecture/implementation-plan.md`. Each stage's status is in `.claude/findings/NOW.md` § The order.
 
-0. **Stage 0, housekeeping:** done. Decisions recorded, the design checked, merged into the fork's `main`; the client pull request and the message to the client are still to do.
-1. **Stage 1, make A safe:** done in code. Every phase 0 item is done or decided except item 9 (a lock on A's Terraform state); A's template loader and JWT check are in `generic`. Item 7 (the customer role) was confirmed on a real AWS account on 2026-11-20, through B, and is now version 10 (ADR-027); item 10 (A's runners) waits for Clutter to be hosted.
-2. **Stage 2, a test cloud on a laptop:** done. DevStack is proven on one laptop, `npm run devstack -- create` sets it up, and `npm run devstack -- route` lets the Mac open the servers built there (`backend/devserver/README.md`).
-3. **Stage 3, B's core:** done. B API, tables, job runner, run task and connector interface; the mock passes the contract tests.
-4. **Stage 4, General's OpenStack connector:** built. A real run on DevStack built and destroyed a VM, network, firewall and volume, from its test and from the browser.
-5. **Stage 5, the AWS connector:** built. It validates, and it applied and destroyed every block on LocalStack and, on 2026-11-20, on a real AWS account (`docs/reports/2026-11-20-real-cloud-verification.pdf`).
-6. **Stage 6, the frontend and the whole flow:** built. Every feature runs end to end in a browser, AWS on LocalStack and OpenStack on DevStack.
-   - **Stage 6b, no manual steps:** done. Function code, cloud-init, `clouds.yaml`, split deployments, website hosting, naming, and the UX, visual and docs passes are done.
-7. **Stage 7, the cloud:** done in code; hosting needs the client's accounts. Clutter on a laptop already built into a real AWS account and VEXXHOST on 2026-11-20.
-8. **Stage 8 and later:** more General connectors (DigitalOcean next, then existing servers over SSH), PatriCloud and TierHive (once they have APIs), the optional Clutter sandbox connection, B1, then B2 with instance connectors once partner details exist; then A's AWS path retires and C is built (ADR-021), which reaches Option 3's end state without a big-bang retest.
+## Questions
 
-Stages 1 to 6 run and are tested on a laptop. The details of each stage are in `docs/architecture/implementation-plan.md`.
-
-## Assessment and recommendations
-
-Overall the plan is sound. The figures form a clear chain:
-
-- how B attaches to A (Option 1 preferred, 2 as fallback, 3 avoided)
-- how users deploy (one diagram, many deployments; B0 now, B1 and B2 later, A kept for existing AWS diagrams)
-- how features map onto connectors and connections
-
-Things to settle before coding:
-
-1. **"Don't touch A" really means "touch A only at the seams."** Shared sign-in, the frontend's Connections page and deploy panel, and new tables for connections and deployments are unavoidable. Name them up front so Option 1 doesn't drift into Option 2 without anyone deciding it.
-2. **Define the connector interface first.** Something like validate → plan → apply → destroy → logs, mirroring what A's Terraform runner already does. Every connector, and B2 later, implements the same contract.
-3. **The diagram engine is the hardest part.** A's Terraform engine is built around AWS resources and IAM rules. Each connector needs its own mapping from the same diagram. Decide early whether connectors output Terraform for other providers, call target APIs directly, or both.
-4. **Make connectors declare their capabilities.** Each connector lists which features it supports, extends or drops (Fig 5's as-is / extended / removed / new). The UI can then hide what a target can't do instead of failing at deploy time.
-5. **Pin down entity vs instance connectors.**
-   - An *entity connector* is a kind of cloud, like OpenStack or TierHive, written once by us.
-   - A *connection* is one company's configured setup of it.
-   - In B0 and B1, a connection is configuration (credentials, region).
-   - In B2, connections become code each company owns: *instance connectors*.
-6. **Keep Option 3 as a possible destination, not the starting move.** If B's interface is general enough for AWS to fit, A can migrate into it gradually, whenever that's worth it.
-
-## Open questions
-
-- How do TierHive and PatriCloud expose their infrastructure (Terraform providers, APIs, something else)? This decides how connectors are built and whether B2 is realistic.
-- What does "General / custom" mean concretely? Plain Terraform for any provider, or a generic API format?
-- Does B1 run as Lambdas like A, or as a long-running container, given that self-hosters need to run it outside your AWS account?
-- Where are connector credentials stored, and how are they secured for each connection?
-
-Answers so far: TierHive and PatriCloud have no public API yet (`docs/research/`); General is a family of connectors, one per approved Terraform provider (OpenStack first), plus existing servers over SSH, and it is where new clouds are added (ADR-008, ADR-017); B runs as a container (ADR-004); credentials are borrowed roles or encrypted secrets with only a reference in Postgres (ADR-016). Details are in `docs/architecture/system-b-adapter-layer.md`, and what is still open is in `.claude/findings/NOW.md`.
+The plan's first questions (how targets expose their APIs, what General means, where B runs, where credentials live) are answered in `docs/architecture/system-b-adapter-layer.md` and `docs/decisions.md`. What is still open is in `.claude/findings/NOW.md` § Open questions.

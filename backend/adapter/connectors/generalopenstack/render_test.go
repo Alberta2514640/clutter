@@ -101,6 +101,74 @@ func TestRenderNamesAddressesAndPin(t *testing.T) {
 	}
 }
 
+// TestRenderSurvivesChangesToALiveDeployment pins what a DevStack run found
+// when it changed a deployed diagram: an attached volume can grow, a renamed
+// firewall or VM leaves the server's security groups as they are, and a new
+// address range replaces the servers on that network with its subnet.
+func TestRenderSurvivesChangesToALiveDeployment(t *testing.T) {
+	c := newConnector(nil)
+	d := testDeployment(fixedDeployment)
+	render := func(g connectors.Graph) string {
+		t.Helper()
+		files, err := c.Render(g, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(files["main.tf"])
+	}
+	main := render(sampleGraph())
+	for _, want := range []string{
+		"enable_online_resize = true",
+		`name        = "` + d.Prefix + `.n3.firewall"`,
+		`description = "` + d.Prefix + `-fw"`,
+		"ignore_changes = [name]",
+		"replace_triggered_by = [openstack_networking_subnet_v2.b_n2.id]",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main.tf lacks %q:\n%s", want, main)
+		}
+	}
+
+	// Renaming blocks changes only names Neutron and Nova update in place.
+	groupLines := func(main string) []string {
+		var out []string
+		for _, l := range strings.Split(main, "\n") {
+			if strings.Contains(l, `.firewall"`) || strings.Contains(l, `.peers"`) || strings.Contains(l, "security_groups =") || strings.Contains(l, "replace_triggered_by =") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	rename := func(g connectors.Graph, ids ...string) connectors.Graph {
+		for _, id := range ids {
+			b := g.Blocks[id]
+			b.Name = "renamed-" + b.Name
+			g.Blocks[id] = b
+		}
+		return g
+	}
+	for name, pair := range map[string][2]connectors.Graph{
+		"firewall, VM and network": {sampleGraph(), rename(sampleGraph(), "n1", "n2", "n3")},
+		"VM with a peer group":     {twoTierGraph(), rename(twoTierGraph(), "db", "web", "db-fw")},
+	} {
+		before, after := groupLines(render(pair[0])), groupLines(render(pair[1]))
+		if len(before) == 0 || !reflect.DeepEqual(before, after) {
+			t.Errorf("%s: renaming changed a security group's name or a server's list:\n%q\n%q", name, before, after)
+		}
+	}
+	if peers := render(twoTierGraph()); !strings.Contains(peers, `name        = "`+d.Prefix+`.db.peers"`) {
+		t.Errorf("the peer group is not named by its VM's node id:\n%s", peers)
+	}
+
+	// A server on two networks is replaced when either subnet is.
+	g := sampleGraph()
+	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindNetwork, Name: "back", Fields: map[string]any{"cidr": "10.30.0.0/24"}}
+	g.Edges = append(g.Edges, connectors.Edge{Source: "n1", Target: "n5"})
+	if main := render(g); !strings.Contains(main, "replace_triggered_by = [openstack_networking_subnet_v2.b_n2.id, openstack_networking_subnet_v2.b_n5.id]") {
+		t.Errorf("the server is not replaced with each of its subnets:\n%s", main)
+	}
+}
+
 func TestRenderHonoursExclusions(t *testing.T) {
 	g := sampleGraph()
 	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindBucket, Name: "assets", Fields: map[string]any{}}

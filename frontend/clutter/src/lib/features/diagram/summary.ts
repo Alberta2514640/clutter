@@ -4,6 +4,7 @@
 // is named by its title.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { plural } from "../../text";
 import { STANDARD_BLOCKS } from "../catalog/types";
 
 // What a person calls each standard block, one and many.
@@ -40,8 +41,22 @@ export function countedKinds(blocks: { kind: string; name: string }[], titleOf: 
   return kinds.map((kind) => ({ kind, label: counted(kind, byKind.get(kind)!.length, titleOf), names: byKind.get(kind)! }));
 }
 
-// diagramSummary is the canvas's one line and the groups it opens to.
-export function diagramSummary(blocks: { kind: string; name: string }[], titleOf: (kind: string) => string): DiagramSummary {
-  const groups = countedKinds(blocks, titleOf);
-  return { line: groups.length === 0 ? "Nothing to build yet" : `Builds ${groups.map((g) => g.label).join(", ")}`, groups };
+// diagramSummary is the canvas's one line and the groups it opens to. With a
+// deployment chosen it counts only what that deployment builds ("Builds 2
+// servers, 1 network"), never a block it leaves out, and names how many it
+// leaves out. With none it says what the diagram has ("Has 3 blocks"), since
+// nothing says where it would be built.
+export function diagramSummary(
+  blocks: { id?: string; kind: string; name: string }[],
+  titleOf: (kind: string) => string,
+  deployment: { excluded: readonly string[] } | null = null,
+): DiagramSummary {
+  if (blocks.length === 0) return { line: "Nothing to build yet", groups: [] };
+  if (!deployment) return { line: `Has ${plural(blocks.length, "block", "blocks")}`, groups: countedKinds(blocks, titleOf) };
+  const skip = new Set(deployment.excluded);
+  const kept = blocks.filter((b) => !b.id || !skip.has(b.id));
+  const left = blocks.length - kept.length;
+  const groups = countedKinds(kept, titleOf);
+  const built = groups.length === 0 ? "Builds nothing" : `Builds ${groups.map((g) => g.label).join(", ")}`;
+  return { line: left > 0 ? `${built}, ${left} left out` : built, groups };
 }

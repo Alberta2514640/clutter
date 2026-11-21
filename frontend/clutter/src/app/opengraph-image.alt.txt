@@ -1,1 +1,1 @@
-Clutter: one diagram, every cloud you link. A screenshot of the editor with building blocks joined on a canvas.
+Clutter: one diagram, every cloud you link. A screenshot of the editor with a diagram of building blocks on the canvas, every block Live, and its AWS deployment in the deploy panel, beside an HTTP API block and a volume block.

@@ -1,39 +1,62 @@
 "use client";
 
-import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { holdLinkClicks, type HeldLink } from "./leaveGuard";
 
-export const LEAVE_PROMPT = "Leave without saving your changes?";
-
-// While the diagram has unsaved changes, warn before the tab closes or
-// reloads, and before any link on the page leaves the editor. The App Router
-// has no navigation event to cancel, so a click listener in the capture phase
-// on the document asks first: it runs before Next's Link handler, and stops
-// the click when the user stays. A link to another site is left to the
-// browser's own beforeunload prompt, so the user is not asked twice.
+// While the diagram has unsaved changes, a link inside the app asks first in
+// the app's own dialog (LeaveDialog), and the browser asks before the tab
+// closes or reloads. The App Router has no navigation event to cancel, so the
+// click is held before Next's Link sees it (leaveGuard.ts). "Leave without
+// saving" clicks the link again and lets it through, so the link's own
+// onClick runs (a breadcrumb chooses its team first). A link to another
+// site, or one opened in a new tab, is left to the browser.
 export function useLeaveGuard(dirty: boolean) {
+  const router = useRouter();
+  // Where the person tried to go, while the dialog asks.
+  const [pending, setPending] = useState<HeldLink | null>(null);
+  const clicks = useRef<ReturnType<typeof holdLinkClicks> | null>(null);
+
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
-    const onClick = (e: MouseEvent) => {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
-      if (!(link instanceof HTMLAnchorElement)) return;
-      if ((link.target && link.target !== "_self") || link.hasAttribute("download")) return;
-      const url = new URL(link.href, window.location.href);
-      if (url.origin !== window.location.origin) return;
-      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
-      if (window.confirm(LEAVE_PROMPT)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
+    const held = holdLinkClicks(document, setPending);
+    clicks.current = held;
     window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("click", onClick, true);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", onClick, true);
+      held.dispose();
+      if (clicks.current === held) clicks.current = null;
     };
   }, [dirty]);
+
+  // leave goes to href, asking first while there are unsaved changes.
+  const leave = useCallback(
+    (href: string) => {
+      if (dirty) setPending({ href, link: null });
+      else router.push(href);
+    },
+    [dirty, router],
+  );
+
+  return {
+    pending,
+    leave,
+    stay: () => setPending(null),
+    confirm: () => {
+      const held = pending;
+      setPending(null);
+      if (!held) return;
+      if (held.link?.isConnected) {
+        // No listener holds clicks once the changes are saved: a plain click follows the link.
+        if (clicks.current) clicks.current.follow(held);
+        else held.link.click();
+        return;
+      }
+      router.push(held.href);
+    },
+  };
 }

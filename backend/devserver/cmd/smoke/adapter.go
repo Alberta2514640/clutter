@@ -119,6 +119,7 @@ func adapterSmoke(r *runner, adapterAPI, conn, jwtSecret, sfx string) {
 	}
 	compat := b("GET", "/v1/organizations/"+orgID+"/deployments/"+depID+"/compatibility", nil, r.token)
 	add("GET deployments/{id}/compatibility is ready", compat.status == http.StatusOK && compat.json["ready"] == true, status(compat))
+	adapterOrgDeployments(b, r.token, orgID, projID, diaID, depID, add)
 
 	var applyRun string
 	for _, action := range []string{"plan", "apply"} {
@@ -215,6 +216,7 @@ func adapterRefusals(b func(string, string, any, string) resp, orgID string, sec
 		{"delete the connection", "DELETE", own + "/connections/" + connID, nil},
 		{"deploy the diagram on the connection", "POST", own + "/diagrams/" + diaID + "/deployments", map[string]any{"connection_id": connID}},
 		{"deploy the diagram through its own organization", "POST", theirs + "/diagrams/" + diaID + "/deployments", map[string]any{"connection_id": connID}},
+		{"list the organization's deployments", "GET", theirs + "/deployments", nil},
 		{"read the compatibility", "GET", own + "/deployments/" + depID + "/compatibility", nil},
 		{"start a run", "POST", own + "/deployments/" + depID + "/runs", map[string]string{"action": "plan"}},
 		{"read the run", "GET", own + "/runs/" + runID, nil},
@@ -227,6 +229,27 @@ func adapterRefusals(b func(string, string, any, string) resp, orgID string, sec
 	}
 	ownList := b("GET", own+"/connections", nil, second.token)
 	add("another organization's own list does not hold the connection", ownList.status == http.StatusOK && !strings.Contains(string(ownList.body), connID), fmt.Sprintf("%d", ownList.status))
+}
+
+// adapterOrgDeployments checks that the organization's deployment list holds the
+// deployment with its diagram and project, with and without the project filter.
+func adapterOrgDeployments(b func(string, string, any, string) resp, token, orgID, projID, diaID, depID string, add func(string, bool, string) bool) {
+	type row struct {
+		ID        string `json:"id"`
+		DiagramID string `json:"diagram_id"`
+		ProjectID string `json:"project_id"`
+	}
+	for _, query := range []string{"", "?project=" + projID} {
+		got := b("GET", "/v1/organizations/"+orgID+"/deployments"+query, nil, token)
+		var body struct {
+			Items []row `json:"items"`
+		}
+		_ = json.Unmarshal(got.body, &body)
+		ok := got.status == http.StatusOK && len(body.Items) == 1 &&
+			body.Items[0].ID == depID && body.Items[0].DiagramID == diaID && body.Items[0].ProjectID == projID
+		add("GET organizations/{id}/deployments"+strings.Replace(query, projID, "{project}", 1)+" lists the deployment", ok,
+			fmt.Sprintf("%d, %d items", got.status, len(body.Items)))
+	}
 }
 
 // adapterCORS checks that B answers a browser preflight from the frontend's origin,

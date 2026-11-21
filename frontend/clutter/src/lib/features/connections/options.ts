@@ -46,10 +46,14 @@ export function settingView(f: FieldSpec, state: OptionsState, value: unknown, t
 
   const current = typeof value === "string" && value !== "" ? value : typeof f.default === "string" ? f.default : "";
   const listed = current === "" || choices.some((c) => c.value === current);
+  // B matches the image default by name prefix, so a default that starts a
+  // listed name is not an error: say what it picks.
+  const prefixDefault = current === f.default && choices.some((c) => c.value.startsWith(current));
+  const label = prefixDefault ? `${current} (default: the newest match in your cloud)` : `${current} (typed name)`;
   return {
     control: "list",
     current,
-    choices: listed ? choices : [{ value: current, label: `${current} (typed, not in your cloud's list)` }, ...choices],
+    choices: listed ? choices : [{ value: current, label }, ...choices],
   };
 }
 

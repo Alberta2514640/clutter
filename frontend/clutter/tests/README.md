@@ -3,13 +3,14 @@
 The whole user workflow in a real browser, against the running app, once each in Chromium, Firefox and WebKit:
 
 1. Sign in (through `/dev/login`).
-2. Create a diagram from the "Single server" example.
-3. Add a block and save.
+2. Create a diagram from the "Single server" example, in the "New diagram" chooser.
+3. Add a block with a click in the palette, and save.
 4. Reopen the diagram and find the change.
-5. Connect a cloud on the Connections page.
-6. Choose that connection as the provider of a deployment.
-7. Deploy, then watch the status and the log.
-8. Destroy what was built.
+5. Connect the Mock cloud on the Connections page.
+6. Add a deployment on that connection, in the diagram's Deploy tab.
+7. Deploy, confirm in the dialog, then watch the status and the log. The deployment's state says "Live", and its next action, "Up to date", is off.
+8. Destroy what was built: "Destroy", then "Destroy for good" in an alert dialog. The state says "Destroyed".
+9. Remove the deployment from the diagram: "Remove from diagram", then "Remove it" in an alert dialog.
 
 The cloud is B's mock connector, which builds nothing, so no account is needed. The test makes its own organization and project through A's API and deletes them at the end, so it leaves the local data alone. The index of every suite is [test-suites/README.md](../../../test-suites/README.md).
 

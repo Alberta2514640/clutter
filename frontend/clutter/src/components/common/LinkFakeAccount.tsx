@@ -34,13 +34,13 @@ function LinkFakeAccountButton({ token, organizationId, onLinked, variant }: Pro
         if (organizationId) linkM.mutate(organizationId, { onSuccess: (accountName) => onLinked?.(accountName) });
       }}
       disabled={linkM.isPending || !token || !organizationId}
-      className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm font-medium text-amber-200 transition hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+      className="border-warning/40 text-warning hover:bg-warning/10 rounded-lg border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60"
     >
       {linkM.isPending ? "Linking…" : "Link fake account"}
     </button>
   );
   const failed = linkM.isError && (
-    <p role="alert" className="text-sm text-red-300">
+    <p role="alert" className="text-danger text-sm">
       Could not link a fake account. Check the gateway log.
     </p>
   );
@@ -55,12 +55,12 @@ function LinkFakeAccountButton({ token, organizationId, onLinked, variant }: Pro
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="border-warning/40 bg-warning/5 flex flex-col gap-3 rounded-xl border border-dashed p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="space-y-1">
-        <p className="text-sm text-amber-100">
+        <p className="text-foreground text-sm">
           On this machine only: link a fake AWS account instead of opening AWS.
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-muted-foreground text-xs">
           AWS deploys then run on LocalStack, if it was running when Clutter started.
         </p>
         {failed}

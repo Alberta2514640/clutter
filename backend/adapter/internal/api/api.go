@@ -81,6 +81,7 @@ func (a *API) Handler() http.Handler {
 	v1.HandleFunc("GET /v1/organizations/{orgID}/diagrams/{diagramID}/code", a.listCode)
 	v1.HandleFunc("PUT /v1/organizations/{orgID}/diagrams/{diagramID}/code/{nodeID}", a.putCode)
 	v1.HandleFunc("DELETE /v1/organizations/{orgID}/diagrams/{diagramID}/code/{nodeID}", a.deleteCode)
+	v1.HandleFunc("GET /v1/organizations/{orgID}/deployments", a.listOrgDeployments)
 	v1.HandleFunc("PATCH /v1/organizations/{orgID}/deployments/{deploymentID}", a.updateDeployment)
 	v1.HandleFunc("DELETE /v1/organizations/{orgID}/deployments/{deploymentID}", a.deleteDeployment)
 	v1.HandleFunc("GET /v1/organizations/{orgID}/deployments/{deploymentID}/compatibility", a.compatibility)

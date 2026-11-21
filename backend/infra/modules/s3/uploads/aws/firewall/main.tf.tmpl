@@ -6,8 +6,15 @@ resource "aws_security_group" "{{.ResourceName}}" {
   vpc_id      = aws_vpc.{{.VPCResourceName}}.id
 {{- end}}
 
+  # The block's name is the Name tag, which changes in place. The group's name
+  # comes from the node id and is kept as made: a new name would need a new
+  # group, and AWS does not delete a group an instance still uses.
   tags = {
-    Name = "{{.GroupName}}"
+    Name = "{{.TagName}}"
+  }
+
+  lifecycle {
+    ignore_changes = [name]
   }
 }
 {{- range $i, $r := .Ingress}}

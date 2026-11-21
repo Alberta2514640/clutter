@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS connections_organization_id ON public.connections (or
 -- DEPLOYMENTS
 -- ============================
 -- One diagram bound to one connection, with its own settings, excluded blocks (node ids),
--- Terraform state and runs.
+-- Terraform state and runs. config_version is added below.
 CREATE TABLE IF NOT EXISTS public.deployments (
     id UUID PRIMARY KEY,
     diagram_id UUID NOT NULL REFERENCES public.diagrams(id) ON DELETE CASCADE,
@@ -211,6 +211,14 @@ CREATE OR REPLACE TRIGGER refuse_live_placement_delete
 -- Where each cloud of a split run stands: [{connection_id, name, step, status}], or NULL for a
 -- run on one cloud.
 ALTER TABLE public.runs ADD COLUMN IF NOT EXISTS parts JSONB;
+
+-- config_version counts the changes to a deployment's own settings, its left-out blocks and its
+-- placements; B adds one in the statement that makes a change, never on a status change. A run
+-- records the count it was built from (NULL for a run from before the column), so a deployment
+-- whose count is past its last apply's has changes not deployed yet, as diagram_version tells
+-- for the diagram.
+ALTER TABLE public.deployments ADD COLUMN IF NOT EXISTS config_version INT NOT NULL DEFAULT 0;
+ALTER TABLE public.runs ADD COLUMN IF NOT EXISTS config_version INT;
 
 -- ============================
 -- ROW-LEVEL SECURITY

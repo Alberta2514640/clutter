@@ -1,6 +1,9 @@
-# Block volume, in the same availability zone as its instance
+# Block volume, in its instance's zone, read from where the instance's zone
+# comes from (its subnet, or the zone override.tf pins) and never from the
+# instance itself, so a replaced instance keeps the volume: the attachment
+# follows the new instance and the volume stays.
 resource "aws_ebs_volume" "{{.ResourceName}}" {
-  availability_zone = aws_instance.{{.InstanceResourceName}}.availability_zone
+  availability_zone = {{.AvailabilityZone}}
   size              = {{.SizeGB}}
   type              = "{{.VolumeType}}"
   encrypted         = true

@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { AdapterApiError } from "../../adapterApi";
-import { deleteErrorMessage, deleteWarning } from "./deleteConnection";
+import { deleteErrorMessage, deleteWarning, holdingDiagrams } from "./deleteConnection";
+
+describe("holdingDiagrams", () => {
+  const projects = [{ id: "p1", diagrams: [{ id: "d1", name: "shop" }, { id: "d2", name: "lab" }] }];
+  const row = (over: Partial<Parameters<typeof holdingDiagrams>[1][number]>) => ({
+    connection_id: "c1",
+    diagram_id: "d1",
+    project_id: "p1",
+    status: "live" as const,
+    placements: null,
+    ...over,
+  });
+
+  it("names each diagram whose deployment on the connection may hold resources, once, with its Deploy link", () => {
+    const rows = [row({}), row({ status: "failed" }), row({ diagram_id: "d2", connection_id: "c2", placements: [{ connection_id: "c1" }] })];
+    expect(holdingDiagrams("c1", rows, projects)).toEqual([
+      { diagramId: "d1", name: "shop", href: "/projects/p1/diagram/d1?panel=deploy" },
+      { diagramId: "d2", name: "lab", href: "/projects/p1/diagram/d2?panel=deploy" },
+    ]);
+  });
+
+  it("leaves out new and destroyed deployments, other connections, and names an unknown diagram plainly", () => {
+    expect(holdingDiagrams("c1", [row({ status: "new" }), row({ status: "destroyed" }), row({ connection_id: "c9" })], projects)).toEqual([]);
+    expect(holdingDiagrams("c1", [row({ diagram_id: "d9" })], projects)[0].name).toBe("a diagram");
+  });
+});
 
 describe("deleteWarning", () => {
   it("asks plainly when no diagram deploys to the connection", () => {

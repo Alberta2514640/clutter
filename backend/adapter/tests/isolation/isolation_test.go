@@ -186,6 +186,15 @@ func TestSimultaneousDeploymentsStayIsolated(t *testing.T) {
 		if code != http.StatusOK || !strings.Contains(body, a.openstackDep) || !strings.Contains(body, `"live"`) {
 			t.Fatalf("A's deployments after B's attempts: %d %.300s", code, body)
 		}
+		// The organization's whole list: refused under A's organization, and
+		// B's own holds none of A's deployments.
+		if code, body := env.Call(t, &b.tn, "GET", "/v1/organizations/"+a.tn.Org+"/deployments", nil); code != http.StatusForbidden {
+			t.Fatalf("B listed A's organization's deployments: %d %.200s", code, body)
+		}
+		code, body = env.Call(t, &b.tn, "GET", "/v1/organizations/"+b.tn.Org+"/deployments", nil)
+		if code != http.StatusOK || !strings.Contains(body, b.openstackDep) || strings.Contains(body, a.openstackDep) || strings.Contains(body, a.mockDep) {
+			t.Fatalf("B's own organization's deployments: %d %.300s", code, body)
+		}
 	})
 
 	t.Run("seeded secrets appear in no diagram, row, response, log, file or repository change", func(t *testing.T) {
@@ -217,7 +226,7 @@ func TestSimultaneousDeploymentsStayIsolated(t *testing.T) {
 
 		// Every response either organization can get.
 		for _, o := range orgs {
-			for _, p := range []string{"/connections", "/diagrams/" + o.tn.Diagram + "/deployments",
+			for _, p := range []string{"/connections", "/deployments", "/diagrams/" + o.tn.Diagram + "/deployments",
 				"/deployments/" + o.openstackDep + "/preview", "/deployments/" + o.openstackDep + "/compatibility",
 				"/connections/" + o.openstackConn + "/options"} {
 				_, body := env.Call(t, &o.tn, "GET", "/v1/organizations/"+o.tn.Org+p, nil)

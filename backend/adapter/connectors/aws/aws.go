@@ -311,8 +311,10 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 	return nil
 }
 
-// natCost is what a NAT gateway costs, for the deploy confirmation; the
-// source of the figure is connectors.privateInternetHelp.
+// natCost is what a NAT gateway costs, for the deploy confirmation (and the
+// network block's help, in manifest.go): $0.05 and $0.005 an hour in
+// ca-central-1, about $40 for a 730-hour month (AWS Price List API, AmazonEC2
+// and AmazonVPC offers, read 2026-11-14); data $0.05 a GB more.
 const natCost = "Internet access for private servers adds a NAT gateway on AWS: about $40 a month plus data."
 
 // Advice implements connectors.Advisor: each public VM nothing can reach,

@@ -20,13 +20,6 @@ const (
 	FieldSSHKey = "ssh_public_key"
 )
 
-// privateInternetHelp names what the network field costs on AWS, where it adds
-// a NAT gateway and its public address: $0.05 and $0.005 an hour in
-// ca-central-1, about $40 for a 730-hour month (AWS Price List API, the
-// AmazonEC2 and AmazonVPC offers for ca-central-1, read 2026-11-14). Data
-// through the gateway costs $0.05 a GB more.
-const privateInternetHelp = "Lets servers without a public address reach the internet. Not needed when your servers are public. Costs about $40 a month plus data on AWS."
-
 // standardFields owns the portable fields of each building block. A diagram
 // holds only these, so one diagram can pass every connector's manifest; what is
 // specific to one cloud (an image, an instance type) is a deployment setting.
@@ -44,7 +37,10 @@ var standardFields = map[BlockKind][]FieldSpec{
 	},
 	KindNetwork: {
 		{Name: "cidr", Title: "Address range (CIDR)", Type: FieldString, Required: true, Default: "10.0.0.0/24"},
-		{Name: "private_internet", Title: "Internet access for private servers", Type: FieldBool, Default: true, Help: privateInternetHelp},
+		// What it does and costs differs by cloud, so each connector says so
+		// in its network block's help.
+		{Name: "private_internet", Title: "Internet access for private servers", Type: FieldBool, Default: true,
+			Help: "Lets servers without a public address reach the internet."},
 	},
 	KindFirewall: {
 		// No default rule: a new firewall lets nothing in until the user says
