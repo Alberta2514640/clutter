@@ -1,6 +1,6 @@
 # System A: Clutter as built (exists today)
 
-As it stands on 2026-11-14, from a read of the code and a local run of every route (`backend/devserver`). The client's `main` does not have the stage 1 fixes yet. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
+As it stands on 2026-11-20, from a read of the code and a local run of every route (`backend/devserver`). The client's `main` does not have the stage 1 fixes yet. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
 
 ## Parts
 
@@ -61,7 +61,7 @@ The capstone's version is tagged `capstone-original`. This is what is different 
 | Row-level security | on for `supported_resources` only, with a policy that let the public `anon` role run every command | on for every table; `anon` may only read the resource catalog |
 | Google sign-in | `GOOGLE_CLIENT_ID` unset, so a token minted for any app passed; `email_verified` unchecked; a missing claim panicked | the audience is checked, an unverified email is refused, and every claim is read with a type check |
 | Sign-in check | inside the authorizer's own package | `generic.VerifyUserJWT`, shared by A's authorizer and B |
-| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary (`RoleTemplateVersion` 9). Real AWS must confirm it |
+| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary, in six managed policies (`RoleTemplateVersion` 10, ADR-027). Confirmed on a real AWS account on 2026-11-20 through B; A's own deployer has not run on real AWS yet |
 | Runners | both handed the database string | neither holds it; each writes a status file to S3, and the API records it after its ownership checks. Real AWS must confirm the S3 writes |
 | Region | the generator's fixed `us-west-2` | the environment's region (`generic.PlatformRegion`; `ca-central-1` in the cloud) |
 | Template loading | inside the generator's `internal` package | `generic/tftemplate`, shared with B's AWS connector; a golden test keeps A's output byte-identical |
@@ -88,7 +88,7 @@ The report makes claims the capstone's code did not support:
 | --- | --- | --- |
 | Every endpoint requires a JWT | `POST /log-in`, `POST /terraform-engine` and `GET /resources` had no authorizer | `POST /log-in` and `GET /resources` (the static resource catalog) have none, on purpose |
 | Supabase row-level security keeps each user's data separate | only `supported_resources` enabled it, with a policy that gave the public `anon` role every command; the other ten tables had none | on for every table (§ What changed) |
-| Least-privilege roles | the customer role granted `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions, limited by tags and a boundary; real AWS must confirm it |
+| Least-privilege roles | the customer role granted `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions, limited by tags and a boundary; confirmed on real AWS through B on 2026-11-20 |
 | A new resource needs only a new template in S3 | a resource lived in five places that must agree | the same (`add-cloud-resource`) |
 | Generation runs when the user deploys (one passage) or on every save (another) | a Supabase webhook, configured outside the repo, called it | the editor asks for it after each successful save; the save handlers do not call it (ADR-018) |
 | No CI | CI built and pushed the frontend image | CI runs the checks on every pull request and builds the website's image without pushing it |

@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Clutter, development only: what a laptop running Clutter (npm run dev) needs in
+  Clutter's own AWS account to deploy into real user accounts. The role B acts as
+  (ClutterAdapterRunnerRole, the name users' account-link stacks trust by
+  default), and a bucket that serves the account-link template to CloudFormation
+  in user accounts. `npm run real-aws -- setup` deploys it as the stack
+  clutter-dev-real-aws; `npm run real-aws -- teardown` removes it. The hosted
+  platform (backend/infra) makes roles of the same names (B API's task role and
+  A's runner task role):
+  tear this stack down before deploying the platform into the same account.
+
+Resources:
+  # B on the laptop acts as this role. Any identity in this account whose own
+  # policy lets it assume the role may do so (an administrator's SSO login does).
+  RunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ClutterAdapterRunnerRole
+      Description: Development only. Clutter's B, run on a laptop, gets users' short-lived keys as this role.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AssumeUsersClutterRolesOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Only the role the account-link template makes in a user's
+              # account, and only with its external id (the user's trust policy
+              # asks for it).
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/AllowClutterToDeployTerraformRole-*"
+
+  # The account-link template's trust policy names A's deployer role too, and
+  # IAM refuses a trust policy whose principal does not exist. The hosted
+  # platform makes the real one; here it only has to exist. It has no
+  # permissions, and only ECS tasks could use it.
+  ADeployerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: TerraformDeployerFargateTaskRole
+      Description: Development only. Exists so users' account-link roles can name it; it has no permissions.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  # CloudFormation in a user's account reads the template from here, as it does
+  # from the hosted platform's templates bucket. Only templates/ is readable.
+  TemplatesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "clutter-dev-templates-${AWS::AccountId}-${AWS::Region}"
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  TemplatesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TemplatesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ReadTemplates
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${TemplatesBucket.Arn}/templates/*"
+          - Sid: TLSOnly
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt TemplatesBucket.Arn
+              - !Sub "${TemplatesBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  RunnerRoleArn:
+    Value: !GetAtt RunnerRole.Arn
+  BucketName:
+    Value: !Ref TemplatesBucket
+  TemplateURL:
+    Value: !Sub "https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"

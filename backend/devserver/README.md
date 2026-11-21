@@ -19,6 +19,7 @@ It runs the real, unchanged Lambdas from `backend/api`. Each one is built for th
 | `stop.sh` | `stop` | stops the website, the backend and Postgres, even when `dev.sh` runs in another terminal or a script; `--wipe` also deletes the database, the local S3 files and B's data |
 | `localstack.sh` | `localstack` | see [AWS on LocalStack](#aws-on-localstack) |
 | `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, starts, stops or shows the VM, and routes DevStack's public network to it (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
+| `real-aws.sh` | `real-aws` | sets up Clutter's own AWS account so this machine can deploy into real AWS accounts, checks that setup, and removes it (see [Real clouds from this machine](#real-clouds-from-this-machine)) |
 
 The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack and DevStack's public network, and says when the route to that network is missing or the VM's side of it is down. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, the route's dry runs and refusals, on macOS and Linux). It also runs every script's `--help`. CI runs it.
 
@@ -87,7 +88,7 @@ Read them in the editor with **Preview Terraform**. List them with `npm run gene
 
 ## How sign-in works locally
 
-Real Google sign-in works here while the capstone team's Google client still exists. The log-in Lambda runs unchanged. The gateway gives it the same `GOOGLE_CLIENT_ID` the frontend signs in with, so it accepts only tokens minted for Clutter. A test fails if the two ids drift apart. Each Google account is a separate local user, which is how to test two users. `/dev/login` is for automated tests and as a fallback; people use `/login`. It creates a local user, `dev@clutter.localhost`. It signs a token with the same claims and algorithm as the log-in Lambda, using a secret that `dev.sh` generates. The real authorizer accepts that token.
+Real Google sign-in works here while the capstone team's Google client still exists. The log-in Lambda runs unchanged. The gateway gives it the same `GOOGLE_CLIENT_ID` the frontend signs in with, so it accepts only tokens minted for Clutter. A test fails if the two ids drift apart. Each Google account is a separate local user, which is how to test two users. On a new machine use `/dev/login`: it needs no Google account, and the tests use it too. It creates a local user, `dev@clutter.localhost`. It signs a token with the same claims and algorithm as the log-in Lambda, using a secret that `dev.sh` generates. The real authorizer accepts that token.
 
 The frontend reads its API token from `localStorage` on its own origin, and the gateway on port 8787 cannot write it. So the gateway also runs a front door on `127.0.0.1:3000`. The front door serves `/dev/login` and passes every other request to the Next dev server on port 3100. `dev.sh` starts that server with `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787` (A) and `NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790` (B). So B's screens (the building-block editor, its deploy panel and the Connections page) call B directly. `/dev/login` sets the `clutter_token` cookie and the `google_data` localStorage entry, just as a real log-in does, then opens `/dashboard`.
 
@@ -240,6 +241,67 @@ go -C backend/adapter test ./connectors/generalopenstack/ -run TestRealCloud -v 
 ```
 
 Optional: `CLUTTER_OPENSTACK_IMAGE` (default `cirros`), `CLUTTER_OPENSTACK_FLAVOR` (default `m1.tiny`) and `CLUTTER_OPENSTACK_EXTERNAL_NETWORK` (default `public`). A failed apply is destroyed before the test ends.
+
+## Real clouds from this machine
+
+Clutter runs here as always (`npm run dev`), and what it builds goes to real clouds: a real AWS account and a real OpenStack cloud, each playing a user's account (world 2). Nothing of Clutter is hosted; that is world 1, later (`docs/architecture/environments.md` § Credentials day). Every run builds real resources that cost money, so destroy what you build the same day. The first full run, with screenshots from Clutter and from each cloud, is `docs/reports/2026-11-20-real-cloud-verification.pdf`.
+
+| Part | Where |
+| --- | --- |
+| The website, A, B and Postgres | this machine |
+| Terraform runs | this machine, with keys for the user's account that last at most one hour |
+| What a deployment builds | the user's real AWS account or OpenStack project |
+| Clutter's own AWS account | only the stack `clutter-dev-real-aws`: the role `ClutterAdapterRunnerRole`, which B acts as; a bucket that serves the account-link template; and an empty `TerraformDeployerFargateTaskRole`, because the link template's trust policy names it and AWS refuses a trust policy whose role does not exist |
+
+You need, besides the usual tools: Terraform 1.14.4 or newer (B runs it on this machine), the AWS CLI v2 for real AWS (`brew install awscli`; the doctor does not check it), and the OpenStack CLI only if you want to look at the cloud from a terminal (`pipx install python-openstackclient`). The first real plan downloads the cloud's Terraform provider (the AWS one is about 680 MB), so it takes a few minutes once.
+
+What it costs (USD, read 2026-11-20): on AWS `ca-central-1`, a small server (`t3.micro`) is $0.0116 an hour, a public IPv4 address $0.005 an hour, and a NAT gateway, which Clutter adds only when private servers need the internet, $0.05 an hour plus data; the deploy confirmation names that one. Functions, tables, APIs and buckets cost pennies at test volumes. On VEXXHOST, `v3-starter-1` is $0.0106 an hour and a floating IP $0.0028 an hour, billed per minute. One deploy of an example for a few minutes costs a few cents. Left running for a month, a Single server on AWS costs about $13, a Two-tier app on VEXXHOST about $20, and the Full app on AWS about $72, half of it the NAT gateway.
+
+### Real AWS
+
+A user's account trusts exactly one identity: the role `ClutterAdapterRunnerRole` in Clutter's account, with the user's own external id. So B, on this machine, acts as that role, through a profile in `~/.aws/config`. Clutter's account and the user's account may be the same account for a first test; two accounts test the real cross-account path.
+
+Three identities take part, and only the first is an administrator:
+
+| Who | Identity | May do | Used for |
+| --- | --- | --- | --- |
+| The person setting up | an administrator in Clutter's account: an SSO login, or an IAM user with `AdministratorAccess` and an access key (not the root user) | anything | `npm run real-aws -- setup` and `teardown` once, and creating the link stack in the user's account (the user's own administrator, in real life) |
+| B on this machine | `ClutterAdapterRunnerRole`, through the profile `setup` prints | assume `AllowClutterToDeployTerraformRole-*` roles, with their external id | getting a run's keys, which last at most one hour |
+| Terraform, in the user's account | `AllowClutterToDeployTerraformRole-<id>`, which the link stack makes | change only what it tagged `ManagedBy = Clutter`; every role it makes carries the stack's boundary | every plan, deploy and destroy |
+
+A user never makes an IAM user or an access key for Clutter: linking needs an administrator's console sign-in for one minute, to create the stack. The CLI profile never touches the user's account; only the console, signed in as that account, creates the link stack. Hosted, B is `ClutterAdapterRunnerRole` itself (its Fargate task's role), so no person's credentials take part at run time.
+
+1. **(person) Make the administrator's CLI profile, once.** With SSO: `aws configure sso --profile clutter-admin`, then `aws sso login --profile clutter-admin`. With an IAM user: create an access key for it (IAM, the user, Security credentials), then `aws configure --profile clutter-admin` in your own terminal and type the key there, never in a chat; region `ca-central-1`. Check: `aws sts get-caller-identity --profile clutter-admin` shows the account you mean.
+2. **(person) `npm run real-aws -- setup --admin-profile clutter-admin`.** It deploys `real-aws/dev-account.yaml` as the stack `clutter-dev-real-aws`, uploads the account-link template to its bucket, and writes `backend/devserver/real-aws.conf` (ignored by git; `real-aws.conf.example` shows its four settings, none of them secret). Then add the profile it prints to `~/.aws/config`. Leave `--region` at its default, `ca-central-1`: the link flow opens CloudFormation there. Deployments choose their own region on the connection form.
+3. **`npm run real-aws -- status`.** Success: one `ok` line for the profile acting as `ClutterAdapterRunnerRole`, and one for the template.
+4. **`npm run dev`.** Its `AWS:` line says `AWS runs build in REAL AWS accounts`. When the profile is missing from `~/.aws/config`, it stops with a message before the backend starts.
+5. **(person) Link the user's account,** as a user does: Connections, Amazon Web Services, **I have my own AWS account**, then link a new account (the steps and the guide with screenshots are on that form). The link opens CloudFormation in the user's account, signed in as that account, with the template and its parameters filled in: tick the IAM acknowledgement, press **Create stack**, and when it shows `CREATE_COMPLETE` copy **RoleArn** from its **Outputs** tab, paste it under **2. Paste the role ARN**, and press **Link account**, then **Check and connect**. Success: `Connected … Clutter checked it and it works.`, which means B assumed the user's role with its external id. Use a new organization for real clouds: **Connect local AWS** (and a fake account linked during the LocalStack tour) is a made-up account that real AWS refuses.
+6. **Deploy,** check in the AWS console, and **Destroy**, as in the checks below.
+
+Back to LocalStack: delete `real-aws.conf`, then `npm run dev` again.
+
+**Cleanup, in order:** destroy every deployment (Destroy in Clutter); delete the AWS connection on Connections (refused while a deployment on it is built); remove the account link (Connections, **Manage AWS account links**); delete the user's account-link stack in CloudFormation in the user's account; run `npm run real-aws -- teardown --admin-profile clutter-admin`; remove the `[profile clutter-dev-runner]` block from `~/.aws/config`; and delete the administrator's access key in IAM. Tear down before the hosted platform is deployed into the same account: it makes roles of the same names.
+
+If the first role switch fails with `explicit deny in a service control policy`, the account belongs to an AWS Organization whose policy denies `sts:AssumeRole`. That limits only identities inside the organization's accounts, so it matters when one account plays both Clutter's side and the user's side, as in a first test. The fix is in the organization's management account (detach the policy from the account, or add an exception for Clutter's two roles), or use an account outside the organization. If `status` says `the account-link template answers 403`, the account's S3 Block Public Access settings refuse the bucket's public read of `templates/*`; allow public policies for that one bucket.
+
+### A real OpenStack cloud
+
+Nothing to set up on this machine. The user's OpenStack project needs application credentials, an `https` Identity (Keystone v3) address, routers and floating IPs for public servers, Cinder volumes, and room for at least 1 server, 1 network, 1 router, 1 security group and 1 floating IP. VEXXHOST, used on 2026-11-20, has all of these (`docs/research/openstack/2026-11-20-public-providers.md`): its order is reviewed before the account works, so sign up first; its Identity address is `https://auth.vexxhost.net/v3`; its regions include `ca-ymq-1` (Montreal).
+
+1. **(person) In the cloud's dashboard,** pick a test project, then Identity, Application Credentials, **Create Application Credential**, and download its `clouds.yaml`. Give it an expiry date later than your test: destroy needs a working credential. The file holds the secret: keep it out of the repo, in `~/.config/openstack/` (where the OpenStack CLI looks) or delete it when you finish. A dashboard's file can name another region than you want (VEXXHOST's came set to `ams1`): set the region on the form, or change it in the file, to `ca-ymq-1`.
+2. **Connections, OpenStack, I have my own OpenStack:** drop the `clouds.yaml` on the form (it is read in your browser and kept nowhere), or type the auth URL, credential ID and secret, and region. Success: `Connected … Clutter checked it and it works.`
+3. **Add a deployment.** A public server waits 30 seconds before its floating IP attaches (a `time_sleep` from the `hashicorp/time` provider, which the first plan downloads with the OpenStack one), so its plan and result counts include it. Clutter reads the cloud's own images, flavors and external networks, and where DevStack's defaults (`cirros`, `m1.*`, `public`) are missing it pre-selects an Ubuntu image for the servers' processor and the smallest flavors with enough memory and the fewest vCPUs. Open **Advanced** to check or change them.
+4. **Deploy,** check in the dashboard, and **Destroy.** When finished, delete the connection, then the application credential, then the downloaded `clouds.yaml`.
+
+`TestRealCloud` (above) runs the same check against any OpenStack cloud without the website.
+
+### What to check on a real cloud
+
+For each example deployed (Single server first, then Two-tier app and Full app on AWS, and Two-tier app on OpenStack):
+
+- **Clutter:** the badge says `Deployed` without a reload, **What was built** lists the results, and **Open** answers (a real server's page, or the API's sample answer).
+- **The cloud's own console:** EC2, VPC, S3, Lambda, DynamoDB and API Gateway in AWS, or Instances, Network Topology and Volumes in OpenStack, show the resources named with the deployment's id. In AWS, every IAM role Clutter made carries the permissions boundary, and CloudTrail shows the `AssumeRole` calls.
+- **Destroy:** `Destroy complete`, and the console shows nothing left.
 
 ## Without AWS
 

@@ -18,7 +18,7 @@ passed=0
 failed=0
 
 # The real commands the scripts may call besides the tools under test.
-real_tools=(bash env awk sed grep head df dirname cat tr)
+real_tools=(bash env awk sed grep head df dirname cat tr mv rm)
 
 # stub NAME BODY: a fake command that runs BODY.
 stub() {
@@ -424,9 +424,73 @@ run_args devstack.sh status extra
 check "devstack.sh refuses an extra argument" 2 "usage: npm run devstack"
 
 echo
+echo "real-aws.sh"
+fresh_stubs
+conf="${work}/real-aws.conf"
+good_url="https://clutter-dev-templates-123456789012-ca-central-1.s3.ca-central-1.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"
+# read_conf: runs lib.sh's read_real_aws_conf on ${conf}, as dev.sh does.
+read_conf() {
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" -c 'source "$1/lib.sh" && read_real_aws_conf "$2" && echo "read ${REAL_AWS_ACCOUNT_ID} ${REAL_AWS_PROFILE} ${REAL_AWS_REGION}"' _ "${DEVSERVER_DIR}" "${conf}" >"${out}" 2>&1 || rc=$?
+}
+printf '# comment\nCLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\n' "${good_url}" >"${conf}"
+read_conf
+check "real-aws.conf: a good file is read" 0 "read 123456789012 clutter-dev-runner ca-central-1"
+printf 'CLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\nAWS_SECRET_ACCESS_KEY=x\n' "${good_url}" >"${conf}"
+read_conf
+check "real-aws.conf: an unknown key is refused" 1 "unknown key AWS_SECRET_ACCESS_KEY"
+printf 'CLUTTER_AWS_ACCOUNT_ID=$(touch %s/ran)\nCLUTTER_TEMPLATE_URL=http://example.com/x\nCLUTTER_RUNNER_PROFILE=a b\nCLUTTER_AWS_REGION=nowhere\n' "${work}" >"${conf}"
+read_conf
+check "real-aws.conf: bad values are refused" 1 "12-digit AWS account id" "must be https://BUCKET.s3.REGION.amazonaws.com/" "name of a profile" "an AWS region"
+if [[ -e "${work}/ran" ]]; then
+  failed=$((failed + 1))
+  echo "FAIL  real-aws.conf: a value ran as a command"
+else
+  passed=$((passed + 1))
+  echo "pass  real-aws.conf: values are never run"
+fi
+
+rm -f "${conf}"
+run real-aws.sh CLUTTER_REAL_AWS_CONF="${conf}"
+check "real-aws.sh with no action" 2 "usage: npm run real-aws"
+stub aws '
+case "$*" in
+  *"sts get-caller-identity --query Account"*) echo 123456789012 ;;
+  *"sts get-caller-identity --query Arn"*) echo "arn:aws:sts::123456789012:assumed-role/ClutterAdapterRunnerRole/botocore-session-1" ;;
+  *"cloudformation deploy"*) echo "FAKE-DEPLOY $*" ;;
+  *"describe-stacks"*BucketName*) echo clutter-dev-templates-123456789012-ca-central-1 ;;
+  *"describe-stacks"*TemplateURL*) echo "'"${good_url}"'" ;;
+  *"describe-stacks"*RunnerRoleArn*) echo arn:aws:iam::123456789012:role/ClutterAdapterRunnerRole ;;
+  *"s3 cp"*) echo "FAKE-UPLOAD $*" ;;
+  *"configure get role_arn"*) exit 1 ;;
+  *) echo "unexpected aws $*" >&2; exit 1 ;;
+esac'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status with no file" 0 "Real AWS is off"
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" setup >"${out}" 2>&1 || rc=$?
+check "real-aws.sh setup needs an admin profile" 2 "needs --admin-profile"
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" setup --admin-profile clutter-admin >"${out}" 2>&1 || rc=$?
+check "real-aws.sh setup" 0 "Clutter's account: 123456789012" "FAKE-DEPLOY" "--stack-name clutter-dev-real-aws" "CAPABILITY_NAMED_IAM" \
+  "FAKE-UPLOAD" "s3://clutter-dev-templates-123456789012-ca-central-1/templates/cloudformation/client_side_terraform_deployer_role.yaml" \
+  "Wrote backend/devserver/real-aws.conf" "[profile clutter-dev-runner]" "role_arn = arn:aws:iam::123456789012:role/ClutterAdapterRunnerRole" "source_profile = clutter-admin"
+read_conf
+check "real-aws.sh setup writes a file dev.sh reads" 0 "read 123456789012 clutter-dev-runner ca-central-1"
+stub curl 'echo 200'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status" 0 "Real AWS is on" "ok    the profile clutter-dev-runner acts as ClutterAdapterRunnerRole" "ok    CloudFormation can read the account-link template"
+stub curl 'echo 403'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status when the template cannot be read" 1 "FAIL  the account-link template answers 403"
+
+echo
 echo "--help"
 fresh_stubs
-for script in doctor.sh setup.sh dev.sh stop.sh smoke.sh localstack.sh devstack.sh generated.sh; do
+for script in doctor.sh setup.sh dev.sh stop.sh smoke.sh localstack.sh devstack.sh generated.sh real-aws.sh; do
   run_args "${script}" --help
   check "${script} --help" 0 "usage: npm run"
 done

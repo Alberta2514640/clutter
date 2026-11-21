@@ -34,6 +34,62 @@ DEVSTACK_GUIDE="the \"OpenStack on this machine (DevStack)\" section of backend/
 DEVSTACK_PUBLIC_RANGE="172.24.4.0/24"
 DEVSTACK_PUBLIC_GATEWAY="172.24.4.1"
 
+# Real AWS from this machine (real-aws.sh). When REAL_AWS_CONF exists, dev.sh
+# runs B's AWS connector against real accounts instead of LocalStack. The file
+# holds no secret: the keys stay in ~/.aws, under the profile it names.
+# CLUTTER_REAL_AWS_CONF moves the file, for test-scripts.sh only.
+REAL_AWS_CONF="${CLUTTER_REAL_AWS_CONF:-${DEVSERVER_DIR}/real-aws.conf}"
+REAL_AWS_STACK="clutter-dev-real-aws"
+REAL_AWS_RUNNER_ROLE="ClutterAdapterRunnerRole"
+REAL_AWS_TEMPLATE_KEY="templates/cloudformation/client_side_terraform_deployer_role.yaml"
+
+# read_real_aws_conf FILE: reads the four settings FILE may hold, as KEY=VALUE
+# lines, into REAL_AWS_ACCOUNT_ID, REAL_AWS_TEMPLATE_URL, REAL_AWS_PROFILE and
+# REAL_AWS_REGION. The file is never run: other keys, and values of the wrong
+# form, are refused with a message on stderr (return 1).
+read_real_aws_conf() {
+  local file="$1" line key value bad=0
+  REAL_AWS_ACCOUNT_ID="" REAL_AWS_TEMPLATE_URL="" REAL_AWS_PROFILE="" REAL_AWS_REGION=""
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    case "${line}" in "" | \#*) continue ;; esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    if [[ "${line}" != *=* ]]; then
+      echo "${file}: not KEY=VALUE: ${key}" >&2
+      bad=1
+      continue
+    fi
+    case "${key}" in
+      CLUTTER_AWS_ACCOUNT_ID) REAL_AWS_ACCOUNT_ID="${value}" ;;
+      CLUTTER_TEMPLATE_URL) REAL_AWS_TEMPLATE_URL="${value}" ;;
+      CLUTTER_RUNNER_PROFILE) REAL_AWS_PROFILE="${value}" ;;
+      CLUTTER_AWS_REGION) REAL_AWS_REGION="${value}" ;;
+      *)
+        echo "${file}: unknown key ${key}" >&2
+        bad=1
+        ;;
+    esac
+  done <"${file}"
+  if [[ ! "${REAL_AWS_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]; then
+    echo "${file}: CLUTTER_AWS_ACCOUNT_ID must be Clutter's 12-digit AWS account id" >&2
+    bad=1
+  fi
+  if [[ ! "${REAL_AWS_TEMPLATE_URL}" =~ ^https://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.[a-z0-9-]+\.amazonaws\.com/${REAL_AWS_TEMPLATE_KEY}$ ]]; then
+    echo "${file}: CLUTTER_TEMPLATE_URL must be https://BUCKET.s3.REGION.amazonaws.com/${REAL_AWS_TEMPLATE_KEY}" >&2
+    bad=1
+  fi
+  if [[ ! "${REAL_AWS_PROFILE}" =~ ^[A-Za-z0-9_.-]{1,64}$ ]]; then
+    echo "${file}: CLUTTER_RUNNER_PROFILE must be the name of a profile in ~/.aws/config" >&2
+    bad=1
+  fi
+  if [[ ! "${REAL_AWS_REGION}" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]$ ]]; then
+    echo "${file}: CLUTTER_AWS_REGION must be an AWS region, such as ca-central-1" >&2
+    bad=1
+  fi
+  return "${bad}"
+}
+
 # devstack_vm_address: prints the VM's lima0 address, the one this machine
 # reaches it at (DevStack's HOST_IP), or nothing when it has none.
 devstack_vm_address() {

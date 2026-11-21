@@ -36,7 +36,7 @@ const ID = "aws"
 // output RoleTemplateVersion) this connector expects. A test keeps the two
 // equal. A connection records it, so a later change to the role can tell
 // which users must update their stack.
-const RoleTemplateVersion = "9"
+const RoleTemplateVersion = "10"
 
 // Session lengths. A run's keys last one hour, the most STS gives when one
 // role assumes another (B's runner role assuming the user's role).
@@ -179,7 +179,7 @@ var providers = []string{"hashicorp/aws", "hashicorp/archive", "hashicorp/random
 
 var (
 	errBadRole   = &connectors.UserError{Message: "The role ARN must look like arn:aws:iam::123456789012:role/name, and the external id must be filled in."}
-	errRefused   = &connectors.UserError{Message: "AWS did not let Clutter use this role. Check that the Clutter CloudFormation stack finished in your account and that the role ARN is its RoleArn output."}
+	errRefused   = &connectors.UserError{Message: "AWS did not let Clutter use this role. If Clutter's CloudFormation stack was deleted, Clutter has no access to this account: link it again to use it. Otherwise, check that the stack finished in your account and that the role ARN is its RoleArn output."}
 	errBadRegion = &connectors.UserError{Message: "AWS does not offer this region through Clutter. Choose another region."}
 	errTerraform = &connectors.UserError{Message: "Terraform stopped with an error. The run's log says why."}
 )

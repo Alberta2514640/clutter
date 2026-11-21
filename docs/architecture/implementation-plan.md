@@ -24,7 +24,7 @@ Nothing waits for the client except stage 7.
 | The whole editor flow | a browser against A2; AWS deployments apply on LocalStack when it runs, and otherwise stop at the AWS call |
 | CloudFormation and IAM | `cfn-lint`, `terraform validate` |
 
-Left for the credentials: real AWS deploys by A and B, the AWS role link end to end, hosting world 1, the client's Google sign-in, and the hosted demo.
+Left for the credentials: real AWS deploys by A, hosting world 1 (B on Fargate, S3 state, the website), the client's Google sign-in, and the hosted demo. B's deploys into real AWS and OpenStack accounts, and the role link end to end, ran from a laptop on 2026-11-20 (`docs/reports/2026-11-20-real-cloud-verification.pdf`).
 
 ## Stage 0: housekeeping
 
@@ -57,11 +57,11 @@ DevStack in a Lima virtual machine, as in the research note. Proven on one lapto
 
 ## Stage 4: General's OpenStack connector
 
-The manifest (VM, network and subnet, firewall, volume; bucket, function, table and HTTP API marked removed), the credential spec (an application credential, or `clouds.yaml` fields), verification by a Keystone token request, rendering for `terraform-provider-openstack` `~> 3.4`, and plan, apply, destroy and logs through the shared runner. B's runner needs a route to DevStack (Lima port forwarding, or the runner inside the same VM). **Done when:** a building-block diagram deploys to DevStack through B and destroys cleanly.
+The manifest (VM, network and subnet, firewall, volume; bucket, function, table and HTTP API marked removed), the credential spec (an application credential, or `clouds.yaml` fields), verification by a Keystone token request, rendering for `terraform-provider-openstack` `~> 3.4` (with `hashicorp/time` `~> 0.14`), and plan, apply, destroy and logs through the shared runner. B's runner needs a route to DevStack (Lima port forwarding, or the runner inside the same VM). **Done when:** a building-block diagram deploys to DevStack through B and destroys cleanly.
 
 ## Stage 5: the AWS connector
 
-A's five templates (a main and an outputs file each) through `generic/tftemplate`, changed only by stage 1 (escaping, the customer role's path and boundary, the API Gateway fix); three new templates (network, firewall, volume), uploaded by the platform Terraform like the others; small override files where a template lacks an input; B's own edge-to-IAM step; the deployment id in Terraform addresses and cloud-side names; A's role table read as AWS connections; and the CloudFormation template trusting B's runner role too. A test renders A's files from disk and runs `terraform validate`, so a change to A's templates that breaks B fails in CI. **Done when:** the same diagram's AWS deployment validates locally; it deploys and destroys in stage 7.
+A's five templates (a main and an outputs file each) through `generic/tftemplate`, changed only by stage 1 (escaping, the customer role's path and boundary, the API Gateway fix); three new templates (network, firewall, volume), uploaded by the platform Terraform like the others; small override files where a template lacks an input; B's own edge-to-IAM step; the deployment id in Terraform addresses and cloud-side names; A's role table read as AWS connections; and the CloudFormation template trusting B's runner role too. A test renders A's files from disk and runs `terraform validate`, so a change to A's templates that breaks B fails in CI. **Done when:** the same diagram's AWS deployment validates locally; it deployed and destroyed on a real AWS account from a laptop on 2026-11-20, and runs again from the hosted service in stage 7.
 
 ## Stage 6: the frontend and the whole flow
 
@@ -91,7 +91,7 @@ Patrii as an OpenStack connection when it opens; DigitalOcean as the second Gene
 A's AWS-only machinery retires once B has proved itself on real AWS; what B shares with A stays.
 
 1. **B covers what A's AWS path does:** function code upload and server setup at first boot. Both are built (stage 6b in `.claude/findings/NOW.md`).
-2. **B's AWS path passes on real AWS:** the stage 7 tests on the test account.
+2. **B's AWS path passes on real AWS from the hosted service:** the stage 7 tests on the test account (a laptop run passed on 2026-11-20).
 3. **Remove A's AWS machinery in one change:** A's diagram editor and its AWS nodes, generation (`terraform-engine/create`, `files`), the command runner, code upload, A's log routes, the Ansible routes and queue, A's two Fargate runners and their images, and their routes in `backend/infra/main.tf` and A2's route table. Old AWS diagrams (none exist outside test data) are deleted or left read-only; no converter is built unless the client has real ones.
 4. **Keep what B uses:** log-in and the JWT, users, organizations, projects, diagram save and load, the CloudFormation account link and A's linked-role table, and the website shell.
 5. **Then build C (ADR-021):** move the kept routes into the adapter service under `/v1` and rename its folder for the whole server, point the website at `/v1` only, and delete API Gateway, the remaining Lambdas and A2's Lambda emulation, so Clutter has one backend, one API and one deploy path.

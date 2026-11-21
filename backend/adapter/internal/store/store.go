@@ -16,6 +16,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -762,15 +763,33 @@ func (s *Store) RunStarted(ctx context.Context, runID string, at time.Time) erro
 	return nil
 }
 
-// RunFinished implements jobs.Store.
-func (s *Store) RunFinished(ctx context.Context, runID string, status jobs.Status, failure string, at time.Time) error {
+// RunFinished implements jobs.Store. The run and, with a change, its
+// deployment change in one transaction, so no reader sees one without the
+// other. A change for another deployment than the run's is refused.
+func (s *Store) RunFinished(ctx context.Context, runID string, status jobs.Status, failure string, at time.Time, change *jobs.DeploymentChange) error {
 	var f *string
 	if failure != "" {
 		f = &failure
 	}
-	_, err := s.Pool.Exec(ctx, `UPDATE runs SET status = $2, failure = $3, finished_at = $4 WHERE id = $1`,
-		runID, string(status), f, at)
-	return err
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // a no-op after commit
+	var deploymentID string
+	if err := tx.QueryRow(ctx, `UPDATE runs SET status = $2, failure = $3, finished_at = $4 WHERE id = $1 RETURNING deployment_id`,
+		runID, string(status), f, at).Scan(&deploymentID); err != nil {
+		return err
+	}
+	if change != nil {
+		if change.ID != deploymentID {
+			return fmt.Errorf("run %s belongs to deployment %s, not %s", runID, deploymentID, change.ID)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE deployments SET status = $2 WHERE id = $1`, deploymentID, string(change.Status)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // RunParts implements jobs.PartRecorder.

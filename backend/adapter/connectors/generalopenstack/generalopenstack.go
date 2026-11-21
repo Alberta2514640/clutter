@@ -36,6 +36,10 @@ const ID = "general-openstack"
 const (
 	providerSource  = "terraform-provider-openstack/openstack"
 	providerVersion = "~> 3.4"
+	// timeSource only waits (time_sleep): before a public VM's floating IP is
+	// attached, its port must be live (render.go).
+	timeSource  = "hashicorp/time"
+	timeVersion = "~> 0.14"
 )
 
 // Credential field names.
@@ -85,7 +89,7 @@ func newConnector(tf *terraform.Runner, opts ...Option) *Connector {
 
 // providers are the Terraform providers this connector renders for. The
 // shared runner refuses any other.
-var providers = []string{providerSource}
+var providers = []string{providerSource, timeSource}
 
 // ID implements connectors.Connector.
 func (*Connector) ID() string { return ID }

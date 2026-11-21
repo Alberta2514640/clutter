@@ -120,8 +120,9 @@ docs/
     system-b-adapter-layer.md  B: the design, and its names
     implementation-plan.md     the build order: stages, tests, "done when"
     environments.md            local vs cloud: what differs and what each needs
-    figures/                   clutter-worlds.png and the editor screenshot, with their sources
+    figures/                   clutter-worlds.png and the editor screenshot (PNGs; no sources kept)
     system-b-team-plan/        the team's own B plan: figures, PDF and the written explanation
+  reports/          dated test reports as PDFs: the local run (2026-11-15), the test plan (2026-11-18) and real clouds (2026-11-20)
   decisions.md      every decision and why (ADR-001 onward; ADR means architecture decision record)
   research/
     patricloud/     dated research on PatriCloud (and a second research run)
@@ -129,6 +130,8 @@ docs/
     openstack/      DevStack on a laptop, and one diagram rendered for two clouds
     aws/            LocalStack, an AWS stand-in on a laptop
   old-capstone/     the previous capstone team's final report (PDF and markdown) and backend tutorial
+test-suites/        the team's test plan: the index of every suite, run-all.sh and the platform check
+deliverables/       the team's course deliverables (slides)
 .claude/            the Claude Code setup (its README says what each part is)
   findings/NOW.md   the status board: next tasks, open defects, open questions (everyone reads this)
 CLAUDE.md, AGENTS.md        rules for AI coding agents; skim them, they are written for agents
@@ -154,7 +157,7 @@ There are two kinds of Terraform here. `backend/infra` deploys Clutter itself. T
 | Terraform | 1.14.4 or newer (the version B's run image uses) | B's local deploys and `npm run generated`, not the app itself |
 | Lima | optional | DevStack, an OpenStack on your machine (`backend/devserver/README.md` § OpenStack on this machine (DevStack)) |
 | Playwright's Chromium | optional | browser tests (`npx --prefix frontend/clutter playwright install chromium`) |
-| AWS CLI | v2 | only for deploying, which nobody does from a laptop yet |
+| AWS CLI | v2, optional | `npm run real-aws` and deploying into your own AWS account (`backend/devserver/README.md` § Real clouds from this machine); not needed for LocalStack |
 | Claude Code, and `jq` | optional | the AI setup in `.claude/` (its hooks need `jq`) |
 
 **macOS**, with [Homebrew](https://brew.sh). If `brew` is missing, install it from that page, then:
@@ -164,6 +167,7 @@ xcode-select --install                         # Apple's Git and compilers; skip
 brew install git gh go node jq
 brew install hashicorp/tap/terraform           # Hashicorp's formula; Homebrew core no longer ships terraform
 brew install --cask docker-desktop             # then open Docker.app and wait until it says it is running
+brew install awscli                            # optional: only for your own AWS account
 ```
 
 `brew install node` puts `node` and `npm` on your PATH. That is not the same as the project's JavaScript packages.
@@ -198,6 +202,7 @@ terraform -chdir=backend/infra fmt -check -recursive    # 6 of A's files fail to
 go -C backend/devserver test ./...     # A2, the local run tool
 backend/devserver/test-scripts.sh      # A2's scripts, against fake tools
 (cd frontend/clutter && npx vitest run)   # the frontend's unit tests
+bash test-suites/scripts/run-all.sh       # the team's test plan, every suite (test-suites/README.md)
 ```
 
 The expected result of each check, including the known `fmt` failure, is in `backend/README.md`, `frontend/clutter/README.md` and `backend/devserver/README.md`. Every Go package must pass.
@@ -219,7 +224,7 @@ If `npm run dev` already runs from the Quick start, run the tour's commands in a
 | LocalStack, a stand-in for AWS | Docker, port 4566 | `npm run localstack -- start` | only for real AWS deploys |
 | DevStack, a small OpenStack | the Lima VM `devstack` | `npm run devstack -- start` | only for OpenStack deploys |
 
-- Start LocalStack before `npm run dev`: B chooses its AWS mode when it starts. If Clutter already runs, run `npm run dev` again; it restarts.
+- Start LocalStack before `npm run dev`: B chooses its AWS mode when it starts. If Clutter already runs, run `npm run dev` again; it restarts. If `backend/devserver/real-aws.conf` exists (made by `npm run real-aws -- setup`), `npm run dev` uses real AWS instead; delete it to go back to LocalStack.
 - `localstack` and `devstack` return when they are ready, so run them in a second terminal. DevStack can start at any time. The VM takes 12 GiB of memory, so on a 16 GB machine run one of the two at a time.
 - The **Mock cloud** on Connections, and the `Mock` tags in the palette, are a local test cloud. It builds nothing.
 - Three ways to run Clutter: `npm run dev` (all of it, in one terminal); `npm run dev:backend`, then `npm run dev:frontend` in a second terminal; or the website alone with no backend (`frontend/clutter/README.md` § Run it).
@@ -249,11 +254,15 @@ Needs a Mac with 16 GB of memory or more (`backend/devserver/README.md` § OpenS
 2. `npm run doctor`: a line says `DevStack answers at http://<the VM's address>/identity/v3`. If it does not, allow your terminal app in macOS's Local Network settings (§ Let this machine reach the VM (macOS) in the same README), then run the doctor again.
 3. `npm run devstack -- credential`, in a terminal: it prints a region, an auth URL, an application credential ID and a secret. The values to copy are in the right-hand column. The secret is shown once. If a credential exists, it asks `Replace it? [y/N]`: answer `y`. Running it again replaces the credential, so delete the OpenStack connection and add it again with the new values.
 4. **Connections**, then **OpenStack**: fill in a connection name and the four printed values, then **Check and connect**: `Connected …. Clutter checked it and it works.` The editor's **View as** now offers OpenStack too. Or skip step 3: **Connect local OpenStack**, first on that form, makes a new credential and the connection (`Local OpenStack`) in one step, and the secret is never shown. The form for the four values is under **I have my own OpenStack**.
-5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram: **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Built 2 blocks (5 cloud resources)` and **What was built** shows the server's address, and **Destroy** says `Destroy complete: 5 destroyed`. To open that address in your browser, run `npm run devstack -- route` once, and again after each restart of the Mac. It asks for your password in the terminal, or in macOS's password window when it runs without one (from an editor, for example).
+5. In the diagram's **Deploy** tab, **Add deployment** with the OpenStack connection. With the VM and Network diagram (a VM that is not public): **Preview Terraform** shows three files (`main.tf`, `outputs.tf`, `versions.tf`), **Plan** says `Plan: 5 to add`, **Deploy** says `Built 2 blocks (5 cloud resources)` and **What was built** shows the server's address, and **Destroy** says `Destroy complete: 5 destroyed`. To open that address in your browser, run `npm run devstack -- route` once, and again after each restart of the Mac. It asks for your password in the terminal, or in macOS's password window when it runs without one (from an editor, for example).
 6. Two clouds in one deployment: **New diagram**, then **Hybrid**. **Add deployment** with the OpenStack connection suggests `Run files on Local AWS`. **Where each block runs** opens by itself, the card is named `Local OpenStack + Local AWS`, and each block's badge shows the cloud it runs on.
 7. `npm run devstack -- dashboard`, in a terminal: the address of DevStack's own dashboard and the `demo` login, to see the servers Clutter built there.
 
 In later sessions, `npm run devstack -- start` starts the VM, and `npm run doctor` shows whether OpenStack answers.
+
+#### Your own clouds
+
+The same tour works against your own AWS account and a real OpenStack project (such as VEXXHOST), with Clutter still running on your machine: `backend/devserver/README.md` § Real clouds from this machine says who needs what, the one-time `npm run real-aws -- setup`, what it costs and how to clean up. The results of the first full run are in `docs/reports/2026-11-20-real-cloud-verification.pdf`.
 
 #### A's older editor, and the end
 
@@ -278,13 +287,14 @@ Every command below takes `--help`.
 | `npm run stop` | stops whatever `npm run dev`, `dev:backend` or `dev:frontend` started, from any terminal |
 | `npm run stop -- --wipe` | also deletes the local database, to start clean |
 | `npm run localstack -- start\|stop\|status` | LocalStack, so B's AWS deployments apply on your machine (`backend/devserver/README.md`) |
+| `npm run real-aws -- setup\|status\|teardown --admin-profile NAME` | lets this machine deploy into your own AWS account instead of LocalStack (`status` takes no profile; `backend/devserver/README.md` § Real clouds from this machine) |
 | `npm run devstack -- create\|credential\|dashboard\|start\|stop\|status\|route` | the Lima VM that runs DevStack, for B's OpenStack connector, the credential Clutter uses, and the route that lets this machine open DevStack servers' addresses (`route remove` takes it out; `backend/devserver/README.md`) |
 | `npm run deploy:plan -- prod` | for later: shows what a cloud deploy would change (`docs/architecture/environments.md`) |
 | `npm run deploy -- prod` | for later, and only by a person: deploys Clutter to the cloud from a clean `main`, after you type `prod` (`docs/architecture/environments.md` § Credentials day) |
 
 A has no backend server of its own, so this runs stand-ins for its AWS parts. `docs/architecture/system-a-as-built.md` § How A runs has the table of what is real and what stands in. What works locally and what does not is in `backend/devserver/README.md`.
 
-Deploying and running Ansible need real AWS: `docs/architecture/environments.md` says what the cloud needs.
+B deploys into real clouds from this machine (§ Your own clouds). A's own deploy and Ansible need Clutter hosted in AWS: `docs/architecture/environments.md` says what the cloud needs.
 
 ## Do not run
 

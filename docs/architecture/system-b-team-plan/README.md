@@ -118,7 +118,7 @@ From the repo:
 4. **Data:** Postgres (Supabase, 11 tables) and S3 (templates, .tf files, state, logs, playbooks, code uploads and run status files).
 5. **Deploy path:**
    - The **terraform-engine** reads the saved diagram and fills Go templates from S3 to produce `main.tf` and `outputs.tf`, generating IAM policies from the diagram's edges.
-   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack, role version 9) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
+   - The **terraform-command-runner** starts one **Fargate terraform-deployer** task per run. That task assumes a role in the **customer's AWS account** (STS with an external ID, set up through a CloudFormation stack, role version 10) and runs plan, apply or destroy. It holds no database string; it writes its status and logs to S3, and the API records the status.
    - **Ansible jobs** go through SQS (with a dead-letter queue) to the `ansible/run-task` Lambda, which starts a **Fargate ansible-runner** that uses SSM Run Command to configure EC2. It also holds no database string.
    - The customer role changes only resources tagged `ManagedBy`, and every role and user it creates sits under a permissions boundary.
 
@@ -178,17 +178,17 @@ A split deployment repeats steps 8 to 14 once per cloud, in dependency order, ea
 
 ![Build order](figures/09-build-order.png)
 
-The status on 2026-11-15, from `.claude/findings/NOW.md` § The order, which owns it:
+The status on 2026-11-20, from `.claude/findings/NOW.md` § The order, which owns it:
 
 0. **Stage 0, housekeeping:** done. Decisions recorded, the design checked, merged into the fork's `main`; the client pull request and the message to the client are still to do.
-1. **Stage 1, make A safe:** done in code. Every phase 0 item is done or decided except item 9 (a lock on A's Terraform state); A's template loader and JWT check are in `generic`; real AWS must confirm items 7 and 10.
+1. **Stage 1, make A safe:** done in code. Every phase 0 item is done or decided except item 9 (a lock on A's Terraform state); A's template loader and JWT check are in `generic`. Item 7 (the customer role) was confirmed on a real AWS account on 2026-11-20, through B, and is now version 10 (ADR-027); item 10 (A's runners) waits for Clutter to be hosted.
 2. **Stage 2, a test cloud on a laptop:** done. DevStack is proven on one laptop, `npm run devstack -- create` sets it up, and `npm run devstack -- route` lets the Mac open the servers built there (`backend/devserver/README.md`).
 3. **Stage 3, B's core:** done. B API, tables, job runner, run task and connector interface; the mock passes the contract tests.
 4. **Stage 4, General's OpenStack connector:** built. A real run on DevStack built and destroyed a VM, network, firewall and volume, from its test and from the browser.
-5. **Stage 5, the AWS connector:** built. It validates, and it applied and destroyed every block on LocalStack; real AWS waits for stage 7.
+5. **Stage 5, the AWS connector:** built. It validates, and it applied and destroyed every block on LocalStack and, on 2026-11-20, on a real AWS account (`docs/reports/2026-11-20-real-cloud-verification.pdf`).
 6. **Stage 6, the frontend and the whole flow:** built. Every feature runs end to end in a browser, AWS on LocalStack and OpenStack on DevStack.
    - **Stage 6b, no manual steps:** done. Function code, cloud-init, `clouds.yaml`, split deployments, website hosting, naming, and the UX, visual and docs passes are done.
-7. **Stage 7, the cloud:** done in code; applying it needs the client's accounts.
+7. **Stage 7, the cloud:** done in code; hosting needs the client's accounts. Clutter on a laptop already built into a real AWS account and VEXXHOST on 2026-11-20.
 8. **Stage 8 and later:** more General connectors (DigitalOcean next, then existing servers over SSH), PatriCloud and TierHive (once they have APIs), the optional Clutter sandbox connection, B1, then B2 with instance connectors once partner details exist; then A's AWS path retires and C is built (ADR-021), which reaches Option 3's end state without a big-bang retest.
 
 Stages 1 to 6 run and are tested on a laptop. The details of each stage are in `docs/architecture/implementation-plan.md`.

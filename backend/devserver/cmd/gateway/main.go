@@ -41,6 +41,8 @@ func run(logger *log.Logger) error {
 	stateDir := flag.String("state-dir", "", "directory for the Lambda binaries, the Lambda HOME and the local S3 files")
 	adapterAddr := flag.String("adapter-addr", "127.0.0.1:8790", "B API's address (loopback only), for the DevStack link route")
 	devstackVM := flag.String("devstack-vm", "devstack", "the Lima VM that runs DevStack, for the DevStack link route")
+	clutterAccountID := flag.String("clutter-account-id", "", "Clutter's real AWS account, for real AWS from this machine (with -template-url); empty keeps the stand-in")
+	templateURL := flag.String("template-url", "", "the account-link template's real S3 address (with -clutter-account-id)")
 	flag.Parse()
 
 	if *apiDir == "" || *stateDir == "" {
@@ -98,6 +100,9 @@ func run(logger *log.Logger) error {
 		FrontendOrigin: frontOrigin,
 		AWSEndpoint:    "http://" + noAWSLn.Addr().String(),
 		HomeDir:        homeDir,
+
+		ClutterAccountID: *clutterAccountID,
+		TemplateURL:      *templateURL,
 	}
 	if err := gateway.ValidateConfig(cfg); err != nil {
 		return err

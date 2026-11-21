@@ -56,6 +56,9 @@ EOF
 cat > "${T}/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$1" == login ]]; then
+  # Read the password from stdin as the real docker login does; exiting
+  # without reading it breaks the pipe from aws and fails the push at random.
+  cat > /dev/null
   echo "docker-login $*" >> "${FAKE_LOG}"
   [[ -z "${FAKE_LOGIN_FAILS:-}" ]]
 fi

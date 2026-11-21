@@ -29,6 +29,9 @@ type osCloud struct {
 	glanceStatus int
 	// endpoint, when set, rewrites each catalog URL the fake hands out.
 	endpoint func(service, url string) string
+	// flavors, images and networks, when set, are the list replies instead
+	// of the DevStack-like ones.
+	flavors, images, networks string
 }
 
 func newOSCloud(t *testing.T) *osCloud {
@@ -64,7 +67,14 @@ func (o *osCloud) serve(w http.ResponseWriter, r *http.Request) {
 	o.mu.Lock()
 	o.hits[r.URL.Path]++
 	glanceStatus, rewrite := o.glanceStatus, o.endpoint
+	flavors, images, networks := o.flavors, o.images, o.networks
 	o.mu.Unlock()
+	reply := func(set, devstack string) {
+		if set == "" {
+			set = devstack
+		}
+		fmt.Fprint(w, set)
+	}
 
 	if r.URL.Path == "/identity/v3/auth/tokens" {
 		var req tokenRequest
@@ -105,7 +115,7 @@ func (o *osCloud) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.URL.Path {
 	case "/compute/v2.1/flavors/detail":
-		fmt.Fprint(w, `{"flavors": [
+		reply(flavors, `{"flavors": [
 		  {"id": "3", "name": "m1.medium", "vcpus": 2, "ram": 4096, "disk": 40},
 		  {"id": "1", "name": "m1.tiny", "vcpus": 1, "ram": 512, "disk": 1},
 		  {"id": "2", "name": "m1.small", "vcpus": 1, "ram": 2048, "disk": 20},
@@ -119,7 +129,7 @@ func (o *osCloud) serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the form lists active images only", http.StatusBadRequest)
 			return
 		}
-		fmt.Fprint(w, `{"images": [
+		reply(images, `{"images": [
 		  {"id": "a", "name": "ubuntu-24.04", "status": "active"},
 		  {"id": "b", "name": "cirros-0.6.3-x86_64-disk", "status": "active"},
 		  {"id": "c", "name": "ubuntu-24.04", "status": "active"},
@@ -130,7 +140,7 @@ func (o *osCloud) serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the form lists external networks only", http.StatusBadRequest)
 			return
 		}
-		fmt.Fprint(w, `{"networks": [{"id": "n", "name": "public", "status": "ACTIVE", "router:external": true}]}`)
+		reply(networks, `{"networks": [{"id": "n", "name": "public", "status": "ACTIVE", "router:external": true}]}`)
 	default:
 		http.NotFound(w, r)
 	}
@@ -175,6 +185,11 @@ func TestOptionsListsTheCloudsChoices(t *testing.T) {
 	}
 	if l := got.Settings["flavor_small"][2].Label; l != "m1.medium (2 vCPUs, 4 GB RAM, 40 GB disk)" {
 		t.Errorf("flavor label %q", l)
+	}
+	// DevStack has every default (cirros as the start of an image name), so
+	// nothing is suggested.
+	if got.Suggested != nil {
+		t.Errorf("suggested %v on a cloud with every default", got.Suggested)
 	}
 	// Every list comes from one token.
 	if n := o.count("/identity/v3/auth/tokens"); n != 1 {
