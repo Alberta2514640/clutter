@@ -122,7 +122,7 @@ docs/
     environments.md            local vs cloud: what differs and what each needs
     figures/                   clutter-worlds.png and the editor screenshot (PNGs; no sources kept)
     system-b-team-plan/        the team's own B plan: figures, PDF and the written explanation
-  reports/          dated test reports as PDFs: the local run (2026-11-15) and real clouds (2026-11-20)
+  reports/          dated test reports as PDFs: the local run (2026-11-15), the test plan (2026-11-18) and real clouds (2026-11-20)
   decisions.md      every decision and why (ADR-001 onward; ADR means architecture decision record)
   research/
     patricloud/     dated research on PatriCloud (and a second research run)
@@ -130,6 +130,8 @@ docs/
     openstack/      DevStack on a laptop, and one diagram rendered for two clouds
     aws/            LocalStack, an AWS stand-in on a laptop
   old-capstone/     the previous capstone team's final report (PDF and markdown) and backend tutorial
+test-suites/        the team's test plan: the index of every suite, run-all.sh and the platform check
+deliverables/       the team's course deliverables (slides)
 .claude/            the Claude Code setup (its README says what each part is)
   findings/NOW.md   the status board: next tasks, open defects, open questions (everyone reads this)
 CLAUDE.md, AGENTS.md        rules for AI coding agents; skim them, they are written for agents
@@ -200,6 +202,7 @@ terraform -chdir=backend/infra fmt -check -recursive    # 6 of A's files fail to
 go -C backend/devserver test ./...     # A2, the local run tool
 backend/devserver/test-scripts.sh      # A2's scripts, against fake tools
 (cd frontend/clutter && npx vitest run)   # the frontend's unit tests
+bash test-suites/scripts/run-all.sh       # the team's test plan, every suite (test-suites/README.md)
 ```
 
 The expected result of each check, including the known `fmt` failure, is in `backend/README.md`, `frontend/clutter/README.md` and `backend/devserver/README.md`. Every Go package must pass.

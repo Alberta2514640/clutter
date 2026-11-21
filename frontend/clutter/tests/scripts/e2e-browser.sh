@@ -21,10 +21,17 @@ if [[ "${E2E_INSTALL_DEPS:-1}" == 1 && "$(uname -s)" == Linux ]]; then
 else
   (cd "${FRONTEND}" && npx --no-install playwright install chromium firefox webkit >/dev/null)
 fi
+# On macOS, Playwright's headless Firefox can fail to start (RenderCompositorSWGL),
+# so a Mac runs Chromium and WebKit unless E2E_FIREFOX=1 or a --project is given.
+args=("$@")
+if [[ "$(uname -s)" == Darwin && "${E2E_FIREFOX:-0}" != 1 && " $* " != *" --project"* ]]; then
+  echo "e2e-browser: on macOS, Chromium and WebKit only (E2E_FIREFOX=1 adds Firefox)"
+  args+=(--project=chromium --project=webkit)
+fi
 set +e
 (cd "${FRONTEND}" && CLUTTER_WEB_URL="${WEB}" CLUTTER_API_URL="http://${API_ADDR}" CLUTTER_ADAPTER_URL="http://${ADAPTER_ADDR}" \
   E2E_JSON="${RESULTS}/e2e-browser.json" E2E_ARTIFACTS="${RESULTS}/e2e-browser-artifacts" \
-  npx --no-install playwright test -c tests/e2e/playwright.config.ts "$@")
+  npx --no-install playwright test -c tests/e2e/playwright.config.ts ${args[@]+"${args[@]}"})
 status=$?
 set -e
 exit "${status}"

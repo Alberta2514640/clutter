@@ -21,8 +21,8 @@ Run from the repo root:
 | --- | --- | --- |
 | Compile and vet | `go -C backend/api build ./...` and `go -C backend/api vet ./...` | pass |
 | A's unit tests | `go -C backend/api test ./...` | 30 packages `ok`, with no AWS or database. `TestGenerateOnly` in `terraform-engine/create` is an integration test: it skips unless `TEMPLATE_BUCKET_NAME` names a live template bucket. The tests in `tests/generic` that need Postgres skip when they cannot connect. |
-| B's unit tests | `go -C backend/adapter test ./...` | 19 packages `ok` (the list and what skips without Docker or Terraform are in `adapter/README.md`) |
-| A2's tests | `go -C backend/devserver test ./...` | 3 packages `ok` |
+| B's unit tests | `go -C backend/adapter test ./...` | 24 packages `ok` (the list and what skips without Docker or Terraform are in `adapter/README.md`) |
+| A2's tests | `go -C backend/devserver test ./...` | 4 packages `ok`, one of them the live cross-tenant test, which skips without the running backend |
 | A2's scripts | `backend/devserver/test-scripts.sh` (the doctor, `devstack.sh` and every script's `--help`, against fake tools) | `81 passed, 0 failed` |
 | Run every route locally | `npm run dev`, then `npm run smoke` | A: all 32 routes in 39 calls, 31 pass, 3 need AWS, 5 expected failures, 0 fail. B: 34 of 34 checks pass. The full breakdown is in `devserver/README.md` |
 | Load the schema | `npm run dev` does it | A's 11 tables and 5 resources, then B's tables |

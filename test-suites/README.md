@@ -4,14 +4,14 @@ The team's test plan has ten test types. Each suite sits beside the code it test
 
 ## Run them
 
-From the repo root, in Linux or WSL (the scripts are bash):
+From the repo root, on macOS, Linux or WSL (the scripts are bash, and run on macOS's own bash 3.2):
 
 ```sh
 npm run dev                       # optional: the live security checks and the browser suite need the app running
 bash test-suites/scripts/run-all.sh     # every suite, then a table of results
 ```
 
-Each suite writes its results to `test-suites/results/` (ignored by git), or to `RESULTS_DIR` if it is set. `run-all.sh` keeps going past a failed suite and exits 1 if any failed. A suite that needs the running app and does not find it says it skipped.
+Each suite writes its results to `test-suites/results/` (ignored by git), or to `RESULTS_DIR` if it is set. `run-all.sh` keeps going past a failed suite and exits 1 if any failed. A suite that exits 2 is shown as skipped and does not fail the run; the browser suite does that when the app is not running. The security regression suite's live part instead prints that it skipped and still passes, and it finds the app only when it was started from the same checkout. CI runs the Go tests and the platform check; the scripts and the browser suite run by hand.
 
 ## Where each suite lives
 
@@ -41,4 +41,4 @@ Patrii publishes no customer API, OpenStack endpoint or Terraform provider (`doc
 
 ## Results
 
-The results of the 2026-11-18 run, with what each one means, are in `docs/reports/2026-11-18-test-plan-results.pdf`. The open bug that run found is in [frontend/clutter/tests/BUG-deploy-status-stays-not-deployed.md](../frontend/clutter/tests/BUG-deploy-status-stays-not-deployed.md).
+The results of the 2026-11-18 run, with what each one means, are in `docs/reports/2026-11-18-test-plan-results.pdf`. The bug that run found (the deploy panel could keep saying "Not deployed" after a deploy) is fixed in B: a run's end and its deployment's status are now saved in one transaction. On 2026-11-20 every suite passed on this branch merged with `main`, on a Mac: the browser workflow 10 of 10 (Chromium and WebKit) and the live security checks.

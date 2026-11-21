@@ -137,6 +137,6 @@ Its settings, all set by the platform Terraform: `ADAPTER_RUN_LAUNCHER=ecs`, `AD
 | `gofmt -l backend/adapter` | no output |
 | `go -C backend/adapter build ./...` | no output |
 | `go -C backend/adapter vet ./...` | no output |
-| `go -C backend/adapter test ./...` | 19 packages `ok` (checked 2026-11-15): `cmd/runtask`, `connectors`, `connectors/aws`, `connectors/generalopenstack`, `connectors/mock`, and under `internal/`: `api`, `auth`, `capability`, `codestore`, `config`, `credentials`, `examples`, `jobs`, `logstore`, `netguard`, `runtask`, `split`, `terraform` and `translate` |
+| `go -C backend/adapter test ./...` | 24 packages `ok` (checked 2026-11-20): the five test-plan suites under `tests/` (`unit`, `contract`, `validation`, `isolation`, `performance`; `tests/README.md` says what each covers), `cmd/runtask`, `connectors`, `connectors/aws`, `connectors/generalopenstack`, `connectors/mock`, and under `internal/`: `api`, `auth`, `capability`, `codestore`, `config`, `credentials`, `examples`, `jobs`, `logstore`, `netguard`, `runtask`, `split`, `terraform` and `translate` |
 
 The `internal/api` tests start a throwaway Postgres container (the image A2 uses) and load A's schema, the seed and `adapter-tables.sql`. Without Docker they skip. The `internal/terraform` test that runs real Terraform skips when `terraform` is not installed. The AWS connector's LocalStack test plans, applies and destroys every AWS block for real through the job runner. It skips unless `CLUTTER_LOCALSTACK=1` (`backend/devserver/README.md` § AWS on LocalStack).

@@ -4,7 +4,7 @@ Tests that need the running backend (A's real Lambdas through A2, and its Postgr
 
 - `crosstenant/` is the live part of the security regression suite. In the cross-tenant test, one user tries 24 reads and changes on another organization's projects, diagrams and Terraform, and every one must be refused with 403 or 404, with the owner's data left as it was. In the row-level security test, Postgres's `anon` role must read no tenant row.
 
-Run them through the security regression suite, which starts nothing itself but finds the running backend and passes its address and secrets in:
+Run them through the security regression suite, which starts nothing itself but finds the running backend and passes its address and secrets in. Start the backend from the same checkout as the suite, which reads its database password from `backend/devserver/.state/`:
 
 ```sh
 npm run dev:backend

@@ -5,7 +5,8 @@
 # at the current tree, then compare the results test by test.
 #
 # A test that passed at the baseline and fails now is a regression, and the
-# script exits 1. Tests that are new, or that failed at the baseline, are
+# script exits 1. A new test that fails, or a package that fails in the
+# current tree, also fails the run. Tests that failed at the baseline are
 # listed but do not fail the run.
 set -euo pipefail
 source "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/test-suites/scripts/lib/common.sh"
