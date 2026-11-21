@@ -11,10 +11,19 @@ type DiagramRecord struct {
 	Data           DiagramLayout  `json:"data"`
 }
 
+// EngineBlocks is DiagramLayout.Engine for a building-block diagram. A's
+// generator skips such a diagram (ADR-014): B builds it through its
+// deployments.
+const EngineBlocks = "blocks"
+
 // DiagramLayout represents the full diagram state stored in the 'data' column
 type DiagramLayout struct {
-	Nodes []DiagramNode `json:"nodes"`
-	Edges []DiagramEdge `json:"edges"`
+	// Engine is "blocks" for a building-block diagram, which B owns
+	// (backend/adapter/internal/translate); empty for A's AWS diagrams. A keeps it on
+	// every save so B can tell its diagrams apart.
+	Engine string        `json:"engine,omitempty"`
+	Nodes  []DiagramNode `json:"nodes"`
+	Edges  []DiagramEdge `json:"edges"`
 }
 
 // DiagramNode represents a node in the flow diagram

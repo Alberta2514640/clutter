@@ -1,67 +1,28 @@
-name: Build and Push Docker Images
+name: Website image
 
+# Builds the website's image on every pull request and push to main, so a change that breaks the
+# Dockerfile or the build fails here first. It pushes nothing: the image bakes in the cloud's
+# addresses, so the cloud's image is built and pushed to ECR by npm run deploy -- prod --site-image
+# (docs/architecture/environments.md § Credentials day). The values below are stand-ins.
 on:
+  pull_request:
   push:
-    branches: ['main', 'dev']  # Adjust to the branch you'd like to trigger this workflow
+    branches: ['main']
 
-env:
-  REGISTRY: ghcr.io
-  FRONTEND_IMAGE_NAME: alberta2514640/clutter-frontend
+permissions:
+  contents: read
 
 jobs:
-  build-and-push-images:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Build and push frontend image
-      - name: Extract frontend metadata (tags, labels)
-        id: frontend-meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
-
-      - name: Build and push frontend Docker image
-        id: frontend-push
-        uses: docker/build-push-action@v4
-        if: github.ref == 'refs/heads/main'
-        with:
-          context: ./frontend
-          push: true
-          file: ./frontend/Dockerfile.frontend  #
-          tags: |
-            ${{ steps.frontend-meta.outputs.tags }}
-            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
-          labels: ${{ steps.frontend-meta.outputs.labels }}
-
-      # When pushing to the dev branch, also tag the image with :dev
-      - name: Build and push frontend Docker image (dev tag)
-        if: github.ref == 'refs/heads/dev'
-        uses: docker/build-push-action@v4
-        with:
-          context: ./frontend
-          push: true
-          file: ./frontend/Dockerfile.frontend
-          tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:dev
-          labels: ${{ steps.frontend-meta.outputs.labels }}
-
-      # - name: Generate artifact attestation for frontend
-      #   uses: actions/attest-build-provenance@v1
-      #   with:
-      #     subject-name: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
-      #     subject-digest: ${{ steps.frontend-push.outputs.digest }}
-      #     push-to-registry: true
+      - name: Build the website's image (no push)
+        env:
+          IMAGE_TAG: ci
+          NEXT_PUBLIC_API_ENDPOINT: https://api.clutter.invalid
+          NEXT_PUBLIC_ADAPTER_API_ENDPOINT: https://app.clutter.invalid
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: 000000000000-ci.apps.googleusercontent.com
+          NEXT_PUBLIC_CONTACT_EMAIL: hello@clutter.invalid
+        run: frontend/build-image.sh

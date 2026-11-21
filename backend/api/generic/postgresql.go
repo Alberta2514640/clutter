@@ -19,6 +19,31 @@ func PsqlConnect() (*pgx.Conn, error) {
 	return conn, nil
 }
 
+// Querier is the part of a Postgres connection the ownership checks need.
+// *pgx.Conn satisfies it, and so does pgxmock's connection in tests.
+type Querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// Conn is the part of a Postgres connection a handler uses. Handlers that
+// open their connection through a replaceable Conn can be tested with pgxmock.
+type Conn interface {
+	Querier
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Close(ctx context.Context) error
+}
+
+// PsqlConnectConn is PsqlConnect behind the Conn interface. It never returns a
+// non-nil Conn with an error.
+func PsqlConnectConn() (Conn, error) {
+	conn, err := PsqlConnect()
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
 // IsUniqueViolation checks if the error is a PostgreSQL unique constraint violation
 // PostgreSQL error code 23505 indicates a unique_violation
 func IsUniqueViolation(err error) bool {

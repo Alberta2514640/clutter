@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -21,7 +21,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	userId := userData.Id
@@ -66,38 +66,17 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	ctx := context.Background()
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("accounts delete: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to connect to PostgreSQL database",
-			"error":   err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Verify the account access role entry exists before attempting deletion
@@ -110,14 +89,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		accountId, organizationId,
 	).Scan(&entryExists)
 	if err != nil {
+		log.Printf("accounts delete: look up the account: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to verify account access role existence",
-			"error":   err.Error(),
 		})
 	}
 	if !entryExists {
 		return generic.Response(http.StatusNotFound, generic.Json{
-			"message": fmt.Sprintf("no account access role found for accountId '%s' in organizationId '%s'.", accountId, organizationId),
+			"message": "account not found",
 		})
 	}
 
@@ -128,9 +107,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		accountId, organizationId,
 	)
 	if err != nil {
+		log.Printf("accounts delete: delete: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to delete account access role",
-			"error":   err.Error(),
 		})
 	}
 

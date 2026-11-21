@@ -1,7 +1,5 @@
 .vscode/.aws_credentials
-/experimental
 frontend/clutter/.prettierrc
-backend/infra/.deployment-outputs
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
@@ -11,3 +9,6 @@ backend/infra/.deployment-outputs
 .claude/findings/*
 !.claude/findings/README.md
 !.claude/findings/NOW.md
+
+# macOS folder metadata
+.DS_Store

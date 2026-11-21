@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +24,22 @@ type UpdateRequest struct {
 	Data      *generic.DiagramLayout `json:"data,omitempty"`
 }
 
+// dbConn is the part of a Postgres connection this handler uses: the shared
+// Conn plus a transaction for the history row and the update.
+type dbConn interface {
+	generic.Conn
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// connect opens the database. Tests replace it with a mock.
+var connect = func() (dbConn, error) {
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
 func main() {
 	lambda.Start(handler)
 }
@@ -30,10 +47,9 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// 1. Extract user data from authorizer context
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -43,7 +59,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "Invalid request body",
-			"error":   err.Error(),
 		})
 	}
 
@@ -99,44 +114,31 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// Note: Empty data {} is valid - allows clearing diagram data
 
 	// 3. Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("diagram update: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
-	// 4. Authorization: Get project's organization and check membership
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, req.ProjectID)
+	// 4. Authorization: the diagram belongs to the project, the project to an
+	// organization the caller is in. Another organization's ids get the same
+	// 404 as ids that do not exist, and the writes below use the checked,
+	// canonical ids.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userID, "", req.ProjectID, req.DiagramID)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "Failed to fetch project",
-		})
+		return generic.AuthorizationResponse(err)
 	}
-
-	// 5. Check organization membership
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "Failed to check authorization",
-		})
-	}
+	req.ProjectID, req.DiagramID = ids.ProjectID, ids.DiagramID
 
 	// 6. Start transaction for atomic fetch + history + update
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
+		log.Printf("diagram update: begin: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to start transaction",
 		})
@@ -154,6 +156,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "Diagram not found",
 			})
 		}
+		log.Printf("diagram update: read the diagram: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to fetch diagram for update",
 		})
@@ -164,6 +167,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	versionQuery := `SELECT COALESCE(MAX(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1`
 	err = tx.QueryRow(ctx, versionQuery, req.DiagramID).Scan(&nextVersion)
 	if err != nil {
+		log.Printf("diagram update: next version: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to get version number",
 		})
@@ -176,6 +180,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	`
 	_, err = tx.Exec(ctx, historyQuery, req.DiagramID, nextVersion, userID, timestamp, oldName, oldData, "Auto-saved before update")
 	if err != nil {
+		log.Printf("diagram update: history row: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to save diagram history",
 		})
@@ -197,6 +202,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		argCount++
 		dataJSON, err := json.Marshal(req.Data)
 		if err != nil {
+			log.Printf("diagram update: marshal data: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "Internal server error",
 			})
@@ -236,22 +242,23 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"message": "A diagram with this name already exists in the project",
 			})
 		}
+		log.Printf("diagram update: update: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to update diagram",
-			"error":   err.Error(),
 		})
 	}
 
 	// Unmarshal the JSONB data
 	if err := json.Unmarshal(rawData, &diagram.Data); err != nil {
+		log.Printf("diagram update: parse diagram %s: %v", diagram.ID, err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to parse diagram data",
-			"error":   err.Error(),
 		})
 	}
 
 	// 11. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
+		log.Printf("diagram update: commit: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to commit update",
 		})

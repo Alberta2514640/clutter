@@ -4,22 +4,29 @@ set -euo pipefail
 TOTAL_START_TIME=$(date +%s)
 
 echo "Starting Terraform deploy."
-psql --version
 
 # ENVIRONMENT VARIABLES (Required)
 # ===============================
+# From the task definition: S3_CLUTTER_NAME, S3_TEMPLATES_NAME
+# From terraform-command-runner, per run:
 # AWS_REGION
 # TERRAFORM_DIRECTORY
-# CLIENT_ROLE_ARN
+# CLIENT_ROLE_ARN (also names the permissions boundary, below)
 # ASSUME_ROLE_EXTERNAL_ID
 # COMMAND
 # COMMAND_ID
+# DIAGRAM_ID (read by the logs/live Lambda from the task's overrides)
+#
+# The task has no database access. It reports how the run ended in a status
+# file beside its logs, which the API copies into the run's
+# diagram_deployment_logs row (backend/api/generic/deploy_status.go).
 
 # -------------------------------
 # Log files
 # -------------------------------
 INIT_LOG="/tmp/terraform-init.log"
 COMMAND_LOG="/tmp/terraform-command.log"
+STATUS_FILE="/tmp/status.json"
 
 # -------------------------------
 # Error handler
@@ -46,9 +53,6 @@ on_error() {
     echo "-----------------------"
   fi
 
-  # Mark as FAILED in DB
-  update_status "FAILED" || true
-
   # Upload state even on failure if state exists
   # Unset assumed role credentials and go back to using Fargate's own role
   unset AWS_ACCESS_KEY_ID
@@ -67,6 +71,9 @@ on_error() {
 
   # Upload logs on failure
   upload_logs
+
+  # Mark FAILED, last, so the logs are there once the status says the run ended
+  write_status "FAILED" || true
 
   exit "$exit_code"
 }
@@ -93,25 +100,45 @@ upload_logs() {
 }
 
 # -------------------------------
-# Update Log DB Record Status
+# Write the run's status file
 # -------------------------------
-update_status() {
+# Runs with the task's own role (the customer's credentials are unset first),
+# since the file goes to Clutter's bucket. The shape is generic.DeployStatus.
+write_status() {
   local status=$1
+  local end_time duration
 
-  END_TIME=$(date +%s)
-  DURATION=$((END_TIME - TOTAL_START_TIME))
+  end_time=$(date +%s)
+  duration=$((end_time - TOTAL_START_TIME))
 
-  echo "Updating deployment status to $status..."
+  echo "Recording deployment status $status..."
 
-  psql "$PSQL_CONNECTION_STRING" -v ON_ERROR_STOP=1 -c "
-  UPDATE public.diagram_deployment_logs
-  SET 
-    status = '$status',
-    duration_seconds = $DURATION
-  WHERE diagram_id = '$DIAGRAM_ID'
-    AND command_id = '$COMMAND_ID';
-  " || echo "Warning: failed to update deployment status"
+  jq -n \
+    --arg status "$status" \
+    --arg command_id "$COMMAND_ID" \
+    --argjson duration "$duration" \
+    '{status: $status, command_id: $command_id, duration_seconds: $duration}' >"$STATUS_FILE" &&
+    aws s3 cp "$STATUS_FILE" "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY/logs/$COMMAND_ID/status.json" \
+      --content-type application/json \
+      --sse AES256 ||
+    echo "Warning: failed to record deployment status"
 }
+
+# -------------------------------
+# Permissions boundary
+# -------------------------------
+# The customer role may create a role only with the boundary its stack made
+# beside it (client_side_terraform_deployer_role.yaml), and every role the
+# generated code creates names it through this variable. The stack names the
+# role AllowClutterToDeployTerraformRole-<UniqueId> and the boundary
+# /clutter/ClutterPermissionsBoundary-<UniqueId> in the same account.
+ROLE_ARN_PATTERN='^arn:(aws[a-z-]*):iam::([0-9]{12}):role/AllowClutterToDeployTerraformRole-([a-z0-9]{8})$'
+if [[ ! "$CLIENT_ROLE_ARN" =~ $ROLE_ARN_PATTERN ]]; then
+  echo "ERROR: CLIENT_ROLE_ARN is not a role the Clutter CloudFormation stack creates."
+  false
+fi
+TF_VAR_permissions_boundary_arn="arn:${BASH_REMATCH[1]}:iam::${BASH_REMATCH[2]}:policy/clutter/ClutterPermissionsBoundary-${BASH_REMATCH[3]}"
+export TF_VAR_permissions_boundary_arn
 
 # -------------------------------
 # Fetch Terraform code
@@ -120,7 +147,7 @@ echo "Downloading Terraform from S3."
 aws s3 sync "s3://$S3_CLUTTER_NAME/$TERRAFORM_DIRECTORY" /app
 
 # Check to see if Terraform file exists
-if [ -z "$(ls -A /app)" ]; then
+if [ -z "$(ls -A /app/*.tf 2>/dev/null)" ]; then
   echo "ERROR: No Terraform files found in S3 path."
   false
 fi
@@ -150,9 +177,10 @@ CREDS=$(aws sts assume-role \
   --role-session-name clutter-terraform-deployer-session \
   --external-id "$ASSUME_ROLE_EXTERNAL_ID")
 
-export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
-export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
-export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
+AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
+AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
+AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
 INIT_LOG="/tmp/terraform-init.log"
 COMMAND_LOG="/tmp/terraform-command.log"
@@ -229,6 +257,6 @@ upload_logs
 # -------------------------------
 # Mark SUCCESS
 # -------------------------------
-update_status "SUCCESS"
+write_status "SUCCESS"
 
 echo "Terraform command complete."

@@ -110,19 +110,6 @@ func (p *Pool) Start(ctx context.Context) error {
 	return nil
 }
 
-// Pids returns the process ids of the running Lambdas.
-func (p *Pool) Pids() []int {
-	var pids []int
-	for _, pr := range p.procs {
-		pr.mu.Lock()
-		if pr.cmd != nil && pr.cmd.Process != nil {
-			pids = append(pids, pr.cmd.Process.Pid)
-		}
-		pr.mu.Unlock()
-	}
-	return pids
-}
-
 // Stop kills every Lambda process.
 func (p *Pool) Stop() {
 	for _, pr := range p.procs {

@@ -1,12 +1,19 @@
 "use client";
 
-import Navbar from "@/components/common/Navbar";
+import ClutterLogo from "@/components/common/ClutterLogo";
+import { Button } from "@/components/ui/button";
 import { organizationApi } from "@/lib/features/organization/api";
+import { homePath } from "@/lib/features/organization/home";
 import { useOrganizations } from "@/lib/features/organization/hooks";
 import { useLoginWithGoogle, useLogout, useMe } from "@/lib/features/user/hooks";
-import { GoogleLogin } from "@react-oauth/google";
+import { isSessionExpired, SESSION_EXPIRED_NOTICE } from "@/lib/features/user/session";
+import type { CredentialResponse } from "@react-oauth/google";
+import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import BrandPanel from "./_components/BrandPanel";
+import GoogleButton from "./_components/GoogleButton";
 
 function isTokenExpired(token: string) {
   try {
@@ -17,15 +24,10 @@ function isTokenExpired(token: string) {
   }
 }
 
-function getErrorStatus(error: unknown): number | null {
-  const err = error as {
-    status?: number;
-    response?: { status?: number };
-  };
+const SIGN_IN_FAILED = "Clutter could not sign you in. Try again.";
 
-  return err?.response?.status ?? err?.status ?? null;
-}
-
+// Sign in and sign up are one page: Google is the only way in (A's log-in
+// accepts only Google tokens), and the first sign-in creates the account.
 export default function LoginPage() {
   const router = useRouter();
 
@@ -33,186 +35,151 @@ export default function LoginPage() {
   const logout = useLogout();
   const meQ = useMe();
 
-  const [postLoginError, setPostLoginError] = useState<string | null>(null);
+  const [signInError, setSignInError] = useState<string | null>(null);
   const [isResolvingLogin, setIsResolvingLogin] = useState(false);
-  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  // Changing the key draws a fresh Google button, which is the retry.
+  const [googleButtonKey, setGoogleButtonKey] = useState(0);
 
   const rawToken = meQ.data?.token ?? null;
   const token = rawToken && !isTokenExpired(rawToken) ? rawToken : null;
-
   const orgsQ = useOrganizations(token);
 
-  const hasOrg = useMemo(() => {
-    const orgs = orgsQ.data ?? [];
-    return orgs.length > 0;
-  }, [orgsQ.data]);
+  // An expired session elsewhere in the app lands here with ?session=expired.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("session") === "expired") {
+      setSessionNotice(SESSION_EXPIRED_NOTICE);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!rawToken) return;
-
-    if (isTokenExpired(rawToken)) {
-      logout();
-      setSessionExpiredMessage("Your session expired. Please sign in again.");
-      setPostLoginError(null);
-    }
+    if (!rawToken || !isTokenExpired(rawToken)) return;
+    logout();
+    setSessionNotice(SESSION_EXPIRED_NOTICE);
+    setSignInError(null);
   }, [rawToken, logout]);
 
+  // Already signed in: go straight to where this person starts.
   useEffect(() => {
-    if (!token) return;
-    if (orgsQ.isLoading) return;
-
-    const status = getErrorStatus(orgsQ.error);
-
-    if (status === 403) {
-      logout();
-      setSessionExpiredMessage("Your session expired. Please sign in again.");
-      return;
-    }
-
-    if (orgsQ.isError) return;
-
-    router.replace(hasOrg ? "/dashboard" : "/onboarding/create-org");
-  }, [token, orgsQ.isLoading, orgsQ.isError, orgsQ.error, hasOrg, router, logout]);
-
-  const isChecking = !!token && orgsQ.isLoading;
+    if (token && orgsQ.isSuccess) router.replace(homePath(orgsQ.data));
+  }, [token, orgsQ.isSuccess, orgsQ.data, router]);
 
   const routeAfterLogin = async (authToken: string) => {
-    const fetchOrganizations = async () => organizationApi.list(authToken);
-
     try {
-      const orgs = await fetchOrganizations();
-      router.replace(orgs.length > 0 ? "/dashboard" : "/onboarding/create-org");
+      router.replace(homePath(await organizationApi.list(authToken)));
       return;
     } catch {
       // One quick retry smooths over the transient first-request failure seen after login.
     }
-
     await new Promise((resolve) => window.setTimeout(resolve, 300));
+    router.replace(homePath(await organizationApi.list(authToken)));
+  };
 
+  const onCredential = async (response: CredentialResponse) => {
+    const googleIdToken = response.credential;
+    if (!googleIdToken) {
+      setSignInError("Google did not return your sign-in. Try again.");
+      return;
+    }
+    setSignInError(null);
+    setSessionNotice(null);
+    setIsResolvingLogin(true);
     try {
-      const orgs = await fetchOrganizations();
-      router.replace(orgs.length > 0 ? "/dashboard" : "/onboarding/create-org");
-    } catch (err) {
-      const status = getErrorStatus(err);
-
-      if (status === 403) {
-        logout();
-        setSessionExpiredMessage("Your session expired. Please sign in again.");
-        return;
+      const user = await login.mutateAsync(googleIdToken);
+      try {
+        await routeAfterLogin(user.token);
+      } catch (err) {
+        if (isSessionExpired(err)) {
+          logout();
+          setSessionNotice(SESSION_EXPIRED_NOTICE);
+        } else {
+          setSignInError("You are signed in, but Clutter could not load your teams. Try again.");
+        }
       }
-
-      throw err;
+    } catch {
+      setSignInError(SIGN_IN_FAILED);
+    } finally {
+      setIsResolvingLogin(false);
     }
   };
 
-  const orgErrorStatus = getErrorStatus(orgsQ.error);
-  const showOrgNetworkError = orgsQ.isError && orgErrorStatus !== 403;
+  const retryGoogle = () => {
+    setSignInError(null);
+    setGoogleButtonKey((k) => k + 1);
+  };
+
+  // A refused token is handled for the whole app (it signs out and shows the notice).
+  const showOrgError = orgsQ.isError && !isSessionExpired(orgsQ.error);
+  const busy = (!!token && orgsQ.isLoading) || isResolvingLogin;
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col pt-20 relative overflow-hidden">
-      <Navbar showLogin={false} />
+    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="relative isolate flex min-h-dvh flex-col px-4 py-6 sm:px-10 lg:px-16">
+        <header>
+          <Link href="/" aria-label="Clutter home" className="inline-flex rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <ClutterLogo size={28} withName motion="once" />
+          </Link>
+        </header>
 
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/[0.05] via-transparent to-indigo-500/[0.08] blur-3xl" />
-        <div className="absolute top-1/4 right-[-5%] w-80 h-80 rounded-full bg-cyan-500/30 blur-3xl" />
-        <div className="absolute bottom-1/5 left-[-10%] w-96 h-96 rounded-full bg-indigo-500/25 blur-3xl" />
-      </div>
+        <main id="main" className="flex flex-1 items-center py-12">
+          <div className="animate-fade-up mx-auto w-full max-w-[400px]">
+            <h1 className="text-foreground text-3xl font-semibold tracking-tight">Sign in to Clutter</h1>
+            <p className="text-muted-foreground mt-2 text-base">New or returning, it&apos;s one step.</p>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-16">
-        <div className="w-full max-w-md">
-          <div className="bg-slate-950/70 backdrop-blur-xl rounded-2xl border border-slate-800/70 p-8 shadow-[0_18px_60px_rgba(0,0,0,0.85)]">
-            <div className="text-center mb-8">
-              <p className="text-xs font-semibold tracking-[0.25em] text-cyan-300 uppercase mb-3">
-                Clutter Access
+            {sessionNotice && (
+              <p role="status" className="border-warning/30 bg-warning/10 text-foreground mt-6 flex gap-2.5 rounded-lg border px-3 py-2.5 text-sm">
+                <Info className="text-warning mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {sessionNotice}
               </p>
-              <h1 className="text-3xl md:text-4xl font-bold mb-2 tracking-tight">
-                Welcome back
-              </h1>
-              <p className="text-sm text-slate-400">
-                Sign in to continue to your projects and diagrams.
-              </p>
-            </div>
-
-            <div className="flex justify-center">
-              <GoogleLogin
-                onSuccess={async (credentialResponse) => {
-                  const googleIdToken = credentialResponse.credential;
-                  if (!googleIdToken) {
-                    console.error("No Google ID token returned");
-                    return;
-                  }
-
-                  setPostLoginError(null);
-                  setSessionExpiredMessage(null);
-                  setIsResolvingLogin(true);
-
-                  try {
-                    const user = await login.mutateAsync(googleIdToken);
-                    await routeAfterLogin(user.token);
-                  } catch (err) {
-                    console.error(err);
-                    setPostLoginError(String(err));
-                  } finally {
-                    setIsResolvingLogin(false);
-                  }
-                }}
-                onError={() => console.log("Login Failed")}
-              />
-            </div>
-
-            {(isChecking || isResolvingLogin) && (
-              <div className="mt-6 text-center text-sm text-slate-400">
-                Checking your organizations…
-              </div>
             )}
 
-            {(sessionExpiredMessage ||
-              login.isError ||
-              meQ.isError ||
-              showOrgNetworkError ||
-              postLoginError) && (
-              <div className="mt-6 text-sm text-red-400">
-                {sessionExpiredMessage && <div>{sessionExpiredMessage}</div>}
-                {login.isError && <div>Login error: {String(login.error)}</div>}
-                {meQ.isError && <div>Auth error: {String(meQ.error)}</div>}
-                {showOrgNetworkError && (
-                  <div>Organization lookup error: {String(orgsQ.error)}</div>
-                )}
-                {postLoginError && <div>Login error: {postLoginError}</div>}
-              </div>
-            )}
+            <div className="mt-8">
+              <GoogleButton key={googleButtonKey} onCredential={(r) => void onCredential(r)} onError={() => setSignInError("Google sign-in did not finish. Try again.")} />
+            </div>
+            {/* An email form, when A's log-in takes one, goes here under an "or continue with email" divider. */}
 
-            <div className="relative my-8">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-800" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-slate-950/80 text-slate-400">
-                  Secure sign in powered by Google &amp; Clutter API
-                </span>
-              </div>
+            <p className="text-muted-foreground mt-4 text-center text-sm">New here? This creates your account.</p>
+
+            <div aria-live="polite" className="mt-6 min-h-6">
+              {busy && (
+                <p role="status" className="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Opening your workspace…
+                </p>
+              )}
+              {!busy && (signInError || showOrgError) && (
+                <div role="alert" className="border-danger/25 bg-danger/10 animate-fade-in space-y-3 rounded-lg border p-3 text-sm">
+                  <p className="text-foreground flex gap-2.5">
+                    <AlertTriangle className="text-danger mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {signInError ?? "Clutter could not load your teams. Check your connection and try again."}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={signInError ? retryGoogle : () => void orgsQ.refetch()}>
+                    Try again
+                  </Button>
+                </div>
+              )}
             </div>
 
-            <p className="text-center text-xs text-slate-400 leading-relaxed">
-              By continuing, you agree to our{" "}
-              <a
-                href="/terms"
-                className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
-              >
-                Terms of Service
-              </a>{" "}
-              and{" "}
-              <a
-                href="/privacy"
-                className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2"
-              >
-                Privacy Policy
-              </a>
+            <p className="text-muted-foreground mt-6 text-center text-xs">
+              By continuing, you agree to the{" "}
+              <Link href="/terms" className="text-foreground underline underline-offset-4 hover:text-link">
+                Terms of use
+              </Link>{" "}
+              and the{" "}
+              <Link href="/privacy" className="text-foreground underline underline-offset-4 hover:text-link">
+                Privacy policy
+              </Link>
               .
             </p>
           </div>
-        </div>
-      </main>
+        </main>
+
+        <footer className="text-muted-foreground text-center text-xs lg:text-left">
+          Google confirms who you are. Clutter never sees your password.
+        </footer>
+      </div>
+
+      <BrandPanel />
     </div>
   );
 }

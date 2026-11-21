@@ -1,113 +1,158 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-
+import EmptyState from "@/components/common/EmptyState";
+import ErrorState from "@/components/common/ErrorState";
+import PageHeader from "@/components/common/PageHeader";
+import PageSkeleton from "@/components/common/PageSkeleton";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-
-import { useOrganizations } from "@/lib/features/organization/hooks";
-import { useCreateProject } from "@/lib/features/projects/hooks";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "@/components/ui/sonner";
+import { Textarea } from "@/components/ui/textarea";
+import { PROJECTS_PATH } from "@/lib/features/organization/home";
+import { useCurrentOrganization } from "@/lib/features/organization/hooks";
+import { useCreateProject, useProjects } from "@/lib/features/projects/hooks";
+import { PROJECT_DESCRIPTION_MAX, projectDescriptionProblem, projectNameProblem } from "@/lib/features/projects/rules";
 import { useMe } from "@/lib/features/user/hooks";
+import { cn } from "@/lib/utils";
+import { Loader2, Users } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useRef, useState, type FormEvent } from "react";
 
 export default function NewProjectPage() {
   const router = useRouter();
   const meQ = useMe();
-  const user = meQ.data ?? null;
-  const token = user?.token ?? null;
+  const token = meQ.data?.token ?? null;
+  const current = useCurrentOrganization(token);
+  const organizationId = current.organizationId;
+  const projectsQ = useProjects(token, organizationId);
+  const createProjectM = useCreateProject(token);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [errorText, setErrorText] = useState<string | null>(null);
+  const [showProblems, setShowProblems] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    if (!name && user?.displayName) {
-      setName("");
+  if (current.isError) {
+    return (
+      <ErrorState
+        title="Your teams could not load"
+        description="Check your connection, then try again."
+        onRetry={() => void current.refetch()}
+        retrying={current.isFetching}
+      />
+    );
+  }
+  if (current.isLoading || meQ.isLoading) return <PageSkeleton label="Loading…" cards={0} />;
+  if (!current.organization || !organizationId) {
+    return (
+      <>
+        <PageHeader title="New project" />
+        <EmptyState
+          icon={Users}
+          title="Create a team first"
+          description="Projects belong to a team. Make your team, then come back to add a project."
+          action={
+            <Button asChild>
+              <Link href="/settings/organization/create-org">Create a team</Link>
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  const taken = (projectsQ.data ?? []).map((p) => p.name);
+  const nameProblem = projectNameProblem(name, taken);
+  const descriptionProblem = projectDescriptionProblem(description);
+  const shownNameProblem = showProblems ? nameProblem : null;
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    setFailed(false);
+    if (nameProblem || descriptionProblem) {
+      setShowProblems(true);
+      nameRef.current?.focus();
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.displayName]);
-
-  const orgsQ = useOrganizations(token);
-  const organizationId = useMemo(() => orgsQ.data?.[0]?.id ?? null, [orgsQ.data]);
-
-  const createProjectM = useCreateProject(token);
-  const submitting = createProjectM.isPending;
-  const canSubmit = !!name.trim() && !!token && !!organizationId && !submitting;
-
-  const onCreate = async () => {
-    setErrorText(null);
-
-    const trimmedName = name.trim();
-    if (!trimmedName) return setErrorText("Project name is required.");
-    if (!token) return setErrorText("Missing auth token. Please log in again.");
-    if (!organizationId) return setErrorText("Missing organizationId. Please select an organization first.");
-
     const desc = description.trim();
-    const payload = {
-      organizationId,
-      name: trimmedName,
-      ...(desc ? { description: desc } : {}), // omit when empty (backend rejects "")
-    };
-
     try {
-      const created = await createProjectM.mutateAsync(payload);
+      const created = await createProjectM.mutateAsync({
+        organizationId,
+        name: name.trim(),
+        // A's create refuses an empty description, so it is left out.
+        ...(desc ? { description: desc } : {}),
+      });
+      toast.success("Project created");
       router.replace(`/projects/${created.id}/diagrams`);
-    } catch (e) {
-      setErrorText(String(e));
+    } catch {
+      setFailed(true);
     }
   };
 
   return (
-    <div className="max-w-xl mx-auto px-6 py-12">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Create New Project</h1>
-        <p className="text-gray-400 mt-2">
-          Create a project to start building diagrams, variables, and workspaces.
-        </p>
-      </div>
+    <div className="max-w-2xl">
+      <PageHeader
+        eyebrow={<Link href={PROJECTS_PATH} className="hover:text-foreground">Projects</Link>}
+        title="New project"
+        description={`A project holds diagrams. It belongs to ${current.organization.name}.`}
+      />
 
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardContent className="p-6 space-y-5">
+      <form onSubmit={create} noValidate className="surface-card">
+        <div className="space-y-6 p-5 md:p-6">
           <div className="space-y-2">
-            <label className="text-sm text-gray-300">Project name</label>
-            <input
+            <Label htmlFor="project-name">Name</Label>
+            <Input
+              ref={nameRef}
+              id="project-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Web App Infrastructure"
-              className="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 text-white outline-none focus:border-teal-500/60"
+              onBlur={() => name && setShowProblems(true)}
+              placeholder="For example, Web shop"
+              autoFocus
+              aria-invalid={!!shownNameProblem}
+              aria-describedby="project-name-hint"
             />
+            <p id="project-name-hint" className={cn("text-sm", shownNameProblem ? "text-danger" : "text-muted-foreground")}>
+              {shownNameProblem ?? "Up to 32 characters."}
+            </p>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-gray-300">Description (optional)</label>
-            <textarea
+            <Label htmlFor="project-description">Description</Label>
+            <Textarea
+              id="project-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this project for?"
-              rows={4}
-              className="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 text-white outline-none focus:border-teal-500/60"
+              rows={3}
+              aria-invalid={!!descriptionProblem}
+              aria-describedby="project-description-hint"
             />
+            <p id="project-description-hint" className={cn("text-sm", descriptionProblem ? "text-danger" : "text-muted-foreground")}>
+              {descriptionProblem ?? `Optional. Up to ${PROJECT_DESCRIPTION_MAX} characters.`}
+            </p>
           </div>
 
-          {(errorText || createProjectM.isError) && (
-            <pre className="whitespace-pre-wrap text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-              {errorText ?? String(createProjectM.error?.message ?? createProjectM.error)}
-            </pre>
+          {failed && (
+            <p role="alert" className="border-danger/25 bg-danger/10 text-foreground rounded-lg border p-3 text-sm">
+              Clutter could not create the project. Try again.
+            </p>
           )}
+        </div>
 
-          <Button onClick={onCreate} disabled={!canSubmit} className="w-full bg-teal-600 hover:bg-teal-500 text-white">
-            {submitting ? "Creating..." : "Create Project"}
+        <div className="bg-muted/40 flex flex-col-reverse gap-3 rounded-b-xl border-t px-5 py-3 sm:flex-row sm:justify-end md:px-6">
+          <Button asChild variant="ghost">
+            <Link href={PROJECTS_PATH}>Cancel</Link>
           </Button>
-
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard")}
-            className="w-full text-sm text-gray-400 hover:text-gray-200"
-          >
-            Back to Dashboard
-          </button>
-        </CardContent>
-      </Card>
+          <Button type="submit" disabled={createProjectM.isPending}>
+            {createProjectM.isPending && <Loader2 className="animate-spin" aria-hidden="true" />}
+            {createProjectM.isPending ? "Creating…" : "Create project"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

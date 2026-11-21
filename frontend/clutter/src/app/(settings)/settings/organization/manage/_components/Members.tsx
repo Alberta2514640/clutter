@@ -1,11 +1,9 @@
 "use client";
 
-export type OrgMember = {
-  id: string;
-  name: string;
-  email: string;
-  role: string; // e.g. "Project Admin", "Member"
-};
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import type { UserData } from "@/lib/features/user/types";
+import { plural } from "@/lib/text";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -14,50 +12,42 @@ function initials(name: string) {
   return (a + b).toUpperCase();
 }
 
-export default function Members({ members }: { members: OrgMember[]; }) {
+// A's organization list gives a team's member count and member ids, not their
+// names, so only the signed-in person is shown by name.
+export default function Members({ me, memberCount }: { me: UserData | null; memberCount: number }) {
+  const others = Math.max(memberCount - 1, 0);
+
   return (
-    <section className="space-y-2 py-2">
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40">
-        {/* Header (stays visible) */}
-        <div className="grid grid-cols-12 px-4 py-3 text-xs text-slate-400 border-b border-slate-800">
-          <div className="col-span-8">User</div>
-          <div className="col-span-4">Role</div>
-        </div>
-
-        {/* Scroll area depends on window */}
-        <div className={`max-h-[40vh] overflow-y-auto`}>
-          <ul className="divide-y divide-slate-800">
-            {members.map((m) => (
-              <li key={m.id} className="px-4 py-3">
-                <div className="grid grid-cols-12 items-center gap-3">
-                  <div className="col-span-8 flex items-center gap-3 min-w-0">
-                    <div className="h-9 w-9 rounded-full bg-slate-800/70 border border-slate-700 flex items-center justify-center text-xs font-semibold text-slate-100 shrink-0">
-                      {initials(m.name)}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="text-sm text-slate-100 truncate">
-                        {m.name}
-                      </div>
-                      <div className="text-xs text-slate-400 truncate">
-                        {m.email}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="col-span-4 text-sm text-slate-100">
-                    {m.role}
-                  </div>
-                </div>
-              </li>
-            ))}
-
-            {members.length === 0 && (
-              <li className="px-4 py-6 text-sm text-slate-400">No members yet.</li>
-            )}
-          </ul>
-        </div>
+    <section aria-labelledby="members-heading" className="surface-card">
+      <div className="p-5 md:p-6">
+        <h2 id="members-heading" className="text-foreground text-base font-semibold">
+          Members
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">{plural(memberCount, "person is", "people are")} in this team.</p>
       </div>
+
+      <ul className="divide-y border-t">
+        {me && (
+          <li className="flex items-center gap-3 px-5 py-4 md:px-6">
+            <Avatar className="size-9">
+              {me.pictureUrl && <AvatarImage src={me.pictureUrl} alt="" referrerPolicy="no-referrer" />}
+              <AvatarFallback className="bg-primary/10 text-link text-xs font-semibold">{initials(me.displayName || me.email)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground truncate text-sm font-medium">{me.displayName}</p>
+              <p className="text-muted-foreground truncate text-xs">{me.email}</p>
+            </div>
+            <Badge variant="outline">You</Badge>
+          </li>
+        )}
+        {others > 0 && (
+          <li className="text-muted-foreground px-5 py-4 text-sm md:px-6">
+            And {plural(others, "other member", "other members")}. Clutter does not show other members&apos; names yet.
+          </li>
+        )}
+      </ul>
+
+      <p className="text-muted-foreground bg-muted/40 rounded-b-xl border-t px-5 py-3 text-sm md:px-6">Inviting people to a team is not available yet.</p>
     </section>
   );
 }

@@ -1,24 +1,6 @@
 // lib/features/projects/api.ts
+import { apiFetch } from "../user/session";
 import type { ApiEnvelope, CreateProjectInput, Project, UpdateProjectInput } from "./types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
-
-async function apiFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  if (!API_BASE) throw new Error("API_ENDPOINT is not set");
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${token}`,
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
-  }
-  return (await res.json()) as T;
-}
 
 export const projectsApi = {
   // GET /project?organizationId=...

@@ -1,0 +1,193 @@
+package gateway
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/google/uuid"
+)
+
+// LinkFakeAccountPath is the dev-only route behind the website's Link fake
+// account button (A's "AWS account required" popup and the AWS link flow).
+const LinkFakeAccountPath = "/dev/link-fake-account"
+
+// FakeRoleArn is what the Link fake account button submits, followed by the
+// stack URL's unique id: a role in no real account, in the form the
+// submit-role-arn Lambda and the API Gateway model accept. The smoke test
+// submits the same, and seed-diagram.py keeps a copy.
+const FakeRoleArn = "arn:aws:iam::123456789012:role/AllowClutterToDeployTerraformRole-"
+
+// LinkFakeAccountHandler links a fake account for one
+// organization, for the signed-in caller. Every step is a call to the real
+// route with the caller's own token, so the real authorizer and each Lambda's
+// membership check decide, and a refusal is returned as it stands. Only
+// Postgres is written; no AWS call is made. An organization that already has
+// a linked account gets no second one. Either way the answer names the linked
+// account (accountName).
+func (s *Server) LinkFakeAccountHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !devPost(w, r) {
+			return
+		}
+
+		var body struct {
+			OrganizationID string `json:"organizationId"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil || uuid.Validate(body.OrganizationID) != nil {
+			writeDevJSON(w, http.StatusBadRequest, "a valid organizationId is required")
+			return
+		}
+		org := url.PathEscape(body.OrganizationID)
+
+		// Reading the accounts proves the caller first: a stranger stops here.
+		status, raw := s.callRoute(r, http.MethodGet, "/organization/"+org+"/accounts", nil)
+		if status != http.StatusOK {
+			writeRouteRefusal(w, status, raw)
+			return
+		}
+		var accounts struct {
+			Data struct {
+				Complete []struct {
+					AccountName string `json:"account_name"`
+				} `json:"complete"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &accounts); err != nil {
+			writeDevJSON(w, http.StatusBadGateway, "could not read the organization's accounts")
+			return
+		}
+		if len(accounts.Data.Complete) > 0 {
+			writeLinked(w, "the organization already has a linked account", accounts.Data.Complete[0].AccountName)
+			return
+		}
+
+		name := "localfake" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+		status, raw = s.callRoute(r, http.MethodGet, "/cloudformation-stack-url/"+org+"?accountName="+name+"&region="+localRegion, nil)
+		if status != http.StatusOK {
+			writeRouteRefusal(w, status, raw)
+			return
+		}
+		accountID, uniqueID, err := ParseStackURL(raw)
+		if err != nil {
+			writeDevJSON(w, http.StatusBadGateway, err.Error())
+			return
+		}
+
+		role, _ := json.Marshal(map[string]string{"role_arn": FakeRoleArn + uniqueID})
+		status, raw = s.callRoute(r, http.MethodPost, "/organization/"+org+"/accounts/"+url.PathEscape(accountID), role)
+		if status < 200 || status >= 300 {
+			writeRouteRefusal(w, status, raw)
+			return
+		}
+		writeLinked(w, "linked a fake account", name)
+	})
+}
+
+// devPost answers what every dev-only POST route answers the same way: a
+// foreign origin, a CORS preflight and a method other than POST. It reports
+// whether the request is a POST the route should handle.
+func devPost(w http.ResponseWriter, r *http.Request) bool {
+	allowed := setCORS(w, r)
+	if r.Header.Get("Origin") != "" && !allowed {
+		writeDevJSON(w, http.StatusForbidden, "this route answers loopback origins only")
+		return false
+	}
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
+		w.WriteHeader(http.StatusNoContent)
+		return false
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST,OPTIONS")
+		writeDevJSON(w, http.StatusMethodNotAllowed, "use POST")
+		return false
+	}
+	return true
+}
+
+// writeLinked answers a successful link with the linked account's name, so
+// the website can choose that account.
+func writeLinked(w http.ResponseWriter, message, accountName string) {
+	writeDevAnswer(w, http.StatusOK, map[string]string{"message": message, "accountName": accountName})
+}
+
+// ParseStackURL pulls the account id and the unique id out of the stack-url
+// Lambda's answer (the raw body, with its data envelope). The URL's query sits
+// after the console's #/ fragment.
+func ParseStackURL(raw []byte) (accountID, uniqueID string, err error) {
+	var stack struct {
+		Data struct {
+			URL       string `json:"url"`
+			AccountID string `json:"account_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &stack); err != nil {
+		return "", "", fmt.Errorf("could not read the stack URL answer")
+	}
+	u, err := url.Parse(stack.Data.URL)
+	if err != nil {
+		return "", "", fmt.Errorf("could not read the stack URL")
+	}
+	query := u.RawQuery
+	if _, after, found := strings.Cut(u.Fragment, "?"); found {
+		query = after
+	}
+	values, err := url.ParseQuery(query)
+	if err != nil {
+		return "", "", fmt.Errorf("could not read the stack URL")
+	}
+	uniqueID = values.Get("param_UniqueId")
+	if stack.Data.AccountID == "" || uniqueID == "" {
+		return "", "", fmt.Errorf("the stack URL answer has no account or unique id")
+	}
+	return stack.Data.AccountID, uniqueID, nil
+}
+
+// callRoute sends one request through this server with the caller's token.
+func (s *Server) callRoute(r *http.Request, method, target string, body []byte) (int, []byte) {
+	req, err := http.NewRequestWithContext(r.Context(), method, target, bytes.NewReader(body))
+	if err != nil {
+		return http.StatusInternalServerError, nil
+	}
+	req.Header.Set("Authorization", r.Header.Get("Authorization"))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = r.RemoteAddr
+	out := &bufferedResponse{header: http.Header{}, status: http.StatusOK}
+	s.ServeHTTP(out, req)
+	return out.status, out.body.Bytes()
+}
+
+type bufferedResponse struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (b *bufferedResponse) Header() http.Header         { return b.header }
+func (b *bufferedResponse) WriteHeader(status int)      { b.status = status }
+func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }
+
+func writeDevJSON(w http.ResponseWriter, status int, message string) {
+	writeDevAnswer(w, status, map[string]string{"message": message})
+}
+
+// writeDevAnswer writes every dev-only route's JSON answer, which no cache keeps.
+func writeDevAnswer(w http.ResponseWriter, status int, body map[string]string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeRouteRefusal(w http.ResponseWriter, status int, raw []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(raw)
+}

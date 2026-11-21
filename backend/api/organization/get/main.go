@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -24,7 +24,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	userId := userData.Id
@@ -37,9 +37,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 		userOrganizationsData, err := internal.GetAllOrgsDataForUser(userId)
 		if err != nil {
+			log.Printf("organization get: list organizations: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "something went wrong while getting data for all organizations",
-				"error":   err.Error(),
 			})
 		}
 
@@ -58,19 +58,18 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 		organizationData, err := internal.GetSingleOrgDataWithId(userId, organizationId)
 		if err != nil && err != pgx.ErrNoRows {
+			log.Printf("organization get: read one organization: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
 				"message": "something went wrong while getting data for single organization",
-				"error":   err.Error(),
 			})
 		} else if err == pgx.ErrNoRows {
 			return generic.Response(http.StatusForbidden, generic.Json{
 				"message": "user does not have access to requested organization data or organization with given ID does not exist",
-				"error":   err.Error(),
 			})
 		}
 
 		return generic.Response(http.StatusOK, generic.Json{
-			"message": fmt.Sprintf("successfully retrieved organization data for ORG#%s", organizationId),
+			"message": "successfully retrieved organization data",
 			"data":    organizationData,
 		})
 

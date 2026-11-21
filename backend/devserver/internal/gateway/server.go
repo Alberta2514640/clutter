@@ -118,9 +118,11 @@ func findRoute(method, path string) (match, string, bool) {
 }
 
 // writeGatewayError writes an error API Gateway itself produces. The platform
-// Terraform configures no gateway responses, so these carry no CORS headers,
-// exactly as in AWS: a browser sees them as CORS failures.
+// Terraform's DEFAULT_4XX and DEFAULT_5XX gateway responses (backend/infra/main.tf)
+// add the CORS origin header, so the browser can read a refused token's 403 and
+// send the user back to sign in.
 func writeGatewayError(w http.ResponseWriter, status int, errorType, body string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Amzn-ErrorType", errorType)
 	w.WriteHeader(status)

@@ -15,7 +15,7 @@ func mockHandler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyR
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 
@@ -115,7 +115,7 @@ func TestGetUserInformation_MissingContext(t *testing.T) {
 		t.Fatalf("Failed to parse response body: %v", err)
 	}
 
-	if body["message"] != "failed to retrieve user data from autorizer context" {
+	if body["message"] != "failed to retrieve user data from authorizer context" {
 		t.Errorf("Unexpected message: %s", body["message"])
 	}
 }

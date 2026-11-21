@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -9,6 +10,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 	lambda.Start(handler)
@@ -18,11 +22,10 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// The authorizer context retains data about the user (extracted from the JWT provided in the Authorization header)
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
-		return generic.Response(
-			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
-		)
+	if err != nil || userData.Id == "" {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+		})
 	}
 	userId := userData.Id
 	// Get query parmeters
@@ -42,27 +45,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("recent activity: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	// Check user's membership to organization
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+	// Check user's membership to organization, and that the diagram belongs to it
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userId, orgId, "", diagramId)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
+
+	// The deployer has no database access, so a finished run's status reaches
+	// its row here, from the status file it wrote beside its logs.
+	generic.ReconcileDeployRunsFromEnv(ctx, conn, ids)
 
 	// Get recent activity
 	query := `
@@ -73,11 +73,11 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		ORDER BY ddl.created_at DESC
 	`
 	recentActivity := []internal.DeploymentLog{}
-	rows, err := conn.Query(ctx, query, diagramId)
+	rows, err := conn.Query(ctx, query, ids.DiagramID)
 	if err != nil {
+		log.Printf("recent activity: query: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to get recent activity",
-			"error":   err.Error(),
 		})
 	}
 	defer rows.Close()
@@ -91,18 +91,18 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 			&deploymentLog.Duration,
 			&deploymentLog.DiagramName,
 		); err != nil {
+			log.Printf("recent activity: scan: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"message": "failed to scan row",
-				"error":   err.Error(),
+				"message": "failed to get recent activity",
 			})
 		}
 		recentActivity = append(recentActivity, deploymentLog)
 	}
 
 	if err := rows.Err(); err != nil {
+		log.Printf("recent activity: rows: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "error iterating deployment log rows",
-			"error":   err.Error(),
+			"message": "failed to get recent activity",
 		})
 	}
 

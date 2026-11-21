@@ -1,17 +1,14 @@
 # All terraform state/lock file
 */terraform.tfvars
+*/*.tfvars
+*/*.backend.hcl
+*/*.tfplan
 */terraform.tfstate.backup
 */terraform.tfstate
 */.terraform.lock.hcl
 */.terraform
 
-# tfstate and application infra for developer account
-/infra-dev
-/tfstate-infra-dev
-
 # Deployment folder containing binary and zip
 **/deploy
 
 **/postman_*.json
-
-infra/backend.tf

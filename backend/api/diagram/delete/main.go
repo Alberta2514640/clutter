@@ -3,12 +3,16 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 	lambda.Start(handler)
@@ -17,10 +21,9 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// 1. Extract user data from authorizer context
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -35,43 +38,30 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// 2. Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("diagram delete: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
-	// 3. Authorization: Get project's organization and check membership
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, projectID)
+	// 3. Authorization: the diagram belongs to the project, the project to an
+	// organization the caller is in
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userID, "", projectID, diagramID)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "Failed to fetch project",
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
-	// 4. Check organization membership
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "Failed to check authorization",
-		})
-	}
-
-	// 5. Delete diagram
+	// 4. Delete diagram
 	query := `DELETE FROM diagrams WHERE id = $1 AND project_id = $2`
-	cmdTag, err := conn.Exec(ctx, query, diagramID, projectID)
+	cmdTag, err := conn.Exec(ctx, query, ids.DiagramID, ids.ProjectID)
+	if generic.IsLiveDeploymentDelete(err) {
+		return generic.LiveDeploymentsResponse()
+	}
 	if err != nil {
+		log.Printf("diagram delete: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "Failed to delete diagram",
 		})

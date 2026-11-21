@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
 
-// LocalSecretPrefix marks a JWT secret as one run.sh generated for this
+// LocalSecretPrefix marks a JWT secret as one dev.sh generated for this
 // machine. The gateway refuses any other secret so a real platform secret is
 // never loaded into a dev process by mistake.
 const LocalSecretPrefix = "devserver-local-"
@@ -22,19 +23,42 @@ type Config struct {
 	// FrontendOrigin is what main.tf passes as var.frontend_url.
 	FrontendOrigin string
 	// AWSEndpoint is where every AWS SDK call from a Lambda is sent. The
-	// gateway serves it on loopback and refuses every request, so no Lambda
-	// can reach a real AWS account from a dev run.
+	// gateway serves it on loopback, answers S3 from local disk and refuses
+	// the rest, so no Lambda can reach a real AWS account from a dev run.
 	AWSEndpoint string
 	// HomeDir is an empty directory used as each Lambda's HOME, so no shared
 	// AWS config or credentials file under the real home is ever read.
 	HomeDir string
+	// ClutterAccountID and TemplateURL are Clutter's real AWS account and the
+	// account-link template's address, for real AWS from this machine
+	// (real-aws.sh). Empty, the link flow gets the local stand-ins. Only the
+	// stack-URL Lambda reads them; no Lambda gets AWS keys either way.
+	ClutterAccountID string
+	TemplateURL      string
 }
+
+var (
+	accountIDPattern   = regexp.MustCompile(`^[0-9]{12}$`)
+	templateURLPattern = regexp.MustCompile(`^https://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.s3\.[a-z0-9-]+\.amazonaws\.com/templates/cloudformation/client_side_terraform_deployer_role\.yaml$`)
+)
 
 // Fixed stand-ins for the platform values main.tf passes to the Lambdas. None
 // of them name a real resource.
 const (
 	localAccountID = "000000000000"
 	localRegion    = "us-west-2"
+
+	// LocalDataBucket and LocalTemplateBucket stand in for the clutter and
+	// templates buckets. The local S3 serves these two and no others.
+	LocalDataBucket     = "clutter-devserver-local"
+	LocalTemplateBucket = "clutter-devserver-local-templates"
+
+	// FrontendGoogleClientID is the Google OAuth client id the local frontend
+	// signs in with: dev.sh passes it as NEXT_PUBLIC_GOOGLE_CLIENT_ID, which
+	// frontend/clutter/src/providers/GoogleAuthProvider.tsx reads. The log-in
+	// Lambda accepts only Google tokens minted for it, so real Google sign-in
+	// works locally. env_test.go fails when the two differ.
+	FrontendGoogleClientID = "214630517546-2tttdua57o7gj14up16v7s3unqoah46k.apps.googleusercontent.com"
 )
 
 // lambdaEnvValue returns the local value for one key a Lambda reads in main.tf.
@@ -46,16 +70,24 @@ func lambdaEnvValue(key string, c Config) (string, error) {
 		return c.PSQLConnString, nil
 	case "JWT_SECRET":
 		return c.JWTSecret, nil
+	case "GOOGLE_CLIENT_ID":
+		return FrontendGoogleClientID, nil
 	case "CORS_ALLOWED_ORIGIN":
 		return c.FrontendOrigin, nil
 	case "CLOUDFORMATION_TEMPLATE_URL":
+		if c.TemplateURL != "" {
+			return c.TemplateURL, nil
+		}
 		return "https://devserver.invalid/client_side_terraform_deployer_role.yaml", nil
 	case "CLUTTER_ACCOUNT_ID":
+		if c.ClutterAccountID != "" {
+			return c.ClutterAccountID, nil
+		}
 		return localAccountID, nil
 	case "S3_BUCKET_NAME":
-		return "clutter-devserver-local", nil
+		return LocalDataBucket, nil
 	case "TEMPLATE_BUCKET_NAME":
-		return "clutter-devserver-local-templates", nil
+		return LocalTemplateBucket, nil
 	case "ECS_CLUSTER_NAME":
 		return "clutter-devserver-local", nil
 	case "TASK_DEFINITION_ARN":
@@ -92,7 +124,7 @@ func processEnv(fn string, keys []string, port string, c Config) ([]string, erro
 		"AWS_REGION=" + localRegion,
 		"AWS_DEFAULT_REGION=" + localRegion,
 		// Static fake credentials and no config files: the SDK never looks
-		// for real credentials, and every call goes to the refusing endpoint.
+		// for real credentials, and every call goes to the loopback endpoint.
 		"AWS_ACCESS_KEY_ID=DEVSERVERLOCALONLY00",
 		"AWS_SECRET_ACCESS_KEY=devserver-local-not-a-credential",
 		"AWS_CONFIG_FILE=/dev/null",
@@ -114,7 +146,7 @@ func processEnv(fn string, keys []string, port string, c Config) ([]string, erro
 // secret and a Postgres on this machine.
 func ValidateConfig(c Config) error {
 	if !strings.HasPrefix(c.JWTSecret, LocalSecretPrefix) || len(c.JWTSecret) < len(LocalSecretPrefix)+32 {
-		return errors.New("JWT_SECRET is not a devserver-local secret; run backend/devserver/run.sh, which generates one")
+		return errors.New("JWT_SECRET is not a devserver-local secret; run backend/devserver/dev.sh, which generates one")
 	}
 	if c.PSQLConnString == "" {
 		return errors.New("PSQL_CONNECTION_STRING is empty")
@@ -132,6 +164,15 @@ func ValidateConfig(c Config) error {
 	}
 	if c.HomeDir == "" {
 		return errors.New("HomeDir is empty")
+	}
+	if (c.ClutterAccountID == "") != (c.TemplateURL == "") {
+		return errors.New("-clutter-account-id and -template-url go together")
+	}
+	if c.ClutterAccountID != "" && !accountIDPattern.MatchString(c.ClutterAccountID) {
+		return errors.New("-clutter-account-id must be a 12-digit AWS account id")
+	}
+	if c.TemplateURL != "" && !templateURLPattern.MatchString(c.TemplateURL) {
+		return errors.New("-template-url must be the account-link template's S3 address")
 	}
 	return nil
 }

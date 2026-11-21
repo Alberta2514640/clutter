@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	// "strings"
 	"time"
@@ -40,7 +41,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err != nil {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -50,31 +50,22 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid request body",
-			"error":   err.Error(),
 		})
 	}
 
 	// 5) Connect to PostgreSQL
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("project create: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
 	// 6) Mandatory authorization: check organization membership
 	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, req.OrganizationID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// 7) Create Project
@@ -100,9 +91,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		// 	})
 		// }
 
+		log.Printf("project create: insert: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to save project",
-			"error":   err.Error(),
 		})
 	}
 

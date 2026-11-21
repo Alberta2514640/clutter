@@ -4,13 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/Alberta2514640/clutter/backend/api/organization/update/internal"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/jackc/pgx/v5"
 )
+
+// dbConn is the part of a Postgres connection this handler uses: the shared
+// Conn plus a transaction for the name and description updates.
+type dbConn interface {
+	generic.Conn
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// connect opens the database. Tests replace it with a mock.
+var connect = func() (dbConn, error) {
+	conn, err := generic.PsqlConnect()
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
 
 func main() {
 
@@ -35,7 +53,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from autorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	// Get user ID from user authorizer data
@@ -45,48 +63,32 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	var body generic.OrgRequestBody
 	err = json.Unmarshal([]byte(request.Body), &body)
 	if err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
+		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request"})
 	}
 	// Get org name and/or description from request body
 	newOrgName := body.OrganizationName
 	newDescription := body.Description
+	// The website's rule, checked here too, so a bad name is a 400 and not a database error.
+	// An empty name means the name does not change.
+	if newOrgName != "" && !generic.OrganizationNameOK(newOrgName) {
+		return generic.Response(http.StatusBadRequest, generic.Json{"message": generic.OrganizationNameProblem})
+	}
 
 	// Connect to PostgreSQL
 	ctx := context.Background()
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("organization update: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to connect to PostgreSQL database",
-			"message": err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, orgId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Fetch current org data
@@ -100,9 +102,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	row := conn.QueryRow(ctx, queryCurrentData, orgId)
 	if err := row.Scan(&currentOrgName, &currentDescription); err != nil {
+		log.Printf("organization update: read the organization: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to fetch current organization data",
-			"message": err.Error(),
+			"message": "failed to fetch current organization data",
 		})
 	}
 
@@ -119,9 +121,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Begin transaction
 	tx, err := conn.Begin(ctx)
 	if err != nil {
+		log.Printf("organization update: begin: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to start transaction",
-			"message": err.Error(),
+			"message": "failed to start transaction",
 		})
 	}
 	defer tx.Rollback(ctx)
@@ -133,13 +135,12 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 		if generic.IsUniqueViolation(err) {
 			return generic.Response(http.StatusConflict, generic.Json{
-				"error":   "organization name already exists for this user",
-				"message": err.Error(),
+				"message": "organization name already exists for this user",
 			})
 		} else if err != nil {
+			log.Printf("organization update: name: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"error":   "failed to update organization name",
-				"message": err.Error(),
+				"message": "failed to update organization name",
 			})
 		}
 
@@ -151,9 +152,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		err = internal.UpdateOrgDescription(tx, ctx, newDescription, orgId)
 
 		if err != nil {
+			log.Printf("organization update: description: %v", err)
 			return generic.Response(http.StatusInternalServerError, generic.Json{
-				"error":   "failed to update organization description",
-				"message": err.Error(),
+				"message": "failed to update organization description",
 			})
 		}
 
@@ -185,25 +186,25 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		&orgData.TotalDiagrams,
 	)
 	if err != nil {
+		log.Printf("organization update: read the overview: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to fetch organization overview",
-			"message": err.Error(),
+			"message": "failed to fetch organization overview",
 		})
 	}
 
 	// Unmarshal projects json as bytes into Projects slice
 	if err := json.Unmarshal(projectsJson, &orgData.Projects); err != nil {
+		log.Printf("organization update: parse projects: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to parse projects data",
-			"message": err.Error(),
+			"message": "failed to parse projects data",
 		})
 	}
 
 	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
+		log.Printf("organization update: commit: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"error":   "failed to commit organization update transaction",
-			"message": err.Error(),
+			"message": "failed to commit organization update transaction",
 		})
 	}
 

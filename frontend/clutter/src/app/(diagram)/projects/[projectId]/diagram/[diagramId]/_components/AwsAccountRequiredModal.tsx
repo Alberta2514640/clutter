@@ -1,17 +1,22 @@
 "use client";
 
+import LinkFakeAccount from "@/components/common/LinkFakeAccount";
 import { AlertTriangle } from "lucide-react";
 
 type AwsAccountRequiredModalProps = {
   open: boolean;
   onGoToSettings: () => void;
   onBack: () => void;
+  token: string | null;
+  organizationId: string | null;
 };
 
 export default function AwsAccountRequiredModal({
   open,
   onGoToSettings,
   onBack,
+  token,
+  organizationId,
 }: AwsAccountRequiredModalProps) {
   if (!open) return null;
 
@@ -41,7 +46,10 @@ export default function AwsAccountRequiredModal({
           to connect your AWS account.
         </div>
 
-        <div className="mt-6 flex items-center justify-end gap-3">
+        <div className="mt-6 flex items-start justify-end gap-3">
+          {/* Local only; renders nothing in a production build. */}
+          <LinkFakeAccount token={token} organizationId={organizationId} variant="popup" />
+
           <button
             type="button"
             onClick={onBack}

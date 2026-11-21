@@ -1,139 +1,119 @@
-// src/app/(settings)/settings/organization/create-org/_components/CreateOrgForm.tsx
 "use client";
 
-import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  organizationDescriptionHint,
+  organizationDescriptionProblem,
+  organizationNameHint,
+  organizationNamePlaceholder,
+  organizationNameProblem,
+  organizationNameTaken,
+} from "@/lib/features/organization/rules";
+import { cn } from "@/lib/utils";
+import { Loader2 } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
 
+// The fields A takes for a new organization (POST /organization).
 export interface CreateOrgFormValues {
-  orgName: string;
-  slug: string;
-  region: string;
-  timeZone: string;
+  name: string;
   description: string;
-  visibility: "private" | "team";
 }
 
-export interface CreateOrgFormProps {
-  initialValues: CreateOrgFormValues;
+type Props = {
   onSubmit: (values: CreateOrgFormValues) => void | Promise<void>;
-  onCancel?: () => void;
-  isCreating?: boolean;
-}
+  onCancel: () => void;
+  // Any change to a field clears the last refusal.
+  onEdit: () => void;
+  isCreating: boolean;
+  // A refused the name as one the person already uses (409).
+  conflict: boolean;
+  failed: boolean;
+};
 
-export default function CreateOrgForm({ initialValues, onSubmit, onCancel, isCreating, }: CreateOrgFormProps) {
-    const [values, setValues] = useState<CreateOrgFormValues>(initialValues);
+export default function CreateOrgForm({ onSubmit, onCancel, onEdit, isCreating, conflict, failed }: Props) {
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [showProblems, setShowProblems] = useState(false);
 
-    const handleChange =(field: keyof CreateOrgFormValues) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        setValues((prev) => ({ ...prev, [field]: e.target.value }));
-    };
+  const nameProblem = organizationNameProblem(name);
+  const descriptionProblem = organizationDescriptionProblem(description);
+  const nameError = (showProblems ? nameProblem : null) ?? (conflict ? organizationNameTaken : null);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        await onSubmit(values);
-    };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (nameProblem || descriptionProblem) {
+      setShowProblems(true);
+      nameRef.current?.focus();
+      return;
+    }
+    await onSubmit({ name: name.trim(), description: description.trim() });
+  };
 
-    return (
-        <section className="bg-slate-900/70 border border-slate-800 rounded-2xl shadow-xl">
-        <div className="border-b border-slate-800 px-6 py-4">
-            <h2 className="text-lg font-semibold">Create a new organization</h2>
-            <p className="text-sm text-slate-400 mt-1 max-w-xl">
-            Use organizations to separate environments (demo, client projects,
-            internal tools) and manage access independently.
-            </p>
+  return (
+    <form onSubmit={submit} noValidate className="surface-card">
+      <div className="space-y-6 p-5 md:p-6">
+        <div className="space-y-2">
+          <Label htmlFor="new-team-name">Team name</Label>
+          <Input
+            ref={nameRef}
+            id="new-team-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              onEdit();
+            }}
+            onBlur={() => name && setShowProblems(true)}
+            placeholder={organizationNamePlaceholder}
+            autoFocus
+            autoComplete="organization"
+            aria-invalid={!!nameError}
+            aria-describedby="new-team-name-hint"
+            className="max-w-md"
+          />
+          <p id="new-team-name-hint" className={cn("text-sm", nameError ? "text-danger" : "text-muted-foreground")}>
+            {nameError ?? `${organizationNameHint} You can rename it later.`}
+          </p>
         </div>
 
-        <form className="px-6 py-6 space-y-6" onSubmit={handleSubmit}>
-            <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-200">
-                Organization name
-                </label>
-                <input
-                type="text"
-                required
-                placeholder="e.g. Demo Organization"
-                value={values.orgName}
-                onChange={handleChange("orgName")}
-                className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                />
-                <p className="text-xs text-slate-500">
-                    This cannot be changed after creation.
-                </p>
-            </div>
+        <div className="space-y-2">
+          <Label htmlFor="new-team-description">Description</Label>
+          <Textarea
+            id="new-team-description"
+            rows={3}
+            placeholder="What is this team for?"
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              onEdit();
+            }}
+            aria-invalid={!!descriptionProblem}
+            aria-describedby="new-team-description-hint"
+          />
+          <p id="new-team-description-hint" className={cn("text-sm", descriptionProblem ? "text-danger" : "text-muted-foreground")}>
+            {descriptionProblem ?? organizationDescriptionHint}
+          </p>
+        </div>
 
-            <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-200">
-                Slug / ID
-                </label>
-                <input
-                type="text"
-                required
-                placeholder="e.g. demo-org"
-                value={values.slug}
-                onChange={handleChange("slug")}
-                className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                />
-                <p className="text-xs text-slate-500">
-                Lowercase, no spaces. Used in URLs and APIs.
-                </p>
-            </div>
-            </div>
+        {failed && (
+          <p role="alert" className="border-danger/25 bg-danger/10 text-foreground rounded-lg border p-3 text-sm">
+            Clutter could not create the team. Try again.
+          </p>
+        )}
+      </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-1.5">
-                    <label className="block text-sm font-medium text-slate-200">
-                    Time zone
-                    </label>
-                    <select
-                    value={values.timeZone}
-                    onChange={handleChange("timeZone")}
-                    className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                    >
-                    <option value="America/Edmonton">(UTC-07:00) Edmonton</option>
-                    <option value="America/Denver">(UTC-07:00) Denver</option>
-                    <option value="America/New_York">(UTC-05:00) New York</option>
-                    <option value="UTC">(UTC) Coordinated Universal Time</option>
-                    </select>
-                </div>
-                <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-200">
-                    Initial visibility
-                </label>
-                <select
-                    value={values.visibility}
-                    onChange={handleChange("visibility")}
-                    className="w-full rounded-lg bg-slate-950/70 border border-slate-800 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                >
-                    <option value="private">Private (invite only)</option>
-                    <option value="team">
-                    Visible to team, restricted project access
-                    </option>
-                </select>
-                <p className="text-xs text-slate-500">
-                    You can customize member roles after creation.
-                </p>
-            </div>
-            </div>
-
-            
-            
-
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-            <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2 rounded-lg border border-slate-700 text-sm text-slate-300 hover:bg-slate-900/80 transition"
-            >
-                Cancel
-            </button>
-            <button
-                type="submit"
-                disabled={isCreating}
-                className="px-4 py-2 rounded-lg bg-teal-500 text-sm font-medium text-black hover:bg-teal-400 disabled:opacity-60 transition shadow-md shadow-teal-500/30"
-            >
-                {isCreating ? "Creating…" : "Create organization"}
-            </button>
-            </div>
-        </form>
-        </section>
-    );
+      <div className="bg-muted/40 flex flex-col-reverse gap-3 rounded-b-xl border-t px-5 py-3 sm:flex-row sm:justify-end md:px-6">
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={isCreating}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isCreating}>
+          {isCreating && <Loader2 className="animate-spin" aria-hidden="true" />}
+          {isCreating ? "Creating…" : "Create team"}
+        </Button>
+      </div>
+    </form>
+  );
 }

@@ -5,11 +5,11 @@
 module "s3" {
   source = "./modules/s3"
 
-  aws_region              = var.aws_region
-  enable_versioning       = true
-  enable_cors             = true
-  cors_allowed_origins    = ["*"]
-  ansible_runner_role_id  = module.fargate.ansible_task_role_unique_id
+  aws_region             = var.aws_region
+  enable_versioning      = true
+  enable_cors            = true
+  cors_allowed_origins   = ["*"]
+  ansible_runner_role_id = module.fargate.ansible_task_role_unique_id
 }
 
 # ================
@@ -19,14 +19,75 @@ module "s3" {
 module "fargate" {
   source = "./modules/fargate"
 
-  s3_clutter_arn            = module.s3.clutter_bucket_arn
-  s3_clutter_name           = module.s3.clutter_bucket_name
-  s3_templates_arn          = module.s3.clutter_templates_bucket_arn 
-  s3_templates_name         = module.s3.clutter_templates_bucket_name
+  s3_clutter_arn    = module.s3.clutter_bucket_arn
+  s3_clutter_name   = module.s3.clutter_bucket_name
+  s3_templates_arn  = module.s3.clutter_templates_bucket_arn
+  s3_templates_name = module.s3.clutter_templates_bucket_name
 
-  aws_region                = var.aws_region
-  psql_connection_string    = var.psql_connection_string
-  ansible_runner_image_tag  = var.ansible_runner_image_tag
+  aws_region                   = var.aws_region
+  ansible_runner_image_tag     = var.ansible_runner_image_tag
+  terraform_deployer_image_tag = var.terraform_deployer_image_tag
+}
+
+# The site's origin, from its one name: A's Lambdas and B answer CORS for it
+# alone. B is served on the same origin (paths /v1/* and /healthz).
+locals {
+  frontend_url = "https://${var.site_domain}"
+}
+
+# =========================================
+# B: the adapter layer's API and run tasks
+# =========================================
+# Its own VPC, cluster, roles and buckets, and the load balancer the website
+# shares (docs/architecture/environments.md).
+
+module "adapter-service" {
+  source = "./modules/adapter-service"
+
+  aws_region            = var.aws_region
+  image_tag             = var.adapter_image_tag
+  certificate_arn       = var.certificate_arn
+  domain                = var.site_domain
+  frontend_url          = local.frontend_url
+  database_url          = var.psql_connection_string
+  jwt_secret            = var.jwt_secret
+  templates_bucket_name = module.s3.clutter_templates_bucket_name
+  templates_bucket_arn  = module.s3.clutter_templates_bucket_arn
+}
+
+output "load_balancer_dns_name" {
+  description = "Point site_domain at this with a CNAME or alias record"
+  value       = module.adapter-service.load_balancer_dns_name
+}
+
+output "adapter_api_repository_url" {
+  value = module.adapter-service.api_repository_url
+}
+
+output "adapter_runtask_repository_url" {
+  value = module.adapter-service.runtask_repository_url
+}
+
+# ==========================================
+# The website, behind B's load balancer
+# ==========================================
+# Its own cluster, image repository, role and security group; the load
+# balancer sends site_domain to it, except B's paths (docs/architecture/environments.md).
+
+module "website" {
+  source = "./modules/website"
+
+  aws_region            = var.aws_region
+  image_tag             = var.site_image_tag
+  domain                = var.site_domain
+  vpc_id                = module.adapter-service.vpc_id
+  subnet_ids            = module.adapter-service.public_subnet_ids
+  alb_security_group_id = module.adapter-service.alb_security_group_id
+  listener_arn          = module.adapter-service.https_listener_arn
+}
+
+output "website_repository_url" {
+  value = module.website.repository_url
 }
 
 # ========================
@@ -81,6 +142,7 @@ module "log-in-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JWT_SECRET             = var.jwt_secret
+    GOOGLE_CLIENT_ID       = var.google_client_id
   }
 }
 
@@ -117,9 +179,10 @@ module "cloudformation-stack-url-generator-lambda" {
   ]
   zip_dir_slice = "cloudformation/stack-url-generator"
   environment_variables = {
-    PSQL_CONNECTION_STRING      = var.psql_connection_string
-    CLOUDFORMATION_TEMPLATE_URL = var.cloudformation_template_url
-    CLUTTER_ACCOUNT_ID = var.clutter_account_id
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    # The key is the one modules/s3 uploads the role template to; the bucket is public-read, which CloudFormation needs.
+    CLOUDFORMATION_TEMPLATE_URL = "https://${module.s3.clutter_templates_bucket_name}.s3.${var.aws_region}.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"
+    CLUTTER_ACCOUNT_ID          = var.clutter_account_id
   }
 }
 
@@ -141,12 +204,12 @@ module "terraform-command-runner-lambda" {
   zip_dir_slice = "terraform-command-runner"
 
   environment_variables = {
-    PSQL_CONNECTION_STRING  = var.psql_connection_string
-    ECS_CLUSTER_NAME        = module.fargate.ecs_cluster_name
-    TASK_DEFINITION_ARN     = module.fargate.terraform_task_definition_arn
-    CONTAINER_NAME          = module.fargate.terraform_container_name
-    SUBNET_IDS              = join(",", module.fargate.subnet_ids)
-    SECURITY_GROUP_ID       = module.fargate.terraform_security_group_id
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+    ECS_CLUSTER_NAME       = module.fargate.ecs_cluster_name
+    TASK_DEFINITION_ARN    = module.fargate.terraform_task_definition_arn
+    CONTAINER_NAME         = module.fargate.terraform_container_name
+    SUBNET_IDS             = join(",", module.fargate.subnet_ids)
+    SECURITY_GROUP_ID      = module.fargate.terraform_security_group_id
   }
 }
 
@@ -184,7 +247,7 @@ module "organization-get-lambda" {
   zip_dir_slice = "organization/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -203,7 +266,7 @@ module "organization-update-lambda" {
   zip_dir_slice = "organization/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -222,7 +285,7 @@ module "organization-delete-lambda" {
   zip_dir_slice = "organization/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -298,7 +361,7 @@ module "project-create-lambda" {
   zip_dir_slice = "project/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -317,7 +380,7 @@ module "project-get-lambda" {
   zip_dir_slice = "project/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -336,7 +399,7 @@ module "project-update-lambda" {
   zip_dir_slice = "project/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -355,7 +418,7 @@ module "project-delete-lambda" {
   zip_dir_slice = "project/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -374,7 +437,7 @@ module "diagram-create-lambda" {
   zip_dir_slice = "diagram/create"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -391,7 +454,7 @@ module "diagram-get-lambda" {
   zip_dir_slice = "diagram/get"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -408,7 +471,7 @@ module "diagram-update-lambda" {
   zip_dir_slice = "diagram/update"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -425,7 +488,7 @@ module "diagram-delete-lambda" {
   zip_dir_slice = "diagram/delete"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 
 }
@@ -508,6 +571,71 @@ module "terraform-engine-create-lambda" {
   }
 }
 
+# A run deletes a generated file only when it has no content, and only
+# outputs.tf can be empty. Nothing else in the folder may be deleted, above all
+# the runner's state beside it.
+resource "aws_iam_role_policy" "terraform_engine_create_delete_outputs" {
+  name = "terraform-engine-create-delete-outputs-policy"
+  role = module.terraform-engine-create-lambda.role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "s3:DeleteObject"
+      Resource = "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/outputs.tf"
+    }]
+  })
+}
+
+module "terraform-engine-files-lambda" {
+  source        = "./modules/templates/lambda"
+  function_name = "terraform-engine-files"
+  actions = [
+    "logs:CreateLogGroup",
+    "logs:CreateLogStream",
+    "logs:PutLogEvents"
+  ]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-files:*"
+  ]
+  zip_dir_slice = "terraform-engine/files"
+  # One database query and up to a few S3 reads, on a cold start.
+  timeout = 10
+  environment_variables = {
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    PSQL_CONNECTION_STRING = var.psql_connection_string
+  }
+}
+
+# The folder also holds the runner's state and deploy logs, so reads stop at the
+# generated files and the status. The state file's name does not end in .tf.
+# ListBucket stays on the bucket: without it S3 answers a missing key with 403,
+# not 404, and the route could not tell a file deleted mid-read from a failure.
+resource "aws_iam_role_policy" "terraform_engine_files_read" {
+  name = "terraform-engine-files-read-policy"
+  role = module.terraform-engine-files-lambda.role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = "arn:aws:s3:::${module.s3.clutter_bucket_name}"
+      },
+      {
+        Effect = "Allow"
+        Action = "s3:GetObject"
+        Resource = [
+          "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/*.tf",
+          "arn:aws:s3:::${module.s3.clutter_bucket_name}/*/terraform/status.json"
+        ]
+      }
+    ]
+  })
+}
+
 # ==================================
 # Deployment logs Lambda Functions
 # ==================================
@@ -568,10 +696,14 @@ module "terraform-engine-logs-live-lambda" {
     "logs:CreateLogStream",
     "logs:PutLogEvents",
     "ecs:DescribeTasks",
-    "logs:GetLogEvents"
+    "logs:GetLogEvents",
+    "s3:GetObject",
+    "s3:ListBucket"
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-engine-logs-live:*",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*",
     module.fargate.ecs_cluster_arn,
     "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${module.fargate.ecs_cluster_name}/*",
     "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/terraform-deployer:*"
@@ -583,6 +715,7 @@ module "terraform-engine-logs-live-lambda" {
     TERRAFORM_DEPLOYER_LOG_GROUP         = "/ecs/terraform-deployer"
     TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX = "ecs"
     TERRAFORM_DEPLOYER_CONTAINER_NAME    = "terraform-deployer"
+    S3_BUCKET_NAME                       = module.s3.clutter_bucket_name
   }
 }
 
@@ -590,17 +723,24 @@ module "terraform-engine-logs-live-lambda" {
 
 # Terraform Command Runner logs to populate "Recent Activity" table in frontend
 module "terraform-command-runner-logs-recent-activity-lambda" {
-  source = "./modules/templates/lambda"
+  source        = "./modules/templates/lambda"
   function_name = "terraform-command-runner-logs-recent-activity"
   actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
-    "logs:PutLogEvents"
+    "logs:PutLogEvents",
+    "s3:GetObject",
+    "s3:ListBucket"
   ]
-  resources     = ["arn:aws:logs:*:*:log-group:/aws/lambda/resources-get:*"]
+  resources = [
+    "arn:aws:logs:*:*:log-group:/aws/lambda/terraform-command-runner-logs-recent-activity:*",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}",
+    "arn:aws:s3:::${module.s3.clutter_bucket_name}/*"
+  ]
   zip_dir_slice = "terraform-engine/logs/recent-activity"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
   }
 }
 
@@ -627,7 +767,7 @@ module "ansible-submit-job-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     JOB_QUEUE_URL          = aws_sqs_queue.ansible_jobs.url
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
     S3_BUCKET_NAME         = module.s3.clutter_bucket_name
   }
 }
@@ -635,40 +775,50 @@ module "ansible-submit-job-lambda" {
 module "ansible-get-job-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "ansible-get-job"
+  # S3 reads the runner's job status file (generic/job_status.go); ListBucket
+  # makes a missing file a 404 rather than a 403.
   actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-
+    "s3:GetObject",
+    "s3:ListBucket",
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-get-job:*",
-
+    module.s3.clutter_bucket_arn,
+    "${module.s3.clutter_bucket_arn}/*",
   ]
   zip_dir_slice = "ansible/get-job"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 }
 
 module "ansible-list-jobs-lambda" {
   source        = "./modules/templates/lambda"
   function_name = "ansible-list-jobs"
+  # S3 reads the runner's job status files (generic/job_status.go); ListBucket
+  # makes a missing file a 404 rather than a 403.
   actions = [
     "logs:CreateLogGroup",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
-
+    "s3:GetObject",
+    "s3:ListBucket",
   ]
   resources = [
     "arn:aws:logs:*:*:log-group:/aws/lambda/ansible-list-jobs:*",
-
+    module.s3.clutter_bucket_arn,
+    "${module.s3.clutter_bucket_arn}/*",
   ]
   zip_dir_slice = "ansible/list-jobs"
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    S3_BUCKET_NAME         = module.s3.clutter_bucket_name
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 }
 
@@ -691,7 +841,7 @@ module "ansible-get-job-logs-lambda" {
   environment_variables = {
     PSQL_CONNECTION_STRING = var.psql_connection_string
     S3_BUCKET_NAME         = module.s3.clutter_bucket_name
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
   }
 }
 
@@ -711,7 +861,7 @@ module "ansible-create-playbook-upload-url-lambda" {
   zip_dir_slice = "ansible/create-playbook-upload-url"
   environment_variables = {
     S3_BUCKET_NAME         = module.s3.clutter_bucket_name
-    CORS_ALLOWED_ORIGIN    = var.frontend_url
+    CORS_ALLOWED_ORIGIN    = local.frontend_url
     PSQL_CONNECTION_STRING = var.psql_connection_string
   }
 }
@@ -744,7 +894,7 @@ module "ansible-run-task-lambda" {
     ANSIBLE_SUBNET_IDS          = join(",", data.aws_subnets.default.ids)
     ANSIBLE_SECURITY_GROUP_ID   = module.fargate.ansible_sg_id
     S3_BUCKET_NAME              = module.s3.clutter_bucket_name
-    CORS_ALLOWED_ORIGIN         = var.frontend_url
+    CORS_ALLOWED_ORIGIN         = local.frontend_url
   }
 }
 
@@ -975,6 +1125,21 @@ module "terraform-engine-api-cors-compliance" {
   rest_api_id  = module.clutter-api-gateway.rest_api_id
   resource_id  = module.terraform-engine-api-path.resource_id
   http_methods = ["POST", "GET"]
+}
+
+# Generated Terraform files
+module "terraform-engine-files-api-path" {
+  source      = "./modules/templates/api-path"
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+  parent_id   = module.terraform-engine-api-path.resource_id
+  path_part   = "files"
+}
+
+module "terraform-engine-files-api-cors-compliance" {
+  source       = "./modules/templates/api-path-cors-compliance"
+  rest_api_id  = module.clutter-api-gateway.rest_api_id
+  resource_id  = module.terraform-engine-files-api-path.resource_id
+  http_methods = ["GET"]
 }
 
 # Terraform logs
@@ -1469,17 +1634,30 @@ module "diagram-delete-api-integration" {
 # Terraform Command
 # POST terraform-command-runner
 module "terraform-command-runner-api-integration" {
-  source            = "./modules/templates/api-lambda-integration"
-  rest_api_id       = module.clutter-api-gateway.rest_api_id
-  resource_id       = module.terraform-command-runner-api-path.resource_id
-  http_method       = "POST"
-  invoke_arn        = module.terraform-command-runner-lambda.invoke_arn
-  function_name     = module.terraform-command-runner-lambda.function_name
-  path_part         = module.terraform-command-runner-api-path.path_part
-  execution_arn     = module.clutter-api-gateway.execution_arn
-  path              = module.terraform-command-runner-api-path.path
+  source               = "./modules/templates/api-lambda-integration"
+  rest_api_id          = module.clutter-api-gateway.rest_api_id
+  resource_id          = module.terraform-command-runner-api-path.resource_id
+  http_method          = "POST"
+  invoke_arn           = module.terraform-command-runner-lambda.invoke_arn
+  function_name        = module.terraform-command-runner-lambda.function_name
+  path_part            = module.terraform-command-runner-api-path.path_part
+  execution_arn        = module.clutter-api-gateway.execution_arn
+  path                 = module.terraform-command-runner-api-path.path
   request_validator_id = module.clutter-api-gateway.body_validator_id
   model_name           = module.terraform-command-runner-model.model_name
+  jwt_authorizer_id    = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+module "terraform-engine-files-api-integration" {
+  source            = "./modules/templates/api-lambda-integration"
+  rest_api_id       = module.clutter-api-gateway.rest_api_id
+  resource_id       = module.terraform-engine-files-api-path.resource_id
+  http_method       = "GET"
+  invoke_arn        = module.terraform-engine-files-lambda.invoke_arn
+  function_name     = module.terraform-engine-files-lambda.function_name
+  path_part         = module.terraform-engine-files-api-path.path_part
+  execution_arn     = module.clutter-api-gateway.execution_arn
+  path              = module.terraform-engine-files-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
@@ -1625,6 +1803,9 @@ module "user-information-get-api-integration" {
 
 # Resources
 # GET resources
+# Public on purpose: it has no jwt_authorizer_id because it serves only the
+# static resource catalog (the supported_resources seed), which holds no
+# tenant data. Every other route except POST /log-in has the authorizer.
 module "resources-get-api-integration" {
   source        = "./modules/templates/api-lambda-integration"
   rest_api_id   = module.clutter-api-gateway.rest_api_id
@@ -1638,7 +1819,7 @@ module "resources-get-api-integration" {
 }
 
 # Terraform Engine
-# POST terraform-engine
+# POST terraform-engine: the editor calls it with the user's token after a save
 module "terraform-engine-create-api-integration" {
   source            = "./modules/templates/api-lambda-integration"
   rest_api_id       = module.clutter-api-gateway.rest_api_id
@@ -1649,6 +1830,7 @@ module "terraform-engine-create-api-integration" {
   path_part         = module.terraform-engine-api-path.path_part
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-engine-api-path.path
+  jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
 }
 
 module "terraform-engine-code-upload-presigned-url-api-integration" {
@@ -1662,4 +1844,129 @@ module "terraform-engine-code-upload-presigned-url-api-integration" {
   execution_arn     = module.clutter-api-gateway.execution_arn
   path              = module.terraform-engine-code-upload-presigned-url-api-path.path
   jwt_authorizer_id = module.clutter-api-gateway.jwt_authorizer_id
+}
+
+# ======================
+# API Gateway: the stage
+# ======================
+# A REST API answers only through a stage, and a stage serves a deployment: a
+# snapshot of the routes, methods and integrations taken when it is created.
+# The trigger hashes every file that defines the API (this file, the
+# api-gateway module, and the api-* templates with their model schemas), so a
+# change to any route, method, integration, model or the authorizer makes a new
+# deployment on the next apply. An edit elsewhere in this file also makes one;
+# that is harmless, the stage moves to an identical snapshot.
+
+locals {
+  api_definition_files = sort(concat(
+    ["main.tf"],
+    tolist(fileset(path.module, "modules/api-gateway/*.tf")),
+    tolist(fileset(path.module, "modules/templates/api-*/**")),
+  ))
+}
+
+# Errors API Gateway answers itself (a token the authorizer refuses, a missing
+# route, a throttle, a timeout) carry the CORS origin header too. Without it the
+# browser hides the 403 as a CORS failure, so the website cannot tell an expired
+# session and never sends the user back to sign in. The devserver's gateway
+# mirrors this (backend/devserver/internal/gateway/server.go, writeGatewayError).
+resource "aws_api_gateway_gateway_response" "default-4xx" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  response_type = "DEFAULT_4XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "default-5xx" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  response_type = "DEFAULT_5XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_deployment" "clutter-api" {
+  rest_api_id = module.clutter-api-gateway.rest_api_id
+
+  triggers = {
+    redeployment = sha1(join(",", [for f in local.api_definition_files : filesha1("${path.module}/${f}")]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  # A deployment fails while any method lacks its integration, so it waits for
+  # every route. A new route's integration and CORS modules go in this list;
+  # backend/infra/test-deploy.sh fails until they do.
+  depends_on = [
+    module.log-in-api-cors-compliance,
+    module.cloudformation-stack-url-generator-api-by-id-cors-compliance,
+    module.terraform-command-runner-api-cors-compliance,
+    module.organization-api-cors-compliance,
+    module.organization-api-by-id-cors-compliance,
+    module.organization-accounts-api-cors-compliance,
+    module.organization-accounts-api-by-account-id-cors-compliance,
+    module.project-api-cors-compliance,
+    module.diagram-api-cors-compliance,
+    module.user-information-api-cors-compliance,
+    module.resources-api-cors-compliance,
+    module.terraform-engine-api-cors-compliance,
+    module.terraform-engine-files-api-cors-compliance,
+    module.terraform-engine-logs-api-cors-compliance,
+    module.terraform-engine-logs-url-api-cors-compliance,
+    module.terraform-engine-logs-live-api-cors-compliance,
+    module.terraform-command-runner-logs-recent-activity-api-cors-compliance,
+    module.terraform-engine-code-upload-presigned-url-api-cors-compliance,
+    module.ansible-jobs-api-cors-compliance,
+    module.ansible-jobs-by-id-api-cors-compliance,
+    module.ansible-jobs-by-id-logs-api-cors-compliance,
+    module.ansible-playbooks-upload-url-api-cors-compliance,
+    module.log-in-api-integration,
+    module.cloudformation-stack-url-generator-api-integration,
+    module.organization-create-api-integration,
+    module.organization-get-api-integration,
+    module.organization-update-api-integration,
+    module.organization-delete-api-integration,
+    module.organization-get-accounts-api-integration,
+    module.organization-submit-account-role-arn-api-integration,
+    module.organization-delete-account-api-integration,
+    module.project-create-api-integration,
+    module.project-get-api-integration,
+    module.project-update-api-integration,
+    module.project-delete-api-integration,
+    module.diagram-create-api-integration,
+    module.diagram-get-api-integration,
+    module.diagram-update-api-integration,
+    module.diagram-delete-api-integration,
+    module.terraform-command-runner-api-integration,
+    module.terraform-engine-files-api-integration,
+    module.terraform-engine-logs-get-api-integration,
+    module.terraform-engine-logs-url-api-integration,
+    module.terraform-engine-logs-live-api-integration,
+    module.terraform-command-runner-logs-recent-activity-api-integration,
+    module.ansible-submit-job-api-integration,
+    module.ansible-list-jobs-api-integration,
+    module.ansible-get-job-api-integration,
+    module.ansible-get-job-logs-api-integration,
+    module.ansible-create-playbook-upload-url-api-integration,
+    module.user-information-get-api-integration,
+    module.resources-get-api-integration,
+    module.terraform-engine-create-api-integration,
+    module.terraform-engine-code-upload-presigned-url-api-integration,
+    aws_api_gateway_gateway_response.default-4xx,
+    aws_api_gateway_gateway_response.default-5xx,
+  ]
+}
+
+resource "aws_api_gateway_stage" "prod" {
+  rest_api_id   = module.clutter-api-gateway.rest_api_id
+  deployment_id = aws_api_gateway_deployment.clutter-api.id
+  stage_name    = "prod"
+}
+
+output "api_invoke_url" {
+  description = "A's API address; npm run deploy -- prod --site-image builds the website with it as NEXT_PUBLIC_API_ENDPOINT"
+  value       = aws_api_gateway_stage.prod.invoke_url
 }

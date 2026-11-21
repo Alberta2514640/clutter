@@ -46,6 +46,18 @@ const writeGoogleData = (obj: GoogleDataShape) => {
   window.localStorage.setItem("google_data", JSON.stringify(obj));
 };
 
+// clearStoredSession forgets the token in both places it is kept: the cookie
+// the route guard reads and the local copy the API clients read.
+export const clearStoredSession = () => {
+  clearTokenCookie();
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem("google_data");
+  } catch {
+    // Storage blocked: the cookie is already gone, so the route guard signs the user out.
+  }
+};
+
 /* ---------------------------------------------
  * Mapping: snake_case → camelCase
  * -------------------------------------------- */
@@ -61,9 +73,6 @@ const toUserData = (g: GoogleDataShape): UserData => {
     token: g.token ?? "",
   };
 };
-
-// optional: centralize your API base
-// const API_BASE = "https://qzq3ncab46.execute-api.us-west-2.amazonaws.com/prod";
 
 export const userApi = {
   loginWithGoogle: async (google_id_token: string): Promise<UserData> => {

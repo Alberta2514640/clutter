@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -10,17 +11,17 @@ import (
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/iam"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/resources"
-	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/template"
+	"github.com/Alberta2514640/clutter/backend/api/generic/tftemplate"
 	"github.com/Alberta2514640/clutter/backend/api/terraform-engine/create/internal/generator/writer"
 )
 
 type TerraformGenerator struct {
 	iamGenerator   *iam.IAMPolicyGenerator
-	templateLoader *template.TemplateLoader
+	templateLoader *tftemplate.TemplateLoader
 }
 
 func NewTerraformGenerator(ctx context.Context, templateBucket string) (*TerraformGenerator, error) {
-	loader, err := template.NewTemplateLoader(ctx, templateBucket)
+	loader, err := tftemplate.NewTemplateLoader(ctx, templateBucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
 	}
@@ -74,14 +75,25 @@ func (g *TerraformGenerator) Generate(ctx context.Context, diagramID string, lay
 			errors = append(errors, internal.GenerationError{
 				NodeID:    res.SourceNodeID,
 				NodeLabel: string(res.Type),
-				ErrorType: "generation_error",
+				ErrorType: generationErrorType(err),
+				Message:   err.Error(),
+			})
+			continue
+		}
+
+		outputs, err := gen.GetOutputs(res.Name)
+		if err != nil {
+			errors = append(errors, internal.GenerationError{
+				NodeID:    res.SourceNodeID,
+				NodeLabel: string(res.Type),
+				ErrorType: generationErrorType(err),
 				Message:   err.Error(),
 			})
 			continue
 		}
 
 		resourceBlocks = append(resourceBlocks, block)
-		outputBlocks = append(outputBlocks, gen.GetOutputs(res.Name))
+		outputBlocks = append(outputBlocks, outputs)
 	}
 
 	// Parse edges into IAM relationships
@@ -99,6 +111,18 @@ func (g *TerraformGenerator) Generate(ctx context.Context, diagramID string, lay
 		VariablesTF: "", // Variables are inlined for simplicity
 		OutputsTF:   strings.Join(outputBlocks, "\n"),
 	}, errors
+}
+
+// generationErrorType separates a failure of Clutter's templates, whose text the
+// user must not see, from a fault in the diagram, whose text they act on.
+func generationErrorType(err error) string {
+	if errors.Is(err, tftemplate.ErrFailed) {
+		return internal.ErrorTypeTemplate
+	}
+	if errors.Is(err, resources.ErrInvalidVariable) {
+		return "invalid_config"
+	}
+	return "generation_error"
 }
 
 // parseNodes converts diagram nodes to TerraformResources

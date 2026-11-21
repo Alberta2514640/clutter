@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/jobsutils"
 	"github.com/Alberta2514640/clutter/backend/api/ansible/shared/uploadutils"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
 	"github.com/aws/aws-lambda-go/events"
@@ -93,6 +94,14 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		return generic.Response(http.StatusInternalServerError, generic.Json{"message": "failed to retrieve job"})
 	}
 
+	// The runner has no database access; a finished job's status and log key
+	// reach its row here, from the status file beside its log.
+	if !generic.IsJobFinished(status) {
+		state := jobsutils.JobState{ID: jobID, Status: status, ErrorMessage: errorMessage, LogS3Key: logS3Key, PlaybookS3Key: playbookS3Key}
+		jobsutils.Reconcile(ctx, conn, generic.StatusStoreFromEnv(ctx), &state)
+		status, errorMessage, logS3Key = state.Status, state.ErrorMessage, state.LogS3Key
+	}
+
 	if logS3Key == nil || *logS3Key == "" {
 		resp := generic.Json{
 			"message": "logs not available yet",
@@ -113,8 +122,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	bucketName := os.Getenv("S3_BUCKET_NAME")
 	if bucketName == "" {
+		log.Printf("ERROR: S3_BUCKET_NAME is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "server configuration error: missing S3_BUCKET_NAME",
+			"message": "failed to retrieve log file",
 		})
 	}
 
@@ -174,4 +184,3 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data": responseData,
 	})
 }
-

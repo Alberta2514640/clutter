@@ -1,0 +1,51 @@
+{
+  "id": "hybrid",
+  "name": "Hybrid",
+  "level": "advanced",
+  "description": "A VM on OpenStack that reads a bucket on AWS, in one deployment.",
+  "clouds": ["general-openstack", "aws"],
+  "placements": [{ "connector": "aws", "node_ids": ["files"] }],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "app-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 30 },
+        "data": { "name": "app-fw", "fields": { "ingress": "tcp/22, tcp/80, tcp/443, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "app",
+        "type": "vm",
+        "position": { "x": 340, "y": 50 },
+        "data": {
+          "name": "app",
+          "fields": {
+            "size": "small",
+            "public": true,
+            "startup_script": "#!/bin/sh\n# Clutter puts the bucket's name and region, and a key that can only read it, in CLUTTER_FILES_*.\nmkdir -p /etc/app\necho \"FILES_BUCKET=$CLUTTER_FILES_BUCKET\" > /etc/app/files.env\necho \"FILES_REGION=$CLUTTER_FILES_REGION\" >> /etc/app/files.env\n# Serve a page on port 80 with what the image has: python3 (Amazon Linux,\n# Ubuntu), else busybox httpd, else a busybox nc loop (cirros).\ndir=/var/www/clutter\nmkdir -p \"$dir\"\npage() { printf '<!doctype html><title>%s</title><h1>%s</h1><p>%s</p>\\n' \"$1\" \"$1\" \"$2\" > \"$dir/index.html\"; }\npage app \"Served by its startup script on port 80.\"\ncd \"$dir\"\nif command -v python3 >/dev/null 2>&1; then\n  if command -v systemctl >/dev/null 2>&1; then\n    # A service, so the page comes back after a restart (a resize restarts the server).\n    printf '[Unit]\\nDescription=Clutter example web page\\nAfter=network.target\\n[Service]\\nWorkingDirectory=%s\\nExecStart=%s -m http.server 80\\nRestart=always\\n[Install]\\nWantedBy=multi-user.target\\n' \"$dir\" \"$(command -v python3)\" > /etc/systemd/system/clutter-web.service\n    systemctl daemon-reload\n    systemctl enable --now clutter-web.service\n  else\n    nohup python3 -m http.server 80 >/var/log/clutter-web.log 2>&1 &\n  fi\nelif busybox --list 2>/dev/null | grep -qx httpd; then\n  busybox httpd -p 80 -h \"$dir\"\nelse\n  while true; do { printf 'HTTP/1.0 200 OK\\r\\nContent-Type: text/html\\r\\n\\r\\n'; cat \"$dir/index.html\"; } | nc -l -p 80 >/dev/null 2>&1; done &\nfi\n"
+          }
+        }
+      },
+      {
+        "id": "app-net",
+        "type": "network",
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 160,
+        "data": { "name": "app-net", "fields": { "cidr": "10.30.0.0/24" } }
+      },
+      {
+        "id": "files",
+        "type": "bucket",
+        "position": { "x": 660, "y": 50 },
+        "data": { "name": "files", "fields": { "versioning": false } }
+      }
+    ],
+    "edges": [
+      { "id": "app-on-net", "source": "app", "target": "app-net" },
+      { "id": "fw-on-app", "source": "app-fw", "target": "app" },
+      { "id": "app-reads-files", "source": "app", "target": "files" }
+    ]
+  }
+}

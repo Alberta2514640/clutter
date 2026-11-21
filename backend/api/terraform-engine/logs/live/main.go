@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -15,12 +16,20 @@ import (
 	cloudwatchlogs "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 )
 
 type LiveLogEvent struct {
 	Timestamp int64  `json:"timestamp"`
 	Message   string `json:"message"`
 }
+
+// What the user reads when the logs cannot be fetched. The cause stays in the
+// log.
+const liveLogsFailure = "failed to fetch the live logs"
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
 
 func main() {
 	lambda.Start(handler)
@@ -40,32 +49,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
-			"message": "failed to get user from authorizer context",
-			"error":   err.Error(),
+			"message": "unauthorized: missing user identity",
 		})
 	}
 
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("live logs: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userData.Id, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to verify organization membership",
-			"error":   err.Error(),
-		})
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userData.Id, orgID, projID, diagramID)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
 
 	clusterName := os.Getenv("ECS_CLUSTER_NAME")
@@ -74,16 +75,17 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	containerName := os.Getenv("TERRAFORM_DEPLOYER_CONTAINER_NAME")
 
 	if clusterName == "" || logGroup == "" || streamPrefix == "" || containerName == "" {
+		log.Printf("live logs: ECS_CLUSTER_NAME, TERRAFORM_DEPLOYER_LOG_GROUP, TERRAFORM_DEPLOYER_LOG_STREAM_PREFIX or TERRAFORM_DEPLOYER_CONTAINER_NAME is not set")
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "required environment variables are missing",
+			"message": liveLogsFailure,
 		})
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
+		log.Printf("live logs: load AWS config: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to load AWS config",
-			"error":   err.Error(),
+			"message": liveLogsFailure,
 		})
 	}
 
@@ -94,9 +96,9 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		Tasks:   []string{taskArn},
 	})
 	if err != nil {
+		log.Printf("live logs: describe task: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to describe ECS task",
-			"error":   err.Error(),
+			"message": liveLogsFailure,
 		})
 	}
 
@@ -107,14 +109,29 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	task := describeOutput.Tasks[0]
+	// The ARN comes from the request, so the task must prove it was started for
+	// this diagram before its status or logs are returned. Another diagram's
+	// task gets the same answer as a task that does not exist.
+	if !taskBelongsTo(task, ids.OrgID, ids.ProjectID, ids.DiagramID) {
+		return generic.Response(http.StatusNotFound, generic.Json{
+			"message": "task not found",
+		})
+	}
 	taskStatus := aws.ToString(task.LastStatus)
 	isComplete := taskStatus == "STOPPED"
+	if isComplete {
+		// The frontend stops polling this route once the task has stopped, so
+		// the run's final status reaches its row now rather than on the next
+		// recent-activity poll.
+		generic.ReconcileDeployRunsFromEnv(ctx, conn, ids)
+	}
 
-	taskID, err := extractTaskID(taskArn)
+	// The stream name comes from the checked task, never from the request text.
+	taskID, err := extractTaskID(aws.ToString(task.TaskArn))
 	if err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{
-			"message": "invalid taskArn",
-			"error":   err.Error(),
+		log.Printf("live logs: task ARN from ECS: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{
+			"message": liveLogsFailure,
 		})
 	}
 
@@ -141,18 +158,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				"data": generic.Json{
 					"events":     []LiveLogEvent{},
 					"nextToken":  "",
-					"taskArn":    taskArn,
 					"taskStatus": taskStatus,
 					"isComplete": isComplete,
-					"logGroup":   logGroup,
-					"logStream":  logStream,
 				},
 			})
 		}
 
+		log.Printf("live logs: get log events: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to fetch CloudWatch log events",
-			"error":   err.Error(),
+			"message": liveLogsFailure,
 		})
 	}
 
@@ -169,13 +183,36 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		"data": generic.Json{
 			"events":     eventsList,
 			"nextToken":  aws.ToString(logOutput.NextForwardToken),
-			"taskArn":    taskArn,
 			"taskStatus": taskStatus,
 			"isComplete": isComplete,
-			"logGroup":   logGroup,
-			"logStream":  logStream,
 		},
 	})
+}
+
+// taskBelongsTo reports whether one container of the task was started with
+// this diagram's DIAGRAM_ID and TERRAFORM_DIRECTORY, the overrides
+// terraform-command-runner sets when it starts a deploy. The deploy-log table
+// does not store the task ARN, so the task's own overrides are the proof.
+func taskBelongsTo(task ecstypes.Task, orgID, projID, diagramID string) bool {
+	if task.Overrides == nil {
+		return false
+	}
+	wantDirectory := orgID + "/" + projID + "/" + diagramID + "/terraform"
+	for _, container := range task.Overrides.ContainerOverrides {
+		var gotDiagram, gotDirectory bool
+		for _, pair := range container.Environment {
+			switch aws.ToString(pair.Name) {
+			case "DIAGRAM_ID":
+				gotDiagram = strings.EqualFold(aws.ToString(pair.Value), diagramID)
+			case "TERRAFORM_DIRECTORY":
+				gotDirectory = strings.EqualFold(aws.ToString(pair.Value), wantDirectory)
+			}
+		}
+		if gotDiagram && gotDirectory {
+			return true
+		}
+	}
+	return false
 }
 
 func extractTaskID(taskArn string) (string, error) {
@@ -191,4 +228,3 @@ func extractTaskID(taskArn string) (string, error) {
 
 	return taskID, nil
 }
-

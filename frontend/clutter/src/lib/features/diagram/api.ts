@@ -3,38 +3,22 @@ import type {
   CreateDiagramInput,
   Diagram,
   DiagramApiItem,
+  GenerateTerraformInput,
+  GenerateTerraformResult,
   RunTerraformResponseEnvelope,
   RunTerraformResult,
+  TerraformFiles,
   UpdateDiagramInput,
 } from "./types";
+import { apiFetch } from "../user/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
-
-async function apiFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  if (!API_BASE) throw new Error("API_ENDPOINT is not set");
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${token}`,
-      ...(init.headers ?? {}),
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
-  }
-
-  return (await res.json()) as T;
-}
-
-// No more uiLayout renaming — just ensure data has a safe fallback
+// No more uiLayout renaming — just ensure data has a safe fallback. The engine
+// marker is kept: it decides which editor opens the diagram.
 function normalizeDiagram(item: DiagramApiItem): Diagram {
   return {
     ...item,
     data: {
+      ...(item.data?.engine ? { engine: item.data.engine } : {}),
       nodes: item.data?.nodes ?? [],
       edges: item.data?.edges ?? [],
     },
@@ -95,6 +79,23 @@ export const diagramApi = {
   delete: async (token: string, projectId: string, diagramId: string): Promise<void> => {
     const qs = new URLSearchParams({ projectId, diagramId });
     await apiFetch<ApiEnvelope<unknown>>(`/diagram?${qs.toString()}`, token, { method: "DELETE" });
+  },
+
+  // POST /terraform-engine: generates the Terraform for the diagram as saved
+  generateTerraform: async (token: string, input: GenerateTerraformInput): Promise<GenerateTerraformResult> => {
+    return apiFetch<GenerateTerraformResult>("/terraform-engine", token, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  // GET /terraform-engine/files
+  terraformFiles: async (token: string, projectId: string, diagramId: string): Promise<TerraformFiles> => {
+    const qs = new URLSearchParams({ projectId, diagramId });
+    const json = await apiFetch<ApiEnvelope<TerraformFiles>>(`/terraform-engine/files?${qs.toString()}`, token, {
+      method: "GET",
+    });
+    return json.data;
   },
 
   // POST /terraform-command-runner

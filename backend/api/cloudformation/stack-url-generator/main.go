@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -26,7 +27,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	if err != nil {
 		return generic.Response(
 			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
+			generic.Json{"message": "failed to retrieve user data from authorizer context"},
 		)
 	}
 	userId := userData.Id
@@ -68,7 +69,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Ensure region is supported and valid
 	// Set default region if not passed in
 	if region == "" {
-		region = generic.DefaultRegion
+		region = generic.DefaultRegion()
 	}
 	if !generic.IsRegionSupported(region) {
 
@@ -80,7 +81,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 		return generic.Response(
 			http.StatusBadRequest,
-			generic.Json{"message": fmt.Sprintf("invalid AWS region passed in: %s", region), "options": supportedRegionsSlice},
+			generic.Json{"message": "invalid AWS region", "options": supportedRegionsSlice},
 		)
 	}
 
@@ -88,38 +89,17 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	ctx := context.Background()
 	conn, err := generic.PsqlConnect()
 	if err != nil {
+		log.Printf("stack URL: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to connect to PostgreSQL database",
-			"error":   err.Error(),
+			"message": "failed to connect to database",
 		})
 	}
 	defer conn.Close(ctx)
 
 	// Check membership of user to organization
-	// Source: ChatGPT
 	err = generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId)
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			// Handle 404 Not Found
-			if authErr.StatusCode == 404 {
-				return generic.Response(http.StatusNotFound, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-
-			// Handle 403 Forbidden
-			if authErr.StatusCode == 403 {
-				return generic.Response(http.StatusForbidden, generic.Json{
-					"error": authErr.Message,
-				})
-			}
-		}
-
-		// Fallback for unexpected errors
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "internal server error",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
 	// Begin URL generation
@@ -129,9 +109,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	query := `SELECT name FROM organizations WHERE id = $1`
 	err = conn.QueryRow(ctx, query, organizationId).Scan(&organizationName)
 	if err != nil {
+		log.Printf("stack URL: read the organization name: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to query organization name",
-			"error":   err.Error(),
 		})
 	}
 
@@ -161,9 +141,9 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	if envVarMissing {
+		log.Printf("stack URL: environment variables not set: %v", missingEnvVars)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "the following required environment variables are missing on the Lambda function",
-			"missing": missingEnvVars,
+			"message": "account linking is not configured",
 		})
 	}
 
@@ -204,14 +184,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
 			return generic.Response(http.StatusConflict, generic.Json{
 				"message": "account with this name already exists for the organization",
-				"error":   pgErr.Message,
 			})
 		}
 
 		// Any other error
+		log.Printf("stack URL: insert the account row: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to insert aws_account_access_roles record",
-			"error":   err.Error(),
+			"message": "failed to record the account",
 		})
 	}
 

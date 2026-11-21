@@ -1,0 +1,44 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
+  }
+}
+
+# Credentials come only from the run's environment: short-lived session keys.
+# ManagedBy marks everything a run creates as Clutter's: the user's Clutter
+# role may change or delete only resources that carry it, and adds it only
+# in a create request. A resource's own ManagedBy (Ansible on instances) wins.
+provider "aws" {
+  region = "{{.Region}}"
+
+  default_tags {
+    tags = {
+      ManagedBy         = "Clutter"
+      ClutterDeployment = "{{.DeploymentID}}"
+    }
+  }
+}
+
+# The boundaries the user's Clutter role stack creates: every role A's lambda
+# and ec2 templates create carries the first, every user cross.tf creates the
+# second. The run's environment sets both from the connection's role ARN.
+variable "permissions_boundary_arn" {
+  type = string
+}
+
+variable "user_permissions_boundary_arn" {
+  type = string
+}

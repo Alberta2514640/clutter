@@ -1,7 +1,8 @@
 // Command gateway runs System A's Lambdas locally behind an HTTP server that
 // behaves like the platform's API Gateway. It is a development tool only: it
 // binds to loopback, refuses a JWT secret it did not generate, and points
-// every AWS SDK call at a local endpoint that refuses it.
+// every AWS SDK call at a local endpoint that serves S3 from disk and refuses
+// everything else.
 package main
 
 import (
@@ -17,8 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -39,8 +38,11 @@ func run(logger *log.Logger) error {
 	frontAddr := flag.String("front-addr", "127.0.0.1:3000", "front door listen address (loopback only); empty disables it")
 	frontendUpstream := flag.String("frontend-upstream", "http://127.0.0.1:3100", "the Next.js dev server the front door forwards to")
 	apiDir := flag.String("api-dir", "", "path to backend/api")
-	stateDir := flag.String("state-dir", "", "directory for binaries, the Lambda HOME and the pid file")
-	skipBuild := flag.Bool("skip-build", false, "reuse binaries already in <state-dir>/bin")
+	stateDir := flag.String("state-dir", "", "directory for the Lambda binaries, the Lambda HOME and the local S3 files")
+	adapterAddr := flag.String("adapter-addr", "127.0.0.1:8790", "B API's address (loopback only), for the DevStack link route")
+	devstackVM := flag.String("devstack-vm", "devstack", "the Lima VM that runs DevStack, for the DevStack link route")
+	clutterAccountID := flag.String("clutter-account-id", "", "Clutter's real AWS account, for real AWS from this machine (with -template-url); empty keeps the stand-in")
+	templateURL := flag.String("template-url", "", "the account-link template's real S3 address (with -clutter-account-id)")
 	flag.Parse()
 
 	if *apiDir == "" || *stateDir == "" {
@@ -48,6 +50,9 @@ func run(logger *log.Logger) error {
 	}
 	if err := gateway.RequireLoopbackAddr(*apiAddr); err != nil {
 		return err
+	}
+	if err := gateway.RequireLoopbackAddr(*adapterAddr); err != nil {
+		return fmt.Errorf("-adapter-addr: %w", err)
 	}
 	frontOrigin := "http://localhost:3000"
 	if *frontAddr != "" {
@@ -68,13 +73,19 @@ func run(logger *log.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The endpoint that refuses every AWS call. It must exist before the
-	// Lambdas start, since their environment points at it.
+	// The endpoint every AWS call goes to. It must exist before the Lambdas
+	// start, since their environment points at it.
 	noAWSLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
-	noAWS := gateway.NewNoAWS(logger)
+	s3ModuleDir := filepath.Join(*apiDir, "..", "infra", "modules", "s3")
+	localS3, err := gateway.NewLocalS3(filepath.Join(*stateDir, "s3"), s3ModuleDir, logger)
+	if err != nil {
+		return err
+	}
+	defer localS3.Close()
+	noAWS := gateway.NewNoAWS(logger, localS3)
 	noAWSSrv := &http.Server{Handler: noAWS, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = noAWSSrv.Serve(noAWSLn) }()
 	defer noAWSSrv.Close()
@@ -89,17 +100,18 @@ func run(logger *log.Logger) error {
 		FrontendOrigin: frontOrigin,
 		AWSEndpoint:    "http://" + noAWSLn.Addr().String(),
 		HomeDir:        homeDir,
+
+		ClutterAccountID: *clutterAccountID,
+		TemplateURL:      *templateURL,
 	}
 	if err := gateway.ValidateConfig(cfg); err != nil {
 		return err
 	}
 
 	binDir := filepath.Join(*stateDir, "bin")
-	if !*skipBuild {
-		logger.Printf("building Lambdas from %s", *apiDir)
-		if err := gateway.BuildLambdas(ctx, *apiDir, binDir, logger); err != nil {
-			return err
-		}
+	logger.Printf("building Lambdas from %s", *apiDir)
+	if err := gateway.BuildLambdas(ctx, *apiDir, binDir, logger); err != nil {
+		return err
 	}
 
 	pool := gateway.NewPool(cfg, binDir, logger)
@@ -107,17 +119,25 @@ func run(logger *log.Logger) error {
 	if err := pool.Start(ctx); err != nil {
 		return err
 	}
-	if err := writePids(filepath.Join(*stateDir, "lambda.pids"), pool.Pids()); err != nil {
-		return err
-	}
 
 	issuer := &devauth.Issuer{ConnString: cfg.PSQLConnString, Secret: []byte(cfg.JWTSecret), FrontendOrigin: frontOrigin}
-	apiHandler := gateway.NewServer(pool, logger, map[string]http.Handler{
+	devRoutes := map[string]http.Handler{
 		"/dev/login":     issuer.RedirectHandler(),
 		"/dev/aws-calls": noAWS.CallsHandler(),
 		"/dev/healthz": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte("ok\n"))
 		}),
+	}
+	apiHandler := gateway.NewServer(pool, logger, devRoutes)
+	// These routes call back into the server, so they are added once the server exists.
+	devRoutes[gateway.LinkFakeAccountPath] = apiHandler.LinkFakeAccountHandler()
+	devRoutes[gateway.LinkDevstackPath] = apiHandler.LinkDevstackHandler(gateway.DevstackConfig{
+		// The same flag dev.sh gives B; the route refuses without it.
+		Enabled:    os.Getenv("ADAPTER_ALLOW_PRIVATE_TARGETS") == "1",
+		AdapterURL: "http://" + *adapterAddr,
+		VM:         *devstackVM,
+		Script:     filepath.Join(*apiDir, "..", "devserver", "devstack", "credential.sh"),
+		Run:        gateway.ExecRunner{},
 	})
 	servers := []*http.Server{{Addr: *apiAddr, Handler: apiHandler, ReadHeaderTimeout: 10 * time.Second}}
 
@@ -127,7 +147,7 @@ func run(logger *log.Logger) error {
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)
-			fmt.Fprintf(w, "The frontend dev server is not reachable at %s.\nStart it as run.sh printed, then reload.\n", *frontendUpstream)
+			fmt.Fprintf(w, "The frontend dev server is not reachable at %s.\nStart everything with npm run dev at the repo root, then reload.\n", *frontendUpstream)
 		}
 		front := http.NewServeMux()
 		front.Handle("/dev/login", issuer.BrowserHandler())
@@ -162,13 +182,4 @@ func run(logger *log.Logger) error {
 		_ = s.Shutdown(shutdownCtx)
 	}
 	return nil
-}
-
-func writePids(path string, pids []int) error {
-	var b strings.Builder
-	for _, p := range pids {
-		b.WriteString(strconv.Itoa(p))
-		b.WriteByte('\n')
-	}
-	return os.WriteFile(path, []byte(b.String()), 0o600)
 }

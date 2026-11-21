@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -32,6 +33,9 @@ type DiagramData struct {
 	LatestUpdateAt *time.Time             `json:"latestUpdateAt,omitempty"`
 }
 
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
 func main() {
 	lambda.Start(handler)
 }
@@ -39,10 +43,9 @@ func main() {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// 1. Extract user data from authorizer context
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
+	if err != nil || userData.Id == "" {
 		return generic.Response(http.StatusUnauthorized, generic.Json{
 			"message": "unauthorized: missing user identity",
-			"error":   err.Error(),
 		})
 	}
 	userID := userData.Id
@@ -52,7 +55,6 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	if err := json.Unmarshal([]byte(request.Body), &req); err != nil {
 		return generic.Response(http.StatusBadRequest, generic.Json{
 			"message": "invalid request body",
-			"error":   err.Error(),
 		})
 	}
 
@@ -78,43 +80,24 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// 4. Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("diagram create: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	// 5. Authorization: Get project's organization and check membership
-	orgID, err := generic.GetProjectOrganizationPSQL(ctx, conn, req.ProjectID)
+	// 5. Authorization: the project belongs to an organization the caller is
+	// in. A project of another organization gets the same 404 as one that does
+	// not exist, and the row is written under the checked, canonical id.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userID, "", req.ProjectID, "")
 	if err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to fetch project",
-			"error":   err.Error(),
-		})
+		return generic.AuthorizationResponse(err)
 	}
 
-	// 6. Check organization membership
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userID, orgID); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
-	}
-
-	// 7. Create Diagram
+	// 6. Create Diagram
 	diagramID := uuid.NewString()
 	timestamp := time.Now().UTC()
 
@@ -129,30 +112,30 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 	emptyDataBytes, err := json.Marshal(emptyLayout)
 	if err != nil {
+		log.Printf("diagram create: marshal the empty layout: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to initialize diagram data",
-			"error":   err.Error(),
 		})
 	}
 	emptyData := string(emptyDataBytes)
 
-	_, err = conn.Exec(ctx, query, diagramID, req.ProjectID, userID, req.Name, emptyData, timestamp)
+	_, err = conn.Exec(ctx, query, diagramID, ids.ProjectID, userID, req.Name, emptyData, timestamp)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique_diagram_name_per_project") {
 			return generic.Response(http.StatusConflict, generic.Json{
 				"message": "a diagram with this name already exists in the project",
 			})
 		}
+		log.Printf("diagram create: insert: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to save diagram",
-			"error":   err.Error(),
 		})
 	}
 
-	// 8. Return Success
+	// 7. Return Success
 	response := DiagramData{
 		ID:             diagramID,
-		ProjectID:      req.ProjectID,
+		ProjectID:      ids.ProjectID,
 		Name:           req.Name,
 		Data:           &emptyLayout,
 		CreatedBy:      userID,

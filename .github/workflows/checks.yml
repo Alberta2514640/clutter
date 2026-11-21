@@ -1,8 +1,6 @@
 name: Checks
 
-# The shared gate before merging: the same checks as root CLAUDE.md § Commands that run without
-# AWS or Docker. The devserver smoke test needs Docker and is run locally (see the PR checklist in
-# the root README).
+# The shared gate before merging: the checks in root CLAUDE.md § Commands that need no AWS.
 on:
   pull_request:
   push:
@@ -22,19 +20,46 @@ jobs:
           cache-dependency-path: |
             backend/api/go.sum
             backend/devserver/go.sum
+            backend/adapter/go.sum
       - name: Build and vet the Lambdas
         run: |
           go -C backend/api build ./...
           go -C backend/api vet ./...
-      # Workaround: two packages fail before any change (one needs live S3, one panics on a nil
-      # connection). Phase 0 item 6 in .claude/findings/NOW.md fixes them and removes this filter.
-      - name: Test the Lambdas (known-failing packages excluded)
+      - name: Test the Lambdas
         run: |
-          go -C backend/api test $(go -C backend/api list ./... | grep -v -e '/terraform-engine/create$' -e '/tests/generic$')
+          go -C backend/api test ./...
       - name: Vet and test the devserver
         run: |
           go -C backend/devserver vet ./...
           go -C backend/devserver test ./...
+      # B's Postgres tests start a throwaway container; the runner has Docker.
+      - name: Vet and test the adapter layer (B)
+        run: |
+          go -C backend/adapter vet ./...
+          go -C backend/adapter test ./...
+
+  smoke:
+    # Runs A's real Lambdas through the devserver and calls every route.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/api/go.mod
+          cache-dependency-path: |
+            backend/api/go.sum
+            backend/devserver/go.sum
+            backend/adapter/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start the backend
+        run: backend/devserver/dev.sh --backend-only
+      - name: Call every route
+        run: backend/devserver/smoke.sh
+      - name: Stop the backend
+        if: always()
+        run: backend/devserver/stop.sh
 
   frontend:
     runs-on: ubuntu-latest
@@ -50,10 +75,29 @@ jobs:
         run: npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter
       - name: Lint
         run: npm --prefix frontend/clutter run lint
+      - name: Unit tests (Vitest)
+        working-directory: frontend/clutter
+        run: npx --no-install vitest run
       - name: Build
         run: npm --prefix frontend/clutter run build
         env:
           NEXT_PUBLIC_API_ENDPOINT: http://localhost:8787
+
+  platform:
+    # The platform and version check (test-suites/scripts/platform-version): toolchains and
+    # images are pinned, the pins agree, and this job's tools meet them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/api/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check pinned versions
+        run: bash test-suites/scripts/platform-version/run.sh
 
   docs-and-scripts:
     runs-on: ubuntu-latest
@@ -62,6 +106,10 @@ jobs:
       - name: Markdown lint
         run: npx -y markdownlint-cli2@0.18.1 "**/*.md"
       - name: Shellcheck our scripts
-        run: shellcheck -S warning .claude/hooks/*.sh backend/devserver/*.sh
+        run: shellcheck -S warning .claude/hooks/*.sh backend/devserver/*.sh backend/devserver/devstack/*.sh backend/infra/*.sh backend/adapter/images/*.sh frontend/build-image.sh test-suites/scripts/*.sh test-suites/scripts/*/*.sh backend/adapter/tests/scripts/*.sh backend/api/tests/scripts/*/*.sh frontend/clutter/tests/scripts/*.sh
+      - name: Devserver script checks
+        run: backend/devserver/test-scripts.sh
+      - name: Deploy script checks
+        run: backend/infra/test-deploy.sh
       - name: Hook tests
         run: .claude/hooks/test-hooks.sh

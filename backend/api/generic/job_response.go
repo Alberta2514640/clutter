@@ -18,7 +18,7 @@ func BuildJobResponse(
 	playbookS3Key *string,
 
 	// Terraform-specific (nullable)
-	terraformDirectory, roleArn, assumeRoleExternalId *string,
+	terraformDirectory, roleArn *string,
 ) map[string]interface{} {
 	job := map[string]interface{}{
 		"id":         id,

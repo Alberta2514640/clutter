@@ -68,7 +68,7 @@ func main() {
 func loadRuntimeConfig() runtimeConfig {
 	awsRegion := os.Getenv("AWS_REGION")
 	if awsRegion == "" {
-		awsRegion = "us-west-2"
+		awsRegion = generic.PlatformRegion()
 	}
 
 	return runtimeConfig{

@@ -48,8 +48,9 @@ func TestLoadRuntimeConfig_DefaultsRegionWhenUnset(t *testing.T) {
 
 	cfg := runtaskutils.LoadRuntimeConfig()
 
-	if cfg.AWSRegion != "us-west-2" {
-		t.Fatalf("expected default region us-west-2, got %q", cfg.AWSRegion)
+	// With AWS_REGION unset, the runner falls back to the platform region (ADR-015).
+	if cfg.AWSRegion != "ca-central-1" {
+		t.Fatalf("expected default region ca-central-1, got %q", cfg.AWSRegion)
 	}
 }
 
@@ -274,6 +275,32 @@ func TestBuildAnsibleRunTaskInput_SetsClusterAndTaskDefinition(t *testing.T) {
 	}
 	if aws.ToString(input.TaskDefinition) != "arn:aws:ecs:us-west-2:123:task-definition/ansible-runner:1" {
 		t.Errorf("unexpected task definition ARN: %s", aws.ToString(input.TaskDefinition))
+	}
+}
+
+// The runner reports its result in a status file, so its overrides carry no
+// database string; the deployed copy in ansible/run-task has the same test.
+func TestBuildAnsibleRunTaskInput_PassesNoDatabaseString(t *testing.T) {
+	t.Setenv("PSQL_CONNECTION_STRING", "postgres://clutter:secret@db.example:5432/postgres")
+	msg := map[string]string{
+		"job_id":                  "job-abc",
+		"playbook_s3_key":         "org-1/proj-1/diag-1/playbooks/site.yml",
+		"target_instance_ids":     "i-0abc123",
+		"role_arn":                "arn",
+		"assume_role_external_id": "ext",
+	}
+
+	input := runtaskutils.BuildAnsibleRunTaskInput("cluster", "taskdef", []string{"subnet-a"}, "sg-1", "bucket", msg)
+
+	for _, override := range input.Overrides.ContainerOverrides {
+		for _, pair := range override.Environment {
+			lower := strings.ToLower(aws.ToString(pair.Name) + "=" + aws.ToString(pair.Value))
+			for _, word := range []string{"psql", "postgres", "database", "secret"} {
+				if strings.Contains(lower, word) {
+					t.Errorf("override %s holds %q", aws.ToString(pair.Name), word)
+				}
+			}
+		}
 	}
 }
 

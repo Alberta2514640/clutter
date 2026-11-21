@@ -1,0 +1,31 @@
+/*
+ * The home page's section reveal. Durations and easing come from the motion
+ * tokens in globals.css; this file adds no new ones.
+ *
+ * Content is visible by default: without script, in print, under reduced
+ * motion and in a capture taken before any scroll. RevealOnScroll marks a
+ * .reveal element "waiting" only once the visitor scrolls, and only while it is
+ * still below the window, then "shown" when it comes into view (once). So a
+ * section fades up 12px on first view, and nothing on screen ever disappears.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    transition:
+      opacity var(--motion-slow) var(--ease-standard),
+      transform var(--motion-slow) var(--ease-standard);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  .reveal[data-reveal="waiting"] {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media print {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

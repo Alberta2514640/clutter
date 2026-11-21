@@ -6,78 +6,181 @@ Setup for the whole repo is in the root `README.md`. This page covers the fronte
 
 ## Run it
 
-Use npm. The Dockerfile runs `npm ci`, and `pnpm-lock.yaml` is stale.
+Use npm. The Dockerfile runs `npm ci`.
 
-| Variant | Command | Result on 2026-10-30 |
+| Variant | Command | Result |
 | --- | --- | --- |
-| With the local backend (the normal way) | `backend/devserver/run.sh`, then `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 npm --prefix frontend/clutter run dev -- --hostname 127.0.0.1 --port 3100`, then open <http://localhost:3000/dev/login> | works; checked in a headless browser |
-| Production build with the local backend | `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 npm --prefix frontend/clutter run build`, copy `.next/static` and `public` into `.next/standalone`, then in `frontend/clutter/.next/standalone` run `PORT=3100 HOSTNAME=127.0.0.1 node server.js` | works; checked in a headless browser |
+| With the local backend (the normal way) | `npm run dev` at the repo root, then sign in at <http://localhost:3000/dev/login> | works |
+| The website alone, against a backend you run yourself | `npm run dev:backend` once, then `npm run dev:frontend` in another terminal (Ctrl+C there stops only the website) | works |
+| Production build with the local backend | `npm run dev:backend`, then `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790 npm --prefix frontend/clutter run build`, copy `.next/static` and `public` into `.next/standalone`, then in `frontend/clutter/.next/standalone` run `PORT=3100 HOSTNAME=127.0.0.1 node server.js` | works |
 | Alone, no backend | `NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run dev` | `/` and `/login` render; everything else redirects to `/login` |
-| Docker image | `docker build -f frontend/Dockerfile.frontend frontend` | the Dockerfile hard-codes the capstone's dead API address, which Next bakes in at build time, so the image talks to nothing |
-| Root `docker-compose.yml` | `docker compose up` | does not work: it pulls the capstone's published image (`ghcr.io/alberta2514640/clutter-frontend`), which could not be pulled, and that image points at the dead API too |
+| Docker image | `frontend/build-image.sh`, with `IMAGE_TAG` and the four `NEXT_PUBLIC_` build values (`npm run deploy -- prod --site-image` runs it with the cloud's values) | the Dockerfile takes A's and B's addresses, the Google client id and the contact address as build arguments with no default, and stops when one is missing; CI builds it with stand-in values (`.github/workflows/docker-image.yml`) |
 
-`NEXT_PUBLIC_API_ENDPOINT` is the base URL of the Clutter API. Next reads it at build time, so a production build must be rebuilt to point somewhere else.
+Two variables name the backends, and Next reads both at build time, so a production build must be rebuilt to point somewhere else:
 
-Real Google sign-in does not work locally: the Google client id is hard-coded and belongs to the capstone team's Google project. Locally you sign in through the devserver's `/dev/login`.
+| Variable | Is | Locally (`dev.sh` sets both) |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_ENDPOINT` | A's API (Lambdas behind API Gateway) | `http://localhost:8787` |
+| `NEXT_PUBLIC_ADAPTER_API_ENDPOINT` | B API, the `/v1` service behind B's screens (`backend/adapter/README.md`) | `http://localhost:8790` |
+
+Without `NEXT_PUBLIC_ADAPTER_API_ENDPOINT`, A's screens work and B's screens say the deployment service is not configured.
 
 ## Check it
 
 ```bash
 npx --prefix frontend/clutter tsc --noEmit -p frontend/clutter     # 0 errors
-npm --prefix frontend/clutter run lint                             # 0 errors, 13 warnings (10 unused variables or imports, 3 React hook dependency warnings; not fixed, A changes only at the seams)
-NEXT_PUBLIC_API_ENDPOINT=http://localhost:9999 npm --prefix frontend/clutter run build   # 16 routes
+npm --prefix frontend/clutter run lint                             # 0 errors, 3 warnings: isComplete and taskStatus unused in A's logs panel (LiveLogsTab), _orgId unused in useCreateDiagram
+(cd frontend/clutter && npx vitest run)                            # 52 files, 385 tests
+NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787 NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790 npm --prefix frontend/clutter run build   # 28 routes
 ```
 
-There are no frontend tests. Vitest, Testing Library and Playwright are installed but unused.
+The Vitest files sit beside the code they test, in `src/lib/`, `src/lib/features/`, `src/components/landing/`, `src/components/brand/` and, for B's editor, `src/app/`. They test the logic behind the screens:
 
-## What was checked in a browser
+- **B's editor:** the building-block document and its network boxes, the link rules and cards, the diagram summary, problem badges, the undo history, which blocks the last deploy built, the save status, and the leave guard (the one test that needs a DOM, in jsdom).
+- **Catalog:** the manifest-to-form and manifest-to-display mappings, the firewall and address range rules (which mirror B's), and the kind and team colours.
+- **The deploy panel:** named states, the one primary action and run labels, compatibility lines, where each block runs, the deploy and destroy confirmations, settings, "Add deployment", and the "What was built" lead lines.
+- **Connections:** the AWS account name and role ARN rules, the AWS link flow's choices, the `clouds.yaml` reader, local connection names, which clouds a build offers, and the local-build check behind **Link fake account** (never true in a production build).
+- **Function code:** the upload's file check and progress states.
+- **Projects and teams:** where a signed-in person starts, the team order, a project's deployment summary, the delete checks, name and description limits, and the example order.
+- **Other:** the preferences store, B API's error envelope, the plural and time-label helpers, the brand blocks' isometric grid, and the landing page's example list and contact address.
 
-With the devserver and a headless Chrome on 2026-10-30:
+There is no `test` script; CI runs them with `npx vitest run` (`.github/workflows/checks.yml`). Testing Library is installed, and no test uses it yet. The browser workflow test in `tests/e2e/` uses Playwright, runs against the running app, and is not part of the Vitest run (`tests/README.md`).
 
-| Page | Result |
+## B's screens
+
+B's screens live in the same website as A's and call B API with the same token. The screens say "team" where the code, the API and the addresses say organization.
+
+### Building-block editor
+
+The editor opens at `/projects/[projectId]/diagram/[diagramId]` for a diagram whose saved document has `engine: "blocks"`. Any other diagram opens A's editor, unchanged and always dark. A thin bar above it names it the older AWS editor, holds the way back to the project, and says why Deploy and Destroy are off.
+
+- **Source.** The palette, block forms and allowed links come from B's catalog (each cloud's manifest). The editor saves through A's `PUT /diagram`.
+- **Top bar.** A back arrow, a breadcrumb (team, project, then the diagram's name, edited in place), the save status ("Saved", "Unsaved changes" or "Saving…"), then Save, Preview and Deploy. Save is the primary button while there are changes; Ctrl or Cmd + S saves too. While the name or a block has a problem, Save is off, and "1 block to fix" (or the count) selects the first one. With unsaved changes, a link inside the app asks "Leave without saving?", and the browser asks before the tab closes or reloads.
+- **Palette.** Each block shows its icon, its name and the one-line summary from its manifest. A click or Enter adds it at a free spot near the middle of the view; dragging works too. A block a connected cloud cannot build carries that cloud's faded logo with a small cross ("Not on (cloud)"). One that no connected cloud builds is dimmed, and can still be added. Each kind has its own colour wherever a block appears (`KIND_TINT`): VM blue, network violet, firewall amber, volume green, bucket orange, function yellow, table cyan, HTTP API pink. A kind a cloud adds on its own stays neutral.
+- **Networks and links.** A network is a resizable dashed box labelled "name · address range" (ADR-025). Drag a VM over a box ("Drop to run it in (name)") to put it in, and drag it out to take it out. The saved document keeps this as the VM-to-Network edge, and an older diagram opens with each VM in the box of its first network edge. Every other link is a line drawn from a block's dot. While it is drawn, only the blocks it may reach glow, and a refused drop says why in one line. Hovering a line shows a card that explains it; "How linking works" shows every card.
+- **Selecting, removing and Undo.** Click selects a block; Shift-click or Cmd-click adds to the selection, and Shift-drag draws a selection box. With two or more selected, the panel says "N blocks selected" with Remove blocks. Delete or Backspace removes the selection, and a toast names what went and offers Undo. Ctrl or Cmd + Z undoes the last canvas change (an add, a move, a link, a removal, a resize or a field edit), and Shift + Ctrl or Cmd + Z (or Ctrl + Y) redoes it; the history holds 100 steps (`lib/features/diagram/history.ts`). Tab reaches every block and line, with a visible focus ring; Enter selects a block and opens its form, and the arrow keys move it. A block dropped onto another inside a network box moves to the nearest free spot.
+- **Markers.** A block with a problem in the shown deployment's compatibility check carries an amber "!" with B's message. A firewall that opens SSH (22) or remote desktop (3389) to everyone says "Open to everyone". A block says "Live" only when the shown deployment's last successful deploy built it (read from B's `Built:` log lines, `lib/features/diagram/live.ts`); a block drawn since says "Not deployed yet". A pill at the foot of the canvas says what the deployment builds ("Builds 2 servers, 1 network, 1 disk") or what the diagram has ("Has 3 blocks").
+- **View as.** At the top left of the canvas, it shows plain blocks, or the diagram as one cloud builds it, with that cloud's logo, service icon and name on each block. A block the cloud does not offer is dimmed with "Not on (cloud)"; a block left out says "Left out", and one a split deployment runs elsewhere says "On another cloud". It starts on the cloud chosen at onboarding, and the choice is kept per diagram in this browser.
+- **First deploy checklist.** "Get to your first deploy" (draw your setup, connect a cloud, preview the code, deploy) docks in the canvas's lower left and folds to a pill. Each step ticks from real state, and its button acts in place. The folded pill says "2/4 done". The checklist goes for good once one of the team's deployments is live (`projects/checklist.ts`). It starts open for new and console users and folded for Terraform users.
+- **Inspector.** The Block and Deploy tabs sit on the right, resizable from 380 to 760 pixels (440 to start, kept in this browser). The Block panel shows the block's name on each connected cloud, the manifest's help lines, and what the last compatibility check found wrong with each saved value. Firewall and address range fields are checked as they are typed. A VM has a "Startup script" of up to 16 KB. A function has a "Handler" and a "Code" section: "Upload .zip" (at most 50 MB, checked in the browser first), then Replace and Remove; without code it runs Clutter's sample code. "Remove block" removes the block, with the same Undo.
+- **Code panel.** Preview opens the Terraform in a panel along the bottom of the canvas. It can be made taller and closes with its button or Escape. It shows the deployment the canvas shows, groups a split deployment's files by connection, and has Copy and Download. With no deployment it offers "Add a deployment". `?panel=deploy` opens the Deploy tab, and `?panel=code` the code panel.
+- **Phones.** Below 1024 pixels wide, the editor is a read-only view: the canvas ("View full diagram" and "Zoom to read"), each deployment with its state, and the blocks as a list. The canvas stays mounted, so unsaved work survives a narrower window.
+
+### Deploy panel
+
+The deploy panel is the editor's Deploy tab.
+
+- **No connection.** It says "Connect a cloud to deploy" and offers one **Connect a cloud** button. That opens the connection flow in a side sheet (`ConnectCloudSheet`), on the cloud chosen at onboarding.
+- **Cards.** There is one card per deployment, with its cloud's logo; its header folds and unfolds it (one deployment starts open; with several, only the selected one does), titled by its connections ("devstack + Local AWS" for a split deployment), with its clouds and region below. With several cards, the one the canvas shows is outlined, and a click or focus on another chooses it.
+- **States.** Each card names one state with a one-line hint: Not deployed, Queued, Planning, Applying, Destroying, Live, Failed or Destroyed. The names come from `deployments/runState.ts`, which the project's Deployments tab and the editor's Live markers read too. "Remove from diagram" is the only removal, so no state says Removed. The first time in this browser that a watched deployment turns Live, the logo's blocks drop in beside its state (`FirstLiveStack`), never under reduced motion.
+- **One primary action.** Deploy before anything is built and after a destroy. Update, with "Changes not deployed yet", when the saved diagram, or the deployment's own settings, left-out blocks or placements, changed since the last successful deploy (B's `config_version`). Up to date (off) when the cloud holds the saved diagram and settings. Deploy again after a failed deploy, and Destroy again after a failed destroy. Watch the log while a run is in progress. Plan and Preview code sit beside it. Plan, Deploy and Preview use the saved diagram; Destroy does not read it. Each button's tooltip says what it does or why it is off, and screen readers get the reason too.
+- **Confirmations.** Deploy and Update ask first. The dialog says what each cloud builds, any cost beyond the blocks (B's cost notes, such as AWS's NAT gateway), and "It runs in your own cloud account. You can destroy it later." Destroy asks "Destroy (title)?", lists what goes, and offers Keep it and Destroy for good. Remove from diagram stays off until the deployment holds nothing, then asks with Keep it and Remove it. It frees the connection and changes nothing in the cloud. A toast confirms each action, and a run's toast turns into how it ended ("Deploy finished on lab").
+- **Runs.** The card shows the latest run's label and time, each cloud's progress in a run on several clouds (including "rolled back"), and the run's headline ("Built 4 blocks (18 cloud resources)" for a first deploy, "Built 4 blocks (1 changed)" for an update, "Destroyed 18 cloud resources" for a destroy), counted from the run itself. A failed run leads with its error, and for a known cloud error a plain line of advice (`failureAdvice` in `deployments/runLog.ts`). "Show log" opens the log, Copy and Download (.txt) take the readable text, and Expand opens it in a large window. The log names the action, the cloud and the connection on its first line, uses block names, and ends with the run's id. "Recent runs (n)", closed by default, lists up to 20 runs. B returns only the latest run and the last successful deploy, so a reload starts the list again from those two.
+- **Compatibility.** One line per cloud, in the order a run builds them, says "every block can be built here" (never "ready"). For a block its cloud cannot build, it offers "Run (block) on (connection)" when another working connection can, and a checkbox to leave the block out. A note names each scoped key a permission edge makes.
+- **Where each block runs, and Advanced.** A list shows each block's connection, with one "Change" control. A block can move only while the deployment holds nothing. **Advanced** holds the cloud's settings for the diagram's blocks, with Save settings. Where the cloud lists its own values (OpenStack's images, flavors and external networks), a setting is a list, and "Type another name…" still allows a typed value.
+- **Add deployment.** It saves the diagram first when it has changes. It says when there is no connection, when every connection already has a deployment here, and which free connection is not working; "Add a connection" opens the side sheet. It reads the connection's lists first ("Reading the choices your cloud offers…"). A manifest default the cloud does not offer takes B's suggestion for that cloud; a value the person chose is never replaced. A split example (Hybrid) opens on its first cloud with each block preset. With exactly one free working connection, that connection is chosen.
+- **What was built.** After a successful apply, it shows "From the last deploy" with its time, while the deployment is live or failed. It leads with lines a person can use: "Your website" (Open) for a public server with a startup script and port 80 open, else "Your server" (Copy); "Your API" with Copy and Open; and "Answers with a sample until you upload your code." A VM on LocalStack gets "VMs on local AWS are simulated; they do not boot." instead. A private address never leads. "Details" lists each block, what it became on its cloud, and every value the apply returned. The panel reads these from B's `Built:` and `Result:` log lines. A run from before those lines shows the saved names, and says "The diagram changed since this deploy. Names show as saved now." once it has.
+
+### Connections
+
+Connections is at `/settings/organization/connections` (Connections in the sidebar).
+
+- **One flow.** `ConnectCloudFlow` (in `components/connections/`) is the one way to add a connection. The page shows it inline while the team has none. After that, **Connect a cloud** opens it in `ConnectCloudSheet`, the same side sheet the editor's Deploy tab and the checklist open. `?connect=(connector)` opens it on that cloud, and the old `/settings/organization/aws-account` page redirects here with `?connect=aws`. Without a team, the page offers "Create a team".
+- **Steps.** "Choose a cloud" shows one card per cloud, then that cloud's form. A new connection says "Connected (name). Clutter checked it and it works." in place and in a toast, with Done (in the sheet) and Connect another cloud.
+- **The list.** Each connection shows its cloud, its name, and Verified or Not working (with the reason), with Verify and Delete.
+- **Deleting.** Delete is off while a deployment on the connection may hold resources, and a line links to each such diagram's Deploy view. Otherwise `ConfirmDialog` asks first and says how many diagrams deploy to it. Deleting removes the deployments that hold nothing and changes nothing in the cloud. When B refuses (409 `live_deployments`), the page says "A deployment on this connection is still built. Destroy it on its diagram's Deploy tab first."
+- **AWS** (`AwsConnectForm`) has three numbered steps. First, name the account and choose a region (where B's deployments build). Second, Open AWS opens Clutter's CloudFormation stack in a new tab, in Canada (Central); the role works in every region. Third, paste the role ARN. Check and connect stays off until the ARN looks right, then links and connects in one step. Errors show next to the field. The team's links show as Linked, Unfinished or Revoked ("Fake, local" for a local one), with Connect, Resume or remove.
+- **Before you start (AWS)** says who can link an account, what the stack creates (free), what Clutter can and cannot change, and how to remove its access. It holds the one link to the guide with screenshots.
+- **Credential forms** (OpenStack and other clouds). A dropped `clouds.yaml` (and `secure.yaml`) fills the form. It is read in the browser, never uploaded or kept. With several clouds in the file, the user picks one. A password entry is refused, with how to create an application credential. Its **Before you start** says what the credential and the project need. Secrets are password fields and are never shown again.
+- **Local actions** (a development build on the local gateway only). An "On this machine only" card leads the form. **Connect local AWS** links a fake account and connects it. Deploys then run on LocalStack if it was running when Clutter started, and it does not work while this machine is set up for real AWS. **Connect local OpenStack** connects this machine's DevStack (`POST /dev/link-devstack`), with the usual form behind "I have my own OpenStack". The connections are named "Local AWS" and "Local OpenStack", with " 2" and up when a name is taken. A production build drops both.
+- **Test and fake clouds.** The Mock cloud ("Test cloud (builds nothing, local only)") shows only in a development build, and its form never shows the token. A's own "AWS account required" popup keeps the local-only **Link fake account** button (`components/common/LinkFakeAccount.tsx`).
+
+### Project deployments
+
+The project's Deployments tab is at `/projects/[projectId]/deployments`.
+
+- It lists every deployment of every diagram in the project, from B's `GET /v1/organizations/{orgID}/deployments?project=(id)` (`deployments/orgApi.ts` and `orgHooks.ts`).
+- Each row shows the diagram, its clouds (each one for a split deployment), region, named state, "Changes not deployed yet" when it applies, and the last run ("Deploy finished 5 minutes ago").
+- Each row opens its diagram on the Deploy tab (`?panel=deploy`). The list polls while a run is in progress.
+- With none, it says "Nothing deployed yet" and how to start.
+- Projects and a project's Settings read the same list. Projects counts live and running deployments. A project or a team whose deployments may still hold resources cannot be deleted until they are destroyed.
+
+### Shared parts
+
+- **Cloud logos.** Every screen that names a cloud draws its logo through `CloudLogo` in `components/common/`; `CloudMark` in `components/clouds/` draws a manifest's cloud through it. It shows AWS's and OpenStack's official logos (ADR-022, revised). `SHOW_OFFICIAL_CLOUD_LOGOS`, in the same file, turns every place back to Clutter's neutral tiles. A connector it does not list uses the logo its manifest names, and a logo that fails to load shows the cloud's monogram. Service icons come from keys in each manifest, resolved to files in `public/clouds/`, whose README lists each file's source, date and licence.
+- **New diagram** (the project's header, and the empty Diagrams and Deployments tabs) opens a chooser. It asks for a name ("Untitled diagram" to start; a name left as it is takes the example's name), then offers Blank or one of B's examples (`GET /v1/examples`). Examples that fit the cloud chosen at onboarding come first. A's create route makes the diagram, then `PUT /diagram` saves the editor's marker and the example's blocks and links. The project's diagram list marks a diagram without the marker "AWS only, older editor".
+- **Level badges** look the same everywhere (the landing page, onboarding and the chooser): `LevelBadge` in `components/common/`, Starter green, Intermediate blue and Advanced violet.
+- **Teams.** The sidebar's team switcher lists the user's teams by name, then id, with "New team" at the end. Choosing a team goes to its Projects page, and a new team becomes the current one. Projects, Connections and the team settings use the chosen team, kept per browser and falling back to the first. Pages inside a project use that project's team. Deleting a team (Settings, Danger zone, after typing its name; off while its deployments may hold resources) moves to another team, or to onboarding when none remain.
+
+To see them locally, run `npm run dev` at the repo root and sign in at <http://localhost:3000/dev/login>. The first time, it lands on onboarding: four steps, the last of which makes "My first project" and opens the editor. In the editor, **Connect a cloud** opens the connection flow: choose Mock cloud with the token `mock-valid-token`, or Amazon Web Services and **Connect local AWS**. The mock builds nothing and has no Terraform preview. A local AWS deployment previews real Terraform; its runs go where `npm run dev -- --aws` sends them (root `README.md` § Ways to run Clutter). The full walk-through is the root `README.md` § A full local tour.
+
+## Last browser check
+
+With `npm run dev` and Playwright:
+
+| Check | Result |
 | --- | --- |
-| `/dev/login` (devserver only) | signs in, lands on `/dashboard` |
-| `/dashboard` | renders projects, diagram and member counts, the project list and recent activity from the local database |
-| `/projects`, `/projects/[projectId]/diagrams` | render the real project and its diagrams |
-| `/settings/organization/aws-account` | renders |
-| `/projects/[projectId]/diagram/[diagramId]` (the canvas) | shows "AWS account required" until the organization has a linked account (run `backend/devserver/link-fake-account.sh` locally); then renders the palette with 5 resources and Save, Deploy and Destroy |
-| Dragging a node and saving | not checked by script (an automated drag timed out); check by hand |
-| Deploy, Destroy, logs, code upload, Ansible | fail at their AWS call, as expected locally |
+| The landing page, sign-in, onboarding and every app page (Projects, a project's Diagrams, Deployments and Settings, Connections, the team's General, Members and Danger zone, Account and preferences, the editor, not found), at 1440 and 390 pixels wide, in light and dark | looked at in screenshots |
+| The first run as a new user, with the team list stubbed empty | sign-in leads to onboarding's four steps, and the last step opens the editor |
+| A Mock deployment: deploy, update, destroy, remove from the diagram | each state and action shows as § B's screens describes |
+| The browser workflow test, `tests/scripts/e2e-browser.sh` | 2 passed: Chromium and WebKit (Firefox is skipped on macOS, `tests/README.md`) |
+| A scripted accessibility audit (contrast of every text, controls without a name, targets under 24 by 24 pixels) of the landing page, onboarding and the app pages, light and dark | app pages and onboarding: 0 contrast failures and 0 controls without a name. On the landing page the script flags the six header links, because it reads the light section behind the sticky header; they are gray 11 on the dark hero, well over 4.5:1. Under 24 pixels: the network box's "Internet access for private servers" switch and its "?" in the editor |
+| The landing hero's motion, in headless Chromium at 1440 by 900, 6 seconds with the pointer moving and 6 seconds still | 60 frames a second both ways |
+| Every page (17) at 1440 and 390 pixels, light and dark: browser console and scrollable areas | 0 warnings or errors (only the 404 page's own "not found"), and no area that scrolls without needing to |
+| Every example and every block field, changed on a live deployment and read back from the cloud: AWS on LocalStack and OpenStack on DevStack | all pass, including growing an attached volume, renaming a firewall or a VM, changing a network's address range or a table's key, and a VM replacement keeping its volume |
 
 ## Where things are
 
-- `src/app/`: routes, in four groups.
-  - `(auth)`: `login`, `register` (posts to a dead hard-coded host and is not reachable through the route guard) and `onboarding/create-org` (the first organization after sign-in).
-  - `(dashboard)`: `dashboard`, `projects`, `projects/new`, and per project `diagrams`, `settings` (rename, delete) and `workspaces` (a placeholder).
-  - `(diagram)`: the canvas at `projects/[projectId]/diagram/[diagramId]/`. Its `_components/` hold `DiagramEditor`, `Palette` (from `GET /resources`), `TopNav`, `AwsAccountRequiredModal`, `nodes/AwsServiceNode`, `nodes/ConfigPanel` and the `logs/` panel.
-  - `(settings)`: `settings/organization/aws-account` (the account link), `manage` (members; a mock) and `create-org` (a stub).
-- `src/lib/features/<feature>/`: one folder per backend area, each with `api.ts`, `types.ts`, `keys.ts`, `hooks.ts` and sometimes `uiStore.ts`. Features: `user` (sign-in, token), `organization`, `projects`, `diagram` (CRUD, save, deploy), `resources`, `logs`, `runs` (Ansible jobs), `codeUpload`, `members` (a mock). Follow this shape for a new feature.
-- `src/lib/stores/loginStore.ts`: unused. It holds a dead hard-coded login URL and the Google client id; nothing imports it.
-- `src/providers/`: Google sign-in. `src/app/providers.tsx` sets up TanStack Query (60-second stale time, one retry).
-- `src/components/common/` (sidebar and navbar) and `src/components/ui/` (shadcn components).
-- `src/proxy.ts`: the route guard. It checks only that the `clutter_token` cookie exists, not that it is valid.
-- `public/`: AWS service icons, logos and the account-link guide.
+- **The public pages:** the landing page `/` (`src/app/page.tsx`: a dark hero, dark footer and dark final call to action around light sections), `/privacy` and `/terms`, built from `src/components/landing/`. Below 768 pixels wide, the header's section links sit behind a Menu button (`SectionsMenu`). With `robots.ts`, `sitemap.ts`, `opengraph-image.png` and `icon.svg` in `src/app/`, they are the only pages search engines index. Their contact address is the build setting `NEXT_PUBLIC_CONTACT_EMAIL`.
+  - **Media.** `public/landing/` holds WebP screenshots of the running app (device scale 2, dark theme, a demo team named Northwind) and a muted demo clip (`demo.webm` and `demo.mp4`, with its still `demo-poster.webp`). The media relabel a local test connection as AWS and OpenStack, in the browser only, so the alt text calls it an example connection. The diagrams, deployments and runs are real local runs. `components/landing/shots.ts` owns each file's size and alt text, and the sign-in page's brand panel reads the same list. The landing page shows no test results; every claim on it is true of the real-cloud run in `docs/reports/2026-11-20-real-cloud-verification.pdf`. Retake the media together when a screen they show changes.
+  - **The hero** is the headline, with "diagram." in a dashed selection box, between the two halves of `HeroCanvas`, a decorative living diagram. `HeroMotion` adds pointer parallax (with a mouse, from 1280 pixels wide) and pauses the hero's animations while it is off screen. The keyframes are in `globals.css`, behind `prefers-reduced-motion: no-preference`, so under reduced motion the hero is still.
+  - **Other interactive parts** are small client components: `ViewAsDemo` (Blocks, AWS and OpenStack buttons that swap three screenshots), `DemoClip` (plays only while on screen, never by itself under reduced motion, with Play and Pause) and `RevealOnScroll` (fades sections in once, after the first scroll). Motion is plain CSS in `motion.module.css`, and none runs under `prefers-reduced-motion`.
+- **`src/app/`:** routes, in four groups. Each group has its own `loading.tsx` and `error.tsx` (the shared `RouteError`: a plain sentence, Retry and a way back), and `global-error.tsx` covers the root layout.
+  - `(auth)` is always light (`ThemeScope theme="light"`). `login` signs in and signs up with Google on a split page: the form on the left, and from 1024 pixels a dark brand panel whose three screenshots turn about every 6 seconds (`_components/BrandPanel`). `onboarding` is four steps with a progress bar: experience (Skip allowed), `create-org` (the team's name), `cloud` (the first cloud, or "Not sure yet") and `start` (Blank or an example; "Skip for now" goes to Projects). Steps 1 and 2 send a person who has a team to where they start; steps 3 and 4 send a person without one back to step 2.
+  - `(dashboard)` is in the app shell. `dashboard` is Projects: the "Getting started" checklist until the team's first live deployment, "Continue where you left off", the projects with their diagram and live deployment counts, the team's connections, and runs of A's older diagrams when there are any. `projects/new` makes a project. `projects/[projectId]` redirects to its tabs: `diagrams`, `deployments` and `settings` (rename and delete). `not-found.tsx` shows a missing project inside the shell.
+  - `(diagram)` holds the canvas at `projects/[projectId]/diagram/[diagramId]/`. `EditorSwitch` picks the editor from the saved document and puts A's editor in `ThemeScope theme="a-editor"`. A's `_components/` hold `DiagramEditor`, `Palette`, `TopNav`, `TerraformPreview`, `AwsAccountRequiredModal`, `nodes/` and `logs/`. B's editor and deploy panel are in `_components/blocks/`.
+  - `(settings)` is in the app shell. `settings/account` is "Account and preferences" (the Google profile, the theme, experience level and first cloud, and sign out). `settings/organization/connections` is Connections, and `aws-account` redirects to it. `settings/organization/manage` holds the team's General, Members (the count and the signed-in member; inviting is not available yet) and Danger zone. `create-org` makes a further team, from the switcher's "New team".
+- **`src/lib/features/<feature>/`:** one folder per backend area, each with `api.ts`, `types.ts`, `keys.ts`, `hooks.ts` and sometimes `uiStore.ts`. Follow this shape for a new feature.
+  - A's areas: `user` (sign-in, token, and `session.ts`: the fetch helper and what an expired session looks like), `organization` (the current team, `home.ts`, `sort.ts`, `rules.ts`), `projects`, `diagram`, `resources`, `logs`, `runs` (Ansible jobs) and `codeUpload`.
+  - B's areas: `catalog` (manifests, forms, firewall and address range rules, linked accounts), `connections`, `deployments` (with `runState.ts`, the run history in `uiStore.ts`, and the team's deployments in `orgApi.ts` and `orgHooks.ts`), `examples` and `functionCode` (its upload uses `XMLHttpRequest` for progress).
+  - `preferences` has only a `uiStore.ts`. It keeps, in this browser under one key, the onboarding answers, per-team UI memory, the inspector width, each diagram's "View as" choice, and whether the first-Live flourish has played. Sign-out forgets the per-team memory and the views. The theme has its own key (`theme.ts`).
+- **`src/lib/adapterApi.ts`:** B API's client and its error envelope; B's five features call through it.
+- **`src/providers/`:** Google sign-in; `GOOGLE_CLIENT_ID` there is the one client id the website uses. `src/app/providers.tsx` sets up the theme, TanStack Query (60-second stale time, one retry) and the toaster, and sends any expired session, from A or B, to `/login`.
+- **`src/components/common/`:** the app shell and sidebar (`AppShell`, `Sidebar`: always dark, a drawer below 768 pixels), the page parts (`PageHeader`, `NavTabs`, `EmptyState`, `ErrorState`, `NotFoundPanel`, `PageSkeleton`, `RouteError`, `StatusDot`, `CopyButton`), `ConfirmDialog` for every delete, `FirstDeployChecklist`, `CloudLogo`, `ClutterLogo`, `LevelBadge`, `SpotlightGroup`, `CanvasMotif`, `LinkFakeAccount`, and the theme (`ThemeProvider`, `ThemeToggle`, `ThemeScope`, `theme.ts`). `src/app/not-found.tsx` is the 404 page for signed-in users.
+- **`src/components/ui/`:** the shared primitives (shadcn new-york style, on Radix where it exists): `Button`, `Dialog`, `AlertDialog`, `Sheet`, `DropdownMenu`, `Tabs`, `Tooltip`, `Select`, `Badge`, `Skeleton`, `RadioCard`, the `sonner` toaster, and the form fields.
+- **`src/components/connections/`:** the one connection flow (`ConnectCloudFlow` and `ConnectCloudSheet`), `AwsConnectForm`, `CredentialsForm`, `CloudsYamlUpload`, `BeforeYouStart` and `LocalConnect`.
+- **`src/components/clouds/`:** `CloudMark`, a manifest's cloud drawn through `CloudLogo`.
+- **`src/components/brand/`:** the block motif, drawn on the logo's isometric grid (`iso.ts`, pure, with its tests). `IsoBlock` is one block, `IsoStack` draws and assembles stacks, `IsoLoader` is the loading mark, `AssembleInView` assembles a stack once it scrolls into view, and `FirstLiveStack` is the first-Live flourish. Every one is decorative and hidden from assistive technology. `logoColours.ts` owns the logo's colours; `public/logos/clutter-mark.svg` and `src/app/icon.svg` draw the same colours, so they change with it.
+- **The theme:** `src/app/globals.css` owns the design tokens, with a light set on `:root` and `.light`, a dark set on `.dark`, and `.a-editor` for A's editor. The app is dark until the person chooses light or system; an inline script in the root layout applies the choice before the first paint. The sidebar is always dark, sign-in and onboarding are always light, and the landing page mixes both.
+  - **Colour.** Every value is from Radix Colors 3.0.0. The light theme's base is Radix gray (step 1 the page, 2 cards, 3 to 5 a control at rest, on hover and selected, 6 borders, 7 control borders, 11 secondary text, 12 text). The dark theme is navy, the deep blue of Clutter's first editor: `#0f172a` the page, `#1e293b` cards, `#253248` popovers and controls, `#334155` borders, `#a3b1c4` muted text (lighter than Tailwind's slate 400 so it keeps 4.5:1 on every surface), `#f1f5f9` text; card borders are a hairline (`#243047`). The always-dark sidebar and the landing hero are the deepest navy, `#0b1222`, a step darker than the dark page, and dark text on a coloured fill is that navy too. Teal is the one accent: teal 9 fills each screen's main action (with near-black text) and the current page's icon, the focus ring is teal (8 in dark, 9 in light), and the `link` token (teal 11) colours links. The landing hero's main button is monochrome instead. Status colours are green, amber and red, and blue for information. There are no gradient fills and no glows.
+  - **Kind colours.** Each kind of block has a Radix tint (a step 3 fill, a step 6 border and a step 11 icon), as `--tint-*` tokens. `KIND_TINT` in `catalog/display.ts` maps a kind to its tint, and `lib/tint.ts` is the one place that names the tint classes (and picks a team's mark colour from its id, among tints whose initial reads at 4.5:1).
+  - **Materials.** `surface-card` is every card, panel and list (12 pixel corners; `surface-card-interactive` adds a hover for a card that is a link or a button). `surface-raised` is menus, popovers and select lists. `surface-floating` is dialogs and sheets. Each is a fill, a hairline border, a 1 pixel top highlight and a shadow.
+  - **Texture.** `grain` is one faint, static noise tile, on the landing page's backgrounds and the app shell's backdrop only. It is not named `bg-*`, because `cn()` would take it for a fill and drop the real one. `bg-dot-grid-masked` is the quieter dot grid behind the hero, empty states and onboarding; the editor canvas keeps its own `bg-dot-grid`. `spotlight` brightens a card's border near the pointer, inside a `SpotlightGroup`; it is off without a fine pointer and under reduced motion.
+  - **Small parts.** `icon-tile` is a block kind's or a team's tile. `micro-label` is the 11 pixel spaced sans capitals over a group or a section; data such as regions and address ranges stays monospace.
+  - **Motion.** The motion tokens (`--motion-fast` 150 ms, `--motion-base` 200 ms, `--motion-slow` 250 ms, `--ease-standard` and `--ease-float`) and the named animations live there too. Only transform and opacity animate, and every animation and transition is off under `prefers-reduced-motion`.
+  - **A's editor.** `.a-editor` keeps it in the dark values it was built on, whatever the theme, and its buttons do not lift. They are the shared `Button`, so they keep their 14 pixel text but take the shared 32 pixel height and outline style.
+  - **Fonts.** The root layout loads Geist and Geist Mono with `next/font` (Geist Mono is not preloaded). Google's sign-in provider wraps `/login` only, in `src/app/(auth)/login/layout.tsx`.
+- **`src/proxy.ts`:** the route guard. It checks only that the `clutter_token` cookie exists, not that it is valid.
+- **`public/`:** A's AWS service icons (`aws/`), B's cloud logos and service icons (`clouds/`), Clutter's logos, and the account-link guide (`guide/AWS_Account_Link_Steps.pdf`: what you need, the CloudFormation steps with screenshots, then copying `RoleArn` from the stack's Outputs tab into Clutter).
 
 ## How sign-in and data flow
 
 1. `/login` shows Google sign-in. The Google ID token goes to `POST /log-in`, which returns Clutter's JWT.
 2. The JWT is stored twice: in `localStorage` as `google_data` (the API client reads it from there) and in the `clutter_token` cookie (the route guard reads it).
-3. Every API call sends the JWT raw in the `Authorization` header, without `Bearer`.
-4. Logs and Ansible jobs are polled about every 10 seconds; nothing is pushed.
+3. Every API call sends the JWT raw in the `Authorization` header, without `Bearer`, to A and to B alike.
+4. When the token stops working (B answers 401; A's gateway answers 403 "not authorized" or 401), both copies are cleared and the browser goes to `/login`, which says "Your session expired. Sign in again." Sign out clears both copies too.
+5. Where a signed-in person goes is decided once, by `homePath` in `lib/features/organization/home.ts`: Projects (`/dashboard`) for a person with a team, onboarding (`/onboarding`) for a person without one. Sign-in, Projects, the onboarding steps and deleting a team all use it.
+6. Onboarding keeps steps 1 and 3 (experience and first cloud) in the preferences store, in this browser only. Step 2 creates the team with A's `POST /organization`. Step 4 creates "My first project" with A's `POST /project`, then the diagram as "New diagram" does.
+7. Logs and Ansible jobs are polled about every 10 seconds. B's runs are polled every 2 seconds while one is queued or running, and so are the team's deployment lists while one of them runs. Nothing is pushed.
 
 ## Known gaps
 
-Member management is a mock, `settings/organization/create-org` and the workspaces page are stubs, `/register` is dead, Ansible polling never stops on success (`SUCCESS` vs the database's `COMPLETED`), the editor uses the user's first organization rather than the project's, and no deploy sends a region. The full list is in `.claude/findings/NOW.md`.
+They are listed in `.claude/findings/NOW.md`.
 
 ## Adding UI components
 
 The capstone team added components with the shadcn CLI, for example:
 
 ```bash
-npx shadcn@latest add https://21st.dev/r/kokonutd/shape-landing-hero
 npx shadcn@latest add input
 ```
-
-## Do not run `init.bash`
-
-It is an early scaffold script that overwrites real source files with placeholders (root `README.md` § Do not run).

@@ -6,14 +6,17 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import Palette from "./Palette";
 import TopNav from "./TopNav";
+import TerraformPreview from "./TerraformPreview";
 import AwsServiceNode from "./nodes/AwsServiceNode";
 import ConfigPanel from "./nodes/ConfigPanel";
 
-import { useDiagram, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import { useDiagram, useGenerateTerraform, useRunTerraform, useUpdateDiagramData } from "@/lib/features/diagram/hooks";
+import { resourceNameError } from "@/lib/features/diagram/resourceName";
 import type { DiagramEdge, DiagramNode } from "@/lib/features/diagram/types";
 import { useDiagramEditor, useDiagramEditorActions } from "@/lib/features/diagram/uiStore";
 import { useLiveLogsAccumulated } from "@/lib/features/logs/hooks";
 import { useOrganizationAccounts, useOrganizations } from "@/lib/features/organization/hooks";
+import { useProjectOrganization } from "@/lib/features/projects/hooks";
 import { useSupportedResources } from "@/lib/features/resources/hooks";
 import { useMe } from "@/lib/features/user/hooks";
 import { useRouter } from "next/navigation";
@@ -26,7 +29,6 @@ export type PaletteItem = {
 };
 
 const DND_MIME = "application/x-palette-item";
-const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HIDDEN_VARIABLE_NAMES = new Set([
   "label",
   "position",
@@ -60,11 +62,24 @@ const getVariableError = (name: string, value: unknown, required: boolean) => {
     }
   }
 
-  if (name === "resource_name" && stringValue && !RESOURCE_NAME_PATTERN.test(stringValue)) {
-    return "Use lowercase letters, numbers, and hyphens only, for example test-lambda.";
+  if (name === "resource_name") {
+    return resourceNameError(stringValue);
   }
 
   return null;
+};
+
+// The API answers a failed generation with { message, error }: error holds the
+// diagram's own problems, message the general reason.
+const generationErrorMessage = (error: Error) => {
+  try {
+    const parsed = JSON.parse(error.message);
+    if (typeof parsed.error === "string" && parsed.error) return parsed.error;
+    if (typeof parsed.message === "string" && parsed.message) return parsed.message;
+  } catch {
+    // Not JSON: the request itself failed.
+  }
+  return error.message || "The request failed.";
 };
 
 export default function DiagramEditor({ projectId, diagramId, }: { projectId: string; diagramId: string; }) {
@@ -73,8 +88,11 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   const meQ = useMe();
   const token = meQ.data?.token ?? null;
   const orgsQ = useOrganizations(token);
+  const orgIds = useMemo(() => orgsQ.data?.map((org) => org.id) ?? null, [orgsQ.data]);
+  const projectOrgQ = useProjectOrganization(token, projectId, orgIds);
 
-  const orgId = orgsQ.data?.[0]?.id ?? null;
+  // The project's own organization: every call below is checked against it.
+  const orgId = projectOrgQ.data ?? null;
 
   const { screenToFlowPosition } = useReactFlow();
 
@@ -87,6 +105,7 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
   const diagramQ = useDiagram(token, projectId, diagramId);
 
   const saveM = useUpdateDiagramData(token);
+  const generateM = useGenerateTerraform(token);
   const terraformM = useRunTerraform(token);
 
   const editor = useDiagramEditor(diagramId);
@@ -188,6 +207,7 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
 
   const isLoading = diagramQ.isLoading;
   const isSaving = saveM.isPending;
+  const isGenerating = generateM.isPending;
 
   const isValidConnection: IsValidConnection<DiagramEdge> = useCallback(
     (connection) => {
@@ -329,34 +349,46 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
     markClean(diagramId);
     setShowSaved(true);
     setTimeout(() => setShowSaved(false), 2000);
-  }, [token, saveM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
+
+    // Generation is a separate call after the save, so a failed generation
+    // never undoes the save. Preview Terraform shows its result.
+    generateM.mutate({ projectId, diagramId });
+  }, [token, saveM, generateM, projectId, diagramId, editor?.name, nodes, edges, markClean]);
 
   const onDeploy = useCallback(async () => {
     if (!orgId || !awsId) return;
 
     setCurrentAction("deploy");
-    const result = await terraformM.mutateAsync({
-      organizationId: orgId,
-      projectId,
-      diagramId,
-      accountAccessRoleId: awsId,
-      command: "apply",
-    });
-    setTaskArn(result.taskArn);
+    try {
+      const result = await terraformM.mutateAsync({
+        organizationId: orgId,
+        projectId,
+        diagramId,
+        accountAccessRoleId: awsId,
+        command: "apply",
+      });
+      setTaskArn(result.taskArn);
+    } catch {
+      // Shown from terraformM.isError below.
+    }
   }, [orgId, projectId, diagramId, terraformM, awsId]);
 
   const onDestroy = useCallback(async () => {
     if (!orgId || !awsId) return;
 
     setCurrentAction("destroy");
-    const result = await terraformM.mutateAsync({
-      organizationId: orgId,
-      projectId,
-      diagramId,
-      accountAccessRoleId: awsId,
-      command: "destroy",
-    });
-    setTaskArn(result.taskArn);
+    try {
+      const result = await terraformM.mutateAsync({
+        organizationId: orgId,
+        projectId,
+        diagramId,
+        accountAccessRoleId: awsId,
+        command: "destroy",
+      });
+      setTaskArn(result.taskArn);
+    } catch {
+      // Shown from terraformM.isError below.
+    }
   }, [orgId, awsId, terraformM, projectId, diagramId]);
 
   const isDeploying =
@@ -405,6 +437,16 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
                 dirty={dirty}
                 isSaving={isSaving}
                 saveDisabledReason={saveDisabledReason}
+                previewControl={
+                  <TerraformPreview
+                    key={diagramId}
+                    token={token}
+                    projectId={projectId}
+                    diagramId={diagramId}
+                    disabled={dirty || isSaving || isGenerating || isLoading}
+                    hasResources={nodes.length > 0}
+                  />
+                }
               />
             </Panel>
 
@@ -455,6 +497,55 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
             </div>
           )}
 
+          {isGenerating && (
+            <div
+              role="status"
+              className="absolute bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-white shadow-lg"
+            >
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Generating Terraform…
+            </div>
+          )}
+
+          {generateM.isError && !isGenerating && !isSaving && (
+            <div
+              role="alert"
+              className="absolute bottom-20 left-1/2 z-50 flex max-w-xl -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-700 bg-amber-950/90 px-4 py-2 text-sm text-amber-100 shadow-lg"
+            >
+              <span>Saved, but the Terraform was not generated: {generationErrorMessage(generateM.error)}</span>
+              <button
+                type="button"
+                className="shrink-0 rounded border border-amber-600 px-2 py-1 text-xs hover:bg-amber-900"
+                onClick={() => generateM.mutate({ projectId, diagramId })}
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1 text-xs hover:bg-amber-900"
+                onClick={() => generateM.reset()}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {terraformM.isError && !terraformM.isPending && (
+            <div
+              role="alert"
+              className="absolute bottom-20 left-1/2 z-50 flex max-w-xl -translate-x-1/2 items-center gap-3 rounded-lg border border-red-800 bg-red-950/90 px-4 py-2 text-sm text-red-100 shadow-lg"
+            >
+              <span>{currentAction === "destroy" ? "Clutter could not start the destroy." : "Clutter could not start the deploy."} Try again in a moment.</span>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-1 text-xs hover:bg-red-900"
+                onClick={() => terraformM.reset()}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           <LogsPanel
             key={taskArn ?? "no-task"}
             token={token}
@@ -471,6 +562,8 @@ export default function DiagramEditor({ projectId, diagramId, }: { projectId: st
             onGoToSettings={() =>
               router.push("/settings/organization/aws-account")
             }
+            token={token}
+            organizationId={orgId}
           />
         </div>
 

@@ -1,9 +1,5 @@
+# The platform's state lives in S3. Every setting comes from the environment's backend file at init
+# (prod.backend.hcl, copied from prod.backend.hcl.example); the deploy command passes it.
 terraform {
-  backend "s3" {
-    bucket         = "tfstate-us-west-2-5727f4ce"
-    key            = "clutter/infra/terraform.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "tflock"
-    encrypt        = true
-  }
+  backend "s3" {}
 }

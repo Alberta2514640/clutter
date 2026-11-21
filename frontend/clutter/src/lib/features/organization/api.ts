@@ -10,28 +10,17 @@ import type {
   UpdateOrganizationAwsAccountInput,
   UpdateOrganizationInput,
 } from "./types";
+import { apiFetch } from "../user/session";
+import { localDevApi } from "./localDev";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_ENDPOINT;
 
-async function apiFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  if (!API_BASE) throw new Error("API_ENDPOINT is not set");
+// The local dev gateway's own routes exist only here, never in a deployment.
+export const isLocalDevApi = localDevApi(process.env.NODE_ENV, API_BASE);
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${token}`,
-      ...(init.headers ?? {}),
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
-  }
-
-  return (await res.json()) as T;
-}
+// The region the AWS setup opens in: the region Clutter's cloud runs in
+// (ADR-015). The role it creates is not tied to a region.
+export const DEFAULT_AWS_REGION = "ca-central-1";
 
 export const organizationApi = {
   // GET /organization
@@ -76,7 +65,7 @@ export const organizationApi = {
   ): Promise<CloudFormationStackUrlResponse> => {
     const params = new URLSearchParams({
       accountName: input.accountName,
-      region: input.region ?? "us-west-2",
+      region: input.region ?? DEFAULT_AWS_REGION,
     });
 
     const json = await apiFetch<ApiEnvelope<CloudFormationStackUrlResponse>>(
@@ -99,6 +88,29 @@ export const organizationApi = {
     return [...(json.data?.complete ?? []), ...(json.data?.incomplete ?? [])].filter(
       (account): account is OrganizationAwsAccount => !!account && typeof account === "object"
     );
+  },
+
+  // POST /dev/link-fake-account (local dev gateway only). Answers with the
+  // linked account's name: a new fake one, or the one already linked.
+  linkFakeAccount: async (token: string, organizationId: string): Promise<string> => {
+    const json = await apiFetch<{ message: string; accountName?: string }>("/dev/link-fake-account", token, {
+      method: "POST",
+      body: JSON.stringify({ organizationId }),
+    });
+
+    return json.accountName ?? "";
+  },
+
+  // POST /dev/link-devstack (local dev gateway only). Makes a credential in
+  // this machine's DevStack and a connection in B from it, named name, and
+  // answers with the connection's name. The secret never reaches the browser.
+  linkDevstack: async (token: string, organizationId: string, connector: string, name: string): Promise<string> => {
+    const json = await apiFetch<{ message: string; connectionName?: string }>("/dev/link-devstack", token, {
+      method: "POST",
+      body: JSON.stringify({ organizationId, connector, name }),
+    });
+
+    return json.connectionName ?? "";
   },
 
   // DELETE /organization/:organizationId/accounts/:accountId

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 
@@ -15,7 +17,28 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/jackc/pgx/v5"
 )
+
+// What the user reads when the run cannot start. The cause stays in the log.
+const runFailure = "failed to start the run"
+
+// connect opens the database. Tests replace it with a mock.
+var connect = generic.PsqlConnectConn
+
+// taskRunner is the part of the ECS client the handler uses.
+type taskRunner interface {
+	RunTask(ctx context.Context, params *ecs.RunTaskInput, optFns ...func(*ecs.Options)) (*ecs.RunTaskOutput, error)
+}
+
+// newTaskRunner builds the ECS client. Tests replace it with a fake.
+var newTaskRunner = func(ctx context.Context) (taskRunner, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(generic.PlatformRegion()))
+	if err != nil {
+		return nil, err
+	}
+	return ecs.NewFromConfig(cfg), nil
+}
 
 func main() {
 	lambda.Start(handler)
@@ -25,11 +48,10 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	// The authorizer context retains data about the user (extracted from the JWT provided in the Authorization header)
 	userData, err := generic.GetUserDataFromAuthorizerContext(request.RequestContext.Authorizer)
-	if err != nil {
-		return generic.Response(
-			http.StatusInternalServerError,
-			generic.Json{"message": "failed to retrieve user data from authorizer context", "error": err.Error()},
-		)
+	if err != nil || userData.Id == "" {
+		return generic.Response(http.StatusUnauthorized, generic.Json{
+			"message": "unauthorized: missing user identity",
+		})
 	}
 	userId := userData.Id
 
@@ -38,7 +60,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 
 	err = json.Unmarshal([]byte(request.Body), &body)
 	if err != nil {
-		return generic.Response(http.StatusBadRequest, generic.Json{"message": "Bad Request", "error": err.Error()})
+		return generic.Response(http.StatusBadRequest, generic.Json{"message": "invalid JSON body"})
 	}
 	organizationId := body.OrganizationId
 	projectId := body.ProjectId
@@ -48,31 +70,44 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	command := body.Command
 	// Set default region if not passed in
 	if region == "" {
-		region = generic.DefaultRegion
+		region = generic.DefaultRegion()
+	}
+
+	// Every id goes into the S3 key or a query, so each must be a real UUID
+	for _, id := range []string{organizationId, projectId, diagramId, accountAccessRoleId} {
+		if !generic.IsValidUuid(id) {
+			return generic.Response(http.StatusBadRequest, generic.Json{
+				"message": "organizationId, projectId, diagramId and accountAccessRoleId must be valid UUIDs",
+			})
+		}
+	}
+
+	// The deployer runs only these two (its entrypoint refuses anything else),
+	// so any other value is refused before a log row is written.
+	if command != "apply" && command != "destroy" {
+		return generic.Response(http.StatusBadRequest, generic.Json{
+			"message": "command must be apply or destroy",
+		})
 	}
 
 	// Connect to PostgreSQL
-	conn, err := generic.PsqlConnect()
+	conn, err := connect()
 	if err != nil {
+		log.Printf("runner: connect to the database: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
 			"message": "failed to connect to database",
-			"error":   err.Error(),
 		})
 	}
 	defer conn.Close(ctx)
 
-	// Check user's membership to organization
-	if err := generic.CheckOrganizationMembershipPSQL(ctx, conn, userId, organizationId); err != nil {
-		if authErr, ok := err.(*generic.AuthorizationError); ok {
-			return generic.Response(authErr.StatusCode, generic.Json{
-				"message": authErr.Message,
-			})
-		}
-		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to check authorization",
-			"error":   err.Error(),
-		})
+	// Check user's membership to organization, and that the project and diagram
+	// belong to it. The key, the log row and the task's overrides use the
+	// checked, canonical ids from here on.
+	ids, err := generic.CheckOwnedIDsPSQL(ctx, conn, userId, organizationId, projectId, diagramId)
+	if err != nil {
+		return generic.AuthorizationResponse(err)
 	}
+	organizationId, projectId, diagramId = ids.OrgID, ids.ProjectID, ids.DiagramID
 
 	// Get Client Role ARN from DB
 	roleArnQuery := `
@@ -90,22 +125,23 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 		accountAccessRoleId,
 		organizationId,
 	).Scan(&roleArn, &externalId); err != nil {
+		// The query is scoped to the organization, so another organization's account is not found
+		if errors.Is(err, pgx.ErrNoRows) {
+			return generic.Response(http.StatusNotFound, generic.Json{"message": "account not found"})
+		}
+		log.Printf("runner: read the account role: %v", err)
 		return generic.Response(http.StatusInternalServerError, generic.Json{
-			"message": "failed to retrieve role ARN",
-			"error":   err.Error(),
+			"message": "failed to read the linked account",
 		})
 	}
 
 	// Run terraform-deployer Fargate
 
-	// Load config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(generic.DefaultRegion))
+	ecsClient, err := newTaskRunner(ctx)
 	if err != nil {
-		return generic.Response(500, generic.Json{"message": "failed to load AWS config", "error": err.Error()})
+		log.Printf("runner: load AWS config: %v", err)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": runFailure})
 	}
-
-	// Create ECS client
-	ecsClient := ecs.NewFromConfig(cfg)
 
 	// Define task parameters
 	clusterName := os.Getenv("ECS_CLUSTER_NAME")
@@ -129,10 +165,15 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	// Create deployment log record in table and get unique command ID from the function
 	commandId, err := internal.InsertIntoLogTable(conn, ctx, diagramId, command)
 	if err != nil {
-		return generic.Response(http.StatusConflict, generic.Json{"message": "failed to insert into log table", "error": err.Error()})
+		log.Printf("runner: write the deployment log row: %v", err)
+		return generic.Response(http.StatusConflict, generic.Json{"message": "failed to record the run"})
 	}
 
-	// Build container overrides with dynamic environment variables
+	// Build container overrides with dynamic environment variables. The task
+	// gets this run's role and external id and nothing that reads the
+	// database: with the database string it could read every organization's
+	// external id and assume any customer's role. It reports its result in a
+	// status file beside its logs (generic.ReconcileDeployRuns).
 	containerOverrides := []types.ContainerOverride{
 		{
 			Name: aws.String(containerName),
@@ -143,7 +184,7 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 				{Name: aws.String("ASSUME_ROLE_EXTERNAL_ID"), Value: aws.String(externalId)},
 				{Name: aws.String("COMMAND"), Value: aws.String(command)},
 				{Name: aws.String("COMMAND_ID"), Value: aws.String(commandId)},
-				{Name: aws.String("PSQL_CONNECTION_STRING"), Value: aws.String(os.Getenv("PSQL_CONNECTION_STRING"))},
+				// logs/live matches the task to the diagram by this value.
 				{Name: aws.String("DIAGRAM_ID"), Value: aws.String(diagramId)},
 			},
 		},
@@ -167,9 +208,22 @@ func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events
 	}
 
 	// Run the task and get the task run request output
+	// The row was written as RUNNING before the task started. A task that does
+	// not start writes no status file, so the row is marked FAILED here or it
+	// would read RUNNING forever.
 	RunTaskOutput, err := ecsClient.RunTask(ctx, runTaskInput)
 	if err != nil {
-		return generic.Response(500, generic.Json{"message": "failed to run ECS task", "error": err.Error()})
+		log.Printf("runner: run task: %v", err)
+		internal.MarkRunNotStarted(conn, ctx, diagramId, commandId)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": runFailure})
+	}
+	// RunTask reports a task it could not place in Failures, not in err.
+	if len(RunTaskOutput.Tasks) == 0 {
+		for _, failure := range RunTaskOutput.Failures {
+			log.Printf("runner: run task: %s %s", aws.ToString(failure.Reason), aws.ToString(failure.Detail))
+		}
+		internal.MarkRunNotStarted(conn, ctx, diagramId, commandId)
+		return generic.Response(http.StatusInternalServerError, generic.Json{"message": runFailure})
 	}
 
 	return generic.Response(200, generic.Json{
