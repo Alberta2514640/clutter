@@ -1,60 +1,31 @@
 /*
- * The public pages' motion, in plain CSS: no script and no animation library.
- * Every rule sits inside prefers-reduced-motion: no-preference, so a visitor
- * who asks for less motion sees the page still and complete.
+ * The home page's section reveal. Durations and easing come from the motion
+ * tokens in globals.css; this file adds no new ones.
  *
- * .rise moves only (no fade): the hero's text and screenshot are the page's
- * largest paint, and an element that starts transparent delays that paint.
- * .reveal fades sections in as they scroll into view. It needs scroll-driven
- * animations; a browser without them shows the content at once.
+ * Content is visible by default: without script, in print, under reduced
+ * motion and in a capture taken before any scroll. RevealOnScroll marks a
+ * .reveal element "waiting" only once the visitor scrolls, and only while it is
+ * still below the window, then "shown" when it comes into view (once). So a
+ * section fades up 12px on first view, and nothing on screen ever disappears.
  */
 
-@keyframes rise {
-  from {
-    transform: translateY(16px);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(28px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(3%, -4%, 0) scale(1.08);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  .rise {
-    animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-    animation-delay: var(--delay, 0ms);
+  .reveal {
+    transition:
+      opacity var(--motion-slow) var(--ease-standard),
+      transform var(--motion-slow) var(--ease-standard);
+    transition-delay: var(--reveal-delay, 0ms);
   }
 
-  .drift {
-    animation: drift 18s ease-in-out infinite;
+  .reveal[data-reveal="waiting"] {
+    opacity: 0;
+    transform: translateY(12px);
   }
+}
 
-  @supports (animation-timeline: view()) {
-    .reveal {
-      animation: reveal linear both;
-      animation-timeline: view();
-      /* Done once the element's top is 180px inside the window, so a tall element never waits. */
-      animation-range: entry 0 entry 180px;
-    }
+@media print {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

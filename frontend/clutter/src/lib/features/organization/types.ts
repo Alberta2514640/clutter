@@ -18,7 +18,11 @@ export type CreateOrganizationInput = {
   description?: string;
 };
 
+// PUT /organization/{id} (backend/api/organization/update). An empty or
+// missing field leaves that field as it is, so a description cannot be
+// cleared. A name another of the caller's teams uses is refused with 409.
 export type UpdateOrganizationInput = {
+  organizationName?: string;
   description?: string;
 };
 

@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useCanvas, type EdgeCard } from "./canvasContext";
+import { kindIconClass } from "@/lib/features/catalog/display";
 import KindIcon from "./KindIcon";
 
 export const FLOATING_EDGE_TYPE = "floating";
@@ -67,6 +68,7 @@ export default function FloatingEdge({ id, source, target, markerEnd, style, int
   return (
     <g
       data-testid="block-edge"
+      className="animate-fade-in"
       onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY })}
       onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY })}
       onMouseLeave={() => setHover(null)}>
@@ -74,7 +76,7 @@ export default function FloatingEdge({ id, source, target, markerEnd, style, int
         id={id}
         path={path}
         markerEnd={markerEnd}
-        style={hover || selected ? { ...style, stroke: "#5eead4", strokeWidth: 2 } : style}
+        style={hover || selected ? { ...style, stroke: "var(--primary)", strokeWidth: 2 } : style}
         interactionWidth={interactionWidth}
       />
       {card && hover && typeof document !== "undefined" && createPortal(<LinkCardView card={card} at={hover} />, document.body)}
@@ -91,7 +93,7 @@ function LinkCardView({ card, at }: { card: EdgeCard; at: { x: number; y: number
       role="tooltip"
       data-testid="link-card"
       style={{ left, top }}
-      className="pointer-events-none fixed z-[1000] w-72 rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-2.5 text-xs text-slate-300 shadow-2xl">
+      className="surface-raised text-popover-foreground pointer-events-none fixed z-[1000] w-72 rounded-xl border px-3 py-2.5 text-xs animate-fade-in">
       <LinkCardBody card={card} />
     </div>
   );
@@ -102,15 +104,15 @@ function LinkCardView({ card, at }: { card: EdgeCard; at: { x: number; y: number
 export function LinkCardBody({ card }: { card: EdgeCard }) {
   return (
     <>
-      <div className="flex items-center gap-1.5 font-medium text-slate-100">
-        <KindIcon kind={card.source} className="h-4 w-4 shrink-0 text-teal-300" />
+      <div className="flex items-center gap-1.5 font-medium">
+        <KindIcon kind={card.source} className={`${kindIconClass(card.source)} size-4 shrink-0`} />
         <span className="truncate">{card.sourceName}</span>
-        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-teal-300" aria-label="to" />
-        <KindIcon kind={card.target} className="h-4 w-4 shrink-0 text-teal-300" />
+        <ArrowRight className="text-muted-foreground size-3.5 shrink-0" aria-label="to" />
+        <KindIcon kind={card.target} className={`${kindIconClass(card.target)} size-4 shrink-0`} />
         <span className="truncate">{card.targetName}</span>
       </div>
-      <p className="mt-1.5 leading-snug text-slate-200">{card.meaning}</p>
-      {card.why && <p className="mt-1 leading-snug text-slate-400">{card.why}</p>}
+      <p className="mt-1.5 leading-snug">{card.meaning}</p>
+      {card.why && <p className="text-muted-foreground mt-1 leading-snug">{card.why}</p>}
     </>
   );
 }

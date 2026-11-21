@@ -266,36 +266,58 @@ var flavorMinRAM = []struct {
 // (flavorMinRAM) and at least one vCPU. A flavor with a local disk comes
 // before one without: VMs boot from the image onto the flavor's disk, and
 // Nova refuses that on a zero-disk flavor unless the caller is an admin.
-// Ties go to less RAM, then fewer vCPUs, then the name. A setting with no
-// such flavor gets no suggestion.
+// Ties go to fewer vCPUs, then less RAM, then the smaller disk (flavorBefore). A setting with no
+// such flavor gets no suggestion. Each size then takes a bigger flavor than
+// the size below when the cloud offers one that boots the same way.
 func suggestFlavors(offered []flavor) map[string]string {
-	names := map[string]bool{}
-	for _, f := range offered {
-		names[f.Name] = true
+	byName := map[string]*flavor{}
+	for i := range offered {
+		byName[offered[i].Name] = &offered[i]
 	}
 	out := map[string]string{}
+	// prev is the flavor the size below got (offered default or suggestion),
+	// so each size gets a bigger one when the cloud has it: on VEXXHOST the
+	// cheapest flavor has enough memory for small and medium, and both sizes
+	// on one flavor made "scale up to medium" change nothing.
+	var prev *flavor
 	for _, s := range flavorMinRAM {
-		if names[defaultString(s.spec)] {
+		if f, ok := byName[defaultString(s.spec)]; ok {
+			prev = f
 			continue
 		}
-		var best *flavor
-		for i := range offered {
-			f := &offered[i]
-			if f.RAM < s.minRAM || f.VCPUs < 1 {
-				continue
-			}
-			if best == nil || flavorBefore(*f, *best) {
-				best = f
+		best := pickFlavor(offered, s.minRAM)
+		if prev != nil {
+			// A bigger flavor that boots like this one (a local disk when this
+			// has one); otherwise the plain pick stands.
+			if bigger := pickFlavor(offered, prev.RAM+1); bigger != nil && (bigger.Disk > 0 || best == nil || best.Disk == 0) {
+				best = bigger
 			}
 		}
 		if best != nil {
 			out[s.spec.Name] = best.Name
+			prev = best
 		}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// pickFlavor is the first flavor, by flavorBefore, with at least minRAM and
+// at least one vCPU, or nil.
+func pickFlavor(offered []flavor, minRAM int) *flavor {
+	var best *flavor
+	for i := range offered {
+		f := &offered[i]
+		if f.RAM < minRAM || f.VCPUs < 1 {
+			continue
+		}
+		if best == nil || flavorBefore(*f, *best) {
+			best = f
+		}
+	}
+	return best
 }
 
 // flavorBefore orders the flavors that are big enough for a size: one with a

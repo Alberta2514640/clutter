@@ -2,7 +2,7 @@
 
 This Lambda function generates Terraform code for one saved diagram. The editor calls it after each successful save (ADR-018).
 
-> **Checked against the code on 2026-11-13.** The route sits behind the JWT authorizer. Locally, `backend/devserver` runs this Lambda for real against a local S3 (`backend/devserver/README.md`). Corrections to the capstone text below are marked "Now:".
+The route sits behind the JWT authorizer. Locally, `backend/devserver` runs this Lambda for real against a local S3 (`backend/devserver/README.md`).
 
 ## Architecture Overview
 
@@ -47,7 +47,7 @@ Each node in the diagram is parsed:
 Templates are fetched from S3 and cached in memory. Their source is `backend/infra/modules/s3/uploads/aws/<type>/` (`main.tf.tmpl` and `outputs.tf.tmpl`): A's five types (`apigateway`, `dynamodb`, `ec2`, `lambda`, `s3`), beside the three B's AWS connector adds (`network`, `firewall`, `volume`). The platform Terraform uploads each file with its own `aws_s3_object` in `backend/infra/modules/s3/main.tf`, to `templates/aws/<type>/` in the template bucket.
 
 ### 4. Template Rendering
-Go's `text/template` package renders templates the variables passed into for each Node in the Diagram Layout:
+Go's `text/template` package renders each node's templates with that node's variables:
 ```
 {{.ResourceName}} → my_test_function
 {{.FunctionName}} → my-test-function
@@ -61,9 +61,9 @@ Edges between nodes generate IAM automatically (`internal/generator/iam`):
 - Any other edge generates nothing.
 
 ### 6. S3 Output
-Generated Terraform is uploaded to:
+Generated Terraform is uploaded to a `terraform/` folder per diagram in the output bucket. The bucket's name is `clutter-<region>-<random suffix>`, with the region the platform runs in (`aws_region`, `ca-central-1` in the cloud):
 ```
-s3://clutter-us-west-2-..../
+s3://clutter-ca-central-1-<suffix>/
 └── {org-id}/
     └── {project-id}/
         └── {diagram-id}/
@@ -73,8 +73,6 @@ s3://clutter-us-west-2-..../
                 └── status.json  (whether the last run succeeded, read by the editor)
 ```
 
-Now: the `terraform/` folder is what the writer really uses.
-
 Every run writes `status.json`. A failed run leaves the older `.tf` files in place and records the failure, so the editor can warn that they are out of date. Errors caused by the diagram keep their real message; infrastructure errors are stored as a fixed sentence, with the cause in the log. If an upload fails partway, the status says the files may be incomplete. A status that cannot be written is logged and does not fail the run. `GET /terraform-engine/files` (`backend/api/generic/terraformfiles`) reads all of this for the editor.
 
 ---
@@ -83,8 +81,10 @@ Every run writes `status.json`. A failed run leaves the older `.tf` files in pla
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `TEMPLATE_BUCKET_NAME` | S3 bucket for templates | `clutter-templates-us-west-2-...` |
-| `S3_BUCKET_NAME` | S3 bucket for output | `clutter-us-west-2-...` |
+| `TEMPLATE_BUCKET_NAME` | S3 bucket for templates | `clutter-templates-ca-central-1-<suffix>` |
+| `S3_BUCKET_NAME` | S3 bucket for output | `clutter-ca-central-1-<suffix>` |
+
+The platform Terraform names both buckets from its `aws_region` variable and a random suffix (`backend/infra/modules/s3`), and sets both variables on the Lambda.
 | `PSQL_CONNECTION_STRING` | Postgres connection string for the ownership check and the diagram row | `postgres://...` |
 
 ---
@@ -150,11 +150,13 @@ resource "aws_s3_bucket" "{{.ResourceName}}" {
 | `resource_name` | `{{.ResourceName}}`, `{{.FunctionName}}` | Required |
 | `handler` | `{{.Handler}}` | `main` |
 | `timeout` | `{{.Timeout}}` | `3` |
-| `runtime` | `{{.Runtime}}` | `provided.al2023` (Now: the generator's default; the seed SQL still says `provided.al2`) |
+| `runtime` | `{{.Runtime}}` | `provided.al2023` |
 | `architecture` | `{{.Architecture}}` | `arm64` |
-| `memory_size` | `{{.MemorySize}}` | `128` (Now: always 128 in practice; the config panel sends a string and the generator reads only numbers) |
+| `memory_size` | `{{.MemorySize}}` | `128` |
 
-Now: every value is checked before rendering. Names must match the name rule in `generic/hclsafe`, enumerated fields (runtime, architecture, billing mode and others) must be in the allow-list beside each generator (runtimes in `generic.LambdaRuntimes`), and free text is escaped for HCL, including `${` and `%{`.
+The defaults above are the generator's. The `supported_resources` seed gives the config panel a different runtime default, `provided.al2`. `memory_size` is always 128 in practice: the config panel sends it as a string, and the generator reads only numbers.
+
+Every value is checked before rendering. Names must match the name rule in `generic/hclsafe`, enumerated fields (runtime, architecture, billing mode and others) must be in the allow-list beside each generator (runtimes in `generic.LambdaRuntimes`), and free text is escaped for HCL, including `${` and `%{`.
 
 ### S3 Node
 | Diagram Variable | Template Placeholder | Default |

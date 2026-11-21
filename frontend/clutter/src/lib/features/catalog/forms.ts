@@ -6,6 +6,7 @@
 // B checks again before anything runs.
 
 import { cloudLook, type CloudLook } from "./display";
+import { blockValueError } from "./fieldRules";
 import { MAX_STRING_FIELD, MAX_TEXT_FIELD, STANDARD_BLOCKS } from "./types";
 import type { BlockKind, CatalogEntry, FieldSpec, Manifest } from "./types";
 
@@ -87,14 +88,13 @@ export function blockFields(catalog: CatalogEntry[], kind: BlockKind): FieldSpec
 }
 
 // The network field that gives private servers internet access
-// (connectors' standard network field). It does something only for a
-// network with a private VM, so it shows only then.
+// (connectors' standard network field). It matters only for a network with
+// a VM in it (a private one on AWS, any on OpenStack), so it shows only then.
 export const PRIVATE_INTERNET_FIELD = "private_internet";
 
 // fieldShown reports whether a block's field is worth showing: every field
-// is, except internet access for private servers on a network with no
-// private VM.
-export const fieldShown = (f: FieldSpec, ctx: { hasPrivateVM: boolean }) => f.name !== PRIVATE_INTERNET_FIELD || ctx.hasPrivateVM;
+// is, except internet access for private servers on a network with no VM.
+export const fieldShown = (f: FieldSpec, ctx: { hasVM: boolean }) => f.name !== PRIVATE_INTERNET_FIELD || ctx.hasVM;
 
 // connectedBuilders are the clouds that can build a kind and that the
 // organization has a connection to, with each cloud's service name and its
@@ -151,6 +151,17 @@ export function fieldControl(f: FieldSpec): FieldControl {
   }
 }
 
+// fieldLabel splits a manifest title that carries its own example, such as
+// "Allowed incoming traffic (for example tcp/22,tcp/443)", into the label
+// and a hint the form shows under the field ("For example tcp/22,tcp/443."),
+// so the label stays short. Any other title is the label as it is.
+export function fieldLabel(title: string): { label: string; hint: string | null } {
+  const m = title.match(/^(.+?)\s*\((for example\b[^)]*)\)\s*$/i);
+  if (!m) return { label: title, hint: null };
+  const example = m[2].trim();
+  return { label: m[1], hint: `${example[0].toUpperCase()}${example.slice(1)}${/[.!?]$/.test(example) ? "" : "."}` };
+}
+
 // textBytes is a text value's length as B counts it: UTF-8 bytes.
 export const textBytes = (s: string) => new TextEncoder().encode(s).length;
 
@@ -204,6 +215,19 @@ export function fieldError(f: FieldSpec, value: unknown): string | null {
 export function valuesErrors(fields: FieldSpec[], values: Record<string, unknown>): { field: string; message: string }[] {
   return fields.flatMap((f) => {
     const msg = fieldError(f, values[f.name]);
+    return msg ? [{ field: f.name, message: msg }] : [];
+  });
+}
+
+// blockFieldError is fieldError plus the grammar of a block's portable field
+// (a firewall's allowed traffic, an address range; fieldRules.ts).
+export const blockFieldError = (kind: BlockKind, f: FieldSpec, value: unknown): string | null =>
+  fieldError(f, value) ?? blockValueError(kind, f.name, value);
+
+// blockValuesErrors checks every field of a block, in field order.
+export function blockValuesErrors(kind: BlockKind, fields: FieldSpec[], values: Record<string, unknown>): { field: string; message: string }[] {
+  return fields.flatMap((f) => {
+    const msg = blockFieldError(kind, f, values[f.name]);
     return msg ? [{ field: f.name, message: msg }] : [];
   });
 }

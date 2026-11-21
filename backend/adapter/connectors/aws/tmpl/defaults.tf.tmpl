@@ -54,9 +54,29 @@ resource "aws_api_gateway_method_settings" "{{.}}_throttle" {
 {{- range .KeyPairs}}
 
 # The VM's SSH public key, as the block holds it. Marked sensitive only to
-# keep it out of the run's log.
+# keep it out of the run's log. Its name comes from the node id and is kept
+# as made: the instance names it, and a new name would replace the instance.
+# A changed key makes a new key pair under the same name, which only a new
+# instance takes.
 resource "aws_key_pair" "{{.Addr}}" {
   key_name   = "{{.Name}}"
   public_key = sensitive("{{.Key}}")
+
+  tags = {
+    Name = "{{.TagName}}"
+  }
+
+  lifecycle {
+    ignore_changes = [key_name]
+  }
+}
+{{- end}}
+{{- range .Zones}}
+
+# The zones a VM with volumes in the default VPC may run in. override.tf pins
+# the VM to the first, as the network template pins its subnets, so a new
+# instance is in the zone its volumes are in.
+data "aws_availability_zones" "{{.}}_azs" {
+  state = "available"
 }
 {{- end}}

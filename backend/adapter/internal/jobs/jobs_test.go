@@ -168,9 +168,26 @@ func setup(t *testing.T, c connectors.Connector, logBuf io.Writer) (*Runner, *st
 	}
 	st, logs := newStore(), logstore.NewMemory()
 	r := New(Config{Registry: reg, Store: st, Broker: broker{}, Logs: logs, Workers: 1,
-		Logger: slog.New(slog.NewTextHandler(logBuf, nil))})
+		Logger: slog.New(slog.NewTextHandler(logBuf, nil)), Now: func() time.Time { return testNow }})
 	r.Start()
 	return r, st, logs
+}
+
+// testNow is the runner's clock in these tests.
+var testNow = time.Date(2026, 11, 21, 10, 42, 3, 0, time.UTC)
+
+// endLine is the line that ends every run's log.
+func endLine(runID string) string { return "Run " + runID + " ended at 10:42:03 UTC.\n" }
+
+// readLog returns a run's whole log.
+func readLog(t *testing.T, logs *logstore.Memory, key string) string {
+	t.Helper()
+	rc, err := logs.Open(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
+	return string(b)
 }
 
 func job(id string) Job {
@@ -229,27 +246,20 @@ func TestTheApplyLineCountsBlocks(t *testing.T) {
 		if err := r.Stop(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		rc, err := logs.Open(j.LogKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
-		if !strings.HasSuffix(string(b), want) || strings.Contains(string(b), "resources") {
-			t.Errorf("%d blocks: log ends %q, want %q", n, string(b), want)
+		b := readLog(t, logs, j.LogKey)
+		if !strings.HasSuffix(b, want+endLine(j.RunID)) || strings.Contains(b, "resources") {
+			t.Errorf("%d blocks: log ends %q, want %q", n, b, want)
 		}
 	}
 }
 
-// An apply's results follow B's apply line, one "Result:" line each, by node
-// id; a value that could break the line is left out.
-func TestTheApplyWritesItsResults(t *testing.T) {
-	r, st, logs := setup(t, fake{built: map[string]string{"web": "i-1"}, results: map[string][]connectors.Result{
-		"web": {{Name: connectors.ResultPrivateAddress, Value: "10.0.0.5"}, {Name: connectors.ResultPublicAddress, Value: "203.0.113.9"}},
-		"api": {{Name: connectors.ResultURL, Value: "https://x.example/v1/items"}},
-		"bad": {{Name: connectors.ResultTable, Value: "two words"}},
-	}}, io.Discard)
+// The log opens with a line a person reads: the action, the cloud and the
+// connection by name, and when it started, with no id in it. The run's id
+// ends the log, so it still names the run it belongs to.
+func TestTheLogOpensWithNamesAndEndsWithTheRunsID(t *testing.T) {
+	r, st, logs := setup(t, fake{plan: func(context.Context, connectors.Run) error { return nil }}, io.Discard)
 	j := job(uuid.NewString())
-	j.Action = connectors.ActionApply
+	j.ConnectionName = "audit mock"
 	if err := r.Enqueue(j); err != nil {
 		t.Fatal(err)
 	}
@@ -257,17 +267,87 @@ func TestTheApplyWritesItsResults(t *testing.T) {
 	if err := r.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rc, err := logs.Open(j.LogKey)
-	if err != nil {
+	b := readLog(t, logs, j.LogKey)
+	first, _, _ := strings.Cut(b, "\n")
+	if first != "Plan on Fake (audit mock), started 10:42:03 UTC." {
+		t.Fatalf("first line %q", first)
+	}
+	if !strings.HasSuffix(b, endLine(j.RunID)) || strings.Count(b, j.RunID) != 1 || strings.Contains(b, j.Deployment.ID) {
+		t.Fatalf("log %q: want the run's id once, on the last line, and no deployment id", b)
+	}
+}
+
+// A problem line names the block or the line as the diagram does, never by
+// node id, and a name that would break the line falls back to the id.
+func TestAProblemNamesItsBlock(t *testing.T) {
+	g := connectors.Graph{Blocks: map[string]connectors.Block{
+		"n1": {ID: "n1", Kind: connectors.KindVM, Name: "web"},
+		"n2": {ID: "n2", Kind: connectors.KindVM, Name: "db"},
+		"n3": {ID: "n3", Kind: connectors.KindVM, Name: "two\nlines"},
+	}}
+	for p, want := range map[connectors.Problem]string{
+		{NodeID: "n1", Message: "m"}:                       "web: ",
+		{EdgeSource: "n1", EdgeTarget: "n2", Message: "m"}: "web to db: ",
+		{NodeID: "n3", Message: "m"}:                       "n3: ",
+		{Message: "m"}:                                     "",
+		{NodeID: "gone", Message: "m"}:                     "gone: ",
+	} {
+		if got := problemWhere(g, p); got != want {
+			t.Errorf("problemWhere(%+v) = %q, want %q", p, got, want)
+		}
+	}
+}
+
+// An apply's blocks follow B's apply line, one "Built:" line each with the
+// block's kind and name as this apply built it, then its results, one
+// "Result:" line each, by node id. A left-out block is not named, and a value
+// that could break the line is left out.
+func TestTheApplyWritesItsBlocksAndResults(t *testing.T) {
+	r, st, logs := setup(t, fake{built: map[string]string{"web": "i-1"}, results: map[string][]connectors.Result{
+		"web": {{Name: connectors.ResultPrivateAddress, Value: "10.0.0.5"}, {Name: connectors.ResultPublicAddress, Value: "203.0.113.9"}},
+		"api": {{Name: connectors.ResultURL, Value: "https://x.example/v1/items"}},
+		"bad": {{Name: connectors.ResultTable, Value: "two words"}},
+	}}, io.Discard)
+	j := job(uuid.NewString())
+	j.Action = connectors.ActionApply
+	j.Graph = connectors.Graph{Blocks: map[string]connectors.Block{
+		"web": {ID: "web", Kind: connectors.KindVM, Name: "web", Fields: map[string]any{}},
+		"api": {ID: "api", Kind: connectors.KindHTTPAPI, Name: "orders-api", Fields: map[string]any{}},
+		"old": {ID: "old", Kind: connectors.KindBucket, Name: "old-files", Fields: map[string]any{}},
+	}}
+	j.Deployment.Exclusions = []string{"old"}
+	if err := r.Enqueue(j); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
+	<-st.done
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	b := readLog(t, logs, j.LogKey)
 	want := "Apply complete: 1 block built or changed.\n" +
+		"Built: api http_api orders-api\n" +
+		"Built: web vm web\n" +
 		"Result: api url https://x.example/v1/items\n" +
 		"Result: web private_address 10.0.0.5\n" +
-		"Result: web public_address 203.0.113.9\n"
-	if !strings.HasSuffix(string(b), want) {
-		t.Fatalf("log ends %q, want %q", string(b), want)
+		"Result: web public_address 203.0.113.9\n" +
+		endLine(j.RunID)
+	if !strings.HasSuffix(b, want) {
+		t.Fatalf("log ends %q, want %q", b, want)
+	}
+}
+
+// The capability check refuses a bad name before any apply; writeBuilt still
+// leaves out a block whose line a space or a missing name would break.
+func TestWriteBuiltLeavesOutALineItCannotWrite(t *testing.T) {
+	g := connectors.Graph{Blocks: map[string]connectors.Block{
+		"web":  {ID: "web", Kind: connectors.KindVM, Name: "web"},
+		"odd":  {ID: "odd", Kind: connectors.KindTable, Name: "two words"},
+		"none": {ID: "none", Kind: connectors.KindTable},
+	}}
+	var b bytes.Buffer
+	writeBuilt(&b, g, connectors.Deployment{})
+	if got, want := b.String(), "Built: web vm web\n"; got != want {
+		t.Fatalf("wrote %q, want %q", got, want)
 	}
 }
 

@@ -59,8 +59,8 @@ func TestOptionsSuggestForAPublicCloud(t *testing.T) {
 	want := map[string]string{
 		"image":         vexxhostUbuntu,
 		"flavor_small":  "v3-starter-1",
-		"flavor_medium": "v3-starter-1",
-		"flavor_large":  "v3-standard-1",
+		"flavor_medium": "v3-standard-1", // bigger than small's, so medium changes the server
+		"flavor_large":  "v3-standard-1", // nothing bigger with a disk in this list
 		// "public" is the default and VEXXHOST has it: no suggestion.
 	}
 	for name, images := range map[string]string{"with image properties": vexxhostImages, "by name alone": vexxhostImagesByName} {
@@ -163,6 +163,13 @@ func TestSuggestFlavors(t *testing.T) {
 			{Name: "volume-only-1", VCPUs: 1, RAM: 1024, Disk: 0}, {Name: "disk-2", VCPUs: 1, RAM: 2048, Disk: 10}, {Name: "volume-only-4", VCPUs: 2, RAM: 4096, Disk: 0}},
 			map[string]string{"flavor_small": "disk-2", "flavor_medium": "disk-2", "flavor_large": "volume-only-4"}},
 		{"too small and no vCPU", []flavor{{Name: "tiny", VCPUs: 1, RAM: 512, Disk: 1}, {Name: "zero", VCPUs: 0, RAM: 8192, Disk: 10}}, nil},
+		// VEXXHOST (2026-11-21): its cheapest flavor has enough memory for small
+		// and medium, so each size takes the next bigger flavor, and scaling
+		// small to medium changes the server.
+		{"each size bigger than the one below", []flavor{
+			{Name: "v3-starter-1", VCPUs: 1, RAM: 2048, Disk: 10}, {Name: "v3-standard-1", VCPUs: 1, RAM: 4096, Disk: 20}, {Name: "v3-starter-2", VCPUs: 2, RAM: 4096, Disk: 20},
+			{Name: "v3-standard-2", VCPUs: 2, RAM: 8192, Disk: 40}, {Name: "v3-starter-4", VCPUs: 4, RAM: 8192, Disk: 40}},
+			map[string]string{"flavor_small": "v3-starter-1", "flavor_medium": "v3-standard-1", "flavor_large": "v3-standard-2"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -38,6 +38,11 @@ export type RowState = {
   checkFailed: boolean;
   // The cloud can build the saved diagram, minus the left-out blocks.
   ready: boolean;
+  // The diagram has blocks and the deployment leaves every one out, so a run
+  // would build nothing.
+  allLeftOut: boolean;
+  // The saved diagram has no blocks at all.
+  noBlocks: boolean;
 };
 
 export const REASON = {
@@ -46,10 +51,16 @@ export const REASON = {
   checking: "Clutter is still checking what this cloud can build.",
   checkFailed: "Clutter could not check what this cloud can build. Reload the page to try again.",
   notReady: "This cloud cannot build the diagram as it is. Fix the problems above, or leave those blocks out.",
+  allLeftOut: "Every block is left out of this deployment.",
+  noBlocks: "Add a block to the diagram first.",
   nothingBuilt: "Nothing is built yet.",
   destroyed: "Everything this deployment built is already removed.",
   live: "Destroy it first. It may still have resources in your cloud.",
 } as const;
+
+// allLeftOut reports whether a deployment leaves out every block of a
+// diagram that has some.
+export const allLeftOut = (blockIds: string[], exclusions: string[]) => blockIds.length > 0 && blockIds.every((id) => exclusions.includes(id));
 
 // Removing a deployment is offered only when it holds nothing in the cloud.
 export const canOfferRemove = (status: DeploymentStatus) => status === "new" || status === "destroyed";
@@ -61,8 +72,8 @@ export function actionReasons(s: RowState): Record<RowAction, string | null> {
   const check = first(s.checking && REASON.checking, s.checkFailed && REASON.checkFailed, !s.ready && REASON.notReady);
   return {
     preview: first(s.unsaved, check),
-    plan: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, check),
-    apply: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, check),
+    plan: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, s.noBlocks && REASON.noBlocks, s.allLeftOut && REASON.allLeftOut, check),
+    apply: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, s.noBlocks && REASON.noBlocks, s.allLeftOut && REASON.allLeftOut, check),
     // A destroy does not read the diagram, so unsaved changes do not stop it.
     destroy: first(
       s.running && REASON.running,
@@ -92,4 +103,13 @@ export function addDeploymentChoice(connections: Connection[], usedConnectionIds
   const usable = free.filter((c) => c.status === "working");
   const broken = free.filter((c) => c.status !== "working");
   return { state: usable.length === 0 ? "none_working" : "pick", usable, broken };
+}
+
+// startingConnection is the connection "Add deployment" opens on: one of
+// the example's first cloud for a split example (preferredConnector), else
+// the only usable one when there is exactly one, else none (the person picks).
+export function startingConnection(usable: Connection[], preferredConnector: string | null = null): string {
+  const preferred = preferredConnector ? usable.find((c) => c.connector === preferredConnector) : undefined;
+  if (preferred) return preferred.id;
+  return usable.length === 1 ? usable[0].id : "";
 }

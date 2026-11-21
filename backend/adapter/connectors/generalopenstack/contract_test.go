@@ -1,11 +1,51 @@
 package generalopenstack
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors/contract"
 )
+
+// TestManifestHelpIsOpenStacks: the help a person reads for this cloud says
+// what holds here, with no other cloud's names or prices, and warns where a
+// change replaces a deployed server.
+func TestManifestHelpIsOpenStacks(t *testing.T) {
+	m := (&Connector{}).Manifest()
+	if err := m.Check(); err != nil {
+		t.Fatal(err)
+	}
+	help := func(kind connectors.BlockKind) string {
+		b, ok := m.Block(kind)
+		if !ok {
+			t.Fatalf("no %s block", kind)
+		}
+		lines := b.Help
+		for _, f := range b.Fields {
+			lines = append(lines, f.Help)
+		}
+		return strings.Join(lines, "\n")
+	}
+	vm, network := help(connectors.KindVM), help(connectors.KindNetwork)
+	for _, text := range []string{vm, network} {
+		for _, other := range []string{"AWS", "$", "NAT", "EC2", "VPC"} {
+			if strings.Contains(text, other) {
+				t.Errorf("OpenStack help names %q:\n%s", other, text)
+			}
+		}
+	}
+	for _, want := range []string{"startup script on a deployed server replaces the server"} {
+		if !strings.Contains(vm, want) {
+			t.Errorf("VM help lacks %q:\n%s", want, vm)
+		}
+	}
+	for _, want := range []string{"public server's first network needs it on", "address range of a deployed network replaces its servers"} {
+		if !strings.Contains(network, want) {
+			t.Errorf("network help lacks %q:\n%s", want, network)
+		}
+	}
+}
 
 // TestContract runs B's shared connector contract against this connector,
 // with a fake Keystone for verification and a fake terraform behind the real

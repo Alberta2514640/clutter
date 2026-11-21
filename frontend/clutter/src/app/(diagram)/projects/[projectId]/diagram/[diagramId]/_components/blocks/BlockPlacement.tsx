@@ -8,6 +8,7 @@ import type { BlockRef } from "@/lib/features/deployments/compatibility";
 import { useUpdateDeployment } from "@/lib/features/deployments/hooks";
 import { blockCloud, cloudBlocks, cloudChoices, placeBlock, placementReason, withPlacementSettings } from "@/lib/features/deployments/placements";
 import type { DeploymentListItem, Placement } from "@/lib/features/deployments/types";
+import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import SettingsForm from "./SettingsForm";
@@ -64,11 +65,11 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
-        {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+        className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1 text-xs font-medium">
+        {open ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
         Where each block runs
         {placements.length > 0 && (
-          <span className="text-slate-500">
+          <span className="text-muted-foreground font-normal">
             {" "}
             ({placements.length + 1} clouds)
           </span>
@@ -77,7 +78,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
       {open && (
         <div className="mt-2 space-y-2 pl-1" data-testid="block-placement">
           {blocks.length === 0 ? (
-            <p className="text-xs text-slate-500">Save the diagram with blocks first.</p>
+            <p className="text-muted-foreground text-xs">Save the diagram with blocks first.</p>
           ) : (
             // One compact row per block: its name and its cloud. "Change" turns
             // each cloud into a choice of the clouds that can build the block.
@@ -87,7 +88,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
                 const current = blockCloud(item.connection_id, placements, b.id);
                 return (
                   <li key={b.id} className="flex min-w-0 items-center justify-between gap-2">
-                    <label htmlFor={editing ? selectId : undefined} className="min-w-0 truncate text-slate-200" title={`${b.name} (${blockTitle(b.kind)})`}>
+                    <label htmlFor={editing ? selectId : undefined} className="min-w-0 truncate" title={`${b.name} (${blockTitle(b.kind)})`}>
                       {b.name}
                     </label>
                     {editing ? (
@@ -95,7 +96,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
                         id={selectId}
                         value={current}
                         onChange={(e) => move(b.id, e.target.value)}
-                        className="w-40 shrink-0 truncate rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100">
+                        className="border-input bg-background focus-visible:ring-ring/50 h-7 w-40 shrink-0 truncate rounded-md border px-1.5 text-xs outline-none focus-visible:ring-[3px]">
                         {choicesFor(b, current).map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name}
@@ -103,7 +104,7 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
                         ))}
                       </select>
                     ) : (
-                      <span data-testid="block-cloud" className="shrink-0 truncate text-slate-400">
+                      <span data-testid="block-cloud" className="text-muted-foreground shrink-0 truncate">
                         {nameOf(current)}
                       </span>
                     )}
@@ -114,19 +115,15 @@ export default function BlockPlacement({ token, organizationId, diagramId, item,
           )}
           {blocks.length > 0 &&
             (reason ? (
-              <p className="text-xs text-amber-300">{reason}</p>
+              <p className="text-warning text-xs">{reason}</p>
             ) : (
-              <button
-                type="button"
-                aria-expanded={editing}
-                onClick={() => setEditing((e) => !e)}
-                className="rounded-md border border-slate-700 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-800">
+              <Button type="button" variant="outline" size="xs" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
                 {editing ? "Done" : "Change"}
-              </button>
+              </Button>
             ))}
-          {updateM.isPending && <p className="text-xs text-slate-400">Saving…</p>}
+          {updateM.isPending && <p className="text-muted-foreground text-xs">Saving…</p>}
           {updateM.isError && (
-            <p role="alert" className="text-xs text-red-300">
+            <p role="alert" className="text-danger text-xs">
               {adapterErrorMessage(updateM.error)}
             </p>
           )}
@@ -180,7 +177,7 @@ function PlacedCloudSettings({
   const errors = valuesErrors(shown, values);
   return (
     <div>
-      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1 text-xs">
         {open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
         {placement.connection_name} settings
       </button>
@@ -196,8 +193,10 @@ function PlacedCloudSettings({
             disabled={disabled}
             onChange={(name, v) => setValues((s) => ({ ...s, [name]: v }))}
           />
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="xs"
             disabled={updateM.isPending || disabled || errors.length > 0}
             onClick={() =>
               updateM.mutate({
@@ -206,12 +205,11 @@ function PlacedCloudSettings({
                 deploymentId: item.id,
                 data: { placements: withPlacementSettings(item.placements ?? [], placement.connection_id, cleanValues(spec, values)) },
               })
-            }
-            className="rounded-md bg-slate-700 px-2.5 py-1 text-xs text-white hover:bg-slate-600 disabled:opacity-50">
+            }>
             {updateM.isPending ? "Saving…" : "Save settings"}
-          </button>
+          </Button>
           {updateM.isError && (
-            <p role="alert" className="text-xs text-red-300">
+            <p role="alert" className="text-danger text-xs">
               {adapterErrorMessage(updateM.error)}
             </p>
           )}

@@ -60,7 +60,7 @@ export default function TermsPage() {
         <h2 id="content">Your content</h2>
         <p>
           You own your diagrams, settings and uploaded code. You let us store and process them only to run Clutter for you. The{" "}
-          <Link href="/privacy" className={`rounded text-teal-300 underline underline-offset-4 hover:text-teal-200 ${FOCUS_RING}`}>
+          <Link href="/privacy" className={`text-link rounded underline underline-offset-4 ${FOCUS_RING}`}>
             privacy policy
           </Link>{" "}
           says how we handle your information.

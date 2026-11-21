@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leadLines, parseResults, resultRows, sampleNote, servesWeb, simulatedNote } from "./results";
+import { builtBlocks, leadLines, parseResults, readableLog, resultRows, sampleNote, servesWeb, simulatedNote } from "./results";
 
 const log = [
   "Run r1: apply on deployment d1.",
@@ -29,6 +29,41 @@ describe("parseResults", () => {
     const split = ["== Lab (OpenStack): apply ==", "Lab (OpenStack): apply complete, 2 blocks built or changed.", "Result: app public_address 172.24.4.10"].join("\n");
     expect(parseResults(split).get("app")).toEqual([{ name: "public_address", value: "172.24.4.10" }]);
     expect(parseResults("Plan: 3 to add, 0 to change, 0 to destroy.\nResult: web private_address 10.0.0.5").size).toBe(0);
+  });
+});
+
+describe("builtBlocks", () => {
+  // The diagram as saved now: web was renamed web2 after the deploy, and a
+  // bucket was added since.
+  const saved = [
+    { id: "net", kind: "network", name: "network" },
+    { id: "web", kind: "vm", name: "web2" },
+    { id: "new", kind: "bucket", name: "files" },
+  ];
+
+  it("names each block as the apply built it, in the diagram's order, even after a rename", () => {
+    const applied = [
+      // Before B's apply line, a line shaped like a block does not count.
+      "Built: fake vm intruder",
+      "Apply complete: 3 blocks built or changed.",
+      "Built: fw firewall fw",
+      "Built: net network network",
+      "Built: web vm web",
+      "Built: odd vm Has Spaces",
+      "Result: web private_address 10.0.0.5",
+    ].join("\n");
+    expect(builtBlocks(applied, saved)).toEqual([
+      { id: "net", kind: "network", name: "network" },
+      { id: "web", kind: "vm", name: "web" },
+      // Removed from the diagram since the deploy: still built, so still listed.
+      { id: "fw", kind: "firewall", name: "fw" },
+    ]);
+  });
+
+  it("gathers every cloud of a split run, and is null for a run from before the Built lines", () => {
+    const split = ["data (Mock): apply complete, 1 block built or changed.", "Built: new bucket files", "main (Mock): apply complete, 1 block built or changed.", "Built: web vm web"].join("\n");
+    expect(builtBlocks(split, saved)?.map((b) => b.id)).toEqual(["web", "new"]);
+    expect(builtBlocks(log, saved)).toBeNull();
   });
 });
 
@@ -179,5 +214,40 @@ describe("servesWeb", () => {
 
   it("does not count a server with no startup script: nothing starts a web server on it", () => {
     expect(servesWeb([vm("web", true, "  \n"), fw("f", "tcp/80")], [{ source: "f", target: "web" }]).size).toBe(0);
+  });
+});
+
+describe("readableLog", () => {
+  it("shows B's Built and Result lines in plain words, named as the diagram names the blocks", () => {
+    const raw = [
+      "Deploy on Mock cloud (lab), started 10:42:03 UTC.",
+      "Result: n1 public_address 6.6.6.6",
+      "Created server (VM).",
+      "Apply complete: 2 blocks built or changed.",
+      "Built: n1 vm server",
+      "Built: n2 network net",
+      "Result: n1 public_address 203.0.113.73",
+      "Result: n1 private_address 10.0.0.5",
+      "Result: fn code sample",
+      "Run r1 ended at 10:42:04 UTC.",
+    ].join("\n");
+    const title = (k: string) => ({ vm: "VM", network: "Network" })[k] ?? k;
+    expect(readableLog(raw, title).split("\n")).toEqual([
+      "Deploy on Mock cloud (lab), started 10:42:03 UTC.",
+      // Before B's apply line nothing is rewritten.
+      "Result: n1 public_address 6.6.6.6",
+      "Created server (VM).",
+      "Apply complete: 2 blocks built or changed.",
+      "Built server (VM)",
+      "Built net (Network)",
+      "server: public address 203.0.113.73",
+      "server: private address 10.0.0.5",
+      "fn: answers with a sample until you upload your code",
+      "Run r1 ended at 10:42:04 UTC.",
+    ]);
+  });
+
+  it("leaves a log with no apply as it was", () => {
+    expect(readableLog("Plan: 1 to add, 0 to change, 0 to destroy.\nBuilt: n1 vm web")).toBe("Plan: 1 to add, 0 to change, 0 to destroy.\nBuilt: n1 vm web");
   });
 });

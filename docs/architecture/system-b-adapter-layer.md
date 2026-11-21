@@ -1,6 +1,6 @@
 # System B: the adapter layer
 
-Status: stages 3 to 6 are built and tested locally. Stage 7's cloud parts are written but not deployed. Nothing is merged into the client's repo yet. Each stage's status is in `.claude/findings/NOW.md` § The order, and the build order is `implementation-plan.md`. This doc is the design. It follows the team's architecture plan (the figures and write-up in `docs/architecture/system-b-team-plan/`). It also follows the product decisions in ADR-013 to ADR-027. Those are B0 with users' own accounts, one diagram with many deployments, AWS as a B connector too, and one deployment split across clouds. Where a part is still later work (B1, B2, Patrii, TierHive, General's existing-servers connector, the sandbox connection), its section says so. The decisions it rests on are in `docs/decisions.md`. What exists today is `system-a-as-built.md`. The Patrii facts are in `docs/research/patricloud/2026-10-26-patricloud-research.md`.
+This doc is the design. Status: `.claude/findings/NOW.md` § The order. Build order: `implementation-plan.md`. It follows the team's architecture plan (the figures and write-up in `docs/architecture/system-b-team-plan/`). It also follows the product decisions in ADR-013 to ADR-027. Those are B0 with users' own accounts, one diagram with many deployments, AWS as a B connector too, and one deployment split across clouds. Where a part is still later work (B1, B2, Patrii, TierHive, General's existing-servers connector, the sandbox connection), its section says so. The decisions it rests on are in `docs/decisions.md`. What exists today is `system-a-as-built.md`. The Patrii facts are in `docs/research/patricloud/2026-10-26-patricloud-research.md`.
 
 ## The goal
 
@@ -17,8 +17,6 @@ The layer has two faces:
 - **Outbound:** connectors behind one interface. Adding a target means writing a connector, not editing the core.
 - **Inbound:** B's own API, versioned. Clutter's UI calls it, and people and other products can call it to use Clutter without learning React Flow, Supabase webhooks or AWS role ARNs.
 
-The inbound half and its standard objects come from a second, independent research run on 2026-10-26 (`docs/research/patricloud/2026-10-26-second-research-run/`). The lead checked them against the code. The outbound half's structure (A, B, connectors, connections) comes from the team's plan, which calls a connection an instance.
-
 Clutter owns intent (what the customer wants); targets own resources. Callers talk to Clutter; Clutter talks to targets. A target such as Patrii is not a host for the standard and not a caller. It publishes no inbound plugin and has no diagram, plan or apply resource. A target-side integration that only wants inventory (as Patrii's Lynx DCIM connector sketches) is a read through the same connector.
 
 ## Names
@@ -33,7 +31,7 @@ This table owns the names. Other docs use them and point here.
 | **B** | the adapter layer, built beside A (Option 1, ADR-006). Its code is in `backend/adapter`, and its API is B API. "B" is the team's shorthand in plans and docs; paths, settings (`ADAPTER_*`) and code say "adapter". |
 | **world 1** | Clutter itself: website, APIs, database, object storage, secret store and runners, in an account Clutter's operator controls |
 | **world 2** | the cloud accounts where users' diagrams are built. World 1 never builds a user's resources inside itself. |
-| **2.1** | world 2 is the user's own cloud accounts, which they link to Clutter. **Chosen; built, tested locally, and run from a laptop against a real AWS account and VEXXHOST on 2026-11-20; hosting Clutter (world 1) waits for the client's accounts.** |
+| **2.1** | world 2 is the user's own cloud accounts, which they link to Clutter. **Chosen (ADR-013).** |
 | **2.2** | world 2 is cloud accounts Clutter owns and resells. **Not now** (ADR-013); an optional Clutter sandbox connection may come later. |
 | **B0** | B run by us as a hosted service (SaaS), so we run world 1. Built first. |
 | **B1** | B shipped as a self-hosted service people run on their own servers, so they run world 1. Its connectors are entity connectors. Later. |
@@ -54,7 +52,7 @@ This table owns the names. Other docs use them and point here.
 | **scoped key** | a key Clutter creates in a target's cloud for one permission edge, which can only read that one bucket or table |
 | **workspace** | not in the first build: a second environment of the same diagram is a second deployment |
 | **seam** | one of the places B touches A (§ The seams: where B touches A even in Option 1) |
-| **phase 0** | the security fixes on paths A and B share; part of stage 1 (`.claude/findings/NOW.md` § Phase 0) |
+| **phase 0** | the security fixes on paths A and B share; part of stage 1 (`implementation-plan.md` § Stage 1) |
 | **stage** | one step of the build order, 0 to 8 (`implementation-plan.md`) |
 | **local**, **cloud** | our two copies of world 1: a laptop with no accounts, and one cloud environment in `ca-central-1` (ADR-015, `environments.md`) |
 | **PatriCloud** | our working name for Patrii Cloud (patrii.cloud), a Canadian cloud; the same thing |
@@ -95,7 +93,7 @@ These are unavoidable and named here so that Option 1 does not drift into Option
 1. **The UI.** A Connections page for every cloud, a palette and forms read from connector manifests, and a deploy panel that lists the diagram's deployments. Existing AWS diagrams keep A's screens and calls; new diagrams call B.
 2. **Shared sign-in and the JWT authorizer.** Users sign in once. B verifies A's JWT.
 3. **The shared database.** Orgs, projects and diagrams stay A's tables. B adds tables for connections, credential references, deployments and runs. B reads A's linked AWS roles as AWS connections, so a user links an AWS account once.
-4. **A's security defects.** B inherits A's sign-in, its database and its membership check, so the defects in `.claude/findings/NOW.md` that sit on those paths are B's defects too. Fixing them is the main change to A's behaviour this plan requires (phase 0). Stage 1 also puts A's template loader and JWT check in `generic`, and makes the generator read the environment's region. It also replaces the Supabase webhook with an authenticated save-then-generate step. The open generation endpoint and the database's row-level security are the two defects that touch shared paths directly. Both are fixed in code.
+4. **A's security defects.** B inherits A's sign-in, its database and its membership check, so the defects in `.claude/findings/NOW.md` that sit on those paths are B's defects too. Fixing them is the main change to A's behaviour this plan requires (phase 0). Stage 1 also puts A's template loader and JWT check in `generic`, and makes the generator read the environment's region. It also replaces the Supabase webhook with an authenticated save-then-generate step. The open generation endpoint and the database's row-level security are the two defects that touch shared paths directly (`system-a-as-built.md` § What changed since the capstone).
 
 Any other change to A is a decision, recorded in `docs/decisions.md` before it is made.
 
@@ -134,7 +132,7 @@ The first building blocks, and what each first connector maps them to:
 
 | Building block | AWS connector | OpenStack connector (General) |
 | --- | --- | --- |
-| VM | EC2 instance (A's template; its AMI is fixed to Amazon Linux 2023 on x86, so image choice is new work). Its startup script is the instance's `user_data_base64`, set in B's override file. `user_data_replace_on_change` makes a changed script build a new instance | Nova server. With `public`, a floating IP is associated to the server's port (`openstack_networking_floatingip_v2` and `_associate_v2`; provider 3.x has no compute association), 30 seconds after the server is created (a `time_sleep`), because an OVN cloud never routes an address associated while the port is still coming up (VEXXHOST, 2026-11-20). The image is a deployment setting, matched by name prefix. Its startup script is the server's `user_data` (a change builds a new server) |
+| VM | EC2 instance (A's template; its AMI is fixed to Amazon Linux 2023 on x86, so image choice is new work). Its startup script is the instance's `user_data_base64`, set in B's override file. `user_data_replace_on_change` makes a changed script build a new instance | Nova server. With `public`, a floating IP is associated to the server's port (`openstack_networking_floatingip_v2` and `_associate_v2`; provider 3.x has no compute association), 30 seconds after the server is created (a `time_sleep`), because an OVN cloud (VEXXHOST, for example) never routes an address associated while the port is still coming up. The image is a deployment setting, matched by name prefix. Its startup script is the server's `user_data` (a change builds a new server) |
 | Network and subnet | new template: VPC split into a private and a public subnet, an internet gateway and route table for public VMs, and a NAT gateway for private VMs when the block's "Internet access for private servers" is on | Neutron network and subnet. With "Internet access for private servers" on, it joins the deployment's one router, whose gateway is the cloud's external network (a connection setting); off, it joins none, so it has no floating IPs either |
 | Firewall rules | new template: security group (A's EC2 template has none) | security group and rules |
 | Block volume | new template: EBS volume and attachment | Cinder volume and attachment |
@@ -171,9 +169,15 @@ A diagram is drawn once. Each place it runs is a **deployment**: the diagram, on
 
 #### Split deployments
 
-One deployment can place each block on a different linked cloud of the same organization, with no manual step in the middle (ADR-020). The code is `backend/adapter/internal/split` (the plan), `backend/adapter/internal/jobs/split.go` (the run) and `backend/adapter/connectors/cross.go` (the contract).
+One deployment can place each block on a different linked cloud of the same organization, with no manual step in the middle (ADR-020). The plan is `backend/adapter/internal/split`, the run is in `backend/adapter/internal/jobs`, and the contract is `connectors.CrossCloud`.
 
-**Placement.** A deployment keeps its own connection (the primary) and may have placements. Each placement names another connection of the organization, the blocks (node ids) on it, and that cloud's own settings (`deployment_placements` in `adapter-tables.sql`). Every block not placed runs on the primary. When B writes a placement row, it proves the placement's connection belongs to the deployment's organization. The insert selects the connection by id and organization. So another organization's connection is "not found", on create and on PATCH alike. A block is placed on one cloud at most, a placement holds at least one block, and a deployment has at most eight. Blocks move between clouds only while the deployment holds nothing (new or destroyed). Moving a block of a live deployment would leave its old cloud's state without it, so B answers 409 `deployment_live`. A placed cloud's settings may change while live, as the primary's may. A connection that a live deployment places blocks on cannot be deleted, just as its primary cannot. A database trigger refuses removing such a placement by a cascade.
+**Placement.**
+
+- A deployment keeps its own connection (the primary) and may have placements. Each placement names another connection of the organization, the blocks (node ids) on it, and that cloud's own settings (`deployment_placements` in `adapter-tables.sql`). Every block not placed runs on the primary.
+- When B writes a placement row, it proves the placement's connection belongs to the deployment's organization. The insert selects the connection by id and organization. So another organization's connection is "not found", on create and on PATCH alike.
+- A block is placed on one cloud at most, a placement holds at least one block, and a deployment has at most eight placements.
+- Blocks move between clouds only while the deployment holds nothing (new or destroyed). Moving a block of a live deployment would leave its old cloud's state without it, so B answers 409 `deployment_live`. A placed cloud's settings may change while live, as the primary's may.
+- A connection that a live deployment places blocks on cannot be deleted, just as its primary cannot. A database trigger refuses removing such a placement by a cascade.
 
 Each cloud of the deployment is a **part**. A part's Terraform state is keyed by the deployment and the connection. The primary keeps the deployment's own id, so a deployment's state stays where it was before any block was placed. Every other part gets a fixed id derived from the deployment and the connection (`split.PartID`). Every part shares the deployment's name prefix. A part's graph is the whole diagram with every block of the other parts left out. So the capability check runs per block against its own cloud's manifest. The deployment's own exclusions still apply. Before a run, every part's connection is verified, and every part passes the capability check, its connector's `Validate` and its `CrossCheck`.
 
@@ -187,13 +191,65 @@ Each cloud of the deployment is a **part**. A part's Terraform state is keyed by
 | VM to network, volume to VM, firewall to VM | refused | | one cloud's wiring: "place both on the same cloud" |
 | function to bucket or table, HTTP API to function | refused | | wired inside one cloud's IAM: "place both on the same cloud, or connect a VM instead" |
 
-The same edges exist inside one cloud. There, a VM to a VM hands the source the target's private address. On AWS, a VM to a bucket or table attaches the reads to the instance's role and hands it the name and region, with no key. Values reach a VM as a small `/bin/sh` wrapper in its user data. The wrapper writes them to `/etc/clutter/connections.env` (readable by root only), one `CLUTTER_<BLOCK>_<VALUE>` line each (for example `CLUTTER_FILES_BUCKET`, `CLUTTER_FILES_SECRET_ACCESS_KEY`, `CLUTTER_DB_ADDRESS`). It exports them and then runs the block's own startup script. That script still reaches the Terraform only as base64 (`connectors.StartupHCL`). A value from another cloud must match a narrow alphabet (an address, a name, a region, a key) before any other cloud sees it. So it cannot break out of the shell's single quotes or the HCL string. With values, the startup script can be about 11 KB, so the whole fits AWS's 16 KB of user data. Clutter opens no firewall rule for a cross-cloud edge. A VM's outbound traffic is open on both clouds already. An inbound rule on the target would need the source's address before the source exists, which the order below forbids. The target's own firewall blocks decide who reaches it. Two kinds of circle are refused: VMs on one cloud that get each other's address in a circle, and clouds that hand each other values in a circle. In both, nothing could be built first.
+The same edges inside one cloud:
 
-**Scoped keys (permission edges).** On AWS, the AWS part creates three things for each permission edge (`backend/adapter/connectors/aws/tmpl/cross.tf.tmpl`). The first is one IAM user under `/clutter/`, named after the deployment's prefix and the edge (`<prefix>-x<10 hex>`). The user carries the stack's users' boundary (reads only on buckets and tables whose names start with a deployment prefix, nothing in IAM) and the tag `ManagedBy = Clutter`. The second is one inline policy that allows only the edge's reads. For a bucket, those are `s3:ListBucket` on the bucket and `s3:GetObject` on its objects. For a table, they are the six DynamoDB reads on the table and its indexes. The third is one access key. The key's secret is a sensitive Terraform output. B reads it with `terraform output -json`. That output goes to its own object (`runs/<run>/out/outputs.json`) and never into the run's log. The job runner adds the secret to the values it removes from the log. The next part renders it only inside the source VM's user data, which is then `sensitive(...)`, so Terraform prints neither. It is never in a preview (a preview renders a placeholder for every value another cloud hands a VM), a response, a `Problem` or a log. Destroying the deployment deletes the key, the policy and the user. The customer role allows exactly the calls the AWS provider (5.x, checked against v5.100) makes for these three resources without `force_destroy`. It allows them only on `user/clutter/*`. `CreateUser` is allowed only with the users' boundary and Clutter's tags. `PutUserPolicy` is allowed only on a user with that boundary. `CreateAccessKey` is allowed only on a user tagged `ManagedBy = Clutter`. The role also allows `GetUser`, `DeleteUser`, `TagUser`, `UntagUser`, `ListGroupsForUser`, `GetUserPolicy`, `DeleteUserPolicy`, `ListAccessKeys` and `DeleteAccessKey`. Removing a user's boundary is denied (`RoleTemplateVersion` 10).
+- A VM to a VM hands the source the target's private address.
+- On AWS, a VM to a bucket or table attaches the reads to the instance's role and hands it the name and region, with no key.
 
-This is ADR-020's accepted trade-off. A long-lived key sits inside the user's VM for the deployment's life. It is in the VM's user data (which anyone on the VM can read from the instance metadata) and in `/etc/clutter/connections.env`. A stolen key reaches only what the edge allowed. From anywhere on the internet, it can list and read the objects of that one bucket, or read the items of that one table. It can do so until the deployment is destroyed. It cannot write. It cannot reach any other bucket or table: its policy names one, and its boundary allows only Clutter's deployment-named ones. It cannot do anything in IAM (the boundary denies it), so it cannot make itself another key. The key's secret also sits in the AWS part's Terraform state (encrypted, in Clutter's state bucket). When the source VM is on AWS too, the secret also sits in that part's state as user data. This would change if a cloud offers workload identity across clouds (IAM Roles Anywhere with a certificate Clutter issues). That would replace the key with short-lived credentials. Pinning the key to the source VM's address (`aws:SourceIp`) is not possible today. The target's cloud is built before the source VM has an address.
+How values reach a VM:
 
-**Order and roll-back.** One run takes the parts in dependency order. A part whose blocks another part's VMs need is applied first. Its outputs (read with `terraform output -json`) go into the next part's render. Each part runs as its own step, with its own run id, in its own isolated run task, with only its own cloud's credentials. The job runner asks the broker for one part's credentials just before that part's step. No step's environment ever holds two clouds' credentials. If a part's apply fails and the deployment held nothing before the run (new or destroyed), the run destroys what this run built. It goes newest first and includes the failed part's partial build. The deployment keeps its status from before the run. The run's failure names the cloud that failed and says the rest was rolled back. If the roll-back of a cloud fails too, the deployment is failed and the failure names both. A live deployment is not rolled back, because destroying would remove what ran before the run. Instead the deployment is failed, and the failure says the clouds before it were updated. A destroy takes the parts in reverse order and destroys every part even when one fails. A plan takes the parts in order too, and hands on the values each part's state already holds (a placeholder before the first apply). Each run records where every cloud stands (`runs.parts`), so the deploy panel shows run progress per cloud.
+- They arrive as a small `/bin/sh` wrapper in its user data. The wrapper writes them to `/etc/clutter/connections.env` (readable by root only), one `CLUTTER_<BLOCK>_<VALUE>` line each (for example `CLUTTER_FILES_BUCKET`, `CLUTTER_FILES_SECRET_ACCESS_KEY`, `CLUTTER_DB_ADDRESS`).
+- The wrapper exports them and then runs the block's own startup script. That script still reaches the Terraform only as base64 (`connectors.StartupHCL`).
+- A value from another cloud must match a narrow alphabet (an address, a name, a region, a key) before any other cloud sees it. So it cannot break out of the shell's single quotes or the HCL string.
+- With values, the startup script can be about 11 KB, so the whole fits AWS's 16 KB of user data.
+
+Firewalls and circles:
+
+- Clutter opens no firewall rule for a cross-cloud edge. A VM's outbound traffic is open on both clouds already.
+- An inbound rule on the target would need the source's address before the source exists, which the order below forbids. The target's own firewall blocks decide who reaches it.
+- Two kinds of circle are refused: VMs on one cloud that get each other's address in a circle, and clouds that hand each other values in a circle. In both, nothing could be built first.
+
+**Scoped keys (permission edges).** On AWS, the AWS part creates three things for each permission edge (the AWS connector's `cross.tf.tmpl`):
+
+- **One IAM user** under `/clutter/`, named after the deployment's prefix and the edge (`<prefix>-x<10 hex>`). The user carries the stack's users' boundary (reads only on buckets and tables whose names start with a deployment prefix, nothing in IAM) and the tag `ManagedBy = Clutter`.
+- **One inline policy** that allows only the edge's reads. For a bucket, those are `s3:ListBucket` on the bucket and `s3:GetObject` on its objects. For a table, they are the six DynamoDB reads on the table and its indexes.
+- **One access key.**
+
+How the key's secret is kept out of sight:
+
+- The secret is a sensitive Terraform output. B reads it with `terraform output -json`. That output goes to its own object (`runs/<run>/out/outputs.json`) and never into the run's log.
+- The job runner adds the secret to the values it removes from the log.
+- The next part renders it only inside the source VM's user data, which is then `sensitive(...)`, so Terraform prints neither.
+- It is never in a preview (a preview renders a placeholder for every value another cloud hands a VM), a response, a `Problem` or a log.
+- Destroying the deployment deletes the key, the policy and the user.
+
+What the customer role allows for scoped keys (`RoleTemplateVersion` 10):
+
+- Exactly the calls the AWS provider (5.x, matched against v5.100) makes for these three resources without `force_destroy`, and only on `user/clutter/*`.
+- `CreateUser` only with the users' boundary and Clutter's tags. `PutUserPolicy` only on a user with that boundary. `CreateAccessKey` only on a user tagged `ManagedBy = Clutter`.
+- Also `GetUser`, `DeleteUser`, `TagUser`, `UntagUser`, `ListGroupsForUser`, `GetUserPolicy`, `DeleteUserPolicy`, `ListAccessKeys` and `DeleteAccessKey`.
+- Removing a user's boundary is denied.
+
+This is ADR-020's accepted trade-off. A long-lived key sits inside the user's VM for the deployment's life:
+
+- It is in the VM's user data (which anyone on the VM can read from the instance metadata) and in `/etc/clutter/connections.env`.
+- A stolen key reaches only what the edge allowed. From anywhere on the internet, it can list and read the objects of that one bucket, or read the items of that one table, until the deployment is destroyed.
+- It cannot write. It cannot reach any other bucket or table: its policy names one, and its boundary allows only Clutter's deployment-named ones.
+- It cannot do anything in IAM (the boundary denies it), so it cannot make itself another key.
+- The key's secret also sits in the AWS part's Terraform state (encrypted, in Clutter's state bucket). When the source VM is on AWS too, the secret also sits in that part's state as user data.
+- This would change if a cloud offers workload identity across clouds (IAM Roles Anywhere with a certificate Clutter issues). That would replace the key with short-lived credentials.
+- Pinning the key to the source VM's address (`aws:SourceIp`) is not possible: the target's cloud is built before the source VM has an address.
+
+**Order and roll-back.**
+
+- One run takes the parts in dependency order. A part whose blocks another part's VMs need is applied first. Its outputs (read with `terraform output -json`) go into the next part's render.
+- Each part runs as its own step, with its own run id, in its own isolated run task, with only its own cloud's credentials. The job runner asks the broker for one part's credentials just before that part's step. No step's environment ever holds two clouds' credentials.
+- If a part's apply fails and the deployment held nothing before the run (new or destroyed), the run destroys what this run built. It goes newest first and includes the failed part's partial build. The deployment keeps its status from before the run. The run's failure names the cloud that failed and says the rest was rolled back.
+- If the roll-back of a cloud fails too, the deployment is failed and the failure names both.
+- A live deployment is not rolled back, because destroying would remove what ran before the run. Instead the deployment is failed, and the failure says the clouds before it were updated.
+- A destroy takes the parts in reverse order and destroys every part even when one fails.
+- A plan takes the parts in order too, and hands on the values each part's state already holds (a placeholder before the first apply).
+- Each run records where every cloud stands (`runs.parts`), so the deploy panel shows run progress per cloud.
 
 **The connector side.** A connector takes part in a split by implementing `connectors.CrossCloud` (§ The connector interface). A connector without it cannot be any cloud of a split deployment, and the capability check says so. AWS and General's OpenStack connector implement it. AWS exports a public VM's address and scoped keys for buckets and tables. OpenStack exports a public VM's floating address. Both take every value into their VMs. The mock connector implements it for tests. The contract tests run a split plan, apply and destroy over two clouds of each connector through the real job runner. They also check that a preview never holds a value another cloud hands a VM.
 
@@ -281,7 +337,7 @@ How a connector does plan and apply is its own business, but most should share o
 
 The runner holds the keys to a user's cloud. So it is built so that a mistake or a hostile diagram reaches only that one run's cloud (ADR-017):
 
-- **One task per run.** Each run starts its own short-lived container with no database access and no secret-store access. A broker in B's API fetches that run's credentials and hands in only those: short-lived session keys for AWS, the one connection's token for others. A's runners, by contrast, share one task role that can assume every customer's role. Since stage 1 (phase 0 item 10), they do not hold the database string.
+- **One task per run.** Each run starts its own short-lived container with no database access and no secret-store access. A broker in B's API fetches that run's credentials and hands in only those: short-lived session keys for AWS, the one connection's token for others. A's runners, by contrast, share one task role that can assume every customer's role (an open defect in `.claude/findings/NOW.md` § Open defects in A). They do not hold the database string.
 - **Only Clutter writes the Terraform.** B renders HCL from building blocks with its own templates; no user-written HCL reaches the runner. General supports only providers on an allow-list that Clutter maintains, not any provider a user names.
 - **Dangerous features are refused.** Rendered Terraform may not contain provisioners or the `external` and `http` data sources. The runner checks this before `plan`. `TF_LOG` is never set, so provider debug output cannot leak credentials into logs.
 - **Its own cluster.** B's run tasks do not share a cluster with A's, so A's `logs/live` cannot read them.
@@ -309,7 +365,7 @@ What each part replaces in A, for the day AWS moves into B (Option 3, later):
 3. **Compile and run are one authenticated sequence.** A public webhook that compiles, and a diagram save that does not (as in A), cannot be the contract.
 4. **B API is the only versioned surface.** `/v1`, one error envelope, one id style, an idempotency key on every create. Neither A nor Patrii has idempotency today, and Patrii's own changelog records a retried create starting duplicate billable servers.
 5. **One naming rule for every `/v1` route.** Paths use plural nouns. Ids go in the path, nested under their owner (`/v1/organizations/{org}/diagrams/{diagram}/deployments`). Paths hold no verbs except real actions (`.../verify`, a `POST` that starts a run). JSON and query strings use `snake_case`. Times are RFC 3339. There is one error shape, `{"error":{"code","message","problems"?}}`. A new major version comes only for a breaking change. A's own routes keep their shapes until they move into the adapter service (ADR-021) and are not a model for new routes.
-6. **A's trust boundary is not standardized.** The admin-sized customer role and the open compiler are fixed before any other product is invited in. Both are fixed in code, and the role was confirmed on a real AWS account on 2026-11-20 (ADR-027).
+6. **A's trust boundary is not standardized.** The admin-sized customer role and the open compiler are fixed before any other product is invited in (stage 1; the role: ADR-027).
 
 ### The objects
 
@@ -349,10 +405,10 @@ Where a stored token lives: in B0, AWS Secrets Manager in Clutter's account, one
 
 Linking a cloud is the step most users fail at, so it gets the most care:
 
-- **One page, one tile per kind of cloud.** A connection belongs to the organization, so every diagram and every teammate reuses it.
-- **AWS stays short:** the existing CloudFormation link creates the role, and the user pastes back its ARN, as in A. B then checks the role itself (`VerifyConnection`) instead of trusting the pasted ARN. An account already linked through A is used without pasting anything.
-- **OpenStack accepts what the user already has:** a `clouds.yaml` file or an openrc file, or the fields typed in. The page explains how to create an application credential and asks for one, not a password.
-- **Every connection is verified before it is saved,** and the page shows its state: working, failed with the reason, or expiring soon.
+- **One page and one flow, one card per kind of cloud.** Connections is a top-level item in the sidebar. The same flow opens in a side sheet from the editor's Deploy tab and from the first-deploy checklist, so a user connects a cloud without leaving the diagram. A connection belongs to the organization (a "team" on screen), so every diagram and every teammate reuses it.
+- **AWS stays short, with one name and one flow:** the user names the account and picks the connection's region, opens AWS, where the existing CloudFormation link creates the role, and pastes back its ARN; one button then links the account and connects it. A wrong ARN is refused next to the field, and a half-finished link is resumed or removed in the same place. B then checks the role itself (`VerifyConnection`) instead of trusting the pasted ARN. An account already linked through A is connected without pasting anything. The older AWS account page redirects to this flow.
+- **OpenStack accepts what the user already has:** a `clouds.yaml` file (with its `secure.yaml`), or the fields typed in. The page explains how to create an application credential and asks for one, not a password.
+- **Every connection is verified before it is saved,** and the page shows its state: working, or not working with the reason.
 - **Errors say what to do next** ("this credential cannot create volumes: add the volume permission"), not a raw cloud error.
 
 ### What a connector may and may not do
@@ -383,13 +439,19 @@ What each target can build in world 2 is its manifest. Today's best estimate:
 
 ### Where B runs
 
-A's API is many small Lambda functions behind API Gateway: each route starts on demand, and it only runs on AWS. B is one Go service in a container instead, for three reasons. First, its main work is Terraform runs that last minutes and need the Terraform binary and its providers (hundreds of megabytes). These do not fit Lambda's limits. A runs those parts in containers too (its Fargate deployer). Second, B1 is a service other people run on their own servers, so B cannot depend on Clutter's own API Gateway and Lambdas. Third, one service is simpler to run locally. In B0 the container runs on AWS Fargate, the same service A's deployer uses. The default is one Go service in a container that runs anywhere: hosted by us next to A, or self-hosted. The Terraform runner is a second process that sits where it can reach the target and the state. Whoever runs it holds the target credentials and the state. Hosting moves custody, not the contract (ADR-004).
+A's API is many small Lambda functions behind API Gateway: each route starts on demand, and it only runs on AWS. B is one Go service in a container instead (ADR-004), for three reasons:
+
+- Its main work is Terraform runs that last minutes and need the Terraform binary and its providers (hundreds of megabytes). These do not fit Lambda's limits. A runs those parts in containers too (its Fargate deployer).
+- B1 is a service other people run on their own servers, so B cannot depend on Clutter's own API Gateway and Lambdas.
+- One service is simpler to run locally.
+
+In B0 the container runs on AWS Fargate, the same service A's deployer uses. The same container runs anywhere: hosted by us next to A, or self-hosted. The Terraform runner is a second process that sits where it can reach the target and the state. Whoever runs it holds the target credentials and the state. Hosting moves custody, not the contract.
 
 ## The connectors
 
 ### General: many clouds through approved Terraform providers
 
-General is not one cloud. It is a family of connectors that share one kit: one connector per approved Terraform provider, plus one for servers the user already has. It is built first (stage 4), because it needs no partner, and it is how most new clouds arrive later. Its scope is still open with the client (question 1 in `.claude/findings/NOW.md`). This section is the default.
+General is not one cloud. It is a family of connectors that share one kit: one connector per approved Terraform provider, plus one for servers the user already has. It is built first (stage 4), because it needs no partner, and it is how most new clouds arrive later. Its scope is still open with the client (`.claude/findings/NOW.md` § Open questions). This section is the default.
 
 - **What the user sees.** The Connections page lists clouds by name: AWS, OpenStack, and more as they are approved (DigitalOcean next, then whatever users ask for), plus "Existing servers". "General" is the team's name for the family, not a word on a screen. The user picks a cloud, fills in its credential form, and gets a connection.
 - **One connector per approved provider.** Each registers with its own id (`general-openstack`, later `general-digitalocean`, and so on). Each has its own manifest, credential spec and verification call, because each provider builds different things and signs in differently. They share General's kit: the HCL renderer and escaping, the provider allow-list and version pins, and the shared Terraform runner. The kit also has a tool that turns a provider's schema (`terraform providers schema -json`: required, optional and sensitive fields) into a draft manifest.
@@ -408,7 +470,7 @@ Patrii does not yet publish a documented customer API. Its REST API docs and its
 - **Path B:** Patrii ships its `patrii/patrii` Terraform provider. It becomes a new General connector on the allow-list, using a Patrii project API key.
 - **Path C:** a Patrii connector of its own calls the console's REST API directly (the second research run's recommendation). It works today, but the write schemas are not in the console bundle. They would have to be captured from a real console session, and any console release can break it. If chosen, it needs idempotency on Clutter's side and a contract test suite run against a Patrii test project. The connector also loses Terraform's plan, state and drift handling (ADR-002).
 
-The lead's recommendation is to ask Patrii first and build Path A or B. Path C comes only if Patrii confirms its REST API will be the supported surface and publishes its OpenAPI file. What would change this: Patrii stating that OpenStack endpoints will never be public and no Terraform provider is planned.
+The recommendation is to ask Patrii first and build Path A or B. Path C comes only if Patrii confirms its REST API will be the supported surface and publishes its OpenAPI file. What would change this: Patrii stating that OpenStack endpoints will never be public and no Terraform provider is planned.
 
 First Patrii features, once there is an API: compute VM (server with keypair, security group, floating IP, cloud-init), network and router, block volume, object storage bucket. Load balancer, DNS and managed databases follow. Serverless function, API Gateway and DynamoDB have no Patrii equivalent and are marked removed in the Patrii manifest.
 
@@ -418,11 +480,62 @@ TierHive (KernelKeepers LTD) is an alpha hourly NAT VPS host with no public API,
 
 ### AWS
 
-AWS is in both systems (ADR-014). A stays as it is and keeps serving the AWS diagrams users already have. B gets an AWS connector so a new diagram can deploy to AWS as one of its deployments. The connector reuses A's customer template files (`*.tf.tmpl`), changed only by stage 1, so the AWS Terraform is not written twice. B owns everything around them: the variable maps from building blocks, validation and escaping, the edge-to-IAM step, and API Gateway routes and integrations. B also owns small override files where a template lacks an input (the EC2 template has no subnet or security group input). A test renders A's files from disk and runs `terraform validate`, so a change to A's templates that breaks B fails in CI. A 2026-11-13 spike did this for two deployments of one diagram in `ca-central-1`: both validated. A's template-loading code sits in `generic/tftemplate` so both can import it, and a golden test keeps A's output byte-identical. B has its own edge-to-IAM step on building blocks, because A's is typed on A's internal resource types. It adds what A lacks (network, firewall, volume) as new templates. The role link is shared. The CloudFormation template's trust policy lists A's runner role and B's runner role, and B reads A's role table as AWS connections. Each connection has a column for the version of the role template it was created from, so a later change to the role (narrowing it, adding volume permissions) can tell which users must update their stack. A does not record that version when an account is linked, so the AWS connector leaves the column empty today (open in `.claude/findings/NOW.md` § The order, stage 5). A function block's code is uploaded through B, not through A's code-upload layout. There is one zip per organization, diagram and function block, and every deployment of the diagram uses it (`backend/adapter/README.md` § Function code). B checks the zip when it arrives (a .zip of at most 50 MB with no path that leaves its folder) and records its SHA-256. At each run, the Terraform runner stages that zip into the run's folder under a name the runner chooses, and checks it against the recorded hash. The rendered `aws_lambda_function` points at it, with `source_code_hash` from the recorded hash. A function with no upload gets Clutter's sample code, zipped in the run, which answers every request with a small JSON message (`backend/adapter/README.md` § Function code). The function block's `handler` field names its entry point. The runtime stays a deployment setting. Server setup at first boot is the VM block's `startup_script`, a shell script the user writes (at most 16 KB). It is cloud-init on both clouds: the EC2 instance's `user_data_base64` here, and the Nova server's `user_data` on OpenStack. It reaches the rendered Terraform only as base64. It replaces A's Ansible over SSM for B. When the AWS connector covers all five of A's resources and server setup, A's own AWS flow can retire. That is Option 3, reached piece by piece.
+AWS is in both systems (ADR-014). A stays as it is and keeps serving the AWS diagrams users already have. B gets an AWS connector so a new diagram can deploy to AWS as one of its deployments.
 
-**Safe defaults.** B's own files add what A's templates lack, on every deployment. Every EC2 instance has an encrypted root disk, requires IMDSv2 and carries its block's name as its `Name` tag. Every function logs to its own log group, kept 30 days, and may write only there. Every function gets the names and region of the buckets and tables it reads as environment variables, under the names a VM gets them. Every table has point-in-time recovery on. Every bucket refuses requests not made over TLS, and its "Delete files on destroy" field (off by default) lets destroy empty it. Every HTTP API's stage is throttled to 100 requests a second, with bursts of 200, and with `cors` on it answers a browser's preflight on each route. A VM that gets another VM's address may reach it: the target gets a security group that lets in the source's private address, on both clouds, and two VMs whose networks cannot reach each other are a problem before anything runs. A VM's optional SSH public key (`ssh-ed25519`, or `ssh-rsa` of at least 2048 bits) becomes a key pair on both clouds. A new firewall lets nothing in until the user lists what may. On OpenStack, every network, subnet, router, security group and floating IP carries the tags `ManagedBy=Clutter` and `ClutterDeployment=<id>`, and every server and volume the same as metadata. Block names are unique across a deployment's blocks on both clouds (`connectors.DuplicateNames`).
+**Templates.**
 
-What the customer role allows is narrow but not airtight. The role (`client_side_terraform_deployer_role.yaml`, `RoleTemplateVersion` 10, its permissions in six managed policies, ADR-027) lists named actions only, and it may change or delete only what Clutter created. Every resource a template renders carries the tag `ManagedBy` from its create request, through the provider's default tags (`Clutter`, or `Ansible` on A's instances). Every create requires that tag in the request, and every change or delete requires it on the resource. No statement lets the role add it to a resource that lacks it. So the account owner's own instances, networks, functions, tables and REST APIs stay out of reach, and so does an SSM shell on their instances. Every role, instance profile and user Clutter creates sits under the `/clutter/` path and is tagged `ManagedBy = Clutter`. Each role carries the roles' boundary the stack creates (`ClutterPermissionsBoundary-<UniqueId>`). It denies all of IAM and allows only Lambda logs, the reads that "reads" edges grant, and the SSM agent's actions. Each user, a scoped key of a split deployment (§ Split deployments), carries the users' boundary (`ClutterUserBoundary-<UniqueId>`). It denies all of IAM and allows reads only on buckets and tables whose names start with a deployment prefix. A's deployer and B's AWS connector derive the boundaries' ARNs from the role's ARN.
+- The connector reuses A's customer template files (`*.tf.tmpl`), changed only by stage 1, so the AWS Terraform is not written twice.
+- B owns everything around them: the variable maps from building blocks, validation and escaping, the edge-to-IAM step, and API Gateway routes and integrations.
+- B also owns small override files where a template lacks an input (the EC2 template has no subnet or security group input).
+- A test renders A's files from disk and runs `terraform validate`, so a change to A's templates that breaks B fails in CI.
+- A's template-loading code sits in `generic/tftemplate` so both can import it, and a golden test keeps A's output byte-identical.
+- B has its own edge-to-IAM step on building blocks, because A's is typed on A's internal resource types.
+- It adds what A lacks (network, firewall, volume) as new templates.
+
+**The role link is shared.**
+
+- The CloudFormation template's trust policy lists A's runner role and B's runner role, and B reads A's role table as AWS connections.
+- Each connection has a column for the version of the role template it was created from. So a later change to the role (narrowing it, adding volume permissions) can tell which users must update their stack.
+- A does not record that version when an account is linked, so the AWS connector leaves the column empty (open in `.claude/findings/NOW.md` § The order, stage 5).
+
+**Function code.**
+
+- A function block's code is uploaded through B, not through A's code-upload layout. There is one zip per organization, diagram and function block, and every deployment of the diagram uses it (`backend/adapter/README.md` § Function code).
+- B checks the zip when it arrives (a .zip of at most 50 MB with no path that leaves its folder) and records its SHA-256.
+- At each run, the Terraform runner stages that zip into the run's folder under a name the runner chooses, and checks it against the recorded hash. The rendered `aws_lambda_function` points at it, with `source_code_hash` from the recorded hash.
+- A function with no upload gets Clutter's sample code, zipped in the run, which answers every request with a small JSON message.
+- The function block's `handler` field names its entry point. The runtime stays a deployment setting.
+
+**Server setup.**
+
+- Server setup at first boot is the VM block's `startup_script`, a shell script the user writes (at most 16 KB).
+- It is cloud-init on both clouds: the EC2 instance's `user_data_base64` here, and the Nova server's `user_data` on OpenStack. It reaches the rendered Terraform only as base64.
+- It replaces A's Ansible over SSM for B.
+
+When the AWS connector covers all five of A's resources and server setup, A's own AWS flow can retire. That is Option 3, reached piece by piece.
+
+**Safe defaults.** B's own files add what A's templates lack, on every deployment:
+
+- Every EC2 instance has an encrypted root disk, requires IMDSv2 and carries its block's name as its `Name` tag.
+- Every function logs to its own log group, kept 30 days, and may write only there. Every function gets the names and region of the buckets and tables it reads as environment variables, under the names a VM gets them.
+- Every table has point-in-time recovery on.
+- Every bucket refuses requests not made over TLS, and its "Delete files on destroy" field (off by default) lets destroy empty it.
+- Every HTTP API's stage is throttled to 100 requests a second, with bursts of 200. With `cors` on, it answers a browser's preflight on each route.
+- A VM that gets another VM's address may reach it: the target gets a security group that lets in the source's private address, on both clouds. Two VMs whose networks cannot reach each other are a problem before anything runs.
+- A VM's optional SSH public key (`ssh-ed25519`, or `ssh-rsa` of at least 2048 bits) becomes a key pair on both clouds.
+- A new firewall lets nothing in until the user lists what may.
+- On OpenStack, every network, subnet, router, security group and floating IP carries the tags `ManagedBy=Clutter` and `ClutterDeployment=<id>`, and every server and volume the same as metadata.
+- Block names are unique across a deployment's blocks on both clouds (`connectors.DuplicateNames`).
+
+**The customer role.** What it allows is narrow but not airtight. The role (`client_side_terraform_deployer_role.yaml`, `RoleTemplateVersion` 10, its permissions in six managed policies, ADR-027) lists named actions only, and it may change or delete only what Clutter created:
+
+- Every resource a template renders carries the tag `ManagedBy` from its create request, through the provider's default tags (`Clutter`, or `Ansible` on A's instances).
+- Every create requires that tag in the request, and every change or delete requires it on the resource. No statement lets the role add it to a resource that lacks it.
+- So the account owner's own instances, networks, functions, tables and REST APIs stay out of reach, and so does an SSM shell on their instances.
+- Every role, instance profile and user Clutter creates sits under the `/clutter/` path and is tagged `ManagedBy = Clutter`.
+- Each role carries the roles' boundary the stack creates (`ClutterPermissionsBoundary-<UniqueId>`). It denies all of IAM and allows only Lambda logs, the reads that "reads" edges grant, and the SSM agent's actions.
+- Each user, a scoped key of a split deployment (§ Split deployments), carries the users' boundary (`ClutterUserBoundary-<UniqueId>`). It denies all of IAM and allows reads only on buckets and tables whose names start with a deployment prefix.
+- A's deployer and B's AWS connector derive the boundaries' ARNs from the role's ARN.
 
 These limits remain:
 
@@ -430,7 +543,7 @@ These limits remain:
 - A new instance may use any subnet, security group, key pair or free network interface in the account. So the role can launch a tagged instance into the owner's network.
 - API Gateway gives method responses and integration responses no inherited tag, so the role can change them on any REST API. Such a change goes live only with a new deployment, which needs the tag.
 - An instance the owner tagged `ManagedBy = Ansible` themselves looks like Clutter's, so the role can change it and run commands on it over SSM.
-- DynamoDB checks tags only where its attribute-based access control is on in the account. With DynamoDB's defaults it works: on 2026-11-20 the examples created, changed and deleted their tables in a real account with no setting changed. An account that has turned it off would refuse Clutter's table changes.
+- DynamoDB checks tags only where its attribute-based access control is on in the account. With DynamoDB's defaults it works: the examples create, change and delete their tables in a real account with no setting changed. An account that has turned it off would refuse Clutter's table changes.
 - The roles' boundary still allows reading every table and every object. So a function Clutter creates can read the owner's data and send it out. Scoping it as the users' boundary is scoped needs A's names to carry a deployment prefix.
 - A role being created cannot have its trust policy restricted by any IAM condition. So whoever holds the customer role can create a bounded `/clutter/` role that another account may assume. That account then reaches what the roles' boundary allows.
 - A boundary does not limit resource-based policies, such as a bucket policy that names a Clutter role.
@@ -442,14 +555,14 @@ The pages, in the order a new user meets them:
 
 | Page | Today (A) | After B |
 | --- | --- | --- |
-| Sign in with Google | exists | the client's own Google client |
-| Create an organization, dashboard | exists | unchanged |
-| Connections | an AWS-only account page | one page for every cloud (§ The Connections page) |
-| Project, then diagram | exists | unchanged |
-| Editor: palette, canvas, config panel | AWS's five resources, lists hard-coded in three places | building blocks from the manifests; per-target settings on each deployment |
-| Preview Terraform | exists for AWS | one tab per deployment |
-| Deploy panel: deploy, destroy, live status, logs, outputs | AWS only | every deployment, with its compatibility line |
-| Run history | partly | per deployment |
+| Sign in with Google | exists | the client's own Google client, on one page for sign-in and sign-up |
+| Create an organization, dashboard | exists | onboarding in four short steps (experience, team name, first cloud, a starting example) that end in the editor; then Projects, with a "Getting started" checklist and "Continue where you left off" |
+| Connections | an AWS-only account page | one page and one flow for every cloud, also in a side sheet inside the editor (§ The Connections page) |
+| Project, then diagram | exists | each project has Diagrams, Deployments (every deployment of its diagrams, with its state) and Settings |
+| Editor: palette, canvas, config panel | AWS's five resources, lists hard-coded in three places | building blocks from the manifests; per-target settings on each deployment; "View as" each cloud; a "Get to your first deploy" checklist; a read-only view on phones |
+| Preview Terraform | exists for AWS | a code panel at the bottom of the editor, per deployment |
+| Deploy panel: deploy, destroy, live status, logs, outputs | AWS only | every deployment, with its compatibility line, one named state (Not deployed, Live, Failed, Destroyed and the running states) and one next action (Deploy, Update, Up to date, Deploy again, Destroy again after a failed destroy, or Show log while a run is going), and "What was built" |
+| Run history | partly | per deployment: the latest run, the last successful deploy and the runs seen since the page opened |
 | Members and roles | a page with the member count and the signed-in member | real invites (needed before live collaboration) |
 | Live collaboration | not built | built by the other team on the stable diagram document (ADR-013) |
 | Import from AWS | not built | read-only discovery that becomes a diagram (a should-have in the team's ENEL 500 Design Roadmap) |

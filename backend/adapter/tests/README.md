@@ -4,7 +4,7 @@ Five of the team's test types test System B (the adapter layer). Their Go tests 
 
 ## Run them
 
-From the repo root, in Linux or WSL. Each script writes `test-suites/results/<suite>.json`:
+From the repo root, on macOS, Linux or WSL. Each script writes `test-suites/results/<suite>.json`:
 
 ```sh
 bash backend/adapter/tests/scripts/unit.sh

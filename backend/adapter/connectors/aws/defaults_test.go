@@ -184,7 +184,8 @@ func TestVMToVMOpensAPath(t *testing.T) {
 	group := p + "_worker_peers"
 	for _, want := range []string{
 		`resource "aws_security_group" "` + group + `"`,
-		`name        = "` + p + `-worker.peers"`,
+		`name        = "` + p + `.worker.peers"`,
+		`Name = "` + p + `-worker.peers"`,
 		`vpc_id      = aws_vpc.` + p + `_net1.id`,
 		`cidr_ipv4         = "${aws_instance.` + p + `_web.private_ip}/32"`,
 		`replace_triggered_by = [aws_instance.` + p + `_web.id]`,
@@ -280,7 +281,7 @@ func TestSSHKeyBecomesAKeyPair(t *testing.T) {
 	g.Blocks["web"].Fields[connectors.FieldSSHKey] = testSSHKey + " me@laptop\n"
 	files := renderFor(t, c, g, d)
 	kp := resourceBlock(string(files["defaults.tf"]), "aws_key_pair", p+"_web")
-	if !strings.Contains(kp, `key_name   = "`+p+`-web"`) || !strings.Contains(kp, `public_key = sensitive("`+testSSHKey+`")`) || strings.Contains(kp, "laptop") {
+	if !strings.Contains(kp, `key_name   = "`+p+`.web.key"`) || !strings.Contains(kp, `Name = "`+p+`-web"`) || !strings.Contains(kp, `public_key = sensitive("`+testSSHKey+`")`) || strings.Contains(kp, "laptop") {
 		t.Errorf("key pair:\n%s", kp)
 	}
 	if !strings.Contains(resourceBlock(string(files["override.tf"]), "aws_instance", p+"_web"), "key_name                    = aws_key_pair."+p+"_web.key_name") {

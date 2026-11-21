@@ -107,6 +107,9 @@ func TestPeersAndTags(t *testing.T) {
 		`resource "openstack_compute_keypair_v2" "b_web"`,
 		`public_key = sensitive("` + testSSHKey + `")`,
 		"key_pair        = openstack_compute_keypair_v2.b_web.name",
+		// Named by node id, so renaming the VM does not replace the server,
+		// with no dot: Nova refuses one in a key pair name.
+		`_web_key"`,
 	} {
 		if !strings.Contains(main, want) {
 			t.Errorf("main.tf lacks %q", want)

@@ -224,6 +224,23 @@ func TestASplitApplyRunsTargetsFirstAndHandsTheKeyOn(t *testing.T) {
 	}
 }
 
+// Each cloud of a split apply names its own blocks after its apply line, so
+// "What was built" reads every block the deployment holds, each once.
+func TestASplitApplyNamesEachCloudsBlocks(t *testing.T) {
+	j, _, _ := splitJob(connectors.ActionApply, DeploymentNew)
+	_, log := runSplit(t, spyOf(j), j)
+	for _, line := range []string{"Built: files bucket files\n", "Built: vm vm web\n"} {
+		if n := strings.Count(log, line); n != 1 {
+			t.Fatalf("%q appears %d times in %s", line, n, log)
+		}
+	}
+	// The bucket's cloud runs first, so its line comes first, after its own apply line.
+	files, vm := strings.Index(log, "Built: files"), strings.Index(log, "Built: vm")
+	if first := strings.Index(log, "apply complete"); first < 0 || first > files || files > vm {
+		t.Fatalf("the Built lines are out of place: %s", log)
+	}
+}
+
 func TestEachCloudGetsOnlyItsOwnCredentials(t *testing.T) {
 	for _, a := range []connectors.Action{connectors.ActionPlan, connectors.ActionApply, connectors.ActionDestroy} {
 		j, _, _ := splitJob(a, DeploymentLive)

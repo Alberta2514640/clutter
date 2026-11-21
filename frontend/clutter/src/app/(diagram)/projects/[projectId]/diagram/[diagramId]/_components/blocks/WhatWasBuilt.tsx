@@ -1,15 +1,16 @@
 "use client";
 
 import { adapterErrorMessage } from "@/lib/adapterApi";
-import { blockLook } from "@/lib/features/catalog/display";
+import { blockLook, kindIconClass } from "@/lib/features/catalog/display";
 import { entryFor } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { BlockRef } from "@/lib/features/deployments/compatibility";
 import { useRunLogs } from "@/lib/features/deployments/hooks";
-import { leadLines, parseResults, resultRows, sampleNote, simulatedNote, type LeadLine } from "@/lib/features/deployments/results";
-import type { DeploymentListItem, Run } from "@/lib/features/deployments/types";
-import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { builtBlocks, leadLines, parseResults, resultRows, sampleNote, simulatedNote, type LeadLine } from "@/lib/features/deployments/results";
+import { diagramNotDeployed, type DeploymentListItem, type Run } from "@/lib/features/deployments/types";
+import CopyButton, { SMALL_ACTION } from "@/components/common/CopyButton";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
+import { useState } from "react";
 import KindIcon from "./KindIcon";
 
 type Props = {
@@ -19,6 +20,8 @@ type Props = {
   // The deployment's last successful apply, which built what is listed.
   run: Run;
   catalog: CatalogEntry[];
+  // The saved diagram's blocks: the order to list built blocks in, and what
+  // to list for a run from before B named the blocks it built.
   blocks: BlockRef[];
   blockTitle: (kind: string) => string;
   // The servers the diagram makes a website (results.servesWeb).
@@ -32,8 +35,9 @@ type Props = {
 // gets no line to open, and one sentence says why. Each block, what it
 // became on its cloud and every value the apply returned sit behind Details.
 // It reads them from the run's log, where B writes them
-// (deployments/results.ts).
-export default function WhatWasBuilt({ token, organizationId, item, run, catalog, blocks, blockTitle, webServers }: Props) {
+// (deployments/results.ts): the blocks and their names as that apply built
+// them, so a rename saved since does not show here until it is deployed.
+export default function WhatWasBuilt({ token, organizationId, item, run, catalog, blocks: saved, blockTitle, webServers }: Props) {
   const logQ = useRunLogs(token, organizationId, run);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const manifestOf = (connector: string) => entryFor(catalog, connector)?.manifest ?? null;
@@ -46,16 +50,24 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
 
   if (logQ.isLoading) {
     return (
-      <p role="status" className="flex items-center gap-1.5 text-xs text-slate-400">
+      <p role="status" className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         Reading what was built…
       </p>
     );
   }
-  if (logQ.isError) return <p className="text-xs text-red-300">Could not read what was built: {adapterErrorMessage(logQ.error)}</p>;
+  if (logQ.isError) return <p className="text-danger text-xs">Could not read what was built: {adapterErrorMessage(logQ.error)}</p>;
 
-  const excluded = item.exclusions ?? [];
-  const results = parseResults(logQ.data ?? "");
+  const log = logQ.data ?? "";
+  // The blocks the apply built, as it named them. A run from before B wrote
+  // them lists the saved blocks, less those left out, and says so once the
+  // diagram has changed since.
+  const asBuilt = builtBlocks(log, saved);
+  const blocks = asBuilt ?? saved;
+  const excluded = asBuilt ? [] : (item.exclusions ?? []);
+  // Names change only with the diagram, not with the deployment's settings.
+  const namesAsSaved = !asBuilt && diagramNotDeployed(item);
+  const results = parseResults(log);
   const lead = leadLines(results, blocks, webServers, excluded);
   const sample = sampleNote(results, blocks, lead.some((l) => l.kind === "api"), excluded);
   const rows = resultRows(results, blocks, became, excluded);
@@ -65,12 +77,18 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
   const when = run.finished_at ? new Date(run.finished_at).toLocaleString() : null;
 
   return (
-    <section aria-label="What was built" data-testid="what-was-built" className="space-y-2 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-2.5">
-      <p data-testid="built-by-last-deploy" className="text-[11px] text-slate-400">
+    <section aria-label="What was built" data-testid="what-was-built" className="border-success/25 bg-success/5 space-y-2 rounded-lg border p-3">
+      <p className="text-sm font-semibold">What was built</p>
+      <p data-testid="built-by-last-deploy" className="text-muted-foreground text-[11px]">
         From the last deploy{when ? `, ${when}` : ""}
       </p>
+      {namesAsSaved && (
+        <p data-testid="names-as-saved" className="text-muted-foreground text-[11px]">
+          The diagram changed since this deploy. Names show as saved now.
+        </p>
+      )}
       {simulated.map((s) => (
-        <p key={s} data-testid="simulated-note" className="text-xs text-amber-200">
+        <p key={s} data-testid="simulated-note" className="text-warning text-xs">
           {s}
         </p>
       ))}
@@ -79,20 +97,20 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
           {lead.map((l) => (
             <li key={l.id} data-testid="result-line" className="space-y-0.5">
               <ResultLine line={l} />
-              {l.kind === "api" && sample && <p className="text-[11px] text-slate-400">{sample}</p>}
+              {l.kind === "api" && sample && <p className="text-muted-foreground text-[11px]">{sample}</p>}
             </li>
           ))}
         </ul>
       )}
-      {sample && !lead.some((l) => l.kind === "api") && <p className="text-[11px] text-slate-400">{sample}</p>}
+      {sample && !lead.some((l) => l.kind === "api") && <p className="text-muted-foreground text-[11px]">{sample}</p>}
       <div>
         {(lead.length > 0 || sample) && (
           <button
             type="button"
             aria-expanded={detailsOpen}
             onClick={() => setDetailsOpen((o) => !o)}
-            className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white">
-            {detailsOpen ? <ChevronDown className="h-3 w-3" aria-hidden /> : <ChevronRight className="h-3 w-3" aria-hidden />}
+            className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1 text-xs">
+            {detailsOpen ? <ChevronDown className="size-3" aria-hidden /> : <ChevronRight className="size-3" aria-hidden />}
             Details
           </button>
         )}
@@ -101,14 +119,14 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
             {rows.map((r) => (
               <li key={r.id} data-testid="built-block" className="text-xs">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <KindIcon kind={r.kind} className="h-3.5 w-3.5 shrink-0 text-teal-300" />
-                  <span className="truncate font-medium text-slate-100">{r.name}</span>
-                  <span className="truncate text-slate-500">{r.became}</span>
+                  <KindIcon kind={r.kind} className={`${kindIconClass(r.kind)} size-3.5 shrink-0`} />
+                  <span className="truncate font-medium">{r.name}</span>
+                  <span className="text-muted-foreground truncate">{r.became}</span>
                 </div>
                 {r.items.map((i) => (
                   <div key={i.label} className="flex min-w-0 items-baseline gap-2 pl-5 text-[11px]">
-                    <span className="shrink-0 text-slate-500">{i.label}</span>
-                    <span data-testid="result-value" className="min-w-0 select-all break-all font-mono text-slate-200">
+                    <span className="text-muted-foreground shrink-0">{i.label}</span>
+                    <span data-testid="result-value" className="min-w-0 font-mono break-all select-all">
                       {i.value}
                     </span>
                   </div>
@@ -122,56 +140,25 @@ export default function WhatWasBuilt({ token, organizationId, item, run, catalog
   );
 }
 
-const linkClass =
-  "inline-flex shrink-0 items-center gap-1 rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-200 hover:border-teal-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300";
-
 // One lead line: its label, the full address (never cut: it wraps, and its
 // title holds it too), and its actions.
 function ResultLine({ line }: { line: LeadLine }) {
   const value = line.kind === "server" ? line.address : line.url;
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span className="shrink-0 font-medium text-emerald-200">{line.label}:</span>
-      <span title={value} className="min-w-0 break-all font-mono text-slate-100">
+      <span className="text-success shrink-0 font-medium">{line.label}:</span>
+      <span title={value} className="min-w-0 font-mono break-all">
         {value}
       </span>
       <span className="flex shrink-0 items-center gap-1">
-        {line.kind !== "website" && <CopyButton value={value} label={line.label} />}
+        {line.kind !== "website" && <CopyButton value={value} label={line.label.toLowerCase()} />}
         {line.kind !== "server" && (
-          <a href={line.url} target="_blank" rel="noopener noreferrer" data-testid="result-link" aria-label={`Open ${line.label.toLowerCase()}`} className={linkClass}>
-            <ExternalLink className="h-3 w-3" aria-hidden />
+          <a href={line.url} target="_blank" rel="noopener noreferrer" data-testid="result-link" aria-label={`Open ${line.label.toLowerCase()}`} className={SMALL_ACTION}>
+            <ExternalLink className="size-3" aria-hidden />
             Open
           </a>
         )}
       </span>
     </div>
-  );
-}
-
-// CopyButton puts value on the clipboard and says so for a moment. A browser
-// that refuses the clipboard gets a plain sentence; the value stays on screen
-// to select by hand.
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
-  useEffect(() => {
-    if (state === "idle") return;
-    const t = window.setTimeout(() => setState("idle"), 2000);
-    return () => window.clearTimeout(t);
-  }, [state]);
-  return (
-    <button
-      type="button"
-      aria-label={`Copy ${label.toLowerCase()}`}
-      onClick={() => {
-        if (!navigator.clipboard) return setState("failed");
-        navigator.clipboard.writeText(value).then(
-          () => setState("copied"),
-          () => setState("failed"),
-        );
-      }}
-      className={linkClass}>
-      {state === "copied" ? <Check className="h-3 w-3" aria-hidden /> : <Copy className="h-3 w-3" aria-hidden />}
-      <span aria-live="polite">{state === "copied" ? "Copied" : state === "failed" ? "Select it to copy" : "Copy"}</span>
-    </button>
   );
 }

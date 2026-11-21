@@ -7,9 +7,15 @@
 //   Result: web private_address 10.0.0.5
 //
 // (jobs.ResultLinePrefix in backend/adapter/internal/jobs; a split run writes
-// them after each cloud's "<cloud>: apply complete, ..." line.) Only lines
-// after one of B's apply lines count, so nothing earlier in the log can pass
-// for a result.
+// them after each cloud's "<cloud>: apply complete, ..." line.) Before its
+// results, B names each block that apply's deployment holds, as it built it:
+//
+//   Built: web vm web
+//
+// (jobs.BuiltLinePrefix), so "What was built" never takes a name the diagram
+// was given after the deploy. A run from before those lines has none.
+// Only lines after one of B's apply lines count, so nothing earlier in the
+// log can pass for a result or a block.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
 import { joinAnd } from "../../text";
@@ -40,6 +46,34 @@ export function parseResults(log: string): Map<string, BlockResult[]> {
     out.set(id, [...list, { name, value }]);
   }
   return out;
+}
+
+// The block kinds and names follow B's own rules (connectors.BlockKind and
+// the capability check's name pattern); the id is a node id.
+const BUILT_LINE = /^Built: ([A-Za-z0-9_-]{1,64}) ([a-z][a-z0-9_]{0,39}) ([a-z][a-z0-9_-]{0,63})$/;
+
+// builtBlocks is the blocks a run's apply built, as it built them: each
+// "Built:" line's id, kind and name, listed in the order of the saved
+// diagram's blocks, then any the diagram no longer holds in log order. It is
+// null for a log with no such line (a run from before B wrote them), and the
+// caller then falls back to the saved diagram's blocks.
+export function builtBlocks(log: string, saved: BlockRef[]): BlockRef[] | null {
+  const byId = new Map<string, BlockRef>();
+  let applied = false;
+  for (const raw of log.split("\n")) {
+    const line = raw.trim();
+    if (APPLY_LINE.test(line)) {
+      applied = true;
+      continue;
+    }
+    if (!applied) continue;
+    const m = line.match(BUILT_LINE);
+    if (m) byId.set(m[1], { id: m[1], kind: m[2], name: m[3] });
+  }
+  if (byId.size === 0) return null;
+  const order = new Map(saved.map((b, i) => [b.id, i]));
+  const rank = (b: BlockRef) => order.get(b.id) ?? order.size;
+  return [...byId.values()].map((b, i) => ({ b, i })).sort((x, y) => rank(x.b) - rank(y.b) || x.i - y.i).map(({ b }) => b);
 }
 
 // What a person reads for each result, in the order they are listed. The
@@ -97,6 +131,43 @@ const rank = (name: string) => {
   const i = ORDER.indexOf(name);
   return i < 0 ? ORDER.length : i;
 };
+
+// What one result says in the shown log: "public address 203.0.113.9".
+function resultText(name: string, value: string): string {
+  if (name === CODE) return value === SAMPLE ? "answers with a sample until you upload your code" : `code ${value}`;
+  if (name === SIMULATED) return "simulated; it does not boot";
+  const label = LABELS[name] ?? name.replaceAll("_", " ");
+  return `${label.charAt(0).toLowerCase()}${label.slice(1)} ${value}`;
+}
+
+// readableLog is a run's log as the deploy panel shows, copies and downloads
+// it. B's "Built:" and "Result:" lines, which parseResults and builtBlocks
+// read back, become plain lines that name each block as the diagram does
+// ("Built server (VM)", "server: public address 203.0.113.9"). kindTitle
+// names a block kind ("VM"). Every other line stays as it was written.
+export function readableLog(log: string, kindTitle: (kind: string) => string = (k) => k): string {
+  const names = new Map<string, string>();
+  let applied = false;
+  return log
+    .split("\n")
+    .map((raw) => {
+      const line = raw.trim();
+      if (APPLY_LINE.test(line)) {
+        applied = true;
+        return raw;
+      }
+      if (!applied) return raw;
+      const built = line.match(BUILT_LINE);
+      if (built) {
+        names.set(built[1], built[3]);
+        return `Built ${built[3]} (${kindTitle(built[2])})`;
+      }
+      const result = line.match(RESULT_LINE);
+      if (result) return `${names.get(result[1]) ?? result[1]}: ${resultText(result[2], result[3])}`;
+      return raw;
+    })
+    .join("\n");
+}
 
 // One plain line per result a person can use, before any detail: a public
 // server's address (a website when it serves the web on port 80), a web API's

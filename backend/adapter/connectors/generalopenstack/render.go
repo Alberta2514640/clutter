@@ -46,6 +46,26 @@ const (
 // VM's address reach it. It starts with p_, so it is never a block's address.
 func peerAddr(nodeID string) string { return "p_" + nodeID }
 
+// groupName is a security group's name in the cloud, which a server lists its
+// groups by. It comes from the node id, not the block's name: renaming a group
+// a server holds makes Nova add the same group to the server's port a second
+// time, which Neutron refuses ("Duplicate items in the list"). The dot keeps
+// it apart from the names groups had before (prefix-name, prefix-name.peers),
+// since neither a block name nor a node id holds one. The block's name goes in
+// the description.
+func groupName(prefix, nodeID, kind string) string { return prefix + "." + nodeID + "." + kind }
+
+// keyPairName is a key pair's name in the cloud, from the node id for the
+// same reason as groupName. Nova refuses a dot in a key pair name (only
+// letters, digits, "_", "-" and spaces), so it joins with "_", which a block
+// name never holds, so it cannot meet a name a key pair had before.
+func keyPairName(prefix, nodeID string) string { return prefix + "_" + nodeID + "_key" }
+
+// keepGroupName is the lifecycle of every security group. A group a
+// deployment made before groupName keeps its old name, for the same reason a
+// rename is unsafe; a new group's name never changes anyway.
+func keepGroupName(r *body) { r.nested("lifecycle").set("ignore_changes", "[name]") }
+
 // tags marks a Neutron resource as the deployment's, as the AWS provider's
 // default tags do there; metadata does the same on a server or a volume.
 func (m model) tags() string {
@@ -149,8 +169,10 @@ func renderMain(m model) []byte {
 	for _, fw := range m.firewalls {
 		a := addr(fw.id)
 		r := f.block("resource", tSecgroup, a)
-		r.set("name", str(fw.name))
+		r.set("name", str(groupName(m.prefix, fw.id, "firewall")))
+		r.set("description", str(fw.name))
 		r.set("tags", m.tags())
+		keepGroupName(r)
 		for _, rl := range fw.rules {
 			r := f.block("resource", tSecgroupRule, a+ruleSuffix(rl))
 			r.set("security_group_id", ref(tSecgroup, a, "id"))
@@ -178,9 +200,10 @@ func renderMain(m model) []byte {
 		}
 		a := peerAddr(v.id)
 		r := f.block("resource", tSecgroup, a)
-		// A block name holds no dot, so this name is never a firewall's.
-		r.set("name", str(v.name+".peers"))
+		r.set("name", str(groupName(m.prefix, v.id, "peers")))
+		r.set("description", str("The VMs that get "+v.name+"'s address may reach it"))
 		r.set("tags", m.tags())
+		keepGroupName(r)
 		for _, src := range v.reachedBy {
 			for i := range byID[src].networks {
 				r := f.block("resource", tSecgroupRule, fmt.Sprintf("%s_from_%s_%d", a, src, i))
@@ -196,10 +219,15 @@ func renderMain(m model) []byte {
 		if v.sshKey == "" {
 			continue
 		}
-		// Marked sensitive only to keep the key out of the run's log.
+		// Marked sensitive only to keep the key out of the run's log. The key
+		// pair's name comes from the node id, as a group's does (groupName):
+		// a server names its key pair, and a new key_pair value replaces the
+		// server, so renaming the VM must not rename the key pair. A key pair
+		// made before keeps its old name (keepGroupName's lifecycle).
 		r := f.block("resource", tKeypair, addr(v.id))
-		r.set("name", str(v.name))
+		r.set("name", str(keyPairName(m.prefix, v.id)))
 		r.set("public_key", "sensitive("+str(v.sshKey)+")")
+		keepGroupName(r)
 	}
 
 	for _, v := range m.vms {
@@ -240,12 +268,18 @@ func renderMain(m model) []byte {
 			r.set("security_groups", list(groups))
 		}
 		subnets := make([]string, len(v.networks))
+		subnetIDs := make([]string, len(v.networks))
 		for i, id := range v.networks {
 			r.nested("network").set("uuid", ref(tNetwork, addr(id), "id"))
 			subnets[i] = ref(tSubnet, addr(id))
+			subnetIDs[i] = ref(tSubnet, addr(id), "id")
 		}
 		// The subnet must exist before Nova asks Neutron for the VM's port.
 		r.set("depends_on", list(subnets))
+		// A changed address range replaces the subnet, which Neutron cannot
+		// delete while the VM's port holds an address on it; so the VM is
+		// replaced with it. Only a new id triggers this, not a rename.
+		r.nested("lifecycle").set("replace_triggered_by", list(subnetIDs))
 
 		if v.public {
 			r := f.block("resource", tFloatingIP, a)
@@ -279,6 +313,10 @@ func renderMain(m model) []byte {
 		r := f.block("resource", tVolume, a)
 		r.set("name", str(vol.name))
 		r.set("size", strconv.FormatInt(vol.sizeGB, 10))
+		// Lets a bigger size extend the volume while it is attached (Cinder
+		// API 3.42 and a driver that supports it); without it the provider
+		// refuses to grow an attached volume.
+		r.set("enable_online_resize", "true")
 		r.set("metadata", m.metadata())
 		if vol.vm != "" {
 			r := f.block("resource", tVolumeAttach, a)

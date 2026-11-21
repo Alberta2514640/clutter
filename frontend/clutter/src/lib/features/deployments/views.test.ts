@@ -144,7 +144,9 @@ describe("which blocks dim in which view", () => {
       status: null,
       statusDetail: "AWS builds it as S3.",
       badges: [],
+      viewCloud: { connector: "aws", title: views.find((v) => v.connector === "aws")!.title, shortName: "AWS", logoSrc: views.find((v) => v.connector === "aws")!.logoSrc },
     });
+    expect(nodeLook(BLOCKS_VIEW, views, bucket, "Bucket").viewCloud).toBeNull();
     expect(nodeLook("general-openstack", views, bucket, "Bucket")).toMatchObject({ subtitle: "Bucket", iconSrc: null, dimmed: true, status: "Not on OpenStack" });
   });
 

@@ -6,20 +6,22 @@ import {
   columnHeight,
   defaultBlockName,
   detachFrom,
+  fitBoxToChildren,
   NETWORK_NODE_TYPE,
   placeIn,
   emptyBlocksDocument,
+  freeSpot,
   fromBlocksDocument,
   isBlocksDocument,
-  networksWithPrivateVM,
+  networksWithVM,
   newBlockId,
   NODE_ID_PATTERN,
   toBlocksDocument,
   type BlockNode,
 } from "./blocksDocument";
 
-describe("networksWithPrivateVM", () => {
-  it("names the networks a VM that is not public runs in", () => {
+describe("networksWithVM", () => {
+  it("names the networks a VM runs in, public or not", () => {
     const n = (id: string, type: string, fields: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data: { name: id, fields } });
     const doc = {
       engine: "blocks" as const,
@@ -30,8 +32,8 @@ describe("networksWithPrivateVM", () => {
         { id: "e3", source: "bare", target: "net-b" },
       ],
     };
-    expect([...networksWithPrivateVM(doc)]).toEqual(["net-b"]);
-    expect(networksWithPrivateVM({ ...doc, edges: [doc.edges[0]] }).size).toBe(0);
+    expect([...networksWithVM(doc)].sort()).toEqual(["net-a", "net-b"]);
+    expect(networksWithVM({ ...doc, edges: [] }).size).toBe(0);
   });
 });
 
@@ -206,9 +208,22 @@ describe("networks as boxes", () => {
     expect(next.find((n) => n.id === "app-net")).toMatchObject({ width: 255 + BOX.blockW + 24, height: 155 + BOX.blockH + BOX.padBottom });
     expect(toBlocksDocument(next, []).edges).toContainEqual({ id: "db-in-app-net", source: "db", target: "app-net" });
 
-    // Dropped on top of the VM already in the box, it goes below it instead.
+    // Dropped on top of the VM already in the box, it moves to a free spot
+    // inside the box's edges, and the box grows to hold it.
     const onTop = placeIn([...nodes, extra], "db", "app-net", { x: 340, y: 50 });
-    expect(onTop.find((n) => n.id === "db")?.position).toEqual({ x: BOX.padX, y: 50 + BOX.row });
+    const moved = onTop.find((n) => n.id === "db")!;
+    const sibling = onTop.find((n) => n.id === "web")!;
+    const overlaps =
+      moved.position.x < sibling.position.x + BOX.blockW &&
+      moved.position.x + BOX.blockW > sibling.position.x &&
+      moved.position.y < sibling.position.y + BOX.blockH &&
+      moved.position.y + BOX.blockH > sibling.position.y;
+    expect(overlaps).toBe(false);
+    expect(moved.position.x).toBeGreaterThanOrEqual(BOX.edgeLeft);
+    expect(moved.position.y).toBeGreaterThanOrEqual(BOX.edgeTop);
+    const grown = onTop.find((n) => n.id === "app-net")!;
+    expect(grown.width).toBeGreaterThanOrEqual(moved.position.x + BOX.blockW + BOX.edgeRight);
+    expect(grown.height).toBeGreaterThanOrEqual(moved.position.y + BOX.blockH + BOX.padBottom);
 
     // Moved out, it is on the canvas where it was dropped, and its edge is gone.
     next = placeIn(next, "web", null, { x: 700, y: 20 });
@@ -224,6 +239,42 @@ describe("networks as boxes", () => {
     expect(left.find((n) => n.id === "web")).toMatchObject({ position: { x: 340, y: 50 } });
     expect(left.find((n) => n.id === "web")?.parentId).toBeUndefined();
     expect(toBlocksDocument(left, []).edges).toEqual([]);
+  });
+});
+
+describe("fitBoxToChildren", () => {
+  const box = (w: number, h: number): BlockNode => ({
+    id: "net",
+    type: NETWORK_NODE_TYPE,
+    position: { x: 100, y: 100 },
+    width: w,
+    height: h,
+    data: { kind: "network", name: "net", fields: {} },
+  });
+  const vm = (x: number, y: number): BlockNode => ({ id: "vm", type: BLOCK_NODE_TYPE, parentId: "net", position: { x, y }, data: { kind: "vm", name: "vm", fields: {} } });
+
+  it("grows a box made smaller than its VM back around it", () => {
+    const out = fitBoxToChildren([box(150, 100), vm(40, 50)], "net");
+    expect(out[0]).toMatchObject({ position: { x: 100, y: 100 }, width: 40 + BOX.blockW + BOX.edgeRight, height: 50 + BOX.blockH + BOX.padBottom });
+    expect(out[1].position).toEqual({ x: 40, y: 50 });
+  });
+
+  it("moves a box pulled past its VM from the left or top back out, leaving the VM where it was", () => {
+    // The VM sits at 90,110 on the canvas; the box's left side was pulled to its right.
+    const out = fitBoxToChildren([box(300, 300), vm(-10, 10)], "net");
+    const [b, v] = out;
+    expect(b.position).toEqual({ x: 100 - 10 - BOX.edgeLeft, y: 100 + 10 - BOX.edgeTop });
+    expect(v.position).toEqual({ x: BOX.edgeLeft, y: BOX.edgeTop });
+    expect(b.position.x + v.position.x).toBe(90);
+    expect(b.position.y + v.position.y).toBe(110);
+    expect(b.width).toBe(300 + 10 + BOX.edgeLeft);
+  });
+
+  it("leaves a box that holds its VMs, and an empty box, as they are", () => {
+    const nodes = [box(400, 300), vm(40, 50)];
+    expect(fitBoxToChildren(nodes, "net")).toBe(nodes);
+    const empty = [box(100, 100)];
+    expect(fitBoxToChildren(empty, "net")).toBe(empty);
   });
 });
 
@@ -247,5 +298,39 @@ describe("new blocks", () => {
     expect(defaultBlockName("vm", ["vm", "vm-2"])).toBe("vm-3");
     expect(defaultBlockName("http_api", [])).toBe("http_api");
     expect(defaultBlockName("9Weird Kind", [])).toBe("weird_kind");
+  });
+});
+
+describe("freeSpot", () => {
+  const card = (id: string, x: number, y: number): BlockNode => ({ id, type: BLOCK_NODE_TYPE, position: { x, y }, data: { kind: "vm", name: id, fields: {} } });
+  const size = { w: BOX.blockW, h: BOX.blockH };
+  const overlaps = (p: { x: number; y: number }, n: BlockNode) =>
+    p.x < n.position.x + BOX.blockW && p.x + size.w > n.position.x && p.y < n.position.y + BOX.blockH && p.y + size.h > n.position.y;
+
+  it("centres a card on an empty canvas", () => {
+    expect(freeSpot([], { x: 400, y: 300 }, size)).toEqual({ x: 320, y: 260 });
+  });
+
+  it("never stacks a new card on the ones already there", () => {
+    const nodes: BlockNode[] = [];
+    for (let i = 0; i < 6; i++) {
+      const p = freeSpot(nodes, { x: 400, y: 300 }, size);
+      for (const n of nodes) expect(overlaps(p, n)).toBe(false);
+      nodes.push(card(`n${i}`, p.x, p.y));
+    }
+  });
+
+  it("never goes left of or above the given corner", () => {
+    const p = freeSpot([card("a", 0, 40)], { x: 90, y: 80 }, size, { x: BOX.edgeLeft, y: BOX.edgeTop });
+    expect(p.x).toBeGreaterThanOrEqual(BOX.edgeLeft);
+    expect(p.y).toBeGreaterThanOrEqual(BOX.edgeTop);
+    expect(overlaps(p, card("a", 0, 40))).toBe(false);
+  });
+
+  it("keeps clear of a network box", () => {
+    const box: BlockNode = { id: "net", type: NETWORK_NODE_TYPE, position: { x: 200, y: 200 }, width: 400, height: 200, data: { kind: "network", name: "net", fields: {} } };
+    const p = freeSpot([box], { x: 400, y: 300 }, size);
+    const inside = p.x < 600 && p.x + size.w > 200 && p.y < 400 && p.y + size.h > 200;
+    expect(inside).toBe(false);
   });
 });

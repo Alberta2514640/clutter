@@ -1,15 +1,17 @@
+import { cn } from "@/lib/utils";
 import Image from "next/image";
 import type { Shot } from "./shots";
 
-// The plain window frame around every product picture on the home page.
-export function WindowFrame({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+// The window frame around every product picture on the home page: a thin
+// border, rounded corners and a soft shadow. The product shots are of the
+// dark app, so the frame is always a dark scope's card.
+export function WindowFrame({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={`overflow-hidden rounded-xl border border-slate-700/70 bg-slate-950 shadow-[0_24px_80px_rgba(0,0,0,0.6)] transition-[border-color,box-shadow] duration-300 hover:border-teal-400/40 hover:shadow-[0_24px_90px_rgba(45,212,191,0.12)] motion-reduce:transition-none ${className}`}>
-      <div aria-hidden="true" className="flex h-7 items-center gap-1.5 border-b border-slate-800 bg-slate-900/80 px-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-600" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-600" />
-        <span className="h-2.5 w-2.5 rounded-full bg-slate-600" />
+    <div className={cn("dark border-border bg-card overflow-hidden rounded-xl border shadow-[0_24px_64px_-24px_rgb(0_0_0/0.45)]", className)}>
+      <div aria-hidden="true" className="border-border flex h-7 items-center gap-1.5 border-b px-3">
+        <span className="bg-muted-foreground/40 size-2.5 rounded-full" />
+        <span className="bg-muted-foreground/40 size-2.5 rounded-full" />
+        <span className="bg-muted-foreground/40 size-2.5 rounded-full" />
       </div>
       {children}
     </div>
@@ -19,7 +21,7 @@ export function WindowFrame({ children, className = "" }: { children: React.Reac
 // A product screenshot in the window frame. hero marks the one image that is
 // the page's largest paint: it loads at once with high priority (the Next 16
 // docs prefer this to preload).
-export function Screenshot({ shot, sizes, hero = false, caption, className = "" }: { shot: Shot; sizes: string; hero?: boolean; caption?: string; className?: string }) {
+export function Screenshot({ shot, sizes, hero = false, caption, className }: { shot: Shot; sizes: string; hero?: boolean; caption?: string; className?: string }) {
   return (
     <figure className={className}>
       <WindowFrame>
@@ -34,7 +36,7 @@ export function Screenshot({ shot, sizes, hero = false, caption, className = "" 
           className="block h-auto w-full"
         />
       </WindowFrame>
-      {caption && <figcaption className="mt-3 text-sm text-slate-400">{caption}</figcaption>}
+      {caption && <figcaption className="text-muted-foreground mt-3 text-sm">{caption}</figcaption>}
     </figure>
   );
 }

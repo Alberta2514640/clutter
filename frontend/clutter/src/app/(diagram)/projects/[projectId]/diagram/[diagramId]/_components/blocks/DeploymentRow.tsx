@@ -1,15 +1,31 @@
 "use client";
 
-import CloudMark from "@/components/clouds/CloudMark";
+import FirstLiveStack from "@/components/brand/FirstLiveStack";
+import CloudLogo from "@/components/common/CloudLogo";
+import StatusDot from "@/components/common/StatusDot";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/sonner";
 import { AdapterApiError, adapterErrorMessage } from "@/lib/adapterApi";
 import { cloudLookFor } from "@/lib/features/catalog/display";
 import { cleanValues, cloudOffers, defaultValues, entryFor, settingsFor, valuesErrors } from "@/lib/features/catalog/forms";
 import type { CatalogEntry } from "@/lib/features/catalog/types";
 import type { Connection } from "@/lib/features/connections/types";
-import { ACTION_LABEL, actionReasons, canOfferRemove, RUN_STATUS_LABEL, type RowAction } from "@/lib/features/deployments/actions";
+import { ACTION_LABEL, actionReasons, allLeftOut, canOfferRemove, type RowAction } from "@/lib/features/deployments/actions";
 import { compatibilityLine, nextExclusions, splitReadyLine, unsupportedBlocks, type BlockRef, type CompatibilityLine } from "@/lib/features/deployments/compatibility";
-import { costLines, deployLine } from "@/lib/features/deployments/confirm";
-import { useCompatibility, useRemoveDeployment, useStartRun, useUpdateDeployment } from "@/lib/features/deployments/hooks";
+import { costLines, deployLine, destroyLine } from "@/lib/features/deployments/confirm";
+import { useCompatibility, useRemoveDeployment, useRunLogs, useStartRun, useUpdateDeployment } from "@/lib/features/deployments/hooks";
 import {
   cloudBlocks,
   cloudsLine,
@@ -23,21 +39,17 @@ import {
   placementSuggestions,
   splitOnly,
 } from "@/lib/features/deployments/placements";
-import { changesNotDeployed, isActive, type DeploymentListItem, type DeploymentStatus, type RunAction } from "@/lib/features/deployments/types";
-import { CheckCircle2, ChevronDown, ChevronRight, FileCode2, KeyRound, Loader2, Play, Rocket, Trash2, TriangleAlert, X } from "lucide-react";
-import { useId, useState } from "react";
+import { DEPLOYMENT_STATE, deploymentState, mergeRuns, primaryAction, primaryRun, runEndToast, runLabel } from "@/lib/features/deployments/runState";
+import { changesNotDeployed, isActive, type DeploymentListItem, type Run, type RunAction } from "@/lib/features/deployments/types";
+import { useRunHistoryStore } from "@/lib/features/deployments/uiStore";
+import { usePreferencesStore } from "@/lib/features/preferences/uiStore";
+import { cn } from "@/lib/utils";
+import { CheckCircle2, ChevronDown, ChevronRight, Code2, History, KeyRound, Loader2, Play, Rocket, ScrollText, Trash2, TriangleAlert, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import BlockPlacement from "./BlockPlacement";
-import PreviewDialog from "./PreviewDialog";
 import RunLog, { RunHeadline } from "./RunLog";
 import SettingsForm from "./SettingsForm";
 import WhatWasBuilt from "./WhatWasBuilt";
-
-const DEPLOYMENT_STATUS: Record<DeploymentStatus, { label: string; className: string }> = {
-  new: { label: "Not deployed", className: "border-slate-600 text-slate-300" },
-  live: { label: "Deployed", className: "border-emerald-700 text-emerald-300" },
-  failed: { label: "Needs attention", className: "border-red-700 text-red-300" },
-  destroyed: { label: "Destroyed", className: "border-slate-600 text-slate-400" },
-};
 
 type Props = {
   token: string | null;
@@ -55,17 +67,54 @@ type Props = {
   webServers: ReadonlySet<string>;
   // Set while the canvas has unsaved changes: checks and runs use the saved diagram.
   blockedReason: string | null;
+  // The deployment the canvas shows (live markers, the code panel).
+  selected: boolean;
+  // Whether the card starts unfolded: the only deployment, or the selected one.
+  defaultOpen: boolean;
+  onSelect: () => void;
+  // Opens the code panel on this deployment.
+  onPreview: () => void;
 };
 
 const PART_TONE: Record<string, string> = {
-  completed: "text-emerald-300",
-  failed: "text-red-300",
-  rolled_back: "text-amber-300",
-  skipped: "text-slate-500",
+  completed: "text-success",
+  failed: "text-danger",
+  rolled_back: "text-warning",
+  skipped: "text-muted-foreground",
 };
 
-export default function DeploymentRow({ token, organizationId, diagramId, item, entry, catalog, connections, blocks, blockTitle, webServers, blockedReason }: Props) {
+const RUN_TONE: Record<Run["status"], "info" | "primary" | "success" | "danger"> = {
+  queued: "info",
+  running: "primary",
+  completed: "success",
+  failed: "danger",
+};
+
+const when = (r: Run) => new Date(r.finished_at ?? r.started_at ?? r.created_at).toLocaleString();
+
+// One deployment of the diagram: where it stands in one named state with the
+// one action that state calls for, what the cloud can build, where each block
+// runs, its settings, its runs and their logs, and what the last deploy built.
+// Destroying and removing sit apart, each behind a confirmation.
+export default function DeploymentRow({
+  token,
+  organizationId,
+  diagramId,
+  item,
+  entry,
+  catalog,
+  connections,
+  blocks,
+  blockTitle,
+  webServers,
+  blockedReason,
+  selected,
+  defaultOpen,
+  onSelect,
+  onPreview,
+}: Props) {
   const cloud = entry?.manifest.title ?? item.connector;
+  const look = cloudLookFor(entry ? [entry] : [], item.connector);
   const settingsSpec = entry?.manifest.settings ?? [];
   const placements = item.placements ?? [];
 
@@ -75,16 +124,34 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
   const exclusions = (updateM.isPending ? updateM.variables?.data.exclusions : undefined) ?? item.exclusions ?? [];
   const startM = useStartRun(token);
   const removeM = useRemoveDeployment(token);
+  const markPreviewOpened = usePreferencesStore((s) => s.markPreviewOpened);
   const offId = useId();
+  const bodyId = useId();
+  const [open, setOpen] = useState(defaultOpen);
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [settings, setSettings] = useState<Record<string, unknown>>(() => ({ ...defaultValues(settingsSpec), ...(item.settings ?? {}) }));
   const [logOpen, setLogOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLog, setHistoryLog] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"apply" | "destroy" | "remove" | null>(null);
+  // The last successful apply's log, for what a destroy removes. It is the
+  // query "What was built" already reads, so it is fetched once.
+  const lastApplyLogQ = useRunLogs(token, organizationId, confirm === "destroy" ? (item.last_apply ?? null) : null);
+
+  // The runs this page has seen, with the two B returns for the deployment.
+  const record = useRunHistoryStore((s) => s.record);
+  const seen = useRunHistoryStore((s) => s.byDeployment[item.id]);
+  useEffect(() => {
+    record(item.id, [item.latest_run, item.last_apply]);
+  }, [record, item.id, item.latest_run, item.last_apply]);
+  const history = useMemo(() => mergeRuns(seen ?? [], [item.latest_run, item.last_apply]), [seen, item.latest_run, item.last_apply]);
 
   const run = item.latest_run;
   const running = isActive(run) || startM.isPending;
+  const state = deploymentState(item);
+  const stateInfo = DEPLOYMENT_STATE[state];
+  const primary = primaryAction(item);
   const report = compatQ.data;
   const titleOf = (connector: string) => entryFor(catalog, connector)?.manifest.title ?? connector;
   const offers = (connector: string, kind: string) => cloudOffers(catalog, connector, kind);
@@ -114,7 +181,6 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
   const cross = report ? crossNotes(report) : { keys: [], addresses: [] };
   const byId = new Map(blocks.map((b) => [b.id, b.name]));
   const ready = !!report?.ready;
-  const status = DEPLOYMENT_STATUS[item.status] ?? DEPLOYMENT_STATUS.new;
 
   // Blocks the own cloud cannot build, and the connection that can run each.
   const unsupported = entry ? unsupportedBlocks(entry.manifest, ownBlocks) : [];
@@ -127,7 +193,6 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
   const settingsErrors = valuesErrors(shownSettings, settings);
 
   const offersRemove = canOfferRemove(item.status);
-  const offersDestroy = !offersRemove;
 
   const reasons = actionReasons({
     status: item.status,
@@ -137,16 +202,53 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
     checking: compatQ.isLoading,
     checkFailed: compatQ.isError,
     ready,
+    allLeftOut: allLeftOut(
+      blocks.map((b) => b.id),
+      exclusions,
+    ),
+    noBlocks: blocks.length === 0,
   });
+  // "Up to date" is off for its own reason: the cloud holds the saved diagram.
+  // "Destroy again" is a destroy, so the destroy's own reasons turn it off.
+  const primaryRunAction = primaryRun(primary.kind);
+  const primaryReason =
+    primary.kind === "up_to_date"
+      ? "Your cloud already has the saved diagram and settings. Change and save them to update."
+      : primaryRunAction === "destroy"
+        ? reasons.destroy
+        : primaryRunAction === "apply"
+          ? reasons.apply
+          : null;
+
+  // The run whose "started" toast is up: once the run ends, the same toast
+  // says how it ended, so a finished run never reads as just started.
+  const toastedRun = useRef<string | null>(null);
+  useEffect(() => {
+    if (!run || run.id !== toastedRun.current) return;
+    const end = runEndToast(run, title);
+    if (!end) return;
+    toastedRun.current = null;
+    if (end.ok) toast.success(end.text, { id: run.id });
+    else toast.error(end.text, { id: run.id });
+  }, [run, title]);
 
   const start = (action: RunAction) => {
     setConfirm(null);
-    startM.mutate({ organizationId, diagramId, deploymentId: item.id, action });
+    startM.mutate(
+      { organizationId, diagramId, deploymentId: item.id, action },
+      {
+        onSuccess: (started) => {
+          toastedRun.current = started.id;
+          toast(`${ACTION_LABEL[action === "apply" ? "apply" : action]} started on ${title}`, { id: started.id });
+        },
+      },
+    );
+    if (action !== "plan") setLogOpen(false);
   };
 
   const remove = () => {
     setConfirm(null);
-    removeM.mutate({ organizationId, diagramId, deploymentId: item.id });
+    removeM.mutate({ organizationId, diagramId, deploymentId: item.id }, { onSuccess: () => toast.success(`${title} removed from the diagram`) });
   };
 
   const toggleExclusion = (id: string, exclude: boolean) =>
@@ -168,57 +270,222 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
     destroy: "Removes everything this deployment built in your cloud.",
     remove: "Takes this deployment off the diagram. Nothing in your cloud changes.",
   };
-  const button = (action: RowAction) => ({ reason: reasons[action], help: help[action], describedBy: `${offId}-${action}` });
+  const off = (action: RowAction | "primary", reason: string | null) =>
+    reason
+      ? { "aria-disabled": true, "aria-describedby": `${offId}-${action}`, title: reason }
+      : { title: action === "primary" ? (primaryRunAction === "destroy" ? help.destroy : help.apply) : help[action] };
+
+  const onPrimary = () => {
+    if (primary.kind === "log") return setLogOpen(true);
+    if (!primaryReason && primaryRunAction) setConfirm(primaryRunAction);
+  };
+  const primaryIcon =
+    primary.kind === "log" ? (
+      <ScrollText aria-hidden />
+    ) : primary.kind === "up_to_date" ? (
+      <CheckCircle2 aria-hidden />
+    ) : primaryRunAction === "destroy" ? (
+      <Trash2 aria-hidden />
+    ) : (
+      <Rocket aria-hidden />
+    );
+  const primaryLabel = primary.kind === "log" ? "Watch the log" : primary.label;
 
   return (
-    <li data-testid="deployment-row" data-connector={item.connector} className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <CloudMark cloud={cloudLookFor(entry ? [entry] : [], item.connector)} size={24} />
+    <li
+      data-testid="deployment-row"
+      data-connector={item.connector}
+      data-state={state}
+      data-selected={selected || undefined}
+      onClickCapture={onSelect}
+      onFocusCapture={onSelect}
+      className={cn("surface-card text-card-foreground space-y-4 p-4 transition-shadow", selected && "ring-primary/30 ring-2")}>
+      {/* Where it stands. The whole header folds the card. */}
+      <button
+        type="button"
+        data-testid="deployment-toggle"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        aria-label={`${open ? "Fold" : "Unfold"} ${title}`}
+        onClick={() => setOpen((o) => !o)}
+        className="-m-1 flex w-[calc(100%+0.5rem)] items-start justify-between gap-3 rounded-md p-1 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+        <div className="flex min-w-0 items-center gap-3">
+          <CloudLogo connector={look.connector} shortName={look.shortName} src={look.logoSrc} size={28} />
           <div className="min-w-0">
-            <div data-testid="deployment-title" className="break-words text-sm font-semibold text-white">
+            <div data-testid="deployment-title" className="text-sm font-semibold break-words">
               {title}
             </div>
-            <div data-testid="deployment-clouds" className="truncate text-xs text-slate-400" title={where}>
+            <div data-testid="deployment-clouds" className="text-muted-foreground truncate text-xs" title={where}>
               {where}
             </div>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className={`rounded border px-1.5 py-0.5 text-[11px] ${status.className}`}>{status.label}</span>
+          <div className="relative">
+            {/* Beside the badge, out of the layout: nothing moves while it plays. */}
+            <FirstLiveStack live={state === "live"} className="absolute top-1/2 right-full mr-1.5 -translate-y-1/2" />
+            <Badge variant={stateInfo.tone === "primary" ? "primary" : stateInfo.tone} data-testid="deployment-state" data-state={state}>
+              <StatusDot tone={stateInfo.tone} pulse={stateInfo.running} />
+              {stateInfo.label}
+            </Badge>
+          </div>
           {changesNotDeployed(item) && (
-            <span
-              data-testid="changes-not-deployed"
-              title="The saved diagram has changes the last deploy did not build. Deploy again to build them."
-              className="whitespace-nowrap rounded border border-amber-700 px-1.5 py-0.5 text-[11px] text-amber-200">
+            <Badge variant="warning" data-testid="changes-not-deployed" title="The saved diagram or this deployment's settings have changes the last deploy did not build. Update to build them.">
               Changes not deployed yet
-            </span>
+            </Badge>
           )}
         </div>
+        <ChevronDown aria-hidden className={cn("text-muted-foreground mt-1 size-4 shrink-0 transition-transform motion-reduce:transition-none", !open && "-rotate-90")} />
+      </button>
+      {open && (
+        <div id={bodyId} className="space-y-4">
+      {/* pl-10: under the title, past the 28px logo and its 12px gap. */}
+      <p className="text-muted-foreground -mt-1 pl-10 text-xs">{stateInfo.hint}</p>
+
+      {/* The one thing to do now, then the quieter ones. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={primary.kind === "up_to_date" ? "outline" : primaryRunAction === "destroy" ? "destructive" : "primary"}
+          data-deployment-primary={item.id}
+          {...off("primary", primaryReason)}
+          onClick={primaryReason ? undefined : onPrimary}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:translate-y-0">
+          {startM.isPending ? <Loader2 className="animate-spin" aria-hidden /> : primaryIcon}
+          {primaryLabel}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          {...off("plan", reasons.plan)}
+          onClick={reasons.plan ? undefined : () => start("plan")}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:translate-y-0">
+          <Play aria-hidden />
+          {ACTION_LABEL.plan}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          {...off("preview", reasons.preview && !blockedReason ? reasons.preview : null)}
+          onClick={
+            reasons.preview && !blockedReason
+              ? undefined
+              : () => {
+                  // Opening the preview ticks the checklist's step, even on a
+                  // cloud that offers no Terraform preview.
+                  markPreviewOpened(organizationId);
+                  onPreview();
+                }
+          }
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
+          <Code2 aria-hidden />
+          Preview code
+        </Button>
       </div>
+      {/* Why each button is off, for screen readers; sighted users see it on hover. */}
+      {(
+        [
+          ["primary", primaryReason],
+          ["plan", reasons.plan],
+          ["preview", reasons.preview && !blockedReason ? reasons.preview : null],
+          ["destroy", reasons.destroy],
+          ["remove", reasons.remove],
+        ] as const
+      ).map(([a, r]) =>
+        r ? (
+          <span key={a} id={`${offId}-${a}`} className="sr-only">
+            {a === "primary" ? primaryLabel : ACTION_LABEL[a]} is off. {r}
+          </span>
+        ) : null,
+      )}
+      {blockedReason && <p className="text-warning -mt-2 text-xs">{blockedReason}</p>}
+      {startM.isError && (
+        <div role="alert" className="text-danger text-xs">
+          <p>{adapterErrorMessage(startM.error)}</p>
+          {startM.error instanceof AdapterApiError &&
+            startM.error.problems.map((p, i) => (
+              <p key={i} className="pl-3">
+                {p.message}
+              </p>
+            ))}
+        </div>
+      )}
+
+      {/* The latest run */}
+      {run ? (
+        <div className="space-y-2 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p data-testid="run-status" data-status={run.status} className="flex min-w-0 items-center gap-2 text-xs">
+              <StatusDot tone={RUN_TONE[run.status]} pulse={isActive(run)} />
+              <span className="font-medium">{runLabel(run)}</span>
+              {run.finished_at && <span className="text-muted-foreground truncate">at {new Date(run.finished_at).toLocaleTimeString()}</span>}
+            </p>
+            <Button type="button" variant="ghost" size="xs" aria-expanded={logOpen} onClick={() => setLogOpen((o) => !o)}>
+              <ScrollText aria-hidden />
+              {logOpen ? "Hide log" : "Show log"}
+            </Button>
+          </div>
+          {run.parts && run.parts.length > 0 && (
+            <ol data-testid="run-parts" aria-label="Each cloud of this run" className="space-y-0.5 pl-4 text-xs">
+              {partLines(run.parts).map((p) => (
+                <li key={p.connectionId} className={cn("flex items-center gap-1.5", PART_TONE[p.status])}>
+                  {(p.status === "running" || p.status === "queued") && <Loader2 className="size-3 animate-spin" aria-hidden />}
+                  {p.text}
+                </li>
+              ))}
+            </ol>
+          )}
+          {!isActive(run) && <RunHeadline token={token} organizationId={organizationId} run={run} />}
+          {logOpen && <RunLog token={token} organizationId={organizationId} run={run} title={`${runLabel(run)} on ${title}`} blockTitle={blockTitle} />}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">No runs yet. Plan shows what would change; Deploy builds it.</p>
+      )}
+
+      {/* What the last successful apply built, while the deployment still holds it. */}
+      {item.last_apply && (item.status === "live" || item.status === "failed") && (
+        <WhatWasBuilt
+          token={token}
+          organizationId={organizationId}
+          item={item}
+          run={item.last_apply}
+          catalog={catalog}
+          blocks={blocks}
+          blockTitle={blockTitle}
+          webServers={webServers}
+        />
+      )}
 
       {/* Compatibility */}
-      <div data-testid="compatibility">
+      <div data-testid="compatibility" className="space-y-1.5">
         {compatQ.isLoading ? (
-          <div role="status" className="flex items-center gap-2 text-xs text-slate-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <div role="status" className="text-muted-foreground flex items-center gap-2 text-xs">
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
             Checking what {cloud} can build…
           </div>
         ) : compatQ.isError ? (
-          <p className="text-xs text-red-300">Could not check compatibility: {adapterErrorMessage(compatQ.error)}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-danger text-xs">Could not check what {cloud} can build. {adapterErrorMessage(compatQ.error)}</p>
+            <Button type="button" variant="outline" size="xs" onClick={() => void compatQ.refetch()}>
+              Retry
+            </Button>
+          </div>
         ) : report ? (
-          <div className="space-y-1.5">
+          <>
             {splitReady && (
-              <p className="flex items-start gap-1.5 text-xs text-emerald-300">
-                <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" />
+              <p className="text-success flex items-start gap-1.5 text-xs">
+                <CheckCircle2 className="mt-px size-3.5 shrink-0" aria-hidden />
                 {splitReady}
               </p>
             )}
             {lines.map((line) => (
               <div key={line.summary} className="space-y-1.5">
                 {!splitReady && (
-                  <p className={`flex items-start gap-1.5 text-xs ${line.ready ? "text-emerald-300" : "text-amber-300"}`}>
-                    {line.ready ? <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" /> : <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />}
+                  <p className={cn("flex items-start gap-1.5 text-xs", line.ready ? "text-success" : "text-warning")}>
+                    {line.ready ? <CheckCircle2 className="mt-px size-3.5 shrink-0" aria-hidden /> : <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />}
                     {line.summary}
                   </p>
                 )}
@@ -227,69 +494,69 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
                   return (
                     <div key={c.id} className="space-y-1 pl-5">
                       {there && (
-                        <button
+                        <Button
                           type="button"
+                          size="xs"
                           data-testid="run-on-suggestion"
                           disabled={updateM.isPending || running}
-                          onClick={() => runOn(c.id, there.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2 py-1 text-xs font-medium text-white hover:bg-teal-500 disabled:opacity-50">
+                          onClick={() => runOn(c.id, there.id)}>
                           Run {c.name} on {there.name}
-                        </button>
+                        </Button>
                       )}
-                      <label className="flex items-center gap-2 text-xs text-slate-200">
+                      <label className="flex min-h-6 items-center gap-2 text-xs">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-teal-500"
+                          className="accent-primary size-4"
                           checked={c.excluded}
                           disabled={updateM.isPending || running}
                           onChange={(e) => toggleExclusion(c.id, e.target.checked)}
                         />
                         <span>
                           Leave {c.name} ({c.kindTitle}) out of this deployment
-                          {!c.supported && !there && <span className="text-amber-300"> (not supported here)</span>}
+                          {!c.supported && !there && <span className="text-warning"> (not supported here)</span>}
                         </span>
                       </label>
                     </div>
                   );
                 })}
                 {line.problems.map((p) => (
-                  <p key={p} className="pl-5 text-xs text-amber-200">
+                  <p key={p} className="text-warning pl-5 text-xs">
                     {p}
                   </p>
                 ))}
                 {line.notes.map((n) => (
-                  <p key={n} className="pl-5 text-xs text-slate-400">
+                  <p key={n} className="text-muted-foreground pl-5 text-xs">
                     {n}
                   </p>
                 ))}
               </div>
             ))}
             {extra.problems.map((p) => (
-              <p key={p.code + p.message} className="flex items-start gap-1.5 text-xs text-amber-300">
-                <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+              <p key={p.code + p.message} className="text-warning flex items-start gap-1.5 text-xs">
+                <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
                 {p.edge_source && p.edge_target ? `${byId.get(p.edge_source) ?? p.edge_source} to ${byId.get(p.edge_target) ?? p.edge_target}: ` : ""}
                 {p.message}
               </p>
             ))}
             {extra.notes.map((n) => (
-              <p key={n.code + n.message} className="pl-5 text-xs text-slate-400">
+              <p key={n.code + n.message} className="text-muted-foreground pl-5 text-xs">
                 {n.message}
               </p>
             ))}
             {cross.keys.map((k) => (
-              <p key={k} data-testid="scoped-key-note" className="flex items-start gap-1.5 text-xs text-sky-200">
-                <KeyRound className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              <p key={k} data-testid="scoped-key-note" className="text-info flex items-start gap-1.5 text-xs">
+                <KeyRound className="mt-px size-3.5 shrink-0" aria-hidden />
                 {k}
               </p>
             ))}
             {cross.addresses.map((a) => (
-              <p key={a} className="pl-5 text-xs text-slate-400">
+              <p key={a} className="text-muted-foreground pl-5 text-xs">
                 {a}
               </p>
             ))}
-          </div>
+          </>
         ) : null}
-        {updateM.isError && <p className="mt-1 text-xs text-red-300">{adapterErrorMessage(updateM.error)}</p>}
+        {updateM.isError && <p className="text-danger text-xs">{adapterErrorMessage(updateM.error)}</p>}
       </div>
 
       {/* Where each block runs */}
@@ -313,13 +580,13 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
             type="button"
             aria-expanded={advancedOpen}
             onClick={() => setAdvancedOpen((o) => !o)}
-            className="flex items-center gap-1 text-xs text-slate-300 hover:text-white">
-            {advancedOpen ? <ChevronDown className="h-3.5 w-3.5" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden />}
+            className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1 text-xs font-medium">
+            {advancedOpen ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
             Advanced
           </button>
           {advancedOpen && (
-            <div className="mt-2 space-y-2 pl-1">
-              <p className="text-[11px] text-slate-400">{cloud} settings</p>
+            <div className="mt-2 space-y-3 pl-1">
+              <p className="text-muted-foreground text-[11px]">{cloud} settings</p>
               <SettingsForm
                 token={token}
                 organizationId={organizationId}
@@ -330,194 +597,162 @@ export default function DeploymentRow({ token, organizationId, diagramId, item, 
                 disabled={running}
                 onChange={(name, v) => setSettings((s) => ({ ...s, [name]: v }))}
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="xs"
                 disabled={updateM.isPending || running || settingsErrors.length > 0}
                 onClick={() =>
-                  updateM.mutate({ organizationId, diagramId, deploymentId: item.id, data: { settings: cleanValues(settingsSpec, settings) } })
-                }
-                className="rounded-md bg-slate-700 px-2.5 py-1 text-xs text-white hover:bg-slate-600 disabled:opacity-50">
+                  updateM.mutate(
+                    { organizationId, diagramId, deploymentId: item.id, data: { settings: cleanValues(settingsSpec, settings) } },
+                    { onSuccess: () => toast.success("Settings saved") },
+                  )
+                }>
                 {updateM.isPending ? "Saving…" : "Save settings"}
-              </button>
+              </Button>
             </div>
           )}
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap gap-1.5">
-        <ActionButton label={ACTION_LABEL.preview} icon={<FileCode2 className="h-3.5 w-3.5" />} {...button("preview")} onClick={() => setPreviewOpen(true)} />
-        <ActionButton label={ACTION_LABEL.plan} icon={<Play className="h-3.5 w-3.5" />} {...button("plan")} onClick={() => start("plan")} />
-        <ActionButton label={ACTION_LABEL.apply} icon={<Rocket className="h-3.5 w-3.5" />} primary {...button("apply")} onClick={() => setConfirm("apply")} />
-      </div>
-      {confirm === "apply" && !reasons.apply && (
-        <div role="dialog" aria-label="Deploy" data-testid="deploy-confirm" className="space-y-2 rounded-lg border border-teal-800/70 bg-teal-950/30 p-2.5">
-          <p className="text-xs text-slate-100">{deployLine({ id: item.connection_id, name: item.connection_name }, placements, blocks, exclusions, blockTitle)}</p>
-          {costLines(report).map((c) => (
-            <p key={c} data-testid="cost-line" className="text-xs text-amber-200">
-              {c}
-            </p>
-          ))}
-          <div className="flex gap-1.5">
-            <ActionButton label="Deploy" icon={<Rocket className="h-3.5 w-3.5" />} primary reason={null} help={help.apply} describedBy="" onClick={() => start("apply")} />
-            <ActionButton label="Cancel" reason={null} help="" describedBy="" onClick={() => setConfirm(null)} />
-          </div>
+      {/* Run history */}
+      {history.length > 0 && (
+        <div>
+          <button
+            type="button"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((o) => !o)}
+            className="text-muted-foreground hover:text-foreground flex min-h-6 items-center gap-1 text-xs font-medium">
+            {historyOpen ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />}
+            <History className="size-3.5" aria-hidden />
+            Recent runs ({history.length})
+          </button>
+          {historyOpen && (
+            <div className="mt-2 space-y-1.5">
+              <ol data-testid="run-history" className="divide-y rounded-lg border">
+                {history.map((r) => (
+                  <li key={r.id} data-testid="run-history-item" className="space-y-2 px-3 py-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <StatusDot tone={RUN_TONE[r.status]} pulse={isActive(r)} />
+                      <span className="font-medium">{runLabel(r)}</span>
+                      <span className="text-muted-foreground min-w-0 flex-1 truncate">{when(r)}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        aria-expanded={historyLog === r.id}
+                        aria-label={`${historyLog === r.id ? "Hide" : "Show"} the log of ${runLabel(r)}, ${when(r)}`}
+                        onClick={() => setHistoryLog((cur) => (cur === r.id ? null : r.id))}>
+                        Log
+                      </Button>
+                    </div>
+                    {r.failure && <p className="text-danger text-xs">{r.failure}</p>}
+                    {historyLog === r.id && (
+                      <RunLog token={token} organizationId={organizationId} run={r} title={`${runLabel(r)} on ${title}`} blockTitle={blockTitle} testId="run-history-log" />
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="text-muted-foreground text-[11px]">The latest run, the last successful deploy, and the runs since you opened this page.</p>
+            </div>
+          )}
         </div>
       )}
+
       {/* Taking things away sits apart from building them. */}
-      <div data-testid="remove-actions" className="flex flex-wrap gap-1.5 border-t border-slate-800 pt-2">
-        {offersDestroy &&
-          (confirm === "destroy" ? (
-            <>
-              <ActionButton label="Destroy for good" icon={<Trash2 className="h-3.5 w-3.5" />} confirmDanger {...button("destroy")} onClick={() => start("destroy")} />
-              <ActionButton label="Keep it" reason={null} help="" describedBy="" onClick={() => setConfirm(null)} />
-            </>
-          ) : (
-            <ActionButton label={ACTION_LABEL.destroy} icon={<Trash2 className="h-3.5 w-3.5" />} danger {...button("destroy")} onClick={() => setConfirm("destroy")} />
-          ))}
-        {confirm === "remove" ? (
-          <>
-            <ActionButton label="Remove for good" icon={<X className="h-3.5 w-3.5" />} confirmDanger {...button("remove")} onClick={remove} />
-            <ActionButton label="Keep it" reason={null} help="" describedBy="" onClick={() => setConfirm(null)} />
-          </>
-        ) : (
-          <ActionButton
-            label={removeM.isPending ? "Removing…" : ACTION_LABEL.remove}
-            icon={<X className="h-3.5 w-3.5" />}
-            {...button("remove")}
-            onClick={() => setConfirm("remove")}
-          />
+      <div data-testid="remove-actions" className="flex flex-wrap items-center gap-2 border-t pt-3">
+        {!offersRemove && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            {...off("destroy", reasons.destroy)}
+            onClick={reasons.destroy ? undefined : () => setConfirm("destroy")}
+            className="text-danger hover:text-danger aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
+            <Trash2 aria-hidden />
+            {ACTION_LABEL.destroy}
+          </Button>
         )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          {...off("remove", reasons.remove)}
+          onClick={reasons.remove ? undefined : () => setConfirm("remove")}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
+          {removeM.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <X aria-hidden />}
+          {removeM.isPending ? "Removing…" : ACTION_LABEL.remove}
+        </Button>
       </div>
-      {confirm === "destroy" && <p className="text-xs text-red-300">Destroy removes everything this deployment built in {builtIn}. This cannot be undone.</p>}
-      {/* Why each button is off, for screen readers; sighted users see it on hover. */}
-      {(["preview", "plan", "apply", "destroy", "remove"] as const).map((a) =>
-        reasons[a] ? (
-          <span key={a} id={`${offId}-${a}`} className="sr-only">
-            {ACTION_LABEL[a]} is off. {reasons[a]}
-          </span>
-        ) : null,
-      )}
       {removeM.isError && (
-        <p role="alert" className="text-xs text-red-300">
+        <p role="alert" className="text-danger text-xs">
           {adapterErrorMessage(removeM.error)}
         </p>
       )}
-      {startM.isError && (
-        <div role="alert" className="text-xs text-red-300">
-          <p>{adapterErrorMessage(startM.error)}</p>
-          {startM.error instanceof AdapterApiError &&
-            startM.error.problems.map((p, i) => (
-              <p key={i} className="pl-3">
-                {p.message}
-              </p>
-            ))}
         </div>
       )}
 
-      {/* Latest run */}
-      {run ? (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <p data-testid="run-status" data-status={run.status} className="flex items-center gap-1.5 text-xs text-slate-300">
-              {isActive(run) && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {ACTION_LABEL[run.action]} {RUN_STATUS_LABEL[run.status]}
-              {run.finished_at && <span className="text-slate-500">at {new Date(run.finished_at).toLocaleTimeString()}</span>}
+      {/* Deploy asks first: what each cloud builds and what it costs beyond the blocks. */}
+      <Dialog open={confirm === "apply"} onOpenChange={(o) => setConfirm(o ? "apply" : null)}>
+        <DialogContent data-testid="deploy-confirm">
+          <DialogHeader>
+            <DialogTitle>
+              {primary.kind === "update" ? "Update" : "Deploy"} {title}?
+            </DialogTitle>
+            <DialogDescription>{deployLine({ id: item.connection_id, name: item.connection_name }, placements, blocks, exclusions, blockTitle)}</DialogDescription>
+          </DialogHeader>
+          {costLines(report).map((c) => (
+            <p key={c} data-testid="cost-line" className="border-warning/30 bg-warning/10 text-warning rounded-md border px-3 py-2 text-sm">
+              {c}
             </p>
-            <button type="button" aria-expanded={logOpen} onClick={() => setLogOpen((o) => !o)} className="text-xs text-teal-300 hover:underline">
-              {logOpen ? "Hide log" : "Show log"}
-            </button>
-          </div>
-          {run.parts && run.parts.length > 0 && (
-            <ol data-testid="run-parts" aria-label="Each cloud of this run" className="space-y-0.5 pl-5 text-xs">
-              {partLines(run.parts).map((p) => (
-                <li key={p.connectionId} className={`flex items-center gap-1.5 ${PART_TONE[p.status] ?? "text-slate-300"}`}>
-                  {(p.status === "running" || p.status === "queued") && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
-                  {p.text}
-                </li>
-              ))}
-            </ol>
-          )}
-          {!isActive(run) && <RunHeadline token={token} organizationId={organizationId} run={run} blocks={blocks.filter((b) => !(item.exclusions ?? []).includes(b.id)).length} />}
-          {run.failure && <p className="text-xs text-red-300">{run.failure}</p>}
-          {/* What the last successful apply built, while the deployment still holds it. */}
-          {item.last_apply && (item.status === "live" || item.status === "failed") && (
-            <WhatWasBuilt
-              token={token}
-              organizationId={organizationId}
-              item={item}
-              run={item.last_apply}
-              catalog={catalog}
-              blocks={blocks}
-              blockTitle={blockTitle}
-              webServers={webServers}
-            />
-          )}
-          {logOpen && <RunLog token={token} organizationId={organizationId} run={run} />}
-        </div>
-      ) : (
-        <p className="text-xs text-slate-500">No runs yet.</p>
-      )}
+          ))}
+          <p className="text-muted-foreground text-xs">It runs in your own cloud account. You can destroy it later.</p>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="button" onClick={() => start("apply")} autoFocus>
+              <Rocket aria-hidden />
+              {primary.kind === "update" ? "Update" : "Deploy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {previewOpen && (
-        <PreviewDialog
-          token={token}
-          organizationId={organizationId}
-          deploymentId={item.id}
-          title={`${title} (${cloud})`}
-          onClose={() => setPreviewOpen(false)}
-        />
-      )}
+      <AlertDialog open={confirm === "destroy"} onOpenChange={(o) => setConfirm(o ? "destroy" : null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Destroy {title}?</AlertDialogTitle>
+            <AlertDialogDescription>Destroy removes everything this deployment built in {builtIn}. This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* What goes, as the deploy confirmation says what it builds. */}
+          <p data-testid="destroy-list" className="text-sm">
+            {destroyLine({ id: item.connection_id, name: item.connection_name }, placements, blocks, exclusions, blockTitle, lastApplyLogQ.data)}
+          </p>
+          {changesNotDeployed(item) && (
+            <p className="text-muted-foreground text-xs">The diagram or its settings changed since the last deploy. Destroy removes what that deploy built.</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={() => start("destroy")}>Destroy for good</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirm === "remove"} onOpenChange={(o) => setConfirm(o ? "remove" : null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {title} from the diagram?</AlertDialogTitle>
+            <AlertDialogDescription>Nothing in your cloud changes. The connection is free again for a new deployment of this diagram.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={remove}>Remove it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </li>
-  );
-}
-
-// A button that is off stays focusable (aria-disabled, not disabled), so a
-// keyboard or screen-reader user reaches it and hears why (describedBy names
-// a screen-reader line with the reason). Its tooltip says why it is off, or
-// what it does.
-function ActionButton({
-  label,
-  icon,
-  reason,
-  help,
-  describedBy,
-  onClick,
-  primary,
-  danger,
-  confirmDanger,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  reason: string | null;
-  help: string;
-  describedBy: string;
-  onClick: () => void;
-  primary?: boolean;
-  // Outlined red: a button that destroys. Solid red only on the confirm step.
-  danger?: boolean;
-  confirmDanger?: boolean;
-}) {
-  const off = !!reason;
-  const tone = primary
-    ? "bg-teal-600 text-white hover:bg-teal-500"
-    : confirmDanger
-      ? "bg-red-600 text-white hover:bg-red-500"
-      : danger
-        ? "border border-red-800 text-red-300 hover:bg-red-950"
-        : "border border-slate-700 text-slate-200 hover:bg-slate-800";
-  return (
-    <button
-      type="button"
-      aria-disabled={off || undefined}
-      aria-describedby={off && describedBy ? describedBy : undefined}
-      title={reason ?? (help || undefined)}
-      onClick={off ? undefined : onClick}
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 ${tone} aria-disabled:cursor-not-allowed aria-disabled:opacity-40`}>
-      <span aria-hidden className="contents">
-        {icon}
-      </span>
-      {label}
-    </button>
   );
 }

@@ -1,11 +1,10 @@
 # Environments: local and cloud
 
-Clutter runs in two places, and each has one job (ADR-015). Only local exists today. A separate test environment is added when real outside users arrive; the deploy command already takes the environment as a parameter.
+Clutter runs in two places, and each has one job (ADR-015). Whether the cloud is set up yet is in `.claude/findings/NOW.md`. A separate test environment is added when real outside users arrive; the deploy command already takes the environment as a parameter.
 
 | | Local | Cloud |
 | --- | --- | --- |
 | **Job** | build and test on your laptop | the hosted product: demos now, real users later |
-| **Status** | works | not set up |
 | **Who uses it** | each developer alone | the team, the client, and later users |
 | **Costs money** | no | yes |
 | **Frontend** | `npm run dev` on port 3100, opened through A2's front door on port 3000 | a Fargate service behind B's load balancer, its image built with A's and B's addresses and pushed by `npm run deploy -- prod --site-image` |
@@ -21,7 +20,7 @@ Clutter runs in two places, and each has one job (ADR-015). Only local exists to
 
 ## What each feature does where
 
-The cloud does not exist yet, so nothing has been tested there. Its column says what is expected once it is set up.
+The cloud column says what is expected there. The test in § Testing A in the cloud confirms it.
 
 | Feature | Local (tested) | Cloud (expected) |
 | --- | --- | --- |
@@ -33,7 +32,7 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 | Read and download Terraform in the editor | works | works, once generation runs |
 | Upload Lambda code or a playbook | stored on disk | real S3 |
 | Deploy and destroy from A's editor | does not run | the first real test happens here |
-| Deploy and destroy a building-block diagram through B | runs on the mock cloud, on DevStack for OpenStack, and on LocalStack for AWS (`backend/devserver/README.md`) | runs in the users' own clouds from the hosted service (the same deploys already ran from a laptop on real AWS and VEXXHOST on 2026-11-20) |
+| Deploy and destroy a building-block diagram through B | runs on the mock cloud, on DevStack for OpenStack, and on LocalStack for AWS (`backend/devserver/README.md`) | runs in the users' own clouds from the hosted service |
 | Live deploy status, real deploy logs | does not run | runs with deploy |
 | Run Ansible on a server | does not run | runs, needs a real EC2 server |
 | `npm run smoke`, `npm run generated` | team tools | not available |
@@ -50,7 +49,7 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 
 **Local:** nothing beyond the install list in the root `README.md`. No env file, no accounts.
 
-**Cloud.** Clutter in the cloud is a hosted service (SaaS): one copy, run for everyone. The accounts that run Clutter itself (world 1, `system-b-adapter-layer.md` § Names) belong to the client, who owns the product and pays for running it, and the team gets access to deploy. Users bring a Google sign-in and their own cloud accounts (world 2), which they pay for. Stages 1 to 6 are done, so this is set up when the client's accounts arrive (`implementation-plan.md`):
+**Cloud.** Clutter in the cloud is a hosted service (SaaS): one copy, run for everyone. The accounts that run Clutter itself (world 1, `system-b-adapter-layer.md` § Names) belong to the client, who owns the product and pays for running it, and the team gets access to deploy. Users bring a Google sign-in and their own cloud accounts (world 2), which they pay for. The cloud is set up when the client's accounts arrive (`implementation-plan.md` § Stage 7):
 
 | Thing | Owned by | Goes into |
 | --- | --- | --- |
@@ -72,15 +71,35 @@ The cloud does not exist yet, so nothing has been tested there. Its column says 
 
 ## Credentials day
 
-This section is the one owner of the go-live steps. The capstone deployment is gone: its API host (`7c1aawofvl.execute-api.us-west-2.amazonaws.com`) returns NXDOMAIN, and its platform state bucket belongs to the capstone AWS account, which we cannot reach. No step below has been run yet. What is missing is accounts and secrets, not tools. Every step marked **(person)** creates real resources, costs money or needs a person's login, so a person runs it, never a session.
+This section is the one owner of the go-live steps. Whether any have run is in `.claude/findings/NOW.md`.
 
-`npm run deploy:plan -- prod` shows what would change, and `npm run deploy -- prod` applies it. They stop on incomplete or example config (`backend/infra/check-config.sh`), on the wrong AWS account, and on anything but a clean `main`; they ask you to type `prod` before applying, and there is no tear-down command. `prod` is the only environment they accept (ADR-015). They have not been run against real AWS yet; `backend/infra/test-deploy.sh` tests only their checks. Stage 1 (phase 0 in `.claude/findings/NOW.md`) must be on the `main` you deploy from before step 9 on any account reachable from the internet. The fork's `main` has its fixes, such as the signed-in generation endpoint. The client's `main` does not until the fork's `main` reaches it, so there the generation endpoint still needs no login.
+- The capstone's AWS deployment no longer exists. Its API host (`7c1aawofvl.execute-api.us-west-2.amazonaws.com`) does not resolve, and its platform state bucket is in the capstone's AWS account, which we cannot reach.
+- What the cloud needs is accounts and secrets, not tools.
+- Every step marked **(person)** creates real resources, costs money or needs a person's login. A person runs it, never a session.
+
+The deploy command:
+
+- `npm run deploy:plan -- prod` shows what would change, and `npm run deploy -- prod` applies it.
+- They stop on incomplete or example config (`backend/infra/check-config.sh`), on the wrong AWS account, and on anything but a clean `main`.
+- They ask you to type `prod` before applying. There is no tear-down command.
+- `prod` is the only environment they accept (ADR-015).
+- `backend/infra/test-deploy.sh` tests only their checks, not a real deploy.
+- Deploy only from a `main` that has stage 1's security fixes (`implementation-plan.md` § Stage 1), before step 9 on any account reachable from the internet. Without them, the generation endpoint needs no login. The fork's `main` has them; whether the client's `main` has them yet is in `.claude/findings/NOW.md`.
 
 Before Clutter is hosted, what users build (world 2) can be tested from a laptop against real AWS and OpenStack accounts: `backend/devserver/README.md` § Real clouds from this machine.
 
 ### Every value the cloud needs
 
-The two files are ignored by git; each has a committed example beside it with a comment per key. `backend/infra/check-config.sh prod` reads the real files and names every key that is missing, still an example value, or of the wrong form, without printing any value. The capstone team shared their tfvars file on Discord; it is not in the repo and must not be. Values the platform and the deploy command can work out are not asked for: the CloudFormation template's address, every B setting (`backend/infra/modules/adapter-service`), B's database string and JWT secret in Secrets Manager (from `psql_connection_string` and `jwt_secret`), the site's origin that A and B answer CORS for (`https://` and `site_domain`), and the website's image build values that come from elsewhere (A's API address from the `api_invoke_url` output, and B's address, which is the site's own origin); the image also takes `google_client_id` and `contact_email` from `prod.tfvars`.
+- The two files are ignored by git, and must never be committed. Each has a committed example beside it, with a comment per key.
+- `backend/infra/check-config.sh prod` reads the real files. It names every key that is missing, still an example value, or of the wrong form, and prints no value.
+
+Values the platform and the deploy command work out are not asked for:
+
+- the CloudFormation template's address
+- every B setting (`backend/infra/modules/adapter-service`)
+- B's database string and JWT secret in Secrets Manager (from `psql_connection_string` and `jwt_secret`)
+- the site's origin that A and B answer CORS for (`https://` and `site_domain`)
+- the website's image build values that come from elsewhere: A's API address from the `api_invoke_url` output, and B's address, which is the site's own origin (the image takes `google_client_id` and `contact_email` from `prod.tfvars`)
 
 | Value | What it is | Where to get it | Goes in | Fake example |
 | --- | --- | --- | --- | --- |
@@ -93,7 +112,7 @@ The two files are ignored by git; each has a committed example beside it with a 
 | `ansible_runner_image_tag` | A's Ansible runner image tag; a new one for each push, never `latest` | you choose | `prod.tfvars` | `v1` |
 | `terraform_deployer_image_tag` | A's Terraform deployer image tag; a new one for each push, never `latest` | you choose | `prod.tfvars` | `v1` |
 | `google_client_id` | the Google OAuth client for sign-in | Google Cloud console: APIs & Services, Credentials, the Web client's **Client ID** | `prod.tfvars` | `NUMBER-ID.apps.googleusercontent.com` |
-| `contact_email` | the address the website's footer, FAQ, privacy policy and terms show; the website's image is built with it | the client's contact address: `devinatkin@gmail.com` (confirm with the client before launch) | `prod.tfvars` | `hello@example.com` |
+| `contact_email` | the address the website's footer, FAQ, privacy policy and terms show; the website's image is built with it | the client's contact address: the address the client gives (ask the client; it is not kept in the repo) (confirm with the client before launch) | `prod.tfvars` | `hello@example.com` |
 | `adapter_image_tag` | the tag of B's two images; a new one for each push | you choose | `prod.tfvars` | `v1` |
 | `site_image_tag` | the tag of the website's image; a new one for each push, never `latest` | you choose | `prod.tfvars` | `v1` |
 | `certificate_arn` | the HTTPS certificate for `site_domain` | AWS console: Certificate Manager in `ca-central-1`, the certificate's ARN once it shows **Issued** (step 6) | `prod.tfvars` | `arn:aws:acm:ca-central-1:123456789012:certificate/REPLACE` |
@@ -119,10 +138,32 @@ The two files are ignored by git; each has a committed example beside it with a 
 6. **(person) The certificate:** Certificate Manager in `ca-central-1`, **Request**, public, the one name `site_domain` (such as `app.example.com`), DNS validation; add the CNAME it shows at the DNS provider. Success: the certificate shows **Issued**, usually within minutes. If it stays pending, the CNAME is wrong or not yet published.
 7. **Fill the files.** `cp backend/infra/prod.tfvars.example backend/infra/prod.tfvars`, `cp backend/infra/prod.backend.hcl.example backend/infra/prod.backend.hcl`, and fill in every value from the table. Then `backend/infra/check-config.sh prod`. Success: `config: complete`. If not, it names each key to fix. Anyone may run it; it prints no value.
 8. **(person) Plan:** `npm run deploy:plan -- prod`. It checks the files and the account, builds the Lambdas (`backend/api/build.sh`, all 34), runs `terraform init` with `prod.backend.hcl`, and plans. Success: `Plan: N to add, 0 to change, 0 to destroy` on the first run, and `Plan only: nothing changed.` If `init` fails, the `bucket` or `region` in `prod.backend.hcl` is wrong.
-9. **(person) The first deploy:** `npm run deploy -- prod`, from a clean `main`, then type `prod`. It creates A, B's part of the platform and the website. B's part (`backend/infra/modules/adapter-service`) is B's own VPC (public subnets for B API and the load balancer, and separate run subnets whose network ACL refuses private and link-local addresses), its own ECS cluster `clutter-adapter`, B API as one Fargate task, the load balancer (HTTPS with `certificate_arn`), the run task definition, the ECR repositories `clutter-adapter-api` and `clutter-adapter-runtask`, the run and state buckets, B's roles and B's two secrets. The website (`backend/infra/modules/website`) is its own ECS cluster `clutter-website`, one Fargate task of the Next.js server, the ECR repository `clutter-website`, a role that can only pull that image and write its log group `/ecs/clutter-website`, and a security group that only the load balancer can reach. The load balancer serves `site_domain` only and routes by path: `/v1/*` and `/healthz` to B API (health check `/healthz`), everything else to the website (health check `/`); any other name gets a 404. It also publishes A's API in the stage `prod`, and makes a new deployment of it whenever a file that defines the API changes, so no deploy needs a manual publish step. Success: `Apply complete!`, A's API address (the `api_invoke_url` output) and the load balancer's name. A's runner tasks, B API and the website wait for their images until step 11; that is expected. This first run takes no image flag, because the image repositories and A's API (whose address the website is built with) do not exist before it. If the apply stops partway, fix the error it names and run the same command again.
+9. **(person) The first deploy.**
+   1. From a clean `main`, run `npm run deploy -- prod`, then type `prod`. Give this first run no image flag: the image repositories and A's API (whose address the website is built with) do not exist before it.
+   2. It creates A, B's part of the platform and the website:
+      - **B's part** (`backend/infra/modules/adapter-service`): B's own VPC, with public subnets for B API and the load balancer, and separate run subnets whose network ACL refuses private and link-local addresses. Its own ECS cluster `clutter-adapter`, B API as one Fargate task, the load balancer (HTTPS with `certificate_arn`) and the run task definition. The ECR repositories `clutter-adapter-api` and `clutter-adapter-runtask`, the run and state buckets, B's roles and B's two secrets.
+      - **The website** (`backend/infra/modules/website`): its own ECS cluster `clutter-website`, one Fargate task of the Next.js server, and the ECR repository `clutter-website`. A role that can only pull that image and write its log group `/ecs/clutter-website`, and a security group that only the load balancer can reach.
+      - **The load balancer** serves `site_domain` only and routes by path: `/v1/*` and `/healthz` to B API (health check `/healthz`), everything else to the website (health check `/`). Any other name gets a 404.
+      - **A's API** is published in the stage `prod`. A new deployment of it is made whenever a file that defines the API changes, so no deploy needs a manual publish step.
+   3. Success: `Apply complete!`, A's API address (the `api_invoke_url` output) and the load balancer's name. A's runner tasks, B API and the website wait for their images until step 11; that is expected.
+   4. If the apply stops partway, fix the error it names and run the same command again.
 10. **(person) The DNS record:** at the DNS provider, point `site_domain` at `terraform -chdir=backend/infra output -raw load_balancer_dns_name` (a CNAME, or the provider's alias record for an apex name). Success: `dig +short app.example.com` shows the load balancer's addresses once DNS has spread.
-11. **(person) The images, and the last apply:** `npm run deploy -- prod --a-images --adapter-images --site-image`. After you type `prod`, it builds and pushes A's two runner images with `terraform_deployer_image_tag` and `ansible_runner_image_tag` (`backend/infra/modules/fargate/ecr-scripts/*/build-and-push.sh`), B's two images with `adapter_image_tag` (`backend/adapter/images/build-and-push.sh`), and the website's image with `site_image_tag` (`frontend/build-image.sh`), then applies. The website's image is built with A's API address from the `api_invoke_url` output, B's address (the site's own origin, `https://` and `site_domain`), `google_client_id` and `contact_email`, so nobody types them. A tag ECR already holds is not rebuilt, so changing one tag ships only that image; the repositories are immutable, so a new image needs a new tag in `prod.tfvars`. Each flag also works alone, for example `--site-image` after a change to the website. Success: each image pushed, then `Apply complete!`; in the ECS console the services `clutter-adapter-api` (cluster `clutter-adapter`) and `clutter-website` (cluster `clutter-website`) each show 1 running task with a healthy target; `curl -fsS https://app.example.com/healthz` answers 200 (from B); and `https://app.example.com` loads, where **Sign in with Google** opens Google's window. If a push fails, nothing is applied. A 502 or 503 means that service's task is not running: its log group (`/ecs/clutter-adapter-api` or `/ecs/clutter-website`) names the cause. If it says A's API address changed in this apply, set a new `site_image_tag` and run `npm run deploy -- prod --site-image`.
-12. **(person) Link the test AWS account:** in the site, link an AWS account, run the CloudFormation link in the test account, and paste back the role ARN; then, on the Connections page, add an AWS connection from that linked account. Users' roles trust B through the template's `AdapterRunnerRoleName`, whose default `ClutterAdapterRunnerRole` is B API's task role, so no step is needed unless that name changes, in both places. Success: the connection shows verified. If it does not, the role's external id or trust does not match. A table needs no account setting first: on 2026-11-20 the Serverless API example created its DynamoDB table in an account with DynamoDB's defaults, through the role's `ManagedBy = Clutter` conditions.
+11. **(person) The images, and the last apply.**
+    1. Run `npm run deploy -- prod --a-images --adapter-images --site-image`, then type `prod`. It builds and pushes these images, then applies:
+       - A's two runner images, with `terraform_deployer_image_tag` and `ansible_runner_image_tag` (`backend/infra/modules/fargate/ecr-scripts/*/build-and-push.sh`).
+       - B's two images, with `adapter_image_tag` (`backend/adapter/images/build-and-push.sh`).
+       - The website's image, with `site_image_tag` (`frontend/build-image.sh`). It is built with A's API address from the `api_invoke_url` output, B's address (the site's own origin, `https://` and `site_domain`), `google_client_id` and `contact_email`, so nobody types them.
+    2. Know how tags work. A tag ECR already holds is not rebuilt, so changing one tag ships only that image. The repositories are immutable, so a new image needs a new tag in `prod.tfvars`. Each flag also works alone, for example `--site-image` after a change to the website.
+    3. Check success:
+       - Each image is pushed, then `Apply complete!`.
+       - In the ECS console, the services `clutter-adapter-api` (cluster `clutter-adapter`) and `clutter-website` (cluster `clutter-website`) each show 1 running task with a healthy target.
+       - `curl -fsS https://app.example.com/healthz` answers 200 (from B).
+       - `https://app.example.com` loads, and **Sign in with Google** opens Google's window.
+    4. If it fails:
+       - If a push fails, nothing is applied.
+       - A 502 or 503 means that service's task is not running. Its log group (`/ecs/clutter-adapter-api` or `/ecs/clutter-website`) names the cause.
+       - If the deploy command says A's API address changed in this apply, set a new `site_image_tag` and run `npm run deploy -- prod --site-image`.
+12. **(person) Link the test AWS account:** in the site, link an AWS account, run the CloudFormation link in the test account, and paste back the role ARN; then, on the Connections page, add an AWS connection from that linked account. Users' roles trust B through the template's `AdapterRunnerRoleName`, whose default `ClutterAdapterRunnerRole` is B API's task role, so no step is needed unless that name changes, in both places. Success: the connection shows verified. If it does not, the role's external id or trust does not match. A table needs no account setting first: with DynamoDB's defaults, the role's `ManagedBy = Clutter` conditions let a run create its tables.
 13. **(person) The demo OpenStack:** start the DevStack VM in the test account and add an OpenStack connection with its application credential. Switch the VM off after the demo.
 14. **(person) Test:** run the 12-step test below (§ Testing A in the cloud) and B's demo (`system-b-adapter-layer.md` § What the user sees). Any failure is a bug in A, B or the setup; fix it and repeat from that step.
 
@@ -149,7 +190,7 @@ B's part is done in code: the platform Terraform, both images, the run task, the
 
 ## Testing A in the cloud
 
-Nothing here has been run yet. A is proven when every step passes, in this order. Use the test AWS account, never a real user's.
+A is proven in the cloud when every step passes, in this order. Use the test AWS account, never a real user's.
 
 1. Sign in with Google, using the client's Google client.
 2. Create an organization, a project and a diagram.

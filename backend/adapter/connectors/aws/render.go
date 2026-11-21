@@ -468,16 +468,19 @@ func (m *model) vars(b *block) (map[string]any, error) {
 		}
 		return map[string]any{
 			"ResourceName":    b.Addr,
-			"GroupName":       m.physical(b, maxName),
+			"GroupName":       m.stableName(b, "firewall"),
+			"TagName":         m.physical(b, maxName),
 			"VPCResourceName": vpc,
 			"Ingress":         rules,
 		}, nil
 	case connectors.KindVolume:
 		size, _ := b.integer(fieldSizeGB)
+		vm := m.volumeVM[b.ID]
 		return map[string]any{
 			"ResourceName":         b.Addr,
 			"VolumeName":           m.physical(b, maxName),
-			"InstanceResourceName": m.blocks[m.volumeVM[b.ID]].Addr,
+			"InstanceResourceName": m.blocks[vm].Addr,
+			"AvailabilityZone":     m.vmZone(vm),
 			"SizeGB":               size,
 			"VolumeType":           "gp3",
 			"DeviceName":           m.deviceName(b.ID),
@@ -492,7 +495,7 @@ func (m *model) vars(b *block) (map[string]any, error) {
 	case connectors.KindTable:
 		return map[string]any{
 			"ResourceName": b.Addr,
-			"TableName":    m.physical(b, maxName),
+			"TableName":    m.tableName(b),
 			"BillingMode":  "PAY_PER_REQUEST",
 			"HashKey":      b.str(fieldKey),
 			"HashKeyType":  keyTypes[b.str(fieldKeyType)],
@@ -545,8 +548,9 @@ type routeVars struct {
 // reach it. VPC is the network's Terraform address, or "" for the account's
 // default VPC.
 type peerVars struct {
-	Addr, Name, VPC, Target string
-	Sources                 []peerSource
+	// Name is the group's cloud name (stableName); TagName is its Name tag.
+	Addr, Name, TagName, VPC, Target string
+	Sources                          []peerSource
 }
 
 type peerSource struct{ Addr, Part string }
@@ -610,10 +614,10 @@ func (m *model) iamVars() map[string]any {
 			continue
 		}
 		p := peerVars{
-			Addr: peerGroup(vm),
-			// A block name holds no dot, so this name is never another block's.
-			Name:   m.physical(vm, maxName-len(".peers")) + ".peers",
-			Target: vm.Addr,
+			Addr:    peerGroup(vm),
+			Name:    m.stableName(vm, "peers"),
+			TagName: m.physical(vm, maxName-len(".peers")) + ".peers",
+			Target:  vm.Addr,
 		}
 		if net, ok := m.vmNetwork[id]; ok {
 			p.VPC = m.blocks[net].Addr
@@ -644,13 +648,16 @@ const (
 
 type logGroupVars struct{ Addr, Name string }
 
-type keyPairVars struct{ Addr, Name, Key string }
+// keyPairVars is one VM's key pair: Name is its cloud name (stableName),
+// TagName its Name tag.
+type keyPairVars struct{ Addr, Name, TagName, Key string }
 
 // defaultsVars feeds defaults.tf: each function's log group, each bucket's
-// TLS-only policy, each API's throttling and each VM's key pair.
+// TLS-only policy, each API's throttling, each VM's key pair and the zone
+// list of each VM whose zone is pinned (vmPinsZone).
 func (m *model) defaultsVars() (map[string]any, error) {
 	var functions []logGroupVars
-	var buckets, apis []string
+	var buckets, apis, zones []string
 	var keys []keyPairVars
 	for _, id := range m.order {
 		b := m.blocks[id]
@@ -667,7 +674,10 @@ func (m *model) defaultsVars() (map[string]any, error) {
 				return nil, err
 			}
 			if key != "" {
-				keys = append(keys, keyPairVars{Addr: b.Addr, Name: m.physical(b, maxName), Key: hclsafe.Escape(key)})
+				keys = append(keys, keyPairVars{Addr: b.Addr, Name: m.stableName(b, "key"), TagName: m.physical(b, maxName), Key: hclsafe.Escape(key)})
+			}
+			if m.vmPinsZone(id) {
+				zones = append(zones, b.Addr)
 			}
 		}
 	}
@@ -676,6 +686,7 @@ func (m *model) defaultsVars() (map[string]any, error) {
 		"Buckets":    buckets,
 		"APIs":       apis,
 		"KeyPairs":   keys,
+		"Zones":      zones,
 		"RateLimit":  apiRateLimit,
 		"BurstLimit": apiBurstLimit,
 	}, nil
@@ -694,6 +705,9 @@ type instanceVars struct {
 	// string of base64, or an expression that builds the startup wrapper, or
 	// "" for none.
 	UserData string
+	// Zone is the availability_zone argument (vmZone) for a VM whose zone is
+	// pinned (vmPinsZone), or "" to leave the zone to the subnet or to AWS.
+	Zone string
 }
 
 // functionVars is one function's code: the zip code.tf builds from its sample
@@ -776,6 +790,9 @@ func (m *model) overrideVars() (map[string]any, error) {
 				return nil, err
 			}
 			v.UserData = ud
+			if m.vmPinsZone(id) {
+				v.Zone = m.vmZone(id)
+			}
 			instances = append(instances, v)
 		case connectors.KindFunction:
 			f := functionVars{Addr: b.Addr, Zip: b.Addr + ".zip"}

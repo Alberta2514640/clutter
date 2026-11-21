@@ -127,24 +127,22 @@ export type ExampleSplit = { name: string; primary: string; placed: Map<string, 
 type ExampleLike = { name: string; clouds: string[]; placements?: { connector: string; node_ids: string[] }[]; document: unknown };
 
 // exampleSplitFor finds the split example this diagram came from: one whose
-// every placed block is in the diagram, under the same id and kind. Examples
-// keep their node ids when a diagram is made from one, and a block drawn by
-// hand gets a random id, so a diagram matches only the example it copies.
+// every block (placed or not) is in the diagram, under the same id and kind.
+// Examples keep their node ids when a diagram is made from one, and a block
+// drawn by hand gets a random id, so a diagram matches only the example it
+// copies. Matching only the placed blocks is not enough: other examples
+// share ids such as "files" (File storage, Full app).
 export function exampleSplitFor(examples: ExampleLike[], blocks: BlockRef[]): ExampleSplit | null {
   const kindOf = new Map(blocks.map((b) => [b.id, b.kind]));
   for (const e of examples) {
     if (!e.placements?.length || e.clouds.length < 2) continue;
     const nodes = (e.document as { nodes?: { id?: unknown; type?: unknown }[] } | null)?.nodes ?? [];
-    const exampleKind = new Map(nodes.map((n) => [String(n.id), String(n.type)]));
+    if (nodes.length === 0) continue;
+    const fits = nodes.every((n) => kindOf.has(String(n.id)) && kindOf.get(String(n.id)) === String(n.type));
+    if (!fits) continue;
     const placed = new Map<string, string>();
-    let fits = true;
-    for (const p of e.placements) {
-      for (const id of p.node_ids) {
-        if (!kindOf.has(id) || kindOf.get(id) !== exampleKind.get(id)) fits = false;
-        placed.set(id, p.connector);
-      }
-    }
-    if (fits) return { name: e.name, primary: e.clouds[0], placed };
+    for (const p of e.placements) for (const id of p.node_ids) placed.set(id, p.connector);
+    return { name: e.name, primary: e.clouds[0], placed };
   }
   return null;
 }
@@ -169,6 +167,15 @@ export function examplePresets(
     if (there) out.set(b.id, there);
   }
   return out;
+}
+
+// missingExampleClouds lists the clouds a split example runs on that the
+// organization has no working connection to, in the example's order. A new
+// deployment then cannot split as the example does.
+export function missingExampleClouds(split: ExampleSplit | null, connections: Connection[]): string[] {
+  if (!split) return [];
+  const clouds = new Set([split.primary, ...split.placed.values()]);
+  return [...clouds].filter((cloud) => !connections.some((c) => c.status === "working" && c.connector === cloud));
 }
 
 // suggestedPlacements turns the blocks a new deployment runs on other

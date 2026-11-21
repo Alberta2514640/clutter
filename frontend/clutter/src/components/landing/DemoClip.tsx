@@ -74,7 +74,7 @@ export function DemoClip({ describedBy }: { describedBy: string }) {
             onPlay={() => setPlaying(true)}
             onPlaying={() => setStarted(true)}
             onPause={() => setPlaying(false)}
-            className="col-start-1 row-start-1 block aspect-video h-auto w-full bg-slate-950">
+            className="bg-card col-start-1 row-start-1 block aspect-video h-auto w-full">
             <source src={DEMO_CLIP.webm} type="video/webm" />
             <source src={DEMO_CLIP.mp4} type="video/mp4" />
           </video>
@@ -85,14 +85,14 @@ export function DemoClip({ describedBy }: { describedBy: string }) {
             width={DEMO_CLIP.width}
             height={DEMO_CLIP.height}
             sizes="(min-width: 1024px) 640px, calc(100vw - 32px)"
-            className={`pointer-events-none col-start-1 row-start-1 block h-auto w-full transition-opacity duration-300 motion-reduce:transition-none ${started ? "opacity-0" : "opacity-100"}`}
+            className={`motion-slow pointer-events-none col-start-1 row-start-1 block h-auto w-full transition-opacity ${started ? "opacity-0" : "opacity-100"}`}
           />
         </div>
       </WindowFrame>
       <button
         type="button"
         onClick={toggle}
-        className={`absolute bottom-2.5 left-2.5 inline-flex min-h-8 items-center gap-1.5 rounded-full border border-white/15 bg-black/80 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-black motion-reduce:transition-none ${FOCUS_RING}`}>
+        className={`dark border-border bg-background text-foreground hover:bg-accent absolute bottom-3 left-3 inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${FOCUS_RING}`}>
         {playing ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : <Play className="h-3.5 w-3.5" aria-hidden="true" />}
         {playing ? "Pause the demo" : "Play the demo"}
       </button>

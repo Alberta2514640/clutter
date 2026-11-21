@@ -105,7 +105,22 @@ type Job struct {
 	// Prior is the deployment's status when the run was queued. A split apply
 	// rolls back only a deployment that held nothing before the run.
 	Prior DeploymentStatus
+	// ConnectionName is the primary connection's name, for the log's first
+	// line. A split run names each part's own (split.Part.Name).
+	ConnectionName string
 }
+
+// actionTitle is how the log names an action, as the deploy panel does
+// (RUN_ACTION in frontend deployments/runState.ts).
+var actionTitle = map[connectors.Action]string{
+	connectors.ActionPlan:    "Plan",
+	connectors.ActionApply:   "Deploy",
+	connectors.ActionDestroy: "Destroy",
+}
+
+// clock is a time as the log writes it. The server's zone is not the
+// reader's, so it says UTC.
+func clock(t time.Time) string { return t.UTC().Format("15:04:05") + " UTC" }
 
 // Config builds a Runner.
 type Config struct {
@@ -275,6 +290,9 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 	}
 	rw := newRedactWriter(sink)
 	defer func() {
+		// The run's id ends the log, not starts it: the first line is for
+		// the person, and the id is what support and B's tests match on.
+		fmt.Fprintf(rw, "Run %s ended at %s.\n", j.RunID, clock(r.cfg.Now()))
 		if ferr := rw.flush(); ferr != nil {
 			log.Error("could not write the run's log", "err", ferr)
 		}
@@ -303,6 +321,11 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 		fmt.Fprintln(rw, failNoConnector)
 		return failNoConnector, fmt.Errorf("%w: connector not registered", connectors.ErrNothingBuilt)
 	}
+	where := c.Manifest().Title
+	if j.ConnectionName != "" {
+		where += " (" + j.ConnectionName + ")"
+	}
+	fmt.Fprintf(rw, "%s on %s, started %s.\n", actionTitle[j.Action], where, clock(r.cfg.Now()))
 
 	secrets, err := r.cfg.Broker.Credentials(ctx, j.SecretRef)
 	if err != nil {
@@ -326,7 +349,6 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 		return truncate(rw.redact(connectors.UserMessage(err, msg))), err
 	}
 
-	fmt.Fprintf(rw, "Run %s: %s on deployment %s.\n", j.RunID, j.Action, d.ID)
 	if failure, err := preflight(ctx, rw, log, "", c, j.Graph, d, j.Action); err != nil {
 		return failure, err
 	}
@@ -345,12 +367,14 @@ func (r *Runner) execute(ctx context.Context, j Job, log *slog.Logger) (failure 
 			return fail(failGeneric, err)
 		}
 		fmt.Fprintf(rw, "Apply complete: %s.\n", blocksChanged(len(res.Resources)))
+		writeBuilt(rw, j.Graph, d)
 		writeResults(rw, res.Results)
 	case connectors.ActionDestroy:
-		if _, err := c.Destroy(ctx, run, d); err != nil {
+		res, err := c.Destroy(ctx, run, d)
+		if err != nil {
 			return fail(failGeneric, err)
 		}
-		fmt.Fprintln(rw, "Destroy complete.")
+		fmt.Fprintf(rw, "Destroy complete%s.\n", blocksRemoved(len(res.Resources)))
 	default:
 		return fail(failGeneric, fmt.Errorf("unknown action %q", j.Action))
 	}
@@ -371,6 +395,19 @@ func blocksChanged(n int) string {
 	return fmt.Sprintf("%d blocks built or changed", n)
 }
 
+// blocksRemoved is what B's destroy line adds when the connector names the
+// blocks it removed (the mock does). A Terraform connector names none; its
+// own "Destroy complete! Resources: N destroyed." line, earlier, counts them.
+func blocksRemoved(n int) string {
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return ": 1 block removed"
+	}
+	return fmt.Sprintf(": %d blocks removed", n)
+}
+
 // ResultLinePrefix starts each line of an apply's results in the run's log:
 // "Result: <node id> <name> <value>", one per result, after the apply's
 // "Apply complete" line. The deploy panel reads them back for "What was
@@ -378,6 +415,36 @@ func blocksChanged(n int) string {
 // no space, and connectors.ReadResults keeps only values CheckCrossValue
 // accepts, which hold none either.
 const ResultLinePrefix = "Result: "
+
+// BuiltLinePrefix starts each line that names a block an apply's deployment
+// holds: "Built: <node id> <kind> <name>", one per block it includes, after
+// the apply's "Apply complete" line and before its results. The deploy panel
+// reads them back, so "What was built" names the blocks as this apply built
+// them, not as the diagram is saved now (frontend deployments/results.ts).
+// Node ids and kinds hold no space, and a name passed the capability check's
+// name pattern, which allows none; a line that would hold one is left out.
+// The line carries no setting, credential or address.
+const BuiltLinePrefix = "Built: "
+
+// writeBuilt writes the blocks deployment d includes from graph g to the
+// run's log, in node id order. On a part of a split run d's exclusions also
+// hold the blocks placed on the other parts, so each part names its own.
+func writeBuilt(w io.Writer, g connectors.Graph, d connectors.Deployment) {
+	ids := make([]string, 0, len(g.Blocks))
+	for id := range g.Blocks {
+		if !d.Excluded(id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		b := g.Blocks[id]
+		if b.Name == "" || strings.ContainsAny(id+string(b.Kind)+b.Name, " \t\r\n") {
+			continue
+		}
+		fmt.Fprintf(w, "%s%s %s %s\n", BuiltLinePrefix, id, b.Kind, b.Name)
+	}
+}
 
 // writeResults writes an apply's results to the run's log, by node id, each
 // block's in the order the connector gave them.
@@ -428,9 +495,30 @@ func preflight(ctx context.Context, rw *redactWriter, log *slog.Logger, name str
 		return "", nil
 	}
 	for _, p := range problems {
-		fmt.Fprintln(rw, label(fmt.Sprintf("Problem: %s %s%s: %s", p.Code, p.NodeID, edgeText(p), p.Message)))
+		fmt.Fprintln(rw, label("Problem: "+problemWhere(g, p)+p.Message))
 	}
 	return failValidate, fmt.Errorf("%w: validation failed", connectors.ErrNothingBuilt)
+}
+
+// problemWhere names what a problem is about, as the diagram names it: "web:
+// " for a block, "web to db: " for a line, "" for the whole diagram.
+func problemWhere(g connectors.Graph, p connectors.Problem) string {
+	switch {
+	case p.EdgeSource != "":
+		return blockName(g, p.EdgeSource) + " to " + blockName(g, p.EdgeTarget) + ": "
+	case p.NodeID != "":
+		return blockName(g, p.NodeID) + ": "
+	}
+	return ""
+}
+
+// blockName is a block's name, or its node id when the name is missing or
+// would break the log's line (a name that fails the check may hold anything).
+func blockName(g connectors.Graph, id string) string {
+	if b, ok := g.Blocks[id]; ok && b.Name != "" && !strings.ContainsAny(b.Name, "\r\n") {
+		return b.Name
+	}
+	return id
 }
 
 // platformError reports whether err is the launcher's own failure to start a
@@ -439,13 +527,6 @@ func preflight(ctx context.Context, rw *redactWriter, log *slog.Logger, name str
 func platformError(err error) bool {
 	var ue *connectors.UserError
 	return errors.Is(err, runtask.ErrNotStarted) && !errors.As(err, &ue)
-}
-
-func edgeText(p connectors.Problem) string {
-	if p.EdgeSource == "" {
-		return ""
-	}
-	return p.EdgeSource + "->" + p.EdgeTarget
 }
 
 func truncate(s string) string {

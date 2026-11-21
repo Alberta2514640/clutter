@@ -126,7 +126,11 @@ func (r *Runner) executeSplit(ctx context.Context, j Job, rw *redactWriter, log 
 			log.Error("could not record a split run's progress", "err", err)
 		}
 	}
-	fmt.Fprintf(rw, "Run %s: %s on deployment %s across %d clouds.\n", j.RunID, j.Action, j.Deployment.ID, len(j.Parts))
+	names := make([]string, len(j.Parts))
+	for i, p := range j.Parts {
+		names[i] = cloudName(p, plain[i])
+	}
+	fmt.Fprintf(rw, "%s across %d clouds, %s, started %s.\n", actionTitle[j.Action], len(j.Parts), strings.Join(names, " and "), clock(r.cfg.Now()))
 
 	// Every cloud is verified, and checked, before any cloud changes.
 	for i, p := range j.Parts {
@@ -219,6 +223,7 @@ func (s *splitRun) apply(ctx context.Context, conns []connectors.CrossCloud, pla
 				s.keep(out)
 				s.record(i, string(connectors.ActionApply), StatusCompleted)
 				fmt.Fprintf(s.rw, "%s: apply complete, %s.\n", name, blocksChanged(len(res.Resources)))
+				writeBuilt(s.rw, s.j.Graph, p.Deployment)
 				writeResults(s.rw, res.Results)
 				built = i + 1
 				continue

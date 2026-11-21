@@ -488,12 +488,70 @@ env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BI
 check "real-aws.sh status when the template cannot be read" 1 "FAIL  the account-link template answers 403"
 
 echo
+echo "dev.sh --aws"
+fresh_stubs
+aws_config="${work}/aws-config"
+printf '[profile clutter-dev-runner]\nregion = ca-central-1\n' >"${aws_config}"
+printf 'CLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\n' "${good_url}" >"${conf}"
+# dev_run [VAR=value ...] -- ARGS...: runs dev.sh with those variables and
+# arguments, real-aws.conf at ${conf} (when it exists) and the runner profile
+# in ${aws_config}. Docker is always stopped here, so every run ends at dev.sh's
+# tool checks: after it chose the AWS mode, and before it touches .state or a
+# Clutter that already runs on this machine.
+dev_run() {
+  local -a vars=()
+  while [[ $# -gt 0 && "$1" != -- ]]; do
+    vars+=("$1")
+    shift
+  done
+  shift
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" AWS_CONFIG_FILE="${aws_config}" FAKE_DOCKER=stopped \
+    ${vars[@]+"${vars[@]}"} "${BASH_BIN}" "${DEVSERVER_DIR}/dev.sh" "$@" >"${out}" 2>&1 || rc=$?
+}
+dev_run --
+check "auto with real-aws.conf uses real AWS" 1 "AWS mode (--aws auto): AWS runs build in REAL AWS accounts" "Docker is installed but not running"
+
+dev_run -- --aws localstack
+check "--aws localstack with LocalStack down stops" 1 "--aws localstack needs LocalStack" \
+  "Run npm run localstack -- start, then npm run dev -- --aws localstack again."
+refute "--aws localstack with LocalStack down checks no tool" "Docker is installed but not running"
+
+stub curl 'case "$*" in *127.0.0.1:4566/_localstack/health*) exit 0 ;; *) exit 7 ;; esac'
+dev_run -- --backend-only --aws=localstack
+check "--aws localstack with real-aws.conf uses LocalStack" 1 \
+  "AWS mode (--aws localstack): AWS runs apply against LocalStack on http://127.0.0.1:4566"
+refute "--aws localstack with real-aws.conf never uses real AWS" "REAL AWS"
+
+rm -f "${conf}"
+dev_run --
+check "auto without real-aws.conf uses LocalStack when it runs" 1 \
+  "AWS mode (--aws auto): AWS runs apply against LocalStack on http://127.0.0.1:4566"
+
+stub curl 'exit 7'
+dev_run --
+check "auto with neither stays local" 1 "AWS mode (--aws auto): renders and previews AWS Terraform; runs need a real AWS account"
+
+dev_run -- --backend-only --aws real
+check "--aws real without real-aws.conf stops" 1 "--aws real needs backend/devserver/real-aws.conf" "npm run real-aws -- setup"
+refute "--aws real without real-aws.conf checks no tool" "Docker is installed but not running"
+
+dev_run -- --aws cloud
+check "--aws refuses a bad value" 2 "--aws takes auto, localstack or real." "usage: npm run dev"
+dev_run -- --aws
+check "--aws refuses a missing value" 2 "--aws takes auto, localstack or real."
+dev_run -- --frontend-only --aws localstack
+check "--aws refuses --frontend-only" 2 "--aws goes with npm run dev or npm run dev:backend"
+
+echo
 echo "--help"
 fresh_stubs
 for script in doctor.sh setup.sh dev.sh stop.sh smoke.sh localstack.sh devstack.sh generated.sh real-aws.sh; do
   run_args "${script}" --help
   check "${script} --help" 0 "usage: npm run"
 done
+run_args dev.sh --backend-only --help
+check "dev.sh --help explains --aws" 0 "--aws MODE" "localstack  LocalStack, even when real-aws.conf exists"
 run_args doctor.sh --nonsense
 check "doctor.sh refuses an unknown flag" 2 "usage: npm run doctor"
 run_args dev.sh --frontend-only

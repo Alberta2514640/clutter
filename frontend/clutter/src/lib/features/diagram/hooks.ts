@@ -5,6 +5,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { DiagramSummary, Project } from "../projects/types";
 import { diagramApi } from "./api";
 import { emptyBlocksDocument, isBlocksDocument, type BlocksDocument } from "./blocksDocument";
+import { hasDrawnDiagram } from "./drawn";
 import { diagramKeys } from "./keys";
 import { filesPredateStatus } from "./types";
 import type {
@@ -41,6 +42,25 @@ export const useHasOlderDiagrams = (token: string | null | undefined, projectIds
   return {
     isLoading: queries.some((q) => q.isLoading),
     hasOlder: queries.some((q) => (q.data ?? []).some((d) => !isBlocksDocument(d.data))),
+  };
+};
+
+// Whether any diagram in these projects holds a block, for the checklist's
+// "Draw your setup". Shares the diagram lists' cache with useDiagrams.
+export const useHasDrawnDiagram = (token: string | null | undefined, projectIds: string[]) => {
+  const queries = useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: diagramKeys.list(projectId),
+      queryFn: () => diagramApi.list(token as string, projectId),
+      enabled: !!token,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  return {
+    isLoading: queries.some((q) => q.isLoading),
+    isError: queries.some((q) => q.isError && !q.data),
+    refetch: () => queries.forEach((q) => void q.refetch()),
+    drawn: hasDrawnDiagram(queries.map((q) => q.data)),
   };
 };
 

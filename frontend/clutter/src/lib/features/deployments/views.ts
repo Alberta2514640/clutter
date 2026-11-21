@@ -134,6 +134,8 @@ export type NodeLook = {
   statusDetail: string | null;
   // In the blocks view, one badge per cloud the diagram deploys to.
   badges: NodeBadge[];
+  // In a cloud's view, that cloud, for its small logo beside the service name.
+  viewCloud: CloudLook | null;
 };
 
 export function nodeLook(view: string, views: CloudView[], block: BlockRefLite, blockTitle: string): NodeLook {
@@ -141,7 +143,8 @@ export function nodeLook(view: string, views: CloudView[], block: BlockRefLite, 
   if (current) {
     const look = blockLook(current.manifest, block.kind, blockTitle);
     const state = cloudBlockState(current, block, blockTitle);
-    return { subtitle: look.name, iconSrc: look.iconSrc, dimmed: state.dimmed, status: state.label, statusDetail: state.detail, badges: [] };
+    const viewCloud = { connector: current.connector, title: current.title, shortName: current.shortName, logoSrc: current.logoSrc };
+    return { subtitle: look.name, iconSrc: look.iconSrc, dimmed: state.dimmed, status: state.label, statusDetail: state.detail, badges: [], viewCloud };
   }
   // One badge per cloud a deployment would build the block on: on where it is
   // built, off where it is left out or cannot be built. A cloud the block is
@@ -152,7 +155,7 @@ export function nodeLook(view: string, views: CloudView[], block: BlockRefLite, 
     .map((v) => ({ cloud: v, state: cloudBlockState(v, block, blockTitle) }))
     .filter((s) => s.state.status !== "elsewhere")
     .map((s) => ({ cloud: s.cloud, on: !s.state.dimmed, detail: s.state.detail }));
-  return { subtitle: blockTitle, iconSrc: null, dimmed: false, status: null, statusDetail: null, badges };
+  return { subtitle: blockTitle, iconSrc: null, dimmed: false, status: null, statusDetail: null, badges, viewCloud: null };
 }
 
 // viewSummary is the one line a cloud view shows above the canvas.

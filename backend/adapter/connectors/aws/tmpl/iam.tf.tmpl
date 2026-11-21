@@ -173,8 +173,14 @@ resource "aws_security_group" "{{.Addr}}" {
   vpc_id      = aws_vpc.{{.VPC}}.id
 {{- end}}
 
+  # As the firewall's group: the Name tag follows the VM's name, and the
+  # group's own name, from the node id, is kept as made.
   tags = {
-    Name = "{{.Name}}"
+    Name = "{{.TagName}}"
+  }
+
+  lifecycle {
+    ignore_changes = [name]
   }
 }
 {{- $group := .Addr}}

@@ -87,6 +87,42 @@ func (m *model) physical(b *block, max int) string {
 	return m.d.Prefix + "-" + strings.TrimRight(b.Name[:cut], "-_") + "-" + shortHash(b.Name)
 }
 
+// stableName is a cloud name built from the node id, not the block's name,
+// for a resource whose name forces a new one and whose replacement is costly:
+// a security group AWS will not delete while an instance uses it, and a key
+// pair whose new name replaces the instance. A rename then changes only the
+// resource's Name tag. A block name holds no dot, so this name is never one
+// physical gives. Templates that use it ignore later changes to the name, so a
+// resource named before it keeps its name.
+func (m *model) stableName(b *block, what string) string {
+	return m.d.Prefix + "." + b.Part + "." + what
+}
+
+// The table key a new table block starts with. A table with this key keeps
+// its plain name (tableName).
+var (
+	defaultTableKey, _     = connectors.StandardField(connectors.KindTable, "key").Default.(string)
+	defaultTableKeyType, _ = connectors.StandardField(connectors.KindTable, "key_type").Default.(string)
+)
+
+// tableName is a table's cloud name. DynamoDB fixes a table's key when it is
+// made, so a changed key or key type replaces the table. The provider plans
+// that replacement create-before-destroy whenever an API reaches the table
+// through a function (A's API deployment sets create_before_destroy, and
+// Terraform carries it to everything the deployment depends on), and the new
+// table cannot take the old one's name. So a table whose key is not the
+// default carries a hash of its key and key type, and any key change is a new
+// name. The hash also makes a key type change visible: the provider compares
+// attribute blocks by name only, so it never plans a type change on its own
+// (hashicorp/terraform-provider-aws#22852).
+func (m *model) tableName(b *block) string {
+	key, keyType := b.str(fieldKey), b.str(fieldKeyType)
+	if key == defaultTableKey && keyType == defaultTableKeyType {
+		return m.physical(b, maxName)
+	}
+	return m.physical(b, maxName-9) + "-" + shortHash(key+":"+keyType)
+}
+
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:4])
@@ -617,6 +653,27 @@ func (m *model) vmSubnet(id string) string {
 		return m.blocks[net].Addr + "_public_subnet"
 	}
 	return m.blocks[net].Addr + "_subnet"
+}
+
+// vmZone is the availability zone a VM with volumes runs in, as an HCL
+// expression its volumes read. It never reads the instance, so a replaced VM
+// keeps its volumes: a volume's zone forces a new volume when it changes, and
+// a replaced instance's zone is unknown until it exists. A VM in a network
+// runs in its subnet's zone. A VM in the account's default VPC is pinned to
+// the zone the network template picks (the region's first available one),
+// because AWS otherwise picks a zone for each new instance (vmPinsZone).
+func (m *model) vmZone(id string) string {
+	if subnet := m.vmSubnet(id); subnet != "" {
+		return "aws_subnet." + subnet + ".availability_zone"
+	}
+	return "data.aws_availability_zones." + m.blocks[id].Addr + "_azs.names[0]"
+}
+
+// vmPinsZone reports whether a VM needs its zone pinned (vmZone): it has
+// volumes and no network.
+func (m *model) vmPinsZone(id string) bool {
+	_, inNetwork := m.vmNetwork[id]
+	return !inNetwork && len(m.vmVolumes[id]) > 0
 }
 
 // peersOf returns the VMs on this cloud that get a VM's address, sorted: the
