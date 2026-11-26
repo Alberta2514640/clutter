@@ -31,7 +31,10 @@
     "sharp": "^0.35.5",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.4.0",
+    "y-protocols": "1.0.6",
+    "y-websocket": "3.0.0",
     "yaml": "2.9.1",
+    "yjs": "13.6.27",
     "zustand": "^5.0.9"
   },
   "devDependencies": {

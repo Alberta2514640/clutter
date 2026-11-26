@@ -1,0 +1,62 @@
+{
+  "about": "One sample diagram in both formats. The service and the frontend both test their conversion with this file.",
+  "name": "Demo diagram",
+  "saved": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "node-vm",
+        "type": "vm",
+        "position": { "x": 300, "y": 180 },
+        "data": { "name": "web", "fields": { "flavor": "m1.small", "ports": [80, 443], "tags": { "env": "demo" } } }
+      },
+      {
+        "id": "node-net",
+        "type": "network",
+        "position": { "x": 600, "y": 180 },
+        "data": { "name": "main", "fields": { "cidr": "10.0.0.0/24" } }
+      },
+      {
+        "id": "node-vol",
+        "type": "volume",
+        "position": { "x": 300, "y": 400.5 },
+        "data": { "name": "data", "fields": {} }
+      }
+    ],
+    "edges": [
+      { "id": "edge-vm-net", "source": "node-vm", "target": "node-net" },
+      { "id": "edge-vol-vm", "source": "node-vol", "target": "node-vm" }
+    ]
+  },
+  "shared": {
+    "nodes": {
+      "node-vm": {
+        "kind": "vm",
+        "name": "web",
+        "position": { "x": 300, "y": 180 },
+        "fields": { "flavor": "m1.small", "ports": [80, 443], "tags": { "env": "demo" } }
+      },
+      "node-net": {
+        "kind": "network",
+        "name": "main",
+        "position": { "x": 600, "y": 180 },
+        "fields": { "cidr": "10.0.0.0/24" }
+      },
+      "node-vol": {
+        "kind": "volume",
+        "name": "data",
+        "position": { "x": 300, "y": 400.5 },
+        "fields": {}
+      }
+    },
+    "edges": {
+      "edge-vm-net": { "source": "node-vm", "target": "node-net" },
+      "edge-vol-vm": { "source": "node-vol", "target": "node-vm" }
+    },
+    "meta": {
+      "name": "Demo diagram",
+      "saved": { "hash": "b7b72b6bc1e626b1dcbdc571584cb1fb35a6603c543f65f90b13476c86c97602", "by": null, "at": null }
+    }
+  },
+  "hash": "b7b72b6bc1e626b1dcbdc571584cb1fb35a6603c543f65f90b13476c86c97602"
+}

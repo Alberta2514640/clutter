@@ -28,7 +28,7 @@ Each kind of fact has one owner. Change a fact at its owner, in the same change 
 | What was decided, and why | `docs/decisions.md` |
 | Outside research (cloud providers, prior art, law) | `docs/research/<target>/<date>-<topic>.md` (`patricloud/`, `tierhive/`, `openstack/`, `aws/`, which holds the LocalStack research, and `website/`, which holds the UX research behind ADR-028) |
 | Where the current work stands, open defects | `.claude/findings/NOW.md` |
-| Dated test reports, with screenshots, for people who will not run the tests | `docs/reports/<date>-*.pdf` |
+| Dated test reports for people who will not run the tests (PDF with screenshots, or Markdown) | `docs/reports/<date>-*` |
 | The team's test plan: one suite per test type, where each lives and how to run it | `test-suites/README.md` |
 | A resource's fields and defaults | in A, the generator code (and, drifting from it, the seed SQL and the config panel); in B, each connector's manifest |
 | The previous capstone team's design and course deliverable | `docs/old-capstone/`: `final-report.pdf` and `.md` (the same report; history, not current) and `backend-tutorial.md` (the capstone's backend guide) |

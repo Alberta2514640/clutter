@@ -187,6 +187,9 @@ adapter_process_alive() {
 website_process_alive() {
   owned_pid website npm >/dev/null
 }
+collab_process_alive() {
+  owned_pid collab "${COLLAB_DIR}/src/server.ts" >/dev/null
+}
 
 # Where to open the website, for both start messages.
 website_lines() {
@@ -203,8 +206,11 @@ EOF
 # the same. A website that exits with 130 or 143 (SIGINT or SIGTERM), or after
 # stop.sh removed website.pid, stopped normally.
 run_website() {
-  local status=0 website_pid
-  NEXT_PUBLIC_API_ENDPOINT="http://localhost:8787" NEXT_PUBLIC_ADAPTER_API_ENDPOINT="http://localhost:${ADAPTER_ADDR##*:}" NEXT_PUBLIC_GOOGLE_CLIENT_ID="214630517546-2tttdua57o7gj14up16v7s3unqoah46k.apps.googleusercontent.com" npm --prefix "${REPO_DIR}/frontend/clutter" run dev -- --hostname 127.0.0.1 --port 3100 &
+  local status=0 website_pid collab_url=""
+  # The website gets the live sync address only while that service runs. An
+  # empty value means live sync is off.
+  if collab_healthy; then collab_url="ws://localhost:${COLLAB_ADDR##*:}"; fi
+  NEXT_PUBLIC_COLLAB_URL="${collab_url}" NEXT_PUBLIC_API_ENDPOINT="http://localhost:8787" NEXT_PUBLIC_ADAPTER_API_ENDPOINT="http://localhost:${ADAPTER_ADDR##*:}" NEXT_PUBLIC_GOOGLE_CLIENT_ID="214630517546-2tttdua57o7gj14up16v7s3unqoah46k.apps.googleusercontent.com" npm --prefix "${REPO_DIR}/frontend/clutter" run dev -- --hostname 127.0.0.1 --port 3100 &
   website_pid=$!
   write_pid_file website "${website_pid}" npm
   write_pid_file dev $$ dev.sh
@@ -243,7 +249,7 @@ EOF
   run_website
 fi
 
-if gateway_healthy || gateway_process_alive || adapter_healthy || adapter_process_alive || website_process_alive; then
+if gateway_healthy || gateway_process_alive || adapter_healthy || adapter_process_alive || website_process_alive || collab_process_alive; then
   echo "Clutter is already running; restarting it so it picks up your code."
   # stop.sh's errors stay visible: it fails when an earlier dev.sh is still stopping.
   if ! "${DEVSERVER_DIR}/stop.sh" >/dev/null; then
@@ -387,6 +393,51 @@ if ! adapter_healthy; then
   exit 1
 fi
 
+# The live sync service (backend/collaboration), for editing one diagram
+# together. It is optional: when it cannot start, Clutter still runs and the
+# start message says why live sync is off. It checks each connection through
+# A's API with the user's own token, so it gets no secret and no database
+# address. Node 22 runs its TypeScript files directly.
+collab_line="off"
+start_collab() {
+  local pid
+  if ! command -v node >/dev/null; then
+    collab_line="off (Node is missing; npm run doctor says how to install it)"
+    return 0
+  fi
+  if [[ ! -d "${COLLAB_DIR}/node_modules" ]]; then
+    collab_line="off (its packages are missing; run npm run setup)"
+    return 0
+  fi
+  # Someone may have started it by hand (npm start in backend/collaboration).
+  if collab_healthy; then
+    collab_line="ws://localhost:${COLLAB_ADDR##*:} (already running; this script did not start it)"
+    return 0
+  fi
+  nohup env -i \
+    PATH="${PATH}" HOME="${HOME}" \
+    COLLAB_HOST="${COLLAB_ADDR%%:*}" \
+    COLLAB_PORT="${COLLAB_ADDR##*:}" \
+    COLLAB_API_URL="http://${API_ADDR}" \
+    COLLAB_ALLOWED_ORIGINS="http://localhost:3000" \
+    node "${COLLAB_DIR}/src/server.ts" \
+    > "${STATE_DIR}/collab.log" 2>&1 &
+  pid=$!
+  write_pid_file collab "${pid}" "${COLLAB_DIR}/src/server.ts"
+  for _ in $(seq 1 20); do
+    if collab_healthy; then
+      collab_line="ws://localhost:${COLLAB_ADDR##*:}"
+      return 0
+    fi
+    kill -0 "${pid}" 2>/dev/null || break
+    sleep 0.5
+  done
+  kill -TERM "${pid}" 2>/dev/null || true
+  rm -f "${STATE_DIR}/collab.pid"
+  collab_line="off (it did not start; see ${STATE_DIR#"${REPO_DIR}"/}/collab.log)"
+}
+start_collab
+
 if ${backend_only}; then
   trap - INT TERM EXIT
   cat <<EOF
@@ -394,6 +445,7 @@ if ${backend_only}; then
 The backend is up (no frontend).
   API:       http://localhost:8787
   B API:     http://localhost:${ADAPTER_ADDR##*:}   (connectors: mock, general-openstack, aws)
+  Live sync: ${collab_line}
   AWS:       ${aws_mode}${aws_next:+${nl}             ${aws_next}}
   Website:   npm run dev:frontend, in another terminal
   Postgres:  127.0.0.1:${PG_PORT}, database clutter
@@ -412,6 +464,7 @@ $(website_lines)
   Sample:   npm run seed, in another terminal, adds an organization, a project and an
             AWS diagram for the local test user. Each run adds a new set.
   B API:    http://localhost:${ADAPTER_ADDR##*:}
+  Live sync: ${collab_line}
   AWS:      ${aws_mode}${aws_next:+${nl}            ${aws_next}}
   Logs:     ${STATE_DIR#"${REPO_DIR}"/}/gateway.log and adapter.log
   Stop:     Ctrl+C here (your data is kept)

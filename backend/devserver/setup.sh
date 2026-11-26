@@ -13,7 +13,8 @@ usage: npm run setup
 
 Prepares this clone for npm run dev. Safe to run again.
   1. npm run doctor: stops here when a required tool is missing
-  2. the frontend's packages (npm ci in frontend/clutter), when package-lock.json changed
+  2. the frontend's packages (npm ci in frontend/clutter), when package-lock.json changed,
+     and the live sync service's packages (npm ci in backend/collaboration)
   3. every Go module's dependencies (go mod download), then one build to fill Go's cache
   4. the pinned Postgres image, and a check that Docker can start a container
   5. frontend/clutter/.env.local from .env.example, only when it does not exist
@@ -39,6 +40,14 @@ if [[ -f "${front}/node_modules/.package-lock.json" && ! "${front}/package-lock.
 else
   echo "Installing the exact versions in frontend/clutter/package-lock.json (npm ci) ..."
   npm --prefix "${front}" ci --no-audit --no-fund || fail "npm ci failed; read its error above."
+fi
+# The live sync service's packages. It is optional, so a failure here does not
+# stop the setup: npm run dev then starts without live sync and says so.
+if [[ -f "${COLLAB_DIR}/node_modules/.package-lock.json" && ! "${COLLAB_DIR}/package-lock.json" -nt "${COLLAB_DIR}/node_modules/.package-lock.json" ]]; then
+  echo "The live sync service's packages are already installed."
+else
+  echo "Installing the live sync service's packages (npm ci in backend/collaboration) ..."
+  (cd "${COLLAB_DIR}" && npm ci --no-audit --no-fund) || echo "Could not install them. Clutter still runs, without live sync." >&2
 fi
 
 step "3/5 Go modules"

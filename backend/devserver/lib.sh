@@ -10,6 +10,9 @@ COMPOSE_FILE="${DEVSERVER_DIR}/docker-compose.yml"
 API_ADDR="127.0.0.1:8787"
 ADAPTER_ADDR="127.0.0.1:8790"
 ADAPTER_DATA_DIR="${STATE_DIR}/adapter"
+# The live sync service (backend/collaboration). It is optional: Clutter runs without it.
+COLLAB_ADDR="127.0.0.1:8791"
+COLLAB_DIR="${REPO_DIR}/backend/collaboration"
 FRONT_ADDR="127.0.0.1:3000"
 FRONTEND_UPSTREAM="http://127.0.0.1:3100"
 PG_PORT="54329"
@@ -144,6 +147,10 @@ load_adapter_credential_key() {
 
 adapter_healthy() {
   curl -fs --max-time 1 "http://${ADAPTER_ADDR}/healthz" >/dev/null
+}
+
+collab_healthy() {
+  curl -fs --max-time 1 "http://${COLLAB_ADDR}/healthz" >/dev/null
 }
 
 compose() {
