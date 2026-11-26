@@ -12,17 +12,18 @@ It runs the real, unchanged Lambdas from `backend/api`. Each one is built for th
 | --- | --- | --- |
 | `doctor.sh` | `doctor` | checks the tools, ports and disk, one line each, and prints the install command for this platform. It exits with 1 only when a required tool is missing or unusable |
 | `setup.sh` | `setup` | runs the doctor, then `npm ci` in `frontend/clutter` when its lock file changed. It runs `go mod download` and one build for every Go module under `backend/`. It pulls the Postgres image and checks `docker run`, and copies `frontend/clutter/.env.example` to `.env.local` when it is missing. It is safe to run again |
-| `dev.sh` | `dev`, `dev:backend`, `dev:frontend` | `dev` starts everything. `dev:backend` (`--backend-only`) starts Postgres, the gateway and B API without the website, and returns. `dev:frontend` (`--frontend-only`) runs only the website, the same way `dev` does, against that backend; Ctrl+C stops the website alone |
+| `dev.sh` | `dev`, `dev:backend`, `dev:frontend` | `dev` starts everything. `dev:backend` (`--backend-only`) starts Postgres, the gateway and B API without the website, and returns. `dev:frontend` (`--frontend-only`) runs only the website, the same way `dev` does, against that backend; Ctrl+C stops the website alone. `dev` and `dev:backend` take `-- --aws auto\|localstack\|real`, where B's AWS runs go (see [AWS on LocalStack](#aws-on-localstack)) |
 | `seed-diagram.py` | `seed` | adds an organization with a fake linked AWS account, a project and an AWS diagram for the `/dev/login` user |
 | `smoke.sh` | `smoke` | calls every route and B's main paths (see [What works locally](#what-works-locally-and-what-only-works-in-aws)) |
 | `generated.sh` | `generated` | lists and validates generated Terraform (see [Generating Terraform locally](#generating-terraform-locally)) |
 | `stop.sh` | `stop` | stops the website, the backend and Postgres, even when `dev.sh` runs in another terminal or a script; `--wipe` also deletes the database, the local S3 files and B's data |
 | `localstack.sh` | `localstack` | see [AWS on LocalStack](#aws-on-localstack) |
-| `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, and starts, stops or shows the VM (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
+| `devstack.sh` | `devstack` | makes the Lima VM named `devstack` and installs DevStack in it, makes the credential Clutter uses, starts, stops or shows the VM, and routes DevStack's public network to it (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)) |
+| `real-aws.sh` | `real-aws` | sets up Clutter's own AWS account so this machine can deploy into real AWS accounts, checks that setup, and removes it (see [Real clouds from this machine](#real-clouds-from-this-machine)) |
 
-The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, on macOS and Linux). It also runs every script's `--help`. CI runs it.
+The doctor's required checks are Node, npm, Go, Docker, curl and openssl. Node must be the version in `.nvmrc` or newer. Go must be the newest `go` line among the `go.mod` files, or Go 1.21 or newer that may download it. Docker needs its compose plugin, and must be running and able to start a container. Recommended: python3 (for `seed`), Terraform (the version B's run image installs, for B's local deploys and `generated`), the free ports and disk space. Optional: the LocalStack image, Lima and the `devstack` VM, and Playwright's Chromium. When the `devstack` VM runs, the doctor also checks that this machine reaches DevStack and DevStack's public network, and says when the route to that network is missing or the VM's side of it is down. `test-scripts.sh` runs the doctor and `devstack.sh` against fake tools on PATH (a missing tool, a stopped Docker, a refused user, everything present, DevStack reachable or blocked, the route's dry runs and refusals, on macOS and Linux). It also runs every script's `--help`. CI runs it.
 
-The gateway also serves `POST /dev/link-fake-account` for the local-only **Link fake account** button, on A's "AWS account required" popup and in the AWS link flow on Connections. It links one fake account per organization and answers with the linked account's name. A production build shows no such button.
+The gateway also serves `POST /dev/link-fake-account` for the local-only **Link fake account** button, on A's "AWS account required" popup and in the AWS link flow on Connections. It links one fake account per organization and answers with the linked account's name. The website's **Connect local AWS** calls it and then connects the account in B, in one step. Its twin, `POST /dev/link-devstack`, serves the **Connect local OpenStack** button on the OpenStack form (see [Add the connection in Clutter](#add-the-connection-in-clutter)). A production build shows neither button.
 
 ## Why the backend runs this way
 
@@ -51,7 +52,7 @@ Nothing to configure: no `.env` file, no API keys, no accounts. `dev.sh` generat
 
 ## What works locally, and what only works in AWS
 
-Checked on 2026-11-13 with `smoke.sh` (all 32 routes, 39 calls: 31 pass, 3 need AWS, 5 expected failures, 0 fail; then 32 B checks, 32 pass, 0 fail). Its checks outside the route rows include a member of another organization being refused. The smoke checks that refusal on generation, on the files route and on every route that takes a project, diagram or run id. Any fail, in A's rows or B's checks, makes the smoke exit with 1. Browser results are in `frontend/clutter/README.md`.
+Expected from `smoke.sh` (all 32 routes, 39 calls: 31 pass, 3 need AWS, 5 expected failures, 0 fail; then 37 B checks, 37 pass, 0 fail). Its checks outside the route rows include a member of another organization being refused. The smoke checks that refusal on generation, on the files route and on every route that takes a project, diagram or run id. Any fail, in A's rows or B's checks, makes the smoke exit with 1. Browser results are in `frontend/clutter/README.md`.
 
 | Feature | Locally | Why |
 | --- | --- | --- |
@@ -87,7 +88,7 @@ Read them in the editor with **Preview Terraform**. List them with `npm run gene
 
 ## How sign-in works locally
 
-Real Google sign-in works here while the capstone team's Google client still exists. The log-in Lambda runs unchanged. The gateway gives it the same `GOOGLE_CLIENT_ID` the frontend signs in with, so it accepts only tokens minted for Clutter. A test fails if the two ids drift apart. Each Google account is a separate local user, which is how to test two users. `/dev/login` is for automated tests and as a fallback; people use `/login`. It creates a local user, `dev@clutter.localhost`. It signs a token with the same claims and algorithm as the log-in Lambda, using a secret that `dev.sh` generates. The real authorizer accepts that token.
+Real Google sign-in works here while the capstone team's Google client still exists. The log-in Lambda runs unchanged. The gateway gives it the same `GOOGLE_CLIENT_ID` the frontend signs in with, so it accepts only tokens minted for Clutter. A test fails if the two ids drift apart. Each Google account is a separate local user, which is how to test two users. On a new machine use `/dev/login`: it needs no Google account, and the tests use it too. It creates a local user, `dev@clutter.localhost`. It signs a token with the same claims and algorithm as the log-in Lambda, using a secret that `dev.sh` generates. The real authorizer accepts that token.
 
 The frontend reads its API token from `localStorage` on its own origin, and the gateway on port 8787 cannot write it. So the gateway also runs a front door on `127.0.0.1:3000`. The front door serves `/dev/login` and passes every other request to the Next dev server on port 3100. `dev.sh` starts that server with `NEXT_PUBLIC_API_ENDPOINT=http://localhost:8787` (A) and `NEXT_PUBLIC_ADAPTER_API_ENDPOINT=http://localhost:8790` (B). So B's screens (the building-block editor, its deploy panel and the Connections page) call B directly. `/dev/login` sets the `clutter_token` cookie and the `google_data` localStorage entry, just as a real log-in does, then opens `/dashboard`.
 
@@ -97,20 +98,21 @@ The frontend reads its API token from `localStorage` on its own origin, and the 
 
 ## B API locally
 
-`dev.sh` builds `backend/adapter/cmd/api` into `.state/adapter-api` and starts it on `127.0.0.1:8790` with a clean environment and only B's own variables. It gets the same JWT secret as A, so A's tokens (including `/dev/login`'s) sign in to B too. It connects to the same Postgres and applies `backend/storage-sql/adapter-tables.sql` at start-up. The Postgres container also loads that file as `30-adapter-tables.sql` on a fresh volume. B offers three connectors. `mock` builds nothing. `general-openstack` needs a reachable OpenStack, such as DevStack (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)). `aws` renders and previews real Terraform from the repo's templates. An `aws` run applies against LocalStack when it is running (see [AWS on LocalStack](#aws-on-localstack)), and otherwise stops at "needs a real AWS account". Connection credentials are encrypted under `.state/adapter/secrets` with a key `dev.sh` generates once into `.state/adapter_credential_key` (mode 600). Run logs go to `.state/adapter/logs`. B answers CORS for `http://localhost:3000` and `http://127.0.0.1:3000` only. Its log is `.state/adapter.log`. `npm run stop -- --wipe` deletes `.state/adapter` with the database, and keeps the key.
+`dev.sh` builds `backend/adapter/cmd/api` into `.state/adapter-api` and starts it on `127.0.0.1:8790` with a clean environment and only B's own variables. It gets the same JWT secret as A, so A's tokens (including `/dev/login`'s) sign in to B too. It connects to the same Postgres and applies `backend/storage-sql/adapter-tables.sql` at start-up. The Postgres container also loads that file as `30-adapter-tables.sql` on a fresh volume. B offers three connectors. `mock` builds nothing. `general-openstack` needs a reachable OpenStack, such as DevStack (see [OpenStack on this machine (DevStack)](#openstack-on-this-machine-devstack)). `aws` renders and previews real Terraform from the repo's templates. An `aws` run goes where `npm run dev -- --aws` chooses: LocalStack, real AWS, or neither, when it stops at "needs a real AWS account" (root `README.md` § Ways to run Clutter). Connection credentials are encrypted under `.state/adapter/secrets` with a key `dev.sh` generates once into `.state/adapter_credential_key` (mode 600). Run logs go to `.state/adapter/logs`. B answers CORS for `http://localhost:3000` and `http://127.0.0.1:3000` only. Its log is `.state/adapter.log`. `npm run stop -- --wipe` deletes `.state/adapter` with the database, and keeps the key.
 
 The smoke's B section signs in as the smoke user and checks these, in order:
 
 1. `/healthz`.
 2. `/v1/catalog` with and without a token.
 3. The CORS preflight.
-4. A building-block diagram (`engine: "blocks"`) saved through A's `PUT /diagram`.
-5. A mock connection created and verified (a wrong token is refused).
-6. A deployment that leaves out the bucket, its compatibility, then plan and apply to `completed` with logs.
-7. A member of another organization refused on every connection, deployment and run path.
-8. The connection delete refused with 409 while the deployment is live.
-9. Destroy.
-10. The delete succeeding.
+4. `/v1/examples` with and without a token: each example is a building-block document.
+5. A building-block diagram (`engine: "blocks"`) saved through A's `PUT /diagram`.
+6. A mock connection created and verified (a wrong token is refused).
+7. A deployment that leaves out the bucket, its compatibility, then plan and apply to `completed` with logs.
+8. A member of another organization refused on every connection, deployment and run path.
+9. The connection delete refused with 409 while the deployment is live.
+10. Destroy.
+11. The delete succeeding.
 
 It cleans up through A's organization delete. None of these calls count in A's 32 route rows.
 
@@ -124,7 +126,9 @@ LocalStack stands in for AWS on this machine, so AWS Terraform applies and destr
 | `npm run localstack -- status` | says whether it runs, and lists its services |
 | `npm run localstack -- stop` | removes the container; LocalStack keeps nothing between starts |
 
-When LocalStack answers at start, `dev.sh` starts B with `ADAPTER_AWS_STS=localstack` and `ADAPTER_AWS_ENDPOINT=http://127.0.0.1:4566`, and says so in its start message. B then gets each run's keys from LocalStack's STS and sends every AWS call of the run to LocalStack. So plan, apply and destroy of an AWS deployment in B's editor run for real. The **Link fake account** role works as it is: LocalStack lets any role in. Start LocalStack before `npm run dev`, because `dev.sh` checks only once. If Clutter already runs, run `npm run dev` again: it restarts and checks again. Without LocalStack, the start message's AWS line says how to turn it on, and B's AWS runs stop at "needs a real AWS account". A's own Deploy button still stops at ECS, as the table above says.
+`dev.sh` chooses where B's AWS runs go before it starts anything, and prints the choice on its first line (`AWS mode`). `--aws auto`, the default, uses real AWS when `real-aws.conf` exists (see [Real AWS](#real-aws)), else LocalStack when it answers, else neither. `npm run dev -- --aws localstack` uses LocalStack even when `real-aws.conf` exists, and stops when LocalStack does not answer. `npm run dev -- --aws real` stops when `real-aws.conf` is missing.
+
+When LocalStack is chosen, `dev.sh` starts B with `ADAPTER_AWS_STS=localstack` and `ADAPTER_AWS_ENDPOINT=http://127.0.0.1:4566`, and says so in its start message. B then gets each run's keys from LocalStack's STS and sends every AWS call of the run to LocalStack. So plan, apply and destroy of an AWS deployment in B's editor run for real. The **Link fake account** role works as it is: LocalStack lets any role in. Start LocalStack before `npm run dev`, because `dev.sh` checks only once. If Clutter already runs, run `npm run dev` again: it restarts and checks again. Without LocalStack, the start message's AWS line says how to turn it on, and B's AWS runs stop at "needs a real AWS account". A's own Deploy button still stops at ECS, as the table above says.
 
 ### The LocalStack tests
 
@@ -144,14 +148,14 @@ CLUTTER_LOCALSTACK=1 TF_PLUGIN_CACHE_DIR="$HOME/.cache/clutter-tf-plugins" \
 
 The provider itself reads "exists" and "gone". A refresh-only plan after apply must find every resource. A refresh-only plan of the state from before the destroy must find every one deleted. Each test builds its environment from nothing, with LocalStack's test keys, so this machine's AWS credentials never reach Terraform.
 
-Results, checked on 2026-11-13:
+Expected results:
 
 | Test | Result |
 | --- | --- |
 | B, every block and edge | passes in about 5 minutes: 51 resources of 30 types apply, exist, and are gone after destroy |
 | A, `defaults` | passes: 17 resources apply, exist, and are gone after destroy |
-| A, `all-five-cors-on` | fails some of the time. The OPTIONS integration response can be created before its integration (`NotFoundException: Invalid Response status code specified`), because the apigateway template does not make it depend on the integration. With that `depends_on` added, it passes |
-| A, `all-five-cors-off` | fails: with CORS off, A's API has no method, and API Gateway refuses to deploy an API with no method (`The REST API doesn't contain any methods`). A's templates render no route for an edge from an API to a function |
+| A, `all-five-cors-on` | passes: 21 resources. The apigateway template makes the OPTIONS integration response depend on its integration; without that, AWS can answer `NotFoundException: Invalid Response status code specified` |
+| A, `all-five-cors-off` | passes: 15 resources. With CORS off, A's API has no method, and API Gateway refuses to deploy an API with no method (`The REST API doesn't contain any methods`), so the template renders no deployment or stage then. A's templates still render no route for an edge from an API to a function |
 
 ### What LocalStack cannot prove
 
@@ -165,7 +169,7 @@ These stay on a real AWS test account. LocalStack is not in CI: it needs the Doc
 
 ## OpenStack on this machine (DevStack)
 
-DevStack is a small, real OpenStack. It runs in a Lima VM named `devstack`, so B's OpenStack connector builds real servers, networks, firewalls and volumes on this machine. The VM's template (`lima.yaml`) and the two scripts it runs inside the VM (`install.sh` and `credential.sh`) are in `devstack/`. They hold no secrets. DevStack's passwords are made at random inside the VM when it is installed, and stay there.
+DevStack is a small, real OpenStack. It runs in a Lima VM named `devstack`, so B's OpenStack connector builds real servers, networks, firewalls and volumes on this machine. The VM's template (`lima.yaml`) and the scripts it runs inside the VM (`install.sh`, `network.sh`, `credential.sh` and `dashboard.sh`) are in `devstack/`. They hold no secrets. DevStack's passwords are made at random inside the VM when it is installed, and stay there.
 
 ### What DevStack needs
 
@@ -191,9 +195,11 @@ npm run devstack -- credential   # makes the credential and prints the values fo
 | --- | --- |
 | `npm run devstack -- create` | makes the VM from `devstack/lima.yaml`, starts it, and installs DevStack with `devstack/install.sh`. A second run does nothing when DevStack is installed. When the VM's address changed, it installs DevStack again for the new address. It refuses a VM named `devstack` that it did not make, and changes nothing in it. The install log is `/opt/stack/stack.log` inside the VM; follow it with `limactl shell devstack tail -f /opt/stack/stack.log` |
 | `npm run devstack -- credential` | makes an OpenStack application credential named `clutter`, for the `demo` user in the `demo` project, and prints the values Clutter's Connections page needs. When one exists, it asks before it replaces it; the old one then stops working |
-| `npm run devstack -- start` | starts the VM |
+| `npm run devstack -- dashboard` | prints the address of DevStack's dashboard (`http://<the VM's address>/dashboard`), the `Default` domain and the `demo` user. The password, read inside the VM from `local.conf`, is printed only to a terminal, as `credential`'s secret is |
+| `npm run devstack -- start` | starts the VM, and sets up DevStack's public network in it (see [Open DevStack's servers from this machine](#open-devstacks-servers-from-this-machine)) |
 | `npm run devstack -- stop` | stops the VM; its disk, and DevStack in it, are kept |
 | `npm run devstack -- status` | shows the VM's state, and exits with 1 when it is not running |
+| `npm run devstack -- route` | sends DevStack's public network to the VM, so its servers' addresses open from this machine. `route remove` takes the route out, and `--dry-run` prints the command without running it |
 
 `credential` prints the secret once, to the terminal. It is not saved in a file or a log, and `credential` runs only when its output is a terminal, so it never lands in a file by mistake. Copy the secret into Clutter straight away. If you lose it, run `credential` again.
 
@@ -207,12 +213,23 @@ macOS asks before an app may reach a device on a local network, and the VM's add
 
 `npm run dev` and the tests reach DevStack through that same app, so start them from it.
 
+### Open DevStack's servers from this machine
+
+A server Clutter builds on DevStack gets its public address from DevStack's public network, `172.24.4.0/24` (DevStack's default; `lib.sh` owns the value). That network is inside the VM, behind its `br-ex` bridge, whose address `172.24.4.1` is the network's gateway. Two things must hold before **Your website** opens from this machine:
+
+- **Inside the VM**, `br-ex` is up with `172.24.4.1/24`, IPv4 forwarding is on, and DevStack's NAT rule for the range is in place. DevStack's install sets these, but a restart of the VM loses them. `devstack/network.sh` installs a systemd unit, `clutter-devstack-network`, that sets them again at every boot, after Open vSwitch starts. `create` installs it, and `start` installs it and runs it, so an older VM gets it on its next `start`.
+- **On this machine**, a route sends `172.24.4.0/24` to the VM's address. Without it, the traffic goes to the home router, and the address does not open. Run `npm run devstack -- route` once. It finds the VM's address, adds the route (`sudo route -n add -net` on macOS, `sudo ip route replace` on Linux), replaces a route through an old address of the VM, and prints the command it ran. sudo asks for your password; nothing keeps it. When it runs with no terminal to type into (from an editor or an agent's shell), macOS asks in its own password window instead. The route lasts until this machine restarts, so run it again then. `npm run doctor` says when it is missing.
+
+`npm run devstack -- route --dry-run` prints the command without running it. `npm run devstack -- route remove` takes the route out again.
+
 ### Add the connection in Clutter
 
 1. Start Clutter with `npm run dev` and sign in.
 2. Open Organization settings, then Connections, and choose OpenStack.
 3. Fill in the form with the values `credential` printed: a name of your choice, the region (`RegionOne`), the auth URL (`http://<the VM's address>/identity/v3`), the application credential ID and the application credential secret.
 4. Choose Check and connect. B checks the credential with DevStack's Keystone.
+
+Or choose **Connect local OpenStack**, first on that form (a development build only). The gateway's `POST /dev/link-devstack` checks that the caller is a member of the organization, makes a new credential `clutter-<8 hex>` in the VM with `credential.sh link` (it never replaces `clutter`), and creates the connection in B with the caller's token. The connection takes the name the website sends (`Local OpenStack`, or `Local OpenStack 2` and up when that is taken; plain letters, digits, spaces, dots, hyphens and underscores, at most 64), or `Local OpenStack` when it sends none. The secret goes from the VM to B only, and the credential is deleted again when B refuses it. The route refuses unless `dev.sh` gave the gateway `ADAPTER_ALLOW_PRIVATE_TARGETS=1`, and says so when the VM is not running.
 
 Locally, B accepts an auth URL over plain `http` at a private address, because `dev.sh` starts it with `ADAPTER_ALLOW_PRIVATE_TARGETS=1`. In the cloud it does not. The connection's default settings (the `cirros` image, the `public` external network, and the `m1.tiny`, `m1.small` and `m1.medium` flavors) are DevStack's own names.
 
@@ -230,6 +247,67 @@ go -C backend/adapter test ./connectors/generalopenstack/ -run TestRealCloud -v 
 ```
 
 Optional: `CLUTTER_OPENSTACK_IMAGE` (default `cirros`), `CLUTTER_OPENSTACK_FLAVOR` (default `m1.tiny`) and `CLUTTER_OPENSTACK_EXTERNAL_NETWORK` (default `public`). A failed apply is destroyed before the test ends.
+
+## Real clouds from this machine
+
+Clutter runs here as always (`npm run dev`), and what it builds goes to real clouds: a real AWS account and a real OpenStack cloud, each playing a user's account (world 2). Nothing of Clutter is hosted; that is world 1, later (`docs/architecture/environments.md` § Credentials day). Every run builds real resources that cost money, so destroy what you build the same day. The first full run, with screenshots from Clutter and from each cloud, is `docs/reports/2026-11-20-real-cloud-verification.pdf`.
+
+| Part | Where |
+| --- | --- |
+| The website, A, B and Postgres | this machine |
+| Terraform runs | this machine, with keys for the user's account that last at most one hour |
+| What a deployment builds | the user's real AWS account or OpenStack project |
+| Clutter's own AWS account | only the stack `clutter-dev-real-aws`: the role `ClutterAdapterRunnerRole`, which B acts as; a bucket that serves the account-link template; and an empty `TerraformDeployerFargateTaskRole`, because the link template's trust policy names it and AWS refuses a trust policy whose role does not exist |
+
+You need, besides the usual tools: Terraform 1.14.4 or newer (B runs it on this machine), the AWS CLI v2 for real AWS (`brew install awscli`; the doctor does not check it), and the OpenStack CLI only if you want to look at the cloud from a terminal (`pipx install python-openstackclient`). The first real plan downloads the cloud's Terraform provider (the AWS one is about 680 MB), so it takes a few minutes once.
+
+What it costs (USD, read 2026-11-20): on AWS `ca-central-1`, a small server (`t3.micro`) is $0.0116 an hour, a public IPv4 address $0.005 an hour, and a NAT gateway, which Clutter adds only when private servers need the internet, $0.05 an hour plus data; the deploy confirmation names that one. Functions, tables, APIs and buckets cost pennies at test volumes. On VEXXHOST, `v3-starter-1` is $0.0106 an hour and a floating IP $0.0028 an hour, billed per minute. One deploy of an example for a few minutes costs a few cents. Left running for a month, a Single server on AWS costs about $13, a Two-tier app on VEXXHOST about $20, and the Full app on AWS about $72, half of it the NAT gateway.
+
+### Real AWS
+
+A user's account trusts exactly one identity: the role `ClutterAdapterRunnerRole` in Clutter's account, with the user's own external id. So B, on this machine, acts as that role, through a profile in `~/.aws/config`. Clutter's account and the user's account may be the same account for a first test; two accounts test the real cross-account path.
+
+Three identities take part, and only the first is an administrator:
+
+| Who | Identity | May do | Used for |
+| --- | --- | --- | --- |
+| The person setting up | an administrator in Clutter's account: an SSO login, or an IAM user with `AdministratorAccess` and an access key (not the root user) | anything | `npm run real-aws -- setup` and `teardown` once, and creating the link stack in the user's account (the user's own administrator, in real life) |
+| B on this machine | `ClutterAdapterRunnerRole`, through the profile `setup` prints | assume `AllowClutterToDeployTerraformRole-*` roles, with their external id | getting a run's keys, which last at most one hour |
+| Terraform, in the user's account | `AllowClutterToDeployTerraformRole-<id>`, which the link stack makes | change only what it tagged `ManagedBy = Clutter`; every role it makes carries the stack's boundary | every plan, deploy and destroy |
+
+A user never makes an IAM user or an access key for Clutter: linking needs an administrator's console sign-in for one minute, to create the stack. The CLI profile never touches the user's account; only the console, signed in as that account, creates the link stack. Hosted, B is `ClutterAdapterRunnerRole` itself (its Fargate task's role), so no person's credentials take part at run time.
+
+1. **(person) Make the administrator's CLI profile, once.** With SSO: `aws configure sso --profile clutter-admin`, then `aws sso login --profile clutter-admin`. With an IAM user: create an access key for it (IAM, the user, Security credentials), then `aws configure --profile clutter-admin` in your own terminal and type the key there, never in a chat; region `ca-central-1`. Check: `aws sts get-caller-identity --profile clutter-admin` shows the account you mean.
+2. **(person) `npm run real-aws -- setup --admin-profile clutter-admin`.** It deploys `real-aws/dev-account.yaml` as the stack `clutter-dev-real-aws`, uploads the account-link template to its bucket, and writes `backend/devserver/real-aws.conf` (ignored by git; `real-aws.conf.example` shows its four settings, none of them secret). Then add the profile it prints to `~/.aws/config`. Leave `--region` at its default, `ca-central-1`: the link flow opens CloudFormation there. Deployments choose their own region on the connection form.
+3. **`npm run real-aws -- status`.** Success: one `ok` line for the profile acting as `ClutterAdapterRunnerRole`, and one for the template.
+4. **`npm run dev -- --aws real`** (plain `npm run dev` chooses real AWS too while `real-aws.conf` exists). Its `AWS:` line says `AWS runs build in REAL AWS accounts`. When the profile is missing from `~/.aws/config`, it stops with a message before the backend starts.
+5. **(person) Link the user's account,** as a user does: Connections, **Connect a cloud**, **Amazon Web Services**, then link a new account (the steps and the guide with screenshots are on that form). The link opens CloudFormation in the user's account, signed in as that account, with the template and its parameters filled in: tick the IAM acknowledgement, press **Create stack**, and when it shows `CREATE_COMPLETE` copy **RoleArn** from its **Outputs** tab, paste it under **2. Paste the role ARN**, and press **Link account**, then **Check and connect**. Success: `Connected … Clutter checked it and it works.`, which means B assumed the user's role with its external id. Use a new organization for real clouds: **Connect local AWS** (and a fake account linked during the LocalStack tour) is a made-up account that real AWS refuses.
+6. **Deploy,** check in the AWS console, and **Destroy**, as in the checks below.
+
+Back to LocalStack: `npm run localstack -- start`, then `npm run dev -- --aws localstack`. `real-aws.conf` stays for the next `npm run dev -- --aws real`.
+
+**Cleanup, in order:** destroy every deployment (Destroy in Clutter); delete the AWS connection on Connections (refused while a deployment on it is built); remove the account link (Connections, **Connect a cloud** when the page asks, **Amazon Web Services**, then the bin button beside the account under "AWS accounts linked to this team", and **Remove link**); delete the user's account-link stack in CloudFormation in the user's account; run `npm run real-aws -- teardown --admin-profile clutter-admin`; remove the `[profile clutter-dev-runner]` block from `~/.aws/config`; and delete the administrator's access key in IAM. Tear down before the hosted platform is deployed into the same account: it makes roles of the same names.
+
+If the first role switch fails with `explicit deny in a service control policy`, the account belongs to an AWS Organization whose policy denies `sts:AssumeRole`. That limits only identities inside the organization's accounts, so it matters when one account plays both Clutter's side and the user's side, as in a first test. The fix is in the organization's management account (detach the policy from the account, or add an exception for Clutter's two roles), or use an account outside the organization. If `status` says `the account-link template answers 403`, the account's S3 Block Public Access settings refuse the bucket's public read of `templates/*`; allow public policies for that one bucket.
+
+### A real OpenStack cloud
+
+Nothing to set up on this machine. The user's OpenStack project needs application credentials, an `https` Identity (Keystone v3) address, routers and floating IPs for public servers, Cinder volumes, and room for at least 1 server, 1 network, 1 router, 1 security group and 1 floating IP. VEXXHOST has all of these (`docs/research/openstack/2026-11-20-public-providers.md`): its order is reviewed before the account works, so sign up first; its Identity address is `https://auth.vexxhost.net/v3`; its regions include `ca-ymq-1` (Montreal).
+
+1. **(person) In the cloud's dashboard,** pick a test project, then Identity, Application Credentials, **Create Application Credential**, and download its `clouds.yaml`. Give it an expiry date later than your test: destroy needs a working credential. The file holds the secret: keep it out of the repo, in `~/.config/openstack/` (where the OpenStack CLI looks) or delete it when you finish. A dashboard's file can name another region than you want (VEXXHOST's came set to `ams1`): set the region on the form, or change it in the file, to `ca-ymq-1`.
+2. **Connections, OpenStack, I have my own OpenStack:** drop the `clouds.yaml` on the form (it is read in your browser and kept nowhere), or type the auth URL, credential ID and secret, and region. Success: `Connected … Clutter checked it and it works.`
+3. **Add a deployment.** A public server waits 30 seconds before its floating IP attaches (a `time_sleep` from the `hashicorp/time` provider, which the first plan downloads with the OpenStack one), so its plan and result counts include it. Clutter reads the cloud's own images, flavors and external networks, and where DevStack's defaults (`cirros`, `m1.*`, `public`) are missing it pre-selects its own choices (`backend/adapter/README.md` § Option lists). Open **Advanced** to check or change them.
+4. **Deploy,** check in the dashboard, and **Destroy.** When finished, delete the connection, then the application credential, then the downloaded `clouds.yaml`.
+
+`TestRealCloud` (above) runs the same check against any OpenStack cloud without the website.
+
+### What to check on a real cloud
+
+For each example deployed (Single server first, then Two-tier app and Full app on AWS, and Two-tier app on OpenStack):
+
+- **Clutter:** the badge says `Deployed` without a reload, **What was built** lists the results, and **Open** answers (a real server's page, or the API's sample answer).
+- **The cloud's own console:** EC2, VPC, S3, Lambda, DynamoDB and API Gateway in AWS, or Instances, Network Topology and Volumes in OpenStack, show the resources named with the deployment's id. In AWS, every IAM role Clutter made carries the permissions boundary, and CloudTrail shows the `AssumeRole` calls.
+- **Destroy:** `Destroy complete`, and the console shows nothing left.
 
 ## Without AWS
 

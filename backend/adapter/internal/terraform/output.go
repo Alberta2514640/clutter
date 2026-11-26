@@ -114,3 +114,17 @@ func PlanSummary(line string) (_ connectors.PlanResult, ok bool) {
 	destroy, _ := strconv.Atoi(m[3])
 	return connectors.PlanResult{Add: add, Change: change, Destroy: destroy}, true
 }
+
+var changedLine = regexp.MustCompile(`^([A-Za-z0-9_.-]+): (?:Creation|Modifications) complete after \S+ \[id=([^\]]+)\]`)
+
+// ChangedResource reads one line of an apply's output: a resource Terraform
+// created or changed in place ("aws_vpc.x: Creation complete after 2s
+// [id=vpc-1]"). It returns the resource's address and the cloud's id for it;
+// ok is false for any other line, a resource left as it was included.
+func ChangedResource(line string) (addr, id string, ok bool) {
+	m := changedLine.FindStringSubmatch(strings.TrimSpace(line))
+	if m == nil {
+		return "", "", false
+	}
+	return m[1], m[2], true
+}

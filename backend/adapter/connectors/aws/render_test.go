@@ -100,7 +100,10 @@ func TestBoundaryMatchesTheRoleStack(t *testing.T) {
 		`:table/c????????-*"`,
 		"Path: /clutter/",
 		"iam:PermissionsBoundary: !Ref PermissionsBoundary",
-		"- iam:DeleteRolePermissionsBoundary\n                - iam:DeleteUserPermissionsBoundary",
+		"- iam:DeleteRolePermissionsBoundary\n              - iam:DeleteUserPermissionsBoundary",
+		// The deployer role's permissions are managed policies: inline,
+		// they exceed IAM's 10,240-character limit for one role.
+		"ManagedPolicyArns:",
 		"aws:RequestTag/ManagedBy: Clutter",
 		`:role/clutter/*-lambda-role"`,
 		`:role/clutter/*-ssm-role"`,
@@ -216,9 +219,12 @@ func TestEdgesBecomeWorkingIAMAndRoutes(t *testing.T) {
 	if n := strings.Count(iam, "statement_id"); n != 2 {
 		t.Errorf("%d statement ids, want 2", n)
 	}
-	if !strings.Contains(iam, `resource "aws_iam_role_policy_attachment" "`+p+`_fn_logs"`) ||
-		!strings.Contains(iam, "AWSLambdaBasicExecutionRole") {
-		t.Error("the function gets no basic execution role")
+	// Logs go only to the function's own group, which defaults.tf creates
+	// with a retention; the role cannot create a group or write elsewhere.
+	if !strings.Contains(iam, `resource "aws_iam_role_policy" "`+p+`_fn_logs"`) ||
+		!strings.Contains(iam, `Resource = "${aws_cloudwatch_log_group.`+p+`_fn.arn}:*"`) ||
+		strings.Contains(iam, "logs:CreateLogGroup") || strings.Contains(iam, "AWSLambdaBasicExecutionRole") {
+		t.Error("the function's log permission is not scoped to its own log group")
 	}
 	for _, write := range []string{"s3:PutObject", "s3:DeleteObject", "s3:*", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:*"} {
 		if strings.Contains(iam, write) {
@@ -241,11 +247,9 @@ var (
 	cloudName      = regexp.MustCompile(`(?m)^\s*(name|bucket|function_name|Name|statement_id)\s*=\s*"([^"]*)"`)
 )
 
-// fixedNames are names A's templates hard-code. Neither is a name in the
-// account: the request validator's name is scoped to its API, and the SSM
-// parameter is AWS's own, which the ec2 template reads.
+// fixedNames are names A's templates hard-code. None is a name in the
+// account: the SSM parameter is AWS's own, which the ec2 template reads.
 var fixedNames = map[string]bool{
-	"validate-body": true,
 	"/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64": true,
 }
 

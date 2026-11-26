@@ -208,8 +208,14 @@ type PlanResult struct {
 
 // RunResult says what an apply or destroy did.
 type RunResult struct {
-	// Resources maps a node id to the cloud's id for what it built.
+	// Resources maps a node id to the cloud's id, for each block whose main
+	// resource the run created or changed. A block left as it was is not in it.
 	Resources map[string]string
+	// Results maps a node id to what an apply returns about that block, such
+	// as a server's address (ResultNames). Every block the deployment holds
+	// after the apply may have some, built in this run or before. Results are
+	// shown to the user, so they never hold a secret.
+	Results map[string][]Result
 }
 
 // ErrNothingBuilt marks a run that failed before Terraform could change
@@ -274,6 +280,16 @@ type Previewer interface {
 	Preview(ctx context.Context, g Graph, d Deployment) (map[string][]byte, error)
 }
 
+// Advisor is optional. A connector gives notes before a run: what its cloud
+// bills for that the diagram does not show as a block (a gateway charged by
+// the hour), with code CodeCost, so the deploy confirmation can name the
+// cost; and what will not work as drawn, such as a public VM nothing can
+// reach (ClosedPublicVMs), which every connector that builds VMs gives. The
+// core finds it by type assertion. Notes never stop a run.
+type Advisor interface {
+	Advice(g Graph, d Deployment) []Problem
+}
+
 // LinkedAccount is an account an organization already linked to Clutter in
 // the cloud's own way (for AWS, a role from Clutter's CloudFormation stack),
 // offered as a ready connection. It holds no secret.
@@ -294,7 +310,8 @@ type LinkedCredentials struct {
 	// CloudFormation role template) the account was linked with, when the
 	// cloud's link flow recorded it; empty when it is not known. The core
 	// stores it on the connection, so a later template change can tell which
-	// accounts must update.
+	// accounts must update. Nothing reads the stored value back yet, and the
+	// aws connector leaves it empty (A's link flow does not record it).
 	TemplateVersion string
 }
 
@@ -325,8 +342,15 @@ type Choice struct {
 // deployment settings, keyed by setting name. A setting that is missing has
 // no list (the cloud could not list it); an empty list means the cloud has
 // none.
+//
+// Suggested holds, for a setting whose manifest default the cloud does not
+// offer, the value the connector recommends instead (an Ubuntu image on a
+// cloud without cirros). It is one of that setting's choices; a setting with
+// no suggestion is missing. Like the choices, it is shown to the user and
+// never holds a secret.
 type Options struct {
-	Settings map[string][]Choice `json:"settings"`
+	Settings  map[string][]Choice `json:"settings"`
+	Suggested map[string]string   `json:"suggested,omitempty"`
 }
 
 // OptionLister is optional. A connector whose settings name things that
@@ -337,7 +361,8 @@ type Options struct {
 // The connection it is handed carries credentials, filled by B's broker for
 // this one call. Values and labels are shown to the user, so they never hold
 // a secret, and errors follow the same rules as VerifyConnection's. The core
-// keeps only settings the manifest declares and values CheckValue accepts.
+// keeps only settings the manifest declares and values CheckValue accepts,
+// and only suggestions that are among the choices it keeps.
 type OptionLister interface {
 	Options(ctx context.Context, c Connection) (Options, error)
 }

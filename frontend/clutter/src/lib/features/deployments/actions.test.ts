@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Connection } from "../connections/types";
-import { actionReasons, addDeploymentChoice, offLines, REASON, type RowState } from "./actions";
+import { actionReasons, addDeploymentChoice, allLeftOut, REASON, startingConnection, type RowState } from "./actions";
 
-const base: RowState = { status: "new", running: false, saving: false, unsaved: null, checking: false, checkFailed: false, ready: true };
+const base: RowState = { status: "new", running: false, saving: false, unsaved: null, checking: false, checkFailed: false, ready: true, allLeftOut: false, noBlocks: false };
 const unsaved = "Save the diagram first. Deployments use the saved version.";
 
 describe("actionReasons", () => {
@@ -37,25 +37,23 @@ describe("actionReasons", () => {
     expect(actionReasons({ ...base, ready: false, checkFailed: true }).preview).toBe(REASON.checkFailed);
   });
 
+  it("turns plan and deploy off when every block is left out", () => {
+    const r = actionReasons({ ...base, allLeftOut: true });
+    expect(r.plan).toBe("Every block is left out of this deployment.");
+    expect(r.apply).toBe(REASON.allLeftOut);
+    expect(r.preview).toBeNull();
+    expect(actionReasons({ ...base, status: "live", allLeftOut: true }).destroy).toBeNull();
+    expect(allLeftOut(["a", "b"], ["b", "a", "gone"])).toBe(true);
+    expect(allLeftOut(["a", "b"], ["a"])).toBe(false);
+    expect(allLeftOut([], [])).toBe(false);
+    expect(actionReasons({ ...base, noBlocks: true }).apply).toBe(REASON.noBlocks);
+    expect(actionReasons({ ...base, noBlocks: true }).plan).toBe(REASON.noBlocks);
+  });
+
   it("offers remove after a destroy", () => {
     const r = actionReasons({ ...base, status: "destroyed" });
     expect(r.remove).toBeNull();
     expect(r.destroy).toBe(REASON.destroyed);
-  });
-});
-
-describe("offLines", () => {
-  it("groups buttons by reason, in button order", () => {
-    const lines = offLines(actionReasons({ ...base, running: true }), ["preview", "plan", "apply", "destroy"]);
-    expect(lines).toEqual([`Plan, Deploy and Destroy are off. ${REASON.running}`]);
-  });
-
-  it("says nothing when every button works", () => {
-    expect(offLines(actionReasons({ ...base, status: "live" }), ["preview", "plan", "apply", "destroy"])).toEqual([]);
-  });
-
-  it("uses is for one button", () => {
-    expect(offLines({ destroy: REASON.nothingBuilt }, ["plan", "destroy"])).toEqual([`Destroy is off. ${REASON.nothingBuilt}`]);
   });
 });
 
@@ -83,5 +81,19 @@ describe("addDeploymentChoice", () => {
     expect(pick.state).toBe("pick");
     expect(pick.usable.map((c) => c.id)).toEqual(["a", "c"]);
     expect(pick.broken.map((c) => c.id)).toEqual(["b"]);
+  });
+});
+
+describe("startingConnection", () => {
+  it("picks the only free connection, and none among several", () => {
+    expect(startingConnection([conn("a")])).toBe("a");
+    expect(startingConnection([conn("a"), conn("c")])).toBe("");
+    expect(startingConnection([])).toBe("");
+  });
+
+  it("prefers a connection of a split example's first cloud", () => {
+    const os = { ...conn("o"), connector: "general-openstack" };
+    expect(startingConnection([conn("a"), os], "general-openstack")).toBe("o");
+    expect(startingConnection([conn("a")], "general-openstack")).toBe("a");
   });
 });

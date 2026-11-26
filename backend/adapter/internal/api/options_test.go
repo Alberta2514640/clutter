@@ -40,7 +40,7 @@ func TestConnectionOptions(t *testing.T) {
 			{Value: "", Label: "empty"},
 		},
 		"flavor_small": {{Value: "m1.tiny", Label: "not a setting the manifest declares"}},
-	}}}
+	}, Suggested: map[string]string{"image": "debian-12", "flavor_small": "m1.tiny"}}}
 	e := newEnvWith(t, l)
 	a := e.tenant(t, blocksDoc)
 	b := e.tenant(t, blocksDoc)
@@ -58,6 +58,9 @@ func TestConnectionOptions(t *testing.T) {
 	want := []connectors.Choice{{Value: "ubuntu-24.04", Label: "Ubuntu 24.04"}, {Value: "debian-12", Label: "debian-12"}}
 	if len(got.Settings) != 1 || len(got.Settings["image"]) != 2 || got.Settings["image"][0] != want[0] || got.Settings["image"][1] != want[1] {
 		t.Fatalf("options %s", body)
+	}
+	if len(got.Suggested) != 1 || got.Suggested["image"] != "debian-12" {
+		t.Fatalf("suggested %v: only a declared setting's suggestion among its choices is kept", got.Suggested)
 	}
 	l.mu.Lock()
 	seen := l.seen["token"]
@@ -96,6 +99,43 @@ func TestConnectionOptions(t *testing.T) {
 	}
 	if strings.Contains(e.logBuf.String(), secretToken) {
 		t.Fatal("the service log holds the credential")
+	}
+}
+
+// TestCleanOptionsSuggestions: a suggestion is kept only for a declared
+// setting, and only when it is one of the choices kept for that setting.
+func TestCleanOptionsSuggestions(t *testing.T) {
+	m := mock.New().Manifest() // one setting: "image", an enum of ubuntu-24.04 and debian-12
+	cases := []struct {
+		name    string
+		choices []connectors.Choice
+		suggest map[string]string
+		want    string // "" means no suggestion
+	}{
+		{"among the choices", []connectors.Choice{{Value: "ubuntu-24.04"}, {Value: "debian-12"}}, map[string]string{"image": "debian-12"}, "debian-12"},
+		{"allowed by the manifest but not offered", []connectors.Choice{{Value: "ubuntu-24.04"}}, map[string]string{"image": "debian-12"}, ""},
+		{"offered but refused by CheckValue", []connectors.Choice{{Value: "ubuntu-24.04"}, {Value: "windows-11"}}, map[string]string{"image": "windows-11"}, ""},
+		{"an undeclared setting", []connectors.Choice{{Value: "ubuntu-24.04"}}, map[string]string{"flavor_small": "ubuntu-24.04"}, ""},
+		{"none", []connectors.Choice{{Value: "ubuntu-24.04"}}, nil, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cleanOptions(m, connectors.Options{Settings: map[string][]connectors.Choice{"image": tc.choices}, Suggested: tc.suggest})
+			if tc.want == "" {
+				if got.Suggested != nil {
+					t.Fatalf("suggested %v", got.Suggested)
+				}
+				return
+			}
+			if len(got.Suggested) != 1 || got.Suggested["image"] != tc.want {
+				t.Fatalf("suggested %v, want image %q", got.Suggested, tc.want)
+			}
+		})
+	}
+	// No suggestion leaves the field out of the answer.
+	raw, _ := json.Marshal(cleanOptions(m, connectors.Options{Settings: map[string][]connectors.Choice{"image": {{Value: "debian-12"}}}}))
+	if strings.Contains(string(raw), "suggested") {
+		t.Fatalf("answer %s", raw)
 	}
 }
 

@@ -1,7 +1,6 @@
 // lib/features/organization/uiStore.ts
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { Organization } from "./types";
 
 // The organization this viewer is working in, kept in this browser only. It
 // is a convenience: useCurrentOrganization falls back to the first
@@ -24,32 +23,3 @@ export const useCurrentOrganizationStore = create<CurrentOrgState>()(
     },
   ),
 );
-
-type OrgUiState = {
-  isEditOpen: boolean;
-  draft: { description?: string };
-};
-
-type OrgUiActions = {
-  open: (org?: Organization | null) => void;
-  close: () => void;
-  patch: (p: { description?: string }) => void;
-  reset: () => void;
-};
-
-export const useOrganizationUiStore = create<{ state: OrgUiState; actions: OrgUiActions }>((set) => ({
-  state: { isEditOpen: false, draft: {} },
-  actions: {
-    open: (org) =>
-      set((s) => ({
-        state: {
-          ...s.state,
-          isEditOpen: true,
-          draft: org ? { description: org.description ?? "" } : {},
-        },
-      })),
-    close: () => set((s) => ({ state: { ...s.state, isEditOpen: false, draft: {} } })),
-    patch: (p) => set((s) => ({ state: { ...s.state, draft: { ...s.state.draft, ...p } } })),
-    reset: () => set(() => ({ state: { isEditOpen: false, draft: {} } })),
-  },
-}));

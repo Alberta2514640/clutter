@@ -8,6 +8,7 @@ import { optionsState, settingView, TYPE_OWN } from "@/lib/features/connections/
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import FieldInput, { inputClass } from "./FieldInput";
+import HelpTip from "./HelpTip";
 
 // SettingsForm draws a deployment's settings. A setting that names something
 // in the user's cloud (an image, a flavor, a network) is a list of the
@@ -46,7 +47,7 @@ export default function SettingsForm({
   const [typing, setTyping] = useState<Record<string, boolean>>({});
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {spec.map((f) => {
         const id = `${idPrefix}-${f.name}`;
         const view = settingView(f, state, values[f.name], !!typing[f.name]);
@@ -54,10 +55,13 @@ export default function SettingsForm({
           const error = fieldError(f, values[f.name]);
           return (
             <div key={f.name} className="space-y-1">
-              <label htmlFor={id} className="block text-xs font-medium text-slate-300">
-                {f.title}
-                {f.required ? "" : " (optional)"}
-              </label>
+              <div className="flex items-center gap-2">
+                <label htmlFor={id} className="block text-xs font-medium">
+                  {f.title}
+                  {f.required ? "" : " (optional)"}
+                </label>
+                {f.help && <HelpTip text={f.help} label={`About ${f.title}`} align="end" />}
+              </div>
               <select
                 id={id}
                 disabled={disabled}
@@ -75,7 +79,7 @@ export default function SettingsForm({
                 ))}
                 <option value={TYPE_OWN}>Type another name…</option>
               </select>
-              {error && <p className="text-xs text-red-400">{error}</p>}
+              {error && <p className="text-danger text-xs">{error}</p>}
             </div>
           );
         }
@@ -83,18 +87,18 @@ export default function SettingsForm({
           <div key={f.name} className="space-y-1">
             <FieldInput id={id} field={f} value={values[f.name]} disabled={disabled} onChange={(v) => onChange(f.name, v)} />
             {view.loading ? (
-              <p role="status" className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <p role="status" className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                 {view.note}
               </p>
             ) : view.note ? (
-              <p className="text-[11px] text-amber-300">{view.note}</p>
+              <p className="text-warning text-[11px]">{view.note}</p>
             ) : null}
             {view.canChoose && (
               <button
                 type="button"
                 onClick={() => setTyping((t) => ({ ...t, [f.name]: false }))}
-                className="text-[11px] text-teal-300 hover:underline">
+                className="text-link text-[11px] hover:underline">
                 Choose from your cloud&apos;s list
               </button>
             )}

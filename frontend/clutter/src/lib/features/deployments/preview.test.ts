@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinAnd, previewGroups } from "./preview";
+import { previewGroups } from "./preview";
 
 describe("previewGroups", () => {
   it("keeps a one-cloud deployment's files in one unnamed group, sorted", () => {
@@ -23,14 +23,5 @@ describe("previewGroups", () => {
 
   it("gives no groups for no files", () => {
     expect(previewGroups([])).toEqual([]);
-  });
-});
-
-describe("joinAnd", () => {
-  it("lists names in a sentence", () => {
-    expect(joinAnd([])).toBe("");
-    expect(joinAnd(["a"])).toBe("a");
-    expect(joinAnd(["a", "b"])).toBe("a and b");
-    expect(joinAnd(["a", "b", "c"])).toBe("a, b and c");
   });
 });

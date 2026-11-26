@@ -108,8 +108,8 @@ export default function Palette({ isReadOnly = false }: PaletteProps) {
 
                 <div className="space-y-2">
                   {sec.items.map((item) => (
+                    <div key={`${sec.title}-${item.label}`}>
                     <div
-                      key={`${sec.title}-${item.label}`}
                       draggable={!isReadOnly}
                       onDragStart={(e) => {
                         if (isReadOnly) {
@@ -118,6 +118,9 @@ export default function Palette({ isReadOnly = false }: PaletteProps) {
                         }
                         e.dataTransfer.setData(DND_MIME, JSON.stringify(item));
                         e.dataTransfer.effectAllowed = "move";
+                        // Drag a card shaped like the node on the canvas, not this palette row.
+                        const preview = e.currentTarget.parentElement?.querySelector<HTMLElement>("[data-drag-preview]");
+                        if (preview) e.dataTransfer.setDragImage(preview, 22, 22);
                       }}
                       className={[
                         "flex select-none items-center gap-3 rounded-lg",
@@ -150,6 +153,15 @@ export default function Palette({ isReadOnly = false }: PaletteProps) {
                           {isReadOnly ? "Temporarily disabled" : "Drag to add"}
                         </div>
                       </div>
+                    </div>
+                    {/* The drag image: rendered off screen, because a browser can only draw a drag image from a rendered element. */}
+                    <div
+                      data-drag-preview
+                      aria-hidden
+                      className="pointer-events-none fixed -left-[9999px] top-0 flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900 px-4 py-3 text-white shadow-lg">
+                      <Image src={item.img} alt="" width={24} height={24} loading="eager" className="object-contain" unoptimized />
+                      <span className="text-sm font-semibold">{item.label}</span>
+                    </div>
                     </div>
                   ))}
                 </div>

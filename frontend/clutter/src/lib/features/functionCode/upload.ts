@@ -1,7 +1,7 @@
 // The upload control's rules and state, kept apart from React so Vitest can
 // check them. B checks every upload again (backend/adapter/internal/codestore).
 
-import { MAX_CODE_BYTES } from "./types";
+import { MAX_CODE_BYTES, MAX_CODE_SIZE_TEXT } from "./types";
 
 // zipFileError says why a chosen file cannot be uploaded, or null. It mirrors
 // B's file name rule (codestore.ValidFileName) and size cap.
@@ -10,7 +10,7 @@ export function zipFileError(file: { name: string; size: number }): string | nul
   if (!name.toLowerCase().endsWith(".zip") || name.length < 5) return "Choose a .zip file.";
   if (name.length > 255 || /[/\\\u0000-\u001f\u007f]/.test(name)) return "Rename the file: its name must be plain text of at most 255 characters.";
   if (file.size === 0) return "The file is empty.";
-  if (file.size > MAX_CODE_BYTES) return `The file is ${formatBytes(file.size)}. A function's code can be at most 50 MB.`;
+  if (file.size > MAX_CODE_BYTES) return `The file is ${formatBytes(file.size)}. A function's code can be at most ${MAX_CODE_SIZE_TEXT}.`;
   return null;
 }
 

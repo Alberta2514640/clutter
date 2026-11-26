@@ -6,7 +6,36 @@
 // so the screen falls back to the neutral icon.
 
 // Relative imports: Vitest runs this file without the "@/" alias.
+import { tintBadgeClass, tintIconClass, type Tint } from "../../tint";
 import type { BlockKind, CatalogEntry, Manifest } from "./types";
+
+// KIND_TINT is the one map from a kind of block to its colour, used
+// everywhere a block appears (palette, canvas, inspector, lists, the
+// landing page and onboarding). A kind a cloud adds on its own has none and
+// shows neutral.
+export const KIND_TINT: Record<string, Tint> = {
+  vm: "blue",
+  network: "violet",
+  firewall: "amber",
+  volume: "grass",
+  bucket: "orange",
+  function: "yellow",
+  table: "cyan",
+  http_api: "pink",
+};
+
+// kindBadgeClass is a block's icon tile: fill, border and icon colour. An
+// unknown kind keeps the tile with the neutral border.
+export function kindBadgeClass(kind: string): string {
+  const t = KIND_TINT[kind];
+  return t ? tintBadgeClass(t) : "icon-tile bg-muted text-foreground";
+}
+
+// kindIconClass is the colour of a block's bare icon (in a line of text).
+export function kindIconClass(kind: string): string {
+  const t = KIND_TINT[kind];
+  return t ? tintIconClass(t) : "text-muted-foreground";
+}
 
 // connectors.ConnectorIDPattern and connectors.IconKeyPattern.
 const CONNECTOR_ID = /^[a-z][a-z0-9-]{1,40}$/;
@@ -24,6 +53,8 @@ export type CloudLook = {
   title: string;
   shortName: string;
   logoSrc: string | null;
+  // What the cloud is when its title does not say, or "".
+  note?: string;
 };
 
 export function cloudLook(m: Manifest): CloudLook {
@@ -32,8 +63,13 @@ export function cloudLook(m: Manifest): CloudLook {
     title: m.title,
     shortName: m.display?.short_name || m.title,
     logoSrc: iconSrc(m.connector, m.display?.logo),
+    ...(m.display?.note ? { note: m.display.note } : {}),
   };
 }
+
+// cloudTitleWithNote is the title the Connections page shows: "Mock cloud
+// (for testing; builds nothing)".
+export const cloudTitleWithNote = (c: CloudLook) => (c.note ? `${c.title} (${c.note})` : c.title);
 
 // cloudLookFor names a connector from the catalog, or by its id when the
 // catalog no longer offers it.

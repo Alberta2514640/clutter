@@ -18,7 +18,3 @@ export function previewGroups(paths: string[]): PreviewGroup[] {
   }
   return [...groups].map(([connection, files]) => ({ connection, files }));
 }
-
-// joinAnd lists names in a sentence: "a", "a and b", "a, b and c".
-export const joinAnd = (names: string[]) =>
-  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;

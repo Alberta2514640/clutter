@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FieldSpec } from "../catalog/types";
-import { optionsState, settingView, type OptionsState } from "./options";
+import { applySuggestions, optionsState, settingView, type OptionsState } from "./options";
+import type { ConnectionOptions } from "./types";
 
 // The OpenStack connector's settings, as its manifest declares them.
 const image: FieldSpec = { name: "image", title: "Image", type: "string", required: true, default: "cirros" };
@@ -38,7 +39,7 @@ describe("settingView", () => {
     expect(v.control).toBe("list");
     if (v.control !== "list") return;
     expect(v.current).toBe("debian");
-    expect(v.choices[0]).toEqual({ value: "debian", label: "debian (typed, not in your cloud's list)" });
+    expect(v.choices[0]).toEqual({ value: "debian", label: "debian (typed name)" });
     expect(v.choices).toHaveLength(3);
   });
 
@@ -69,6 +70,66 @@ describe("settingView", () => {
 
   it("leaves enum and other typed settings to the manifest's input", () => {
     expect(settingView(size, ready, undefined, false)).toEqual({ control: "field", note: null, loading: false, canChoose: false });
+  });
+});
+
+describe("applySuggestions", () => {
+  const ubuntu = "Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]";
+  // A public cloud without DevStack's defaults (VEXXHOST-like), as B answers.
+  const publicCloud: ConnectionOptions = {
+    settings: {
+      image: [
+        { value: ubuntu, label: ubuntu },
+        { value: "debian-12-generic-amd64-20241201", label: "debian-12-generic-amd64-20241201" },
+      ],
+      flavor_small: [
+        { value: "v1-standard-1", label: "v1-standard-1 (1 vCPU, 1 GB RAM, 20 GB disk)" },
+        { value: "v3-starter-1", label: "v3-starter-1 (1 vCPU, 2 GB RAM, 10 GB disk)" },
+      ],
+      external_network: [{ value: "public", label: "public" }],
+    },
+    suggested: { image: ubuntu, flavor_small: "v1-standard-1", external_network: "public" },
+  };
+  const spec = [image, flavor, network, size];
+
+  it("replaces defaults the cloud lacks, and says which", () => {
+    const got = applySuggestions(spec, { image: "cirros", flavor_small: "m1.tiny", external_network: "public" }, publicCloud);
+    expect(got.values).toEqual({ image: ubuntu, flavor_small: "v1-standard-1", external_network: "public" });
+    expect(got.picked).toEqual(["image", "flavor_small"]);
+  });
+
+  it("fills a setting that is not set yet", () => {
+    expect(applySuggestions([image], {}, publicCloud)).toEqual({ values: { image: ubuntu }, picked: ["image"] });
+  });
+
+  it("keeps a value the user chose", () => {
+    const got = applySuggestions(spec, { image: "debian-12-generic-amd64-20241201", flavor_small: "v3-starter-1" }, publicCloud);
+    expect(got.values).toMatchObject({ image: "debian-12-generic-amd64-20241201", flavor_small: "v3-starter-1" });
+    expect(got.picked).toEqual([]);
+    // A typed value not in the list is the user's too.
+    expect(applySuggestions([image], { image: "my-image" }, publicCloud).picked).toEqual([]);
+  });
+
+  it("keeps a default the cloud lists", () => {
+    const devstack: ConnectionOptions = {
+      settings: { flavor_small: [{ value: "m1.tiny", label: "m1.tiny" }] },
+      suggested: { flavor_small: "m1.tiny" },
+    };
+    expect(applySuggestions([flavor], { flavor_small: "m1.tiny" }, devstack).picked).toEqual([]);
+  });
+
+  it("ignores a suggestion that is not one of the choices, or with no list", () => {
+    const odd: ConnectionOptions = { settings: { image: [{ value: ubuntu, label: ubuntu }] }, suggested: { image: "other", flavor_small: "v1-standard-1" } };
+    expect(applySuggestions(spec, { image: "cirros", flavor_small: "m1.tiny" }, odd)).toEqual({
+      values: { image: "cirros", flavor_small: "m1.tiny" },
+      picked: [],
+    });
+    expect(applySuggestions(spec, { image: "cirros" }, { settings: null }).picked).toEqual([]);
+  });
+
+  it("leaves enum settings alone", () => {
+    const sizes: ConnectionOptions = { settings: { size: [{ value: "large", label: "large" }] }, suggested: { size: "large" } };
+    expect(applySuggestions([size], {}, sizes).picked).toEqual([]);
   });
 });
 

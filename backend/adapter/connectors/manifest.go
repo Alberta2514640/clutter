@@ -62,6 +62,10 @@ type Manifest struct {
 type Display struct {
 	ShortName string `json:"short_name"`
 	Logo      string `json:"logo,omitempty"`
+	// Note says in a few lower-case words what the cloud is when its title
+	// does not, such as "for testing; builds nothing". The Connections page
+	// shows it after the title.
+	Note string `json:"note,omitempty"`
 }
 
 // BlockDisplay is how the UI shows a block on one cloud: the cloud's own name
@@ -74,19 +78,33 @@ type BlockDisplay struct {
 
 // BlockSpec is one block a connector declares.
 type BlockSpec struct {
-	Kind      BlockKind   `json:"kind"`
-	Treatment Treatment   `json:"treatment"`
-	Title     string      `json:"title"`
-	Fields    []FieldSpec `json:"fields,omitempty"`
+	Kind      BlockKind `json:"kind"`
+	Treatment Treatment `json:"treatment"`
+	Title     string    `json:"title"`
+	// Summary says in a few plain words what the block is for, such as "A
+	// private area for servers". The palette shows it under the title.
+	// StandardBlock sets it from the one owner, standardSummaries.
+	Summary string      `json:"summary,omitempty"`
+	Fields  []FieldSpec `json:"fields,omitempty"`
 	// Display is set on every block the connector builds (the contract tests
 	// check it) and never on a removed one.
 	Display *BlockDisplay `json:"display,omitempty"`
+	// Help is what this cloud adds about the block, one short line each (its
+	// runtime's default, the names its links arrive under). The block panel
+	// shows it under the cloud's name for the block. Never on a removed one.
+	Help []string `json:"help,omitempty"`
 }
 
 // WithDisplay returns b showing as name, with the icon key icon ("" for the
 // block's neutral icon).
 func (b BlockSpec) WithDisplay(name, icon string) BlockSpec {
 	b.Display = &BlockDisplay{Name: name, Icon: icon}
+	return b
+}
+
+// WithHelp returns b with these help lines.
+func (b BlockSpec) WithHelp(lines ...string) BlockSpec {
+	b.Help = append([]string(nil), lines...)
 	return b
 }
 
@@ -98,6 +116,14 @@ type FieldSpec struct {
 	Required bool      `json:"required"`
 	Default  any       `json:"default,omitempty"`
 	Allowed  []string  `json:"allowed,omitempty"`
+	// Help is one short line the editor shows with the field, for a field
+	// whose title alone does not say what it does.
+	Help string `json:"help,omitempty"`
+	// AppliesTo, on a deployment setting, names the block kinds the setting
+	// is about (a function runtime is about functions), so the editor shows it
+	// only for a diagram that has one. Empty means it is about every
+	// deployment. A block field leaves it empty.
+	AppliesTo []BlockKind `json:"applies_to,omitempty"`
 }
 
 // EdgeSpec is a pair of block kinds a connector can wire together.
@@ -105,6 +131,16 @@ type EdgeSpec struct {
 	Source  BlockKind `json:"source"`
 	Target  BlockKind `json:"target"`
 	Meaning string    `json:"meaning"`
+	// Why says in plain words what the link is good for, for a person with
+	// no cloud background, such as "Your app on the server can look up data
+	// such as users or orders." The editor shows it when a line is hovered.
+	Why string `json:"why,omitempty"`
+	// SingleTarget means a source block links to at most one block of the
+	// target kind, and Rule says so in one short line ("A volume attaches to
+	// one VM."). The editor refuses a second such line with Rule; the
+	// connector's Validate refuses it too.
+	SingleTarget bool   `json:"single_target,omitempty"`
+	Rule         string `json:"rule,omitempty"`
 }
 
 // Block returns the spec for kind.
@@ -164,6 +200,17 @@ const (
 	MaxDisplayName = 48
 )
 
+// The longest plain-words texts: a block's summary sits on one palette line,
+// and an edge's why and rule fit one line of a small card.
+const (
+	MaxSummary  = 48
+	MaxEdgeText = 120
+	// A block's help is a few short lines; a cloud's note fits beside its title.
+	MaxHelpLines = 4
+	MaxHelpLine  = 160
+	MaxNote      = 48
+)
+
 // Check returns an error unless the manifest is well formed: a valid id and
 // title, a treatment for every standard block, new kinds marked new, valid
 // fields and defaults, edges between declared blocks, unique regions, and
@@ -210,11 +257,25 @@ func (m Manifest) Check() error {
 		if b.Treatment == TreatmentRemoved && len(b.Fields) > 0 {
 			errs = append(errs, fmt.Errorf("removed block %q declares fields", b.Kind))
 		}
+		if len(b.Summary) > MaxSummary {
+			errs = append(errs, fmt.Errorf("block %q summary is longer than %d characters", b.Kind, MaxSummary))
+		}
 		if b.Display != nil {
 			if b.Treatment == TreatmentRemoved {
 				errs = append(errs, fmt.Errorf("removed block %q declares a display", b.Kind))
 			}
 			errs = append(errs, b.Display.check(b.Kind)...)
+		}
+		if b.Treatment == TreatmentRemoved && len(b.Help) > 0 {
+			errs = append(errs, fmt.Errorf("removed block %q declares help", b.Kind))
+		}
+		if len(b.Help) > MaxHelpLines {
+			errs = append(errs, fmt.Errorf("block %q has more than %d help lines", b.Kind, MaxHelpLines))
+		}
+		for _, line := range b.Help {
+			if line == "" || len(line) > MaxHelpLine {
+				errs = append(errs, fmt.Errorf("block %q has a help line that is empty or longer than %d characters", b.Kind, MaxHelpLine))
+			}
 		}
 		errs = append(errs, checkFields(fmt.Sprintf("block %q", b.Kind), b.Fields)...)
 	}
@@ -235,6 +296,12 @@ func (m Manifest) Check() error {
 				errs = append(errs, fmt.Errorf("edge %s->%s names removed block %q", e.Source, e.Target, k))
 			}
 		}
+		if len(e.Why) > MaxEdgeText || len(e.Rule) > MaxEdgeText {
+			errs = append(errs, fmt.Errorf("edge %s->%s has a why or rule longer than %d characters", e.Source, e.Target, MaxEdgeText))
+		}
+		if e.SingleTarget != (e.Rule != "") {
+			errs = append(errs, fmt.Errorf("edge %s->%s needs a rule exactly when it allows a single target", e.Source, e.Target))
+		}
 		p := pair{e.Source, e.Target}
 		if edges[p] {
 			errs = append(errs, fmt.Errorf("edge %s->%s is declared twice", e.Source, e.Target))
@@ -243,6 +310,20 @@ func (m Manifest) Check() error {
 	}
 
 	errs = append(errs, checkFields("settings", m.Settings)...)
+	for _, f := range m.Settings {
+		for _, k := range f.AppliesTo {
+			if _, ok := seen[k]; !ok {
+				errs = append(errs, fmt.Errorf("setting %q applies to undeclared block %q", f.Name, k))
+			}
+		}
+	}
+	for _, b := range m.Blocks {
+		for _, f := range b.Fields {
+			if len(f.AppliesTo) > 0 {
+				errs = append(errs, fmt.Errorf("block %q: field %q names blocks it applies to, which only a setting does", b.Kind, f.Name))
+			}
+		}
+	}
 
 	regions := map[string]bool{}
 	for _, r := range m.Regions {
@@ -261,6 +342,9 @@ func (d Display) check() []error {
 	var errs []error
 	if len(d.ShortName) > MaxShortName {
 		errs = append(errs, fmt.Errorf("display short name is longer than %d characters", MaxShortName))
+	}
+	if len(d.Note) > MaxNote {
+		errs = append(errs, fmt.Errorf("display note is longer than %d characters", MaxNote))
 	}
 	if d.Logo != "" {
 		if d.ShortName == "" {

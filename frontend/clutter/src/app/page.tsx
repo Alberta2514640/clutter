@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import ThemeScope from "@/components/common/ThemeScope";
 import { Clouds } from "@/components/landing/Clouds";
-import { Demo } from "@/components/landing/Demo";
+import { DrawOnce } from "@/components/landing/DrawOnce";
+import { Examples } from "@/components/landing/Examples";
 import { Faq } from "@/components/landing/Faq";
 import { FinalCta } from "@/components/landing/FinalCta";
 import { Hero } from "@/components/landing/Hero";
-import { HowItWorks } from "@/components/landing/HowItWorks";
 import { LandingHeader } from "@/components/landing/LandingHeader";
+import { ReadAndDeploy } from "@/components/landing/ReadAndDeploy";
+import { RevealOnScroll } from "@/components/landing/RevealOnScroll";
+import { SeeEachCloud } from "@/components/landing/SeeEachCloud";
+import { SeveralClouds } from "@/components/landing/SeveralClouds";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { Trust } from "@/components/landing/Trust";
 import { HOME_DESCRIPTION, HOME_TITLE } from "@/components/landing/site";
@@ -32,20 +37,28 @@ export const metadata: Metadata = {
   },
 };
 
+// Dark hero and dark close, light sections between, whatever theme the
+// visitor chose in the app. Every page-wide background carries the grain
+// (grain); cards and media on it do not. Every claim on the page is true
+// today; the sources are named beside each section's text.
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-col bg-black text-white">
-      <LandingHeader />
+    <ThemeScope theme="light" className="bg-background grain text-foreground flex min-h-screen flex-col">
+      <RevealOnScroll />
+      <LandingHeader overHero />
       <main id="main" className="flex-1">
         <Hero />
-        <Demo />
-        <HowItWorks />
-        <Clouds />
+        <DrawOnce />
+        <SeeEachCloud />
+        <ReadAndDeploy />
+        <SeveralClouds />
         <Trust />
+        <Examples />
+        <Clouds />
         <Faq />
         <FinalCta />
       </main>
       <SiteFooter />
-    </div>
+    </ThemeScope>
   );
 }

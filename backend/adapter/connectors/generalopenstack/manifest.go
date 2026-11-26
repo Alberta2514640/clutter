@@ -12,6 +12,8 @@ var (
 	fieldSize   = connectors.StandardField(connectors.KindVM, "size")
 	fieldPublic = connectors.StandardField(connectors.KindVM, "public")
 	fieldCIDR   = connectors.StandardField(connectors.KindNetwork, "cidr")
+	// fieldPrivateInternet joins the network to the deployment's router.
+	fieldPrivateInternet = connectors.StandardField(connectors.KindNetwork, "private_internet")
 	// fieldIngress lists what may come in, such as "tcp/22,tcp/443,udp/1000-2000,icmp".
 	fieldIngress    = connectors.StandardField(connectors.KindFirewall, "ingress")
 	fieldSourceCIDR = connectors.StandardField(connectors.KindFirewall, "source_cidr")
@@ -25,12 +27,16 @@ var sizes = hclsafe.NewAllowList(fieldSize.Allowed...)
 var (
 	// settingImage is matched as the start of an image name, and the newest
 	// match wins, so "cirros" finds DevStack's versioned cirros image.
-	settingImage           = connectors.FieldSpec{Name: "image", Title: "Image (a name, or the start of one; the newest match is used)", Type: connectors.FieldString, Required: true, Default: "cirros"}
-	settingExternalNetwork = connectors.FieldSpec{Name: "external_network", Title: "External network (routers and public addresses use it)", Type: connectors.FieldString, Required: true, Default: "public"}
-	settingFlavorSmall     = connectors.FieldSpec{Name: "flavor_small", Title: "Flavor for small VMs", Type: connectors.FieldString, Required: true, Default: "m1.tiny"}
-	settingFlavorMedium    = connectors.FieldSpec{Name: "flavor_medium", Title: "Flavor for medium VMs", Type: connectors.FieldString, Required: true, Default: "m1.small"}
-	settingFlavorLarge     = connectors.FieldSpec{Name: "flavor_large", Title: "Flavor for large VMs", Type: connectors.FieldString, Required: true, Default: "m1.medium"}
+	settingImage           = connectors.FieldSpec{Name: "image", Title: "Image (a name, or the start of one; the newest match is used)", Type: connectors.FieldString, Required: true, Default: "cirros", AppliesTo: vmOnly}
+	settingExternalNetwork = connectors.FieldSpec{Name: "external_network", Title: "External network (routers and public addresses use it)", Type: connectors.FieldString, Required: true, Default: "public",
+		AppliesTo: []connectors.BlockKind{connectors.KindVM, connectors.KindNetwork}}
+	settingFlavorSmall  = connectors.FieldSpec{Name: "flavor_small", Title: "Flavor for small VMs", Type: connectors.FieldString, Required: true, Default: "m1.tiny", AppliesTo: vmOnly}
+	settingFlavorMedium = connectors.FieldSpec{Name: "flavor_medium", Title: "Flavor for medium VMs", Type: connectors.FieldString, Required: true, Default: "m1.small", AppliesTo: vmOnly}
+	settingFlavorLarge  = connectors.FieldSpec{Name: "flavor_large", Title: "Flavor for large VMs", Type: connectors.FieldString, Required: true, Default: "m1.medium", AppliesTo: vmOnly}
 )
+
+// vmOnly marks a setting that is about VMs alone.
+var vmOnly = []connectors.BlockKind{connectors.KindVM}
 
 // flavorSetting maps a VM size to the setting that names its flavor.
 var flavorSetting = map[string]connectors.FieldSpec{
@@ -52,22 +58,37 @@ func (*Connector) Manifest() connectors.Manifest {
 		// license (frontend/clutter/public/clouds/README.md).
 		Display: connectors.Display{ShortName: "OpenStack", Logo: "logo"},
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM, "VM").WithDisplay("Server (Nova)", ""),
-			connectors.StandardBlock(connectors.KindNetwork, "Network").WithDisplay("Network (Neutron)", ""),
-			connectors.StandardBlock(connectors.KindFirewall, "Firewall").WithDisplay("Security group", ""),
-			connectors.StandardBlock(connectors.KindVolume, "Volume").WithDisplay("Volume (Cinder)", ""),
-			{Kind: connectors.KindBucket, Treatment: connectors.TreatmentRemoved, Title: "Bucket"},
-			{Kind: connectors.KindFunction, Treatment: connectors.TreatmentRemoved, Title: "Function"},
-			{Kind: connectors.KindTable, Treatment: connectors.TreatmentRemoved, Title: "Table"},
-			{Kind: connectors.KindHTTPAPI, Treatment: connectors.TreatmentRemoved, Title: "HTTP API"},
+			// What replaces a deployed server here: Nova takes user data only
+			// at boot (render.go), and a new address range replaces the subnet
+			// and so its servers. A new SSH key replaces only the key pair, so
+			// it reaches new servers only.
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("Server (Nova)", "").WithHelp(
+				"Changing the startup script on a deployed server replaces the server; data on its own disk is lost.",
+				"A changed SSH key reaches new servers only; a running server keeps the key it started with.",
+				"Changing the size restarts the server. A startup script runs only at first start, so have it set up anything that must keep running as a service."),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("Network (Neutron)", "").WithHelp(
+				"Internet access for private servers joins the network to a router. A public server's first network needs it on.",
+				"Changing the address range of a deployed network replaces its servers; data on their own disks is lost."),
+			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
+			connectors.StandardBlock(connectors.KindVolume).WithDisplay("Volume (Cinder)", ""),
+			connectors.RemovedBlock(connectors.KindBucket),
+			connectors.RemovedBlock(connectors.KindFunction),
+			connectors.RemovedBlock(connectors.KindTable),
+			connectors.RemovedBlock(connectors.KindHTTPAPI),
 		},
+		// A VM may sit on several networks here; a volume attaches to one VM
+		// (connectors.CodeVolumeTwoVMs).
 		Edges: []connectors.EdgeSpec{
-			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network"},
-			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM"},
-			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM"},
+			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM is attached to the network",
+				Why: "Servers in one network can talk to each other privately."},
+			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM",
+				Why: "Only the traffic you allow can reach the server."},
+			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM",
+				Why: "Gives the server more room for its data.", SingleTarget: true, Rule: "A volume attaches to one VM."},
 			// Across clouds this is a split deployment's address edge
 			// (connectors.CrossClass).
-			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts"},
+			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts",
+				Why: "Your app on the server can find the other server, such as its database."},
 		},
 		Settings: specs(settingImage, settingExternalNetwork, settingFlavorSmall, settingFlavorMedium, settingFlavorLarge),
 	}
@@ -79,6 +100,7 @@ func specs(fs ...connectors.FieldSpec) []connectors.FieldSpec {
 	out := make([]connectors.FieldSpec, len(fs))
 	for i, f := range fs {
 		f.Allowed = append([]string(nil), f.Allowed...)
+		f.AppliesTo = append([]connectors.BlockKind(nil), f.AppliesTo...)
 		out[i] = f
 	}
 	return out

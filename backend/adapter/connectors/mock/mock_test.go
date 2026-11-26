@@ -1,6 +1,8 @@
 package mock_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
@@ -43,4 +45,50 @@ func Fixture() contract.Fixture {
 
 func TestContract(t *testing.T) {
 	contract.Run(t, Fixture())
+}
+
+// A second apply of the same diagram changes nothing, and says so per block;
+// it reports no block as built or changed.
+func TestASecondApplySaysUnchanged(t *testing.T) {
+	m, f := mock.New(), Fixture()
+	d := connectors.Deployment{ID: "d1", Prefix: "p1", Connection: connectors.Connection{ConnectorID: mock.ID, Region: f.Region}}
+	var first strings.Builder
+	if _, err := m.Apply(context.Background(), connectors.Run{Log: &first}, f.Graph, d); err != nil {
+		t.Fatal(err)
+	}
+	var again strings.Builder
+	res, err := m.Apply(context.Background(), connectors.Run{Log: &again}, f.Graph, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first.String(), "Created web (VM).") || strings.Contains(first.String(), "p1") {
+		t.Fatalf("first apply: %q", first.String())
+	}
+	if strings.Contains(again.String(), "Created") || !strings.Contains(again.String(), "Unchanged web (VM).") || len(res.Resources) != 0 {
+		t.Fatalf("second apply: %q, resources %v", again.String(), res.Resources)
+	}
+	var plan strings.Builder
+	if p, err := m.Plan(context.Background(), connectors.Run{Log: &plan}, f.Graph, d); err != nil || p != (connectors.PlanResult{}) || plan.Len() != 0 {
+		t.Fatalf("plan of an unchanged diagram: %+v, %v, %q", p, err, plan.String())
+	}
+}
+
+// A block named fail-me fails a plan and an apply on purpose, with a message
+// for the user.
+func TestABlockNamedFailMeFails(t *testing.T) {
+	m, f := mock.New(), Fixture()
+	f.Graph.Blocks["n3"] = connectors.Block{ID: "n3", Kind: connectors.KindVolume, Name: mock.FailName, Fields: map[string]any{}}
+	d := connectors.Deployment{ID: "d1", Connection: connectors.Connection{ConnectorID: mock.ID, Region: f.Region}}
+	run := connectors.Run{Log: &strings.Builder{}}
+	_, perr := m.Plan(context.Background(), run, f.Graph, d)
+	_, aerr := m.Apply(context.Background(), run, f.Graph, d)
+	for _, err := range []error{perr, aerr} {
+		if msg := connectors.UserMessage(err, ""); !strings.Contains(msg, "failed on purpose at fail-me (Volume)") {
+			t.Fatalf("error %v", err)
+		}
+	}
+	// What it built before the failing block stays, so a destroy removes it.
+	if got := m.Built("d1"); len(got) != 2 {
+		t.Fatalf("built %v, want the two blocks before fail-me", got)
+	}
 }

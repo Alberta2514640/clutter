@@ -8,8 +8,6 @@
 // two disagree, so drift shows up in `go test`, not in a confusing local run.
 package routes
 
-import "sort"
-
 // Lambda is one function from a `module "...-lambda"` block in main.tf.
 type Lambda struct {
 	// Name is the module's function_name.
@@ -154,20 +152,4 @@ func LambdaByName(name string) (Lambda, bool) {
 		}
 	}
 	return Lambda{}, false
-}
-
-// AllEnvKeys returns every environment key any Lambda reads, sorted.
-func AllEnvKeys() []string {
-	seen := map[string]bool{}
-	for _, l := range Lambdas {
-		for _, k := range l.EnvKeys {
-			seen[k] = true
-		}
-	}
-	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

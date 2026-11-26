@@ -58,6 +58,7 @@ func adapterSmoke(r *runner, adapterAPI, conn, jwtSecret, sfx string) {
 	add("GET /v1/catalog with the smoke user's token", cat.status == http.StatusOK && strings.Contains(string(cat.body), `"connector":"mock"`),
 		fmt.Sprintf("%d, mock listed: %v", cat.status, strings.Contains(string(cat.body), `"connector":"mock"`)))
 	adapterCORS(r, adapterAPI, add)
+	adapterExamples(b, r.token, add)
 
 	// An organization, project and building-block diagram, through A's API.
 	org := r.do("POST", "/organization", map[string]string{"organizationName": "Smoke B Org " + sfx, "description": "Created by the devserver smoke test for B"}, r.token)
@@ -118,6 +119,7 @@ func adapterSmoke(r *runner, adapterAPI, conn, jwtSecret, sfx string) {
 	}
 	compat := b("GET", "/v1/organizations/"+orgID+"/deployments/"+depID+"/compatibility", nil, r.token)
 	add("GET deployments/{id}/compatibility is ready", compat.status == http.StatusOK && compat.json["ready"] == true, status(compat))
+	adapterOrgDeployments(b, r.token, orgID, projID, diaID, depID, add)
 
 	var applyRun string
 	for _, action := range []string{"plan", "apply"} {
@@ -214,6 +216,7 @@ func adapterRefusals(b func(string, string, any, string) resp, orgID string, sec
 		{"delete the connection", "DELETE", own + "/connections/" + connID, nil},
 		{"deploy the diagram on the connection", "POST", own + "/diagrams/" + diaID + "/deployments", map[string]any{"connection_id": connID}},
 		{"deploy the diagram through its own organization", "POST", theirs + "/diagrams/" + diaID + "/deployments", map[string]any{"connection_id": connID}},
+		{"list the organization's deployments", "GET", theirs + "/deployments", nil},
 		{"read the compatibility", "GET", own + "/deployments/" + depID + "/compatibility", nil},
 		{"start a run", "POST", own + "/deployments/" + depID + "/runs", map[string]string{"action": "plan"}},
 		{"read the run", "GET", own + "/runs/" + runID, nil},
@@ -226,6 +229,27 @@ func adapterRefusals(b func(string, string, any, string) resp, orgID string, sec
 	}
 	ownList := b("GET", own+"/connections", nil, second.token)
 	add("another organization's own list does not hold the connection", ownList.status == http.StatusOK && !strings.Contains(string(ownList.body), connID), fmt.Sprintf("%d", ownList.status))
+}
+
+// adapterOrgDeployments checks that the organization's deployment list holds the
+// deployment with its diagram and project, with and without the project filter.
+func adapterOrgDeployments(b func(string, string, any, string) resp, token, orgID, projID, diaID, depID string, add func(string, bool, string) bool) {
+	type row struct {
+		ID        string `json:"id"`
+		DiagramID string `json:"diagram_id"`
+		ProjectID string `json:"project_id"`
+	}
+	for _, query := range []string{"", "?project=" + projID} {
+		got := b("GET", "/v1/organizations/"+orgID+"/deployments"+query, nil, token)
+		var body struct {
+			Items []row `json:"items"`
+		}
+		_ = json.Unmarshal(got.body, &body)
+		ok := got.status == http.StatusOK && len(body.Items) == 1 &&
+			body.Items[0].ID == depID && body.Items[0].DiagramID == diaID && body.Items[0].ProjectID == projID
+		add("GET organizations/{id}/deployments"+strings.Replace(query, projID, "{project}", 1)+" lists the deployment", ok,
+			fmt.Sprintf("%d, %d items", got.status, len(body.Items)))
+	}
 }
 
 // adapterCORS checks that B answers a browser preflight from the frontend's origin,
@@ -251,6 +275,32 @@ func adapterCORS(r *runner, adapterAPI string, add func(string, bool, string) bo
 		fmt.Sprintf("%d, allow-origin %q, allow-headers %q", code, origin, headers))
 	code, origin, _ = preflight("http://evil.example")
 	add("OPTIONS /v1/catalog from another origin gets no CORS answer", code != http.StatusNoContent && origin == "", fmt.Sprintf("%d, allow-origin %q", code, origin))
+}
+
+// adapterExamples checks that B serves its built-in example diagrams to a
+// signed-in caller only, each a building-block document.
+func adapterExamples(b func(string, string, any, string) resp, token string, add func(string, bool, string) bool) {
+	anon := b("GET", "/v1/examples", nil, "")
+	add("GET /v1/examples with no token", anon.status == http.StatusUnauthorized, fmt.Sprintf("%d", anon.status))
+	got := b("GET", "/v1/examples", nil, token)
+	var body struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Clouds   []string
+			Document struct {
+				Engine string `json:"engine"`
+				Nodes  []any  `json:"nodes"`
+			} `json:"document"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(got.body, &body)
+	var ids []string
+	ok := got.status == http.StatusOK && len(body.Items) > 0
+	for _, e := range body.Items {
+		ids = append(ids, e.ID)
+		ok = ok && e.Document.Engine == "blocks" && len(e.Document.Nodes) > 0 && len(e.Clouds) > 0
+	}
+	add("GET /v1/examples lists building-block examples", ok, fmt.Sprintf("%d, %s", got.status, strings.Join(ids, ", ")))
 }
 
 // reportAdapter prints B's checks after A's route table.

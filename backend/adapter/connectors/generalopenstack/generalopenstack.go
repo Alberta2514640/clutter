@@ -36,6 +36,10 @@ const ID = "general-openstack"
 const (
 	providerSource  = "terraform-provider-openstack/openstack"
 	providerVersion = "~> 3.4"
+	// timeSource only waits (time_sleep): before a public VM's floating IP is
+	// attached, its port must be live (render.go).
+	timeSource  = "hashicorp/time"
+	timeVersion = "~> 0.14"
 )
 
 // Credential field names.
@@ -85,7 +89,7 @@ func newConnector(tf *terraform.Runner, opts ...Option) *Connector {
 
 // providers are the Terraform providers this connector renders for. The
 // shared runner refuses any other.
-var providers = []string{providerSource}
+var providers = []string{providerSource, timeSource}
 
 // ID implements connectors.Connector.
 func (*Connector) ID() string { return ID }
@@ -123,6 +127,13 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 	}
 	return nil
 }
+
+// Advice implements connectors.Advisor: each public VM nothing can reach.
+func (c *Connector) Advice(g connectors.Graph, d connectors.Deployment) []connectors.Problem {
+	return connectors.ClosedPublicVMs(g, d)
+}
+
+var _ connectors.Advisor = (*Connector)(nil)
 
 // Render returns the Terraform files for deployment d of graph g. It refuses
 // a graph Validate refuses, so it never renders a value that was not checked;
@@ -193,7 +204,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 			&connectors.UserError{Message: "A value another cloud should hand this deployment is missing. Apply the deployment again."})
 	}
 	var outputs bytes.Buffer
-	out, err := c.terraform(ctx, run, connectors.ActionApply, d, renderFiles(m), connectors.ExportsWriter(d, &outputs))
+	out, err := c.terraform(ctx, run, connectors.ActionApply, d, renderFiles(m), &outputs)
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
@@ -201,7 +212,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
-	return connectors.RunResult{Resources: out.resources()}, exports, nil
+	return connectors.RunResult{Resources: out.resources(), Results: connectors.ReadResults(outputs.Bytes(), g, d)}, exports, nil
 }
 
 var _ connectors.CrossCloud = (*Connector)(nil)
@@ -220,17 +231,19 @@ func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.G
 }
 
 // Apply implements connectors.Connector. Its result maps each block's node id
-// to the id the cloud gave it, read from Terraform's outputs in the run's log.
+// to the id the cloud gave it, read from Terraform's outputs in the run's log,
+// and holds each block's results, read from `terraform output -json`.
 func (c *Connector) Apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.RunResult, error) {
 	files, err := c.Render(g, d)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	out, err := c.terraform(ctx, run, connectors.ActionApply, d, files, nil)
+	var outputs bytes.Buffer
+	out, err := c.terraform(ctx, run, connectors.ActionApply, d, files, &outputs)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	return connectors.RunResult{Resources: out.resources()}, nil
+	return connectors.RunResult{Resources: out.resources(), Results: connectors.ReadResults(outputs.Bytes(), g, d)}, nil
 }
 
 // Destroy implements connectors.Connector. It needs only the provider
@@ -333,8 +346,9 @@ func runPublicHosts(env map[string]string, allowPrivate bool) ([]string, error) 
 }
 
 // capture passes Terraform's output through to the run's log and keeps what
-// the connector reads back: the plan summary (terraform.PlanSummary) and the
-// id outputs.
+// the connector reads back: the plan summary (terraform.PlanSummary), the
+// id outputs, and the blocks whose main resource the apply created or
+// changed (terraform.ChangedResource).
 type capture struct {
 	mu    sync.Mutex
 	w     io.Writer
@@ -343,12 +357,17 @@ type capture struct {
 	plan     connectors.PlanResult
 	planSeen bool
 	ids      map[string]string // node id -> cloud id, from the id outputs
+	changed  map[string]bool   // node ids
 }
+
+// primaryTypes are the resource types that stand for a block in an apply's
+// count: each block kind's main resource, at the block's address (addr).
+var primaryTypes = []string{tInstance, tNetwork, tSecgroup, tVolume}
 
 var idOutput = regexp.MustCompile(`^` + outputIDPrefix + `([A-Za-z0-9_-]{1,64}) = "([^"\\]*)"\s*$`)
 
 func newCapture(w io.Writer) *capture {
-	c := &capture{w: w, ids: map[string]string{}}
+	c := &capture{w: w, ids: map[string]string{}, changed: map[string]bool{}}
 	c.lines = terraform.NewLineWriter(c.keep)
 	return c
 }
@@ -372,15 +391,25 @@ func (c *capture) keep(line string) error {
 	if m := idOutput.FindStringSubmatch(line); m != nil {
 		c.ids[m[1]] = m[2]
 	}
+	if a, _, ok := terraform.ChangedResource(line); ok {
+		for _, t := range primaryTypes {
+			if id, found := strings.CutPrefix(a, t+"."+addr("")); found {
+				c.changed[id] = true
+			}
+		}
+	}
 	return nil
 }
 
+// resources maps each block the apply created or changed to its cloud id.
 func (c *capture) resources() map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make(map[string]string, len(c.ids))
+	out := map[string]string{}
 	for k, v := range c.ids {
-		out[k] = v
+		if c.changed[k] {
+			out[k] = v
+		}
 	}
 	return out
 }

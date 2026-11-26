@@ -13,15 +13,21 @@ export type Connection = {
   created_at: string;
   updated_at: string;
   verified_at: string | null;
+  // How many diagrams deploy to it; deleting it removes those deployments.
+  diagrams?: number;
 };
 
 // Mirrors connectors.Choice and connectors.Options in
 // backend/adapter/connectors/connectors.go: the values a connection's cloud offers
 // for each deployment setting. A setting that is missing has no list; an
-// empty list means the cloud has none.
+// empty list means the cloud has none. suggested names, for a setting whose
+// manifest default the cloud lacks, one of its choices that works there.
 export type Choice = { value: string; label: string };
 
-export type ConnectionOptions = { settings: Record<string, Choice[] | null> | null };
+export type ConnectionOptions = {
+  settings: Record<string, Choice[] | null> | null;
+  suggested?: Record<string, string> | null;
+};
 
 // POST /v1/organizations/{org}/connections: pasted credentials, or the id of
 // a linked account, never both.

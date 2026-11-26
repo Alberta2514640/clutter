@@ -1,16 +1,20 @@
-// The manifest-to-form mapping. B's editor builds its palette, block forms,
-// allowed edges and deployment settings from the catalog only (the manifests
+// The manifest-to-form mapping. B's editor builds its palette, block forms
+// and deployment settings from the catalog only (links.ts reads the edges;
+// the manifests
 // are the one owner of blocks, fields, defaults and allowed values). The value
 // rules here mirror connectors.CheckValue in backend/adapter/connectors/manifest.go;
 // B checks again before anything runs.
 
 import { cloudLook, type CloudLook } from "./display";
+import { blockValueError } from "./fieldRules";
 import { MAX_STRING_FIELD, MAX_TEXT_FIELD, STANDARD_BLOCKS } from "./types";
 import type { BlockKind, CatalogEntry, FieldSpec, Manifest } from "./types";
 
 export type PaletteBlock = {
   kind: BlockKind;
   title: string;
+  // What it is for, from the first cloud that says; "" when none does.
+  summary: string;
   // The clouds that can build it.
   clouds: CloudLook[];
 };
@@ -18,6 +22,17 @@ export type PaletteBlock = {
 // manifestOffers reports whether a cloud can build a kind of block.
 export const manifestOffers = (m: Manifest, kind: BlockKind) =>
   (m.blocks ?? []).some((b) => b.kind === kind && b.treatment !== "removed");
+
+// entryFor is a connector's catalog entry, or null when this server no
+// longer offers the connector.
+export const entryFor = (catalog: CatalogEntry[], connector: string | null | undefined): CatalogEntry | null =>
+  connector ? (catalog.find((e) => e.manifest.connector === connector) ?? null) : null;
+
+// cloudOffers reports whether a connector in the catalog can build a kind of block.
+export const cloudOffers = (catalog: CatalogEntry[], connector: string, kind: BlockKind) => {
+  const entry = entryFor(catalog, connector);
+  return !!entry && manifestOffers(entry.manifest, kind);
+};
 
 // paletteBlocks lists every block at least one cloud can build: the standard
 // blocks in their fixed order, then any cloud's own blocks by title.
@@ -29,8 +44,9 @@ export function paletteBlocks(catalog: CatalogEntry[]): PaletteBlock[] {
       const cur = byKind.get(b.kind);
       if (cur) {
         if (!cur.clouds.some((c) => c.connector === manifest.connector)) cur.clouds.push(cloudLook(manifest));
+        if (!cur.summary && b.summary) cur.summary = b.summary;
       } else {
-        byKind.set(b.kind, { kind: b.kind, title: b.title, clouds: [cloudLook(manifest)] });
+        byKind.set(b.kind, { kind: b.kind, title: b.title, summary: b.summary ?? "", clouds: [cloudLook(manifest)] });
       }
     }
   }
@@ -71,6 +87,38 @@ export function blockFields(catalog: CatalogEntry[], kind: BlockKind): FieldSpec
   return out;
 }
 
+// The network field that gives private servers internet access
+// (connectors' standard network field). It matters only for a network with
+// a VM in it (a private one on AWS, any on OpenStack), so it shows only then.
+export const PRIVATE_INTERNET_FIELD = "private_internet";
+
+// fieldShown reports whether a block's field is worth showing: every field
+// is, except internet access for private servers on a network with no VM.
+export const fieldShown = (f: FieldSpec, ctx: { hasVM: boolean }) => f.name !== PRIVATE_INTERNET_FIELD || ctx.hasVM;
+
+// connectedBuilders are the clouds that can build a kind and that the
+// organization has a connection to, with each cloud's service name and its
+// help lines for the block.
+export function connectedBuilders(
+  catalog: CatalogEntry[],
+  kind: BlockKind,
+  connected: ReadonlySet<string>,
+): { cloud: CloudLook; service: string; help: string[] }[] {
+  return catalog.flatMap(({ manifest }) => {
+    const b = (manifest.blocks ?? []).find((x) => x.kind === kind && x.treatment !== "removed");
+    if (!b || !connected.has(manifest.connector)) return [];
+    return [{ cloud: cloudLook(manifest), service: b.display?.name || b.title, help: b.help ?? [] }];
+  });
+}
+
+// settingsFor keeps the deployment settings that are about the diagram's
+// blocks: a function runtime only when the diagram has a function. A setting
+// that names no kind is about every deployment.
+export function settingsFor(settings: FieldSpec[] | null | undefined, kinds: Iterable<BlockKind>): FieldSpec[] {
+  const present = new Set(kinds);
+  return (settings ?? []).filter((f) => !f.applies_to || f.applies_to.length === 0 || f.applies_to.some((k) => present.has(k)));
+}
+
 // defaultValues holds each field's default, leaving out fields with none.
 export function defaultValues(fields: FieldSpec[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -78,22 +126,6 @@ export function defaultValues(fields: FieldSpec[]): Record<string, unknown> {
     if (f.default !== undefined && f.default !== null) out[f.name] = f.default;
   }
   return out;
-}
-
-// edgeAllowed reports whether any cloud can wire source to target.
-export function edgeAllowed(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): boolean {
-  return catalog.some(({ manifest }) =>
-    (manifest.edges ?? []).some((e) => e.source === source && e.target === target),
-  );
-}
-
-// edgeMeaning is what an edge means on the first cloud that can wire it.
-export function edgeMeaning(catalog: CatalogEntry[], source: BlockKind, target: BlockKind): string | null {
-  for (const { manifest } of catalog) {
-    const e = (manifest.edges ?? []).find((x) => x.source === source && x.target === target);
-    if (e) return e.meaning;
-  }
-  return null;
 }
 
 // What a field renders as.
@@ -117,6 +149,17 @@ export function fieldControl(f: FieldSpec): FieldControl {
     default:
       return { control: "text" };
   }
+}
+
+// fieldLabel splits a manifest title that carries its own example, such as
+// "Allowed incoming traffic (for example tcp/22,tcp/443)", into the label
+// and a hint the form shows under the field ("For example tcp/22,tcp/443."),
+// so the label stays short. Any other title is the label as it is.
+export function fieldLabel(title: string): { label: string; hint: string | null } {
+  const m = title.match(/^(.+?)\s*\((for example\b[^)]*)\)\s*$/i);
+  if (!m) return { label: title, hint: null };
+  const example = m[2].trim();
+  return { label: m[1], hint: `${example[0].toUpperCase()}${example.slice(1)}${/[.!?]$/.test(example) ? "" : "."}` };
 }
 
 // textBytes is a text value's length as B counts it: UTF-8 bytes.
@@ -172,6 +215,19 @@ export function fieldError(f: FieldSpec, value: unknown): string | null {
 export function valuesErrors(fields: FieldSpec[], values: Record<string, unknown>): { field: string; message: string }[] {
   return fields.flatMap((f) => {
     const msg = fieldError(f, values[f.name]);
+    return msg ? [{ field: f.name, message: msg }] : [];
+  });
+}
+
+// blockFieldError is fieldError plus the grammar of a block's portable field
+// (a firewall's allowed traffic, an address range; fieldRules.ts).
+export const blockFieldError = (kind: BlockKind, f: FieldSpec, value: unknown): string | null =>
+  fieldError(f, value) ?? blockValueError(kind, f.name, value);
+
+// blockValuesErrors checks every field of a block, in field order.
+export function blockValuesErrors(kind: BlockKind, fields: FieldSpec[], values: Record<string, unknown>): { field: string; message: string }[] {
+  return fields.flatMap((f) => {
+    const msg = blockFieldError(kind, f, values[f.name]);
     return msg ? [{ field: f.name, message: msg }] : [];
   });
 }

@@ -129,7 +129,7 @@ func TestAScopedKeyCanOnlyReadItsBucketOrTable(t *testing.T) {
 	// bucket and table it is for only while B names them that way.
 	boundaryName := regexp.MustCompile(`^c[0-9a-f]{8}-`)
 	main := string(files["main.tf"])
-	for _, name := range []string{m.bucketName(m.blocks["files"]), m.physical(m.blocks["orders"], maxName)} {
+	for _, name := range []string{m.bucketName(m.blocks["files"]), m.tableName(m.blocks["orders"])} {
 		if !boundaryName.MatchString(name) || !strings.Contains(main, `"`+name) {
 			t.Errorf("name %q does not match the users' boundary pattern, or main.tf does not use it", name)
 		}
@@ -191,6 +191,15 @@ func TestVMEdgesOnOneCloudUseTheInstanceRoleAndReferences(t *testing.T) {
 		if !strings.Contains(override, want) {
 			t.Errorf("override.tf lacks %q\n%s", want, override)
 		}
+	}
+	// Terraform drops replace_triggered_by from an override file, so it must
+	// be in the instance's own block (ADR-026).
+	if strings.Contains(override, "replace_triggered_by") {
+		t.Errorf("override.tf sets replace_triggered_by, which Terraform ignores there\n%s", override)
+	}
+	trigger := `replace_triggered_by = [aws_instance.` + m.blocks["db"].Addr + `.private_ip, aws_s3_bucket.` + m.blocks["files"].Addr + `.bucket, aws_dynamodb_table.` + m.blocks["orders"].Addr + `.name]`
+	if !strings.Contains(joined(files), trigger) {
+		t.Errorf("no file holds %q", trigger)
 	}
 	if strings.Contains(override, "sensitive(") {
 		t.Fatal("nothing secret, yet the user data is sensitive")

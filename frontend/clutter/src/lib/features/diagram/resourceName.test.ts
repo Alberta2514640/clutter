@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESOURCE_NAME_RULE, resourceNameError } from "./resourceName";
+import { blockNameExample, RESOURCE_NAME_RULE, resourceNameError } from "./resourceName";
 
 describe("resourceNameError", () => {
   it("accepts the names the backend accepts", () => {
@@ -20,5 +20,12 @@ describe("resourceNameError", () => {
 
   it("says a name starts with a lowercase letter", () => {
     expect(RESOURCE_NAME_RULE).toContain("Start with a lowercase letter");
+  });
+
+  it("gives an example that fits the block, never a Lambda for a firewall", () => {
+    const msg = resourceNameError("Web FW", blockNameExample("firewall"));
+    expect(msg).toContain("for example web-fw.");
+    expect(msg).not.toContain("lambda");
+    expect(blockNameExample("something-new")).toBe("my-block");
   });
 });

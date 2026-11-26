@@ -69,6 +69,7 @@ const maxBody = 1 << 20
 func (a *API) Handler() http.Handler {
 	v1 := http.NewServeMux()
 	v1.HandleFunc("GET /v1/catalog", a.catalog)
+	v1.HandleFunc("GET /v1/examples", a.examples)
 	v1.HandleFunc("GET /v1/organizations/{orgID}/connectors/{connectorID}/linked-accounts", a.listLinkedAccounts)
 	v1.HandleFunc("GET /v1/organizations/{orgID}/connections", a.listConnections)
 	v1.HandleFunc("POST /v1/organizations/{orgID}/connections", a.createConnection)
@@ -80,6 +81,7 @@ func (a *API) Handler() http.Handler {
 	v1.HandleFunc("GET /v1/organizations/{orgID}/diagrams/{diagramID}/code", a.listCode)
 	v1.HandleFunc("PUT /v1/organizations/{orgID}/diagrams/{diagramID}/code/{nodeID}", a.putCode)
 	v1.HandleFunc("DELETE /v1/organizations/{orgID}/diagrams/{diagramID}/code/{nodeID}", a.deleteCode)
+	v1.HandleFunc("GET /v1/organizations/{orgID}/deployments", a.listOrgDeployments)
 	v1.HandleFunc("PATCH /v1/organizations/{orgID}/deployments/{deploymentID}", a.updateDeployment)
 	v1.HandleFunc("DELETE /v1/organizations/{orgID}/deployments/{deploymentID}", a.deleteDeployment)
 	v1.HandleFunc("GET /v1/organizations/{orgID}/deployments/{deploymentID}/compatibility", a.compatibility)

@@ -1,6 +1,6 @@
 # System A: Clutter as built (exists today)
 
-As it stands on 2026-11-14 on the `impl/b0` branch, from a read of the code and a local run of every route (`backend/devserver`). The client's `main` does not have the stage 1 fixes yet. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
+A as it stands, from a read of the code and a local run of every route (`backend/devserver`). Where the work stands, including which repo has the stage 1 fixes, is in `.claude/findings/NOW.md`. The final report (`docs/old-capstone/final-report.pdf`, same text in `.md`) describes the design as submitted; where they differ, this file and the code win. What is planned next is `system-b-adapter-layer.md`.
 
 ## Parts
 
@@ -52,7 +52,7 @@ The capstone's version is tagged `capstone-original`. This is what is different 
 
 | Area | Capstone delivered | Now |
 | --- | --- | --- |
-| Where it runs | only in AWS; that account is gone | locally with `npm run dev` (A2); the cloud environment is not set up yet |
+| Where it runs | only in AWS; that account is gone | locally with `npm run dev` (A2), and in the cloud through `npm run deploy` (`environments.md`) |
 | Reading generated Terraform | not in the app, only through the AWS console | **Preview Terraform** in the editor, for every user (ADR-012) |
 | Generator | writes `.tf` files | also records `status.json`, and removes a stale `outputs.tf` |
 | What triggers generation | a Supabase database webhook configured outside the repo, on a route with no authorizer | the editor calls `POST /terraform-engine` with the user's token after each save; the handler checks ownership and reads the diagram from the database (ADR-018) |
@@ -61,12 +61,13 @@ The capstone's version is tagged `capstone-original`. This is what is different 
 | Row-level security | on for `supported_resources` only, with a policy that let the public `anon` role run every command | on for every table; `anon` may only read the resource catalog |
 | Google sign-in | `GOOGLE_CLIENT_ID` unset, so a token minted for any app passed; `email_verified` unchecked; a missing claim panicked | the audience is checked, an unverified email is refused, and every claim is read with a type check |
 | Sign-in check | inside the authorizer's own package | `generic.VerifyUserJWT`, shared by A's authorizer and B |
-| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary (`RoleTemplateVersion` 8). Real AWS must confirm it |
+| Customer role | `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions only; changes only resources tagged `ManagedBy`; roles and users only under `/clutter/` with a permissions boundary, in six managed policies (`RoleTemplateVersion` 10, ADR-027). Confirmed on a real AWS account through B; A's own deployer has not run on real AWS yet |
 | Runners | both handed the database string | neither holds it; each writes a status file to S3, and the API records it after its ownership checks. Real AWS must confirm the S3 writes |
 | Region | the generator's fixed `us-west-2` | the environment's region (`generic.PlatformRegion`; `ca-central-1` in the cloud) |
 | Template loading | inside the generator's `internal` package | `generic/tftemplate`, shared with B's AWS connector; a golden test keeps A's output byte-identical |
 | IAM from edges | "reads" edges also granted writes; the API Gateway case named an API type no template renders | reads only, as an inline policy on the function's role; the invoke permission names the REST API |
 | Generation errors | an output template failure was hidden; error bodies carried paths and SDK text; API Gateway with CORS off rendered invalid Terraform | a failed output template fails the run; error bodies are fixed sentences; CORS off renders valid Terraform |
+| API Gateway template | rendered a request validator that no method used | renders none, and A's golden files lose those seven lines each |
 | API | 31 routes | 32: adds `GET /terraform-engine/files` |
 | Unlocking the canvas locally | not possible | a local-only **Link fake account** button |
 | Tests before merging | none on Go | `checks.yml` on every pull request runs every Go package offline, the frontend's checks and the smoke test of every route |
@@ -84,18 +85,18 @@ Testing in the report is manual: a Postman collection, exploratory UI testing, o
 
 The report makes claims the capstone's code did not support:
 
-| Report says | The capstone's code | Now, on `impl/b0` |
+| Report says | The capstone's code | Now |
 | --- | --- | --- |
 | Every endpoint requires a JWT | `POST /log-in`, `POST /terraform-engine` and `GET /resources` had no authorizer | `POST /log-in` and `GET /resources` (the static resource catalog) have none, on purpose |
 | Supabase row-level security keeps each user's data separate | only `supported_resources` enabled it, with a policy that gave the public `anon` role every command; the other ten tables had none | on for every table (§ What changed) |
-| Least-privilege roles | the customer role granted `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions, limited by tags and a boundary; real AWS must confirm it |
+| Least-privilege roles | the customer role granted `ec2:*`, `s3:*`, `iam:*`, `ssm:*` and more | named actions, limited by tags and a boundary; confirmed on real AWS through B (ADR-027) |
 | A new resource needs only a new template in S3 | a resource lived in five places that must agree | the same (`add-cloud-resource`) |
 | Generation runs when the user deploys (one passage) or on every save (another) | a Supabase webhook, configured outside the repo, called it | the editor asks for it after each successful save; the save handlers do not call it (ADR-018) |
 | No CI | CI built and pushed the frontend image | CI runs the checks on every pull request and builds the website's image without pushing it |
 
 ## What A can and cannot do
 
-Status: **proven** means we ran it locally (2026-11-04). **Unproven** means the code exists but needs AWS, so only the capstone team has run it, and their evidence is one Lambda and one playbook.
+Status: **proven** means we ran it locally. **Unproven** means the code exists but needs AWS, so only the capstone team has run it, and their evidence is one Lambda and one playbook.
 
 | Ability | Status |
 | --- | --- |
@@ -159,11 +160,12 @@ Everywhere a connector would need to reach. Behind a usable seam: the per-resour
 - Run state is split: Terraform runs in `diagram_deployment_logs`, Ansible runs in `jobs`.
 - Generated code and Terraform state for every customer sit in Clutter's own bucket, in the region Clutter runs in (`generic.PlatformRegion`).
 - Customer Terraform state is a local file synced to S3 per diagram; two concurrent runs on one diagram overwrite each other.
-- Neither runner holds the Postgres connection string; each writes a status file to S3 that the API records. Both share one task role that may assume any customer's Clutter role (guarded by the external id, which a run knows only for its own organization) and may read and write the whole Clutter bucket, so one run can reach another customer's state and logs. The Ansible job's SQS message carries the role ARN and external id.
+- Neither runner holds the Postgres connection string; each writes a status file to S3 that the API records.
+- Both runners share one task role that may assume any customer's Clutter role and may read and write the whole Clutter bucket. The Ansible job's SQS message carries the role ARN and external id. Both are open defects; the risk and the fix are in `.claude/findings/NOW.md` § Open defects in A.
 - The schema in `backend/storage-sql` is written for Supabase: the seed creates a policy for the `anon` role, which plain Postgres does not have.
 
 ## Repositories and branches
 
-- This clone's `origin` is `FayzanT/re-clutter`, a fork made 2026-10-19 of the client's `Alberta2514640/clutter` (remote `upstream`). Work happens in the fork, and pull requests merge it into the client's repo.
-- `upstream` has 24 older branches. Every one is merged into `main` or holds an older copy of a file `main` rewrote later, with two exceptions: `dev` bumps `actions/checkout` to v6 in CI, and `database-seed` holds an abandoned DynamoDB seed script. One old PR is open (#21, conflicting).
+- This clone's `origin` is `FayzanT/re-clutter`, a fork of the client's `Alberta2514640/clutter` (remote `upstream`). Work happens in the fork, and pull requests merge it into the client's repo.
+- `upstream` has 24 older branches. Every one is merged into `main` or holds an older copy of a file `main` rewrote later, with two exceptions: `dev` bumps `actions/checkout` to v6 in CI, and `database-seed` holds an abandoned DynamoDB seed script.
 - CI: `docker-image.yml` builds the website's image on every pull request and push to `main`, with stand-in values, and pushes nothing. `checks.yml` is described in the root `CLAUDE.md` § Commands.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { blockLook, cloudLook, cloudLookFor, iconSrc, monogram } from "./display";
+import { tintForId } from "../../tint";
+import { blockLook, cloudLook, cloudLookFor, iconSrc, KIND_TINT, kindBadgeClass, kindIconClass, monogram } from "./display";
 import type { CatalogEntry, Manifest } from "./types";
 
 // Shaped like the AWS and OpenStack manifests: AWS has a service icon per
@@ -86,5 +87,28 @@ describe("monogram", () => {
     expect(monogram("AWS")).toBe("AWS");
     expect(monogram("OpenStack")).toBe("O");
     expect(monogram(" mock ")).toBe("M");
+  });
+});
+
+describe("block kind colours", () => {
+  it("gives each of B's eight kinds its own tint", () => {
+    const kinds = ["vm", "network", "firewall", "volume", "bucket", "function", "table", "http_api"];
+    expect(new Set(kinds.map((k) => KIND_TINT[k])).size).toBe(8);
+    expect(kindBadgeClass("vm")).toBe("icon-tile bg-tint-blue border-tint-blue-edge text-tint-blue-fg");
+    expect(kindIconClass("network")).toBe("text-tint-violet-fg");
+  });
+
+  it("shows a kind a cloud adds on its own as neutral", () => {
+    expect(kindBadgeClass("queue")).toBe("icon-tile bg-muted text-foreground");
+    expect(kindIconClass("queue")).toBe("text-muted-foreground");
+  });
+});
+
+describe("tintForId", () => {
+  it("picks the same readable tint for the same id every time", () => {
+    const id = "e6415f8a-1fd0-4b3b-9094-3931ad461366";
+    expect(tintForId(id)).toBe(tintForId(id));
+    expect(["violet", "grass", "pink"]).toContain(tintForId(id));
+    expect(new Set(["a", "b", "c", "d", "e", "f"].map(tintForId)).size).toBeGreaterThan(1);
   });
 });

@@ -32,6 +32,18 @@ func TestRenderedTerraformValidates(t *testing.T) {
 	}
 
 	c, _, _ := newTestConnector(t)
+	// A peer group in the network and one in the default VPC, a key pair,
+	// and a bucket that deletes its files on destroy.
+	peers := fullGraph()
+	peers.Edges = append(peers.Edges, connectors.Edge{Source: "web", Target: "worker"})
+	peers.Blocks["web"].Fields[connectors.FieldSSHKey] = testSSHKey
+	peers.Blocks["bucket"].Fields["force_destroy"] = true
+	noNAT := fullGraph()
+	noNAT.Blocks["net1"].Fields["private_internet"] = false
+	// A volume on a VM in the default VPC pins the VM's zone.
+	pinned := defaultVPCGraph()
+	pinned.Blocks["disk"] = connectors.Block{ID: "disk", Kind: connectors.KindVolume, Name: "disk", Fields: map[string]any{}}
+	pinned.Edges = append(pinned.Edges, connectors.Edge{Source: "disk", Target: "vm"})
 	hostile := fullGraph()
 	hostile.Blocks["api"].Fields["description"] = "x\" }\n${file(\"/etc/passwd\")} %{ if true } \\"
 	zipBody := testZip(t)
@@ -48,9 +60,12 @@ func TestRenderedTerraformValidates(t *testing.T) {
 		"uploaded code and startup script": {withCodeAndScript(uploaded(t, nil, zipBody)), testDeployment("ca-central-1")},
 		// A split deployment's AWS parts: scoped keys and an address for
 		// other clouds, and values from another cloud on a VM.
-		"exports to other clouds":  {exportGraph(), exportDeployment()},
-		"values from other clouds": {importGraph(), importDeployment(true)},
-		"VM edges on one cloud":    {vmEdgesGraph(), testDeployment("ca-central-1")},
+		"exports to other clouds":   {exportGraph(), exportDeployment()},
+		"values from other clouds":  {importGraph(), importDeployment(true)},
+		"VM edges on one cloud":     {vmEdgesGraph(), testDeployment("ca-central-1")},
+		"peers, key, force destroy": {peers, testDeployment("ca-central-1")},
+		"no NAT gateway":            {noNAT, testDeployment("ca-central-1")},
+		"volume in the default VPC": {pinned, testDeployment("ca-central-1")},
 		// The portable firewall grammar: icmp, and an IPv6 source.
 		"firewall icmp from IPv4":         {firewallGraph("tcp/22, icmp", "203.0.113.0/24"), testDeployment("ca-central-1")},
 		"firewall tcp and icmp from IPv6": {firewallGraph("tcp/443, udp/1000-2000, icmp", "2001:db8::/32"), testDeployment("ca-central-1")},

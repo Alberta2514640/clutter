@@ -1,7 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Theme scopes. The light tokens sit on :root and on any `.light` element; the
+ * dark tokens on any `.dark` element. <html> gets `dark` from the user's
+ * choice (the inline script in layout.tsx, then ThemeProvider), the sidebar
+ * is always a `.dark` scope, and A's editor is a `.dark.a-editor` scope.
+ * The `dark:` variant matches inside a `.dark` scope unless a `.light` scope
+ * is nearer the root; a `.dark` nested inside a `.light` gets the dark tokens
+ * but not `dark:` utilities, so screens style with tokens, not `dark:`.
+ */
+@custom-variant dark (&:where(.dark, .dark *):not(:where(.light, .light *)));
 
 @theme inline {
   --color-background: var(--background);
@@ -37,50 +46,579 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Status: strong colour for text and dots, `/10` of it for soft fills. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  /* Status dots (step 9) and badge fills (step 3). */
+  --color-success-solid: var(--success-solid);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning-solid: var(--warning-solid);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info-solid: var(--info-solid);
+  --color-info-subtle: var(--info-subtle);
+  /* Links: teal 11. */
+  --color-link: var(--link);
+  /* Tints (step 3 fill, step 11 icon), named in lib/tint.ts only. */
+  --color-tint-blue: var(--tint-blue);
+  --color-tint-blue-fg: var(--tint-blue-fg);
+  --color-tint-violet: var(--tint-violet);
+  --color-tint-violet-fg: var(--tint-violet-fg);
+  --color-tint-amber: var(--tint-amber);
+  --color-tint-amber-fg: var(--tint-amber-fg);
+  --color-tint-grass: var(--tint-grass);
+  --color-tint-grass-fg: var(--tint-grass-fg);
+  --color-tint-orange: var(--tint-orange);
+  --color-tint-orange-fg: var(--tint-orange-fg);
+  --color-tint-yellow: var(--tint-yellow);
+  --color-tint-yellow-fg: var(--tint-yellow-fg);
+  --color-tint-cyan: var(--tint-cyan);
+  --color-tint-cyan-fg: var(--tint-cyan-fg);
+  --color-tint-pink: var(--tint-pink);
+  --color-tint-pink-fg: var(--tint-pink-fg);
+  /* Tile borders (step 6), named in lib/tint.ts only. */
+  --color-tint-blue-edge: var(--tint-blue-edge);
+  --color-tint-violet-edge: var(--tint-violet-edge);
+  --color-tint-amber-edge: var(--tint-amber-edge);
+  --color-tint-grass-edge: var(--tint-grass-edge);
+  --color-tint-orange-edge: var(--tint-orange-edge);
+  --color-tint-yellow-edge: var(--tint-yellow-edge);
+  --color-tint-cyan-edge: var(--tint-cyan-edge);
+  --color-tint-pink-edge: var(--tint-pink-edge);
+  /* The raised material's shadow alone, for a layer that keeps its own fill (the tooltip). */
+  --shadow-raised: var(--raised-shadow);
+  /* The near-black of the landing hero, final call to action and footer. */
+  --color-hero: var(--hero);
+  --color-hero-foreground: var(--hero-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/*
+ * Motion system, the one owner of durations and easing. Every `transition-*`
+ * utility defaults to 150ms on the standard easing; `motion-base` (200ms:
+ * menus, toasts, tabs) and `motion-slow` (250ms: dialogs, sheets, onboarding
+ * steps) lengthen it. Only transform and opacity animate. Under
+ * prefers-reduced-motion every animation and transition is off (below).
+ */
+@theme {
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-shimmer: shimmer 1.6s cubic-bezier(0.2, 0, 0, 1) infinite;
+  --animate-fade-in: fade-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-fade-up: fade-up 250ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-pop-in: pop-in 200ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-check: check 250ms cubic-bezier(0.2, 0, 0, 1) both;
+  --animate-status-ping: status-ping 1.6s cubic-bezier(0.2, 0, 0, 1) infinite;
+
+  /* Runs on an ::after that rests at translateX(-100%), so it ends off the box. */
+  @keyframes shimmer {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(200%);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  /* Landing sections on first view; content that arrives in place. */
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+  /* A new block on the canvas. */
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+  }
+  /* A checklist item that ticks. */
+  @keyframes check {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+  }
+  /* The ring behind a running status dot. */
+  @keyframes status-ping {
+    0% {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    80%,
+    100% {
+      opacity: 0;
+      transform: scale(2.4);
+    }
+  }
+}
+
+@utility motion-fast {
+  --tw-duration: var(--motion-fast);
+  transition-duration: var(--motion-fast);
+}
+@utility motion-base {
+  --tw-duration: var(--motion-base);
+  transition-duration: var(--motion-base);
+}
+@utility motion-slow {
+  --tw-duration: var(--motion-slow);
+  transition-duration: var(--motion-slow);
+}
+
+/* Cards and buttons lift 1px on hover. */
+@utility lift {
+  transition-property: translate, box-shadow, background-color, border-color, color;
+  &:hover:not(:disabled, [aria-disabled="true"]) {
+    translate: 0 -1px;
+  }
+}
+
+/* The canvas motif: a faint dot grid, shared by the editor and the site. */
+@utility bg-dot-grid {
+  background-image: radial-gradient(var(--dot-grid) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* The quieter grid behind a hero, an empty state or onboarding: 1px dots at
+   gray 5 on a 24px pitch, fading out from the top. The editor canvas keeps
+   bg-dot-grid, unfaded. */
+@utility bg-dot-grid-masked {
+  background-image: radial-gradient(circle, var(--dot-grid-masked) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 12px 0;
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 0%, #000 25%, transparent 100%);
+}
+
+/*
+ * Grain: one static fractal-noise tile (--grain) painted over a page
+ * background, under everything on it. Only the landing page's backgrounds and
+ * the app shell's fixed backdrop carry it; cards, the editor canvas and the
+ * demo video sit on top with their own fills, so text stays crisp. Not named
+ * bg-*: tailwind-merge (cn) would take it for a fill and drop the real one.
+ */
+@utility grain {
+  background-image: var(--grain);
+  background-size: 180px 180px;
+  background-repeat: repeat;
+}
+
+/*
+ * Three materials. Each is a fill, a hairline border, a 1px top inner
+ * highlight and a shadow; in light the shadows are faint layered ones, in
+ * dark the step to a lighter grey does the lifting and the shadow is only a
+ * small contact one.
+ * - surface-card: every card, panel and list surface. In dark its top edge
+ *   is a hair lighter than its sides, as if lit from above. Tint the border
+ *   for a danger card with [--card-border:var(--card-border-danger)], never a
+ *   border-* colour class.
+ * - surface-raised: menus, popovers, select lists and anything that floats
+ *   over the canvas.
+ * - surface-floating: dialogs and sheets.
+ * Radius: surface-card sets 12px; raised and floating keep the component's.
+ */
+@utility surface-card {
+  background-color: var(--card-surface);
+  border: 1px solid var(--card-border);
+  border-top-color: color-mix(in srgb, var(--card-border), white var(--card-top-lift));
+  border-radius: var(--radius-xl);
+  box-shadow:
+    inset 0 1px 0 0 var(--card-highlight),
+    var(--card-shadow);
+}
+
+/* A card that is a link or a button: on hover or keyboard focus inside it,
+   the border brightens (neutral, never teal); on hover it lifts 1px, its
+   shadow grows in light and its fill steps up a grey in dark. */
+@utility surface-card-interactive {
+  transition-property: translate, border-color, background-color, box-shadow;
+  &:hover:not(:disabled, [aria-disabled="true"]),
+  &:focus-within {
+    border-color: var(--card-border-hover);
+  }
+  &:hover:not(:disabled, [aria-disabled="true"]) {
+    translate: 0 -1px;
+    background-color: var(--card-surface-hover);
+    box-shadow:
+      inset 0 1px 0 0 var(--card-highlight),
+      var(--card-shadow-hover);
+  }
+}
+
+/* Raised and floating set the border's colour only (the component says which
+   sides have one: `border`, or a sheet's `border-l`) and leave the text
+   colour to the component (text-popover-foreground). */
+@utility surface-raised {
+  background-color: var(--popover);
+  border-color: var(--raised-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--raised-highlight),
+    var(--raised-shadow);
+}
+
+@utility surface-floating {
+  background-color: var(--popover);
+  border-color: var(--raised-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--raised-highlight),
+    var(--floating-shadow);
+}
+
+/* The app's backdrop behind the content column: one flat colour, never a
+   gradient, and never on cards. AppShell adds the grain to it. */
+@utility bg-app-backdrop {
+  background-color: var(--app-backdrop);
+}
+
+/*
+ * Pointer spotlight: near the pointer, a card's border brightens toward gray
+ * 8, and nothing else changes. SpotlightGroup (components/common) feeds
+ * --spot-x and --spot-y to each [data-spotlight] card and --spot-alpha to
+ * the group. Without a fine pointer, or under reduced motion, it is off and
+ * the cards look as they always do.
+ */
+@property --spot-x {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: -999px;
+}
+@property --spot-y {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: -999px;
+}
+@property --spot-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+@utility spotlight {
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(180px circle at var(--spot-x) var(--spot-y), var(--spotlight), transparent 100%);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+    opacity: var(--spot-alpha);
+    transition: --spot-alpha var(--motion-slow) var(--ease-standard);
+  }
+  @media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+    &::before {
+      display: none;
+    }
+  }
+}
+
+/* A block-kind or team tile: its tint's step 3 fill, step 6 border (from
+   lib/tint.ts), a top highlight and, in dark, a faint lower shade. */
+@utility icon-tile {
+  border-width: 1px;
+  border-style: solid;
+  box-shadow:
+    inset 0 1px 0 0 var(--tile-highlight),
+    inset 0 -1px 0 0 var(--tile-shade);
+}
+
+/* A small label over a group or a section: 11px spaced sans capitals in the
+   muted colour. (Monospace capitals read as a terminal; data such as regions
+   and address ranges stays monospace.) */
+@utility micro-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/*
+ * A neutral base with colour used on purpose. Every value is from Radix
+ * Colors 3.0.0, read from the official files at
+ *   https://unpkg.com/@radix-ui/colors@3.0.0/<scale>.css and <scale>-dark.css
+ * for gray, teal, green, amber, red, blue, violet, grass, orange, yellow,
+ * cyan and pink.
+ * - Greys (gray): 1 app background, 2 subtle (sidebar, dark cards), 3 to 5
+ *   component default, hover and selected, 6 borders, 7 control borders,
+ *   8 strong borders, 11 secondary text, 12 primary text.
+ * - Teal is Clutter's accent: teal 9 fills the main action (near-black text:
+ *   white is 3.1:1 on it), teal 11 is links, teal 8 the focus ring in dark
+ *   (teal 9 in light, where teal 8 is too faint on white).
+ * - Status: step 9 dots (-solid), step 3 fills (-subtle), step 11 text
+ *   (green, amber, red, blue). Light text is step 11 blended toward step 12
+ *   (success and warning 30%, info 25%, danger 20%) for 4.5:1 on its fill.
+ *   The destructive fill is red 9 in dark, red 11 in light.
+ * - Tints: step 3 fill and step 11 icon, for block kinds (KIND_TINT in
+ *   lib/features/catalog/display.ts) and team marks (lib/tint.ts).
+ * No gradients and no glows. Shadows are faint and layered in light and a
+ * small contact shadow in dark (the materials above); grain sits only on
+ * page backgrounds.
+ */
 :root {
-  --radius: 0.625rem;
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Controls 6px (rounded-md), cards, popovers and dialogs 12px (rounded-xl). */
+  --radius: 0.5rem;
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 250ms;
+
+  /* The sidebar is always dark, so its tokens have one set: the deepest
+     navy, a step darker than the dark theme's page, so it frames the content
+     (muted navy-gray text, card navy for hover and the current page, whose
+     icon is teal 9). The landing page's dark hero is the same navy. */
+  --sidebar: #0b1222;
+  --sidebar-foreground: #a3b1c4;
+  --sidebar-primary: #12a594;
+  --sidebar-primary-foreground: #0b1222;
+  --sidebar-accent: #253248;
+  --sidebar-accent-foreground: #f1f5f9;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #207e73;
+
+  --hero: #0b1222;
+  --hero-foreground: #f1f5f9;
+}
+
+:root,
+.light {
+  color-scheme: light;
+  --background: #fcfcfc;
+  --foreground: #202020;
+  /* Light cards are white on step 1; popovers and dialogs are white too,
+     lifted by the raised shadow. */
+  --card: #ffffff;
+  --card-foreground: #202020;
+  --popover: #ffffff;
+  --popover-foreground: #202020;
+  --primary: #12a594;
+  --primary-foreground: #111111;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #202020;
+  --muted: #f0f0f0;
+  --muted-foreground: #646464;
+  --accent: #e8e8e8;
+  --accent-foreground: #202020;
+  --border: #d9d9d9;
+  --input: #cecece;
+  --ring: #12a594;
+  /* Teal 11 blended 30% toward teal 12, for 4.5:1 on the page. */
+  --link: #046f61;
+  --success: #1f6d4b;
+  --success-solid: #30a46c;
+  --success-subtle: #e6f6eb;
+  --success-foreground: #ffffff;
+  --warning: #8f560a;
+  --warning-solid: #ffc53d;
+  --warning-subtle: #fff7c2;
+  --warning-foreground: #ffffff;
+  --danger: #b9282e;
+  --danger-solid: #e5484d;
+  --danger-subtle: #feebec;
+  --danger-foreground: #ffffff;
+  --info: #0e64b4;
+  --info-solid: #0090ff;
+  --info-subtle: #e6f4fe;
+  --info-foreground: #ffffff;
+  --destructive: #ce2c31;
+  --tint-blue: #e6f4fe;
+  --tint-blue-fg: #0d74ce;
+  --tint-violet: #f4f0fe;
+  --tint-violet-fg: #6550b9;
+  --tint-amber: #fff7c2;
+  --tint-amber-fg: #ab6400;
+  --tint-grass: #e9f6e9;
+  --tint-grass-fg: #2a7e3b;
+  --tint-orange: #ffefd6;
+  --tint-orange-fg: #cc4e00;
+  --tint-yellow: #fffab8;
+  --tint-yellow-fg: #9e6c00;
+  --tint-cyan: #def7f9;
+  --tint-cyan-fg: #107d98;
+  --tint-pink: #fee9f5;
+  --tint-pink-fg: #c2298a;
+  --tint-blue-edge: #acd8fc;
+  --tint-violet-edge: #d4cafe;
+  --tint-amber-edge: #f3d673;
+  --tint-grass-edge: #b2ddb5;
+  --tint-orange-edge: #ffc182;
+  --tint-yellow-edge: #f3d768;
+  --tint-cyan-edge: #9ddde7;
+  --tint-pink-edge: #efbfdd;
+  --tile-highlight: rgb(255 255 255 / 0.8);
+  --tile-shade: rgb(0 0 0 / 0.03);
+  --dot-grid: oklch(0 0 0 / 11%);
+  /* Gray 6: on gray 1 and 2 pages, gray 5 is too faint to read as a grid. */
+  --dot-grid-masked: #d9d9d9;
+  /* Grain: fractal noise (base frequency 0.9, 3 octaves) turned grey and
+     centred on the page's own tone (gray 1 here, gray 1 dark below), so the
+     page keeps its colour and only gains texture; 2.5% opacity in light,
+     3.5% in dark. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2.4 0 0 0 -0.212 2.4 0 0 0 -0.212 2.4 0 0 0 -0.212 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+  --spotlight: rgb(0 0 0 / 0.16);
+  --shimmer: oklch(1 0 0 / 70%);
+  /* Light app pages are gray 2, so white cards stand off them. */
+  --app-backdrop: #f9f9f9;
+  /* Layered shadows from one light above (Comeau): each layer doubles the
+     last's offset and blur, all faint. */
+  --raised-border: #d9d9d9;
+  --raised-highlight: rgb(255 255 255 / 0.8);
+  --raised-shadow:
+    0 1px 1px rgb(0 0 0 / 0.04), 0 2px 4px rgb(0 0 0 / 0.04), 0 6px 12px -2px rgb(0 0 0 / 0.06),
+    0 12px 24px -6px rgb(0 0 0 / 0.08);
+  --floating-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04), 0 4px 8px rgb(0 0 0 / 0.05), 0 12px 24px -4px rgb(0 0 0 / 0.08),
+    0 24px 48px -12px rgb(0 0 0 / 0.16);
+  /* The card material (surface-card): white on the gray 2 page, gray 6 border. */
+  --card-surface: var(--card);
+  --card-surface-hover: var(--card);
+  --card-border: #d9d9d9;
+  --card-top-lift: 0%;
+  --card-border-hover: #bbbbbb;
+  --card-border-danger: #fdbdbe;
+  --card-highlight: rgb(255 255 255 / 0.8);
+  --card-shadow:
+    0 1px 1px rgb(0 0 0 / 0.03), 0 2px 2px rgb(0 0 0 / 0.025), 0 4px 4px -1px rgb(0 0 0 / 0.02),
+    0 8px 8px -4px rgb(0 0 0 / 0.02);
+  --card-shadow-hover:
+    0 1px 1px rgb(0 0 0 / 0.03), 0 2px 2px rgb(0 0 0 / 0.03), 0 4px 4px -1px rgb(0 0 0 / 0.03),
+    0 8px 8px -2px rgb(0 0 0 / 0.03), 0 16px 16px -6px rgb(0 0 0 / 0.04);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
 }
 
 .dark {
-  /* Native controls (select menus, scrollbars, date pickers) draw dark too. */
   color-scheme: dark;
+  /* Navy, the deep blue of Clutter's first editor (Tailwind slate 900 and
+     800 for the page and cards), lifted step by step for popovers and
+     controls. Muted text is a lighter navy-gray than Tailwind's 400 so it
+     keeps 4.5:1 on every surface; dark text on a coloured fill is the deepest
+     navy. Pure gray, then Radix slate, both read as dull. */
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --popover: #253248;
+  --popover-foreground: #f1f5f9;
+  --primary: #12a594;
+  --primary-foreground: #0b1222;
+  --secondary: #253248;
+  --secondary-foreground: #f1f5f9;
+  --muted: #253248;
+  --muted-foreground: #a3b1c4;
+  --accent: #2c3a50;
+  --accent-foreground: #f1f5f9;
+  --border: #334155;
+  --input: #475569;
+  --ring: #207e73;
+  --link: #0bd8b6;
+  --success: #3dd68c;
+  --success-solid: #30a46c;
+  --success-subtle: #132d21;
+  --success-foreground: #0b1222;
+  --warning: #ffca16;
+  --warning-solid: #ffc53d;
+  --warning-subtle: #302008;
+  --warning-foreground: #0b1222;
+  --danger: #ff9592;
+  --danger-solid: #e5484d;
+  --danger-subtle: #3b1219;
+  --danger-foreground: #0b1222;
+  --info: #70b8ff;
+  --info-solid: #0090ff;
+  --info-subtle: #0d2847;
+  --info-foreground: #0b1222;
+  --destructive: #e5484d;
+  --tint-blue: #0d2847;
+  --tint-blue-fg: #70b8ff;
+  --tint-violet: #291f43;
+  --tint-violet-fg: #baa7ff;
+  --tint-amber: #302008;
+  --tint-amber-fg: #ffca16;
+  --tint-grass: #1b2a1e;
+  --tint-grass-fg: #71d083;
+  --tint-orange: #331e0b;
+  --tint-orange-fg: #ffa057;
+  --tint-yellow: #2d2305;
+  --tint-yellow-fg: #f5e147;
+  --tint-cyan: #082c36;
+  --tint-cyan-fg: #4ccce6;
+  --tint-pink: #37172f;
+  --tint-pink-fg: #ff8dcc;
+  --tint-blue-edge: #104d87;
+  --tint-violet-edge: #473876;
+  --tint-amber-edge: #5c3d05;
+  --tint-grass-edge: #2d5736;
+  --tint-orange-edge: #66350c;
+  --tint-yellow-edge: #524202;
+  --tint-cyan-edge: #045468;
+  --tint-pink-edge: #692955;
+  --tile-highlight: rgb(255 255 255 / 0.06);
+  --tile-shade: rgb(0 0 0 / 0.15);
+  --dot-grid: oklch(1 0 0 / 8%);
+  --dot-grid-masked: #2f3c52;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='2.4 0 0 0 -1.133 2.4 0 0 0 -1.133 2.4 0 0 0 -1.133 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.035'/%3E%3C/svg%3E");
+  --spotlight: rgb(255 255 255 / 0.14);
+  --shimmer: oklch(1 0 0 / 5%);
+  --app-backdrop: var(--background);
+  --raised-border: #334155;
+  --raised-highlight: rgb(255 255 255 / 0.06);
+  --raised-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(0 0 0 / 0.5);
+  --floating-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+  /* Gray 2 cards on the gray 1 page, gray 3 on hover; the lift is the lighter
+     step, so the shadow is only a contact one. */
+  --card-surface: var(--card);
+  --card-surface-hover: #253248;
+  /* A hairline: cards sit on the page, not in hard boxes. */
+  --card-border: #243047;
+  --card-top-lift: 7%;
+  --card-border-hover: #334155;
+  --card-border-danger: #72232d;
+  --card-highlight: rgb(255 255 255 / 0.05);
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  --card-shadow-hover: 0 1px 2px rgb(0 0 0 / 0.35);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+}
+
+/*
+ * A's older editor keeps its look whatever the theme (ADR-006): these are the
+ * dark values it was built against, and its buttons do not lift.
+ */
+.a-editor {
+  --radius: 0.625rem;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -99,26 +637,233 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+}
+.a-editor [data-slot="button"]:hover {
+  translate: none;
+}
+/* A's own buttons keep the 14px text they were built with; the app's
+   buttons are 13px. Only inside A's editor, not the banner above it
+   (EditorSwitch marks the editor's box). A's buttons set no other size. */
+.a-editor [data-a-editor-body] [data-slot="button"] {
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
 }
 
 @layer base {
+  /* Large text set a little tighter, as premium interfaces do; a heading's
+     own tracking class still wins. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.015em;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* A scope recomputes its text colour from its own tokens. */
+  .dark,
+  .light {
+    color: var(--foreground);
+  }
+  /* Numbers in tables line up. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Icons draw at stroke 1.5. Only icons left at lucide's default 2 change
+     (an icon that sets its own width keeps it), and A's editor keeps its look. */
+  svg.lucide[stroke-width="2"]:not(:where(.a-editor *)) {
+    stroke-width: 1.5;
+  }
+}
+
+/* B's canvases: React Flow's credit link is 13px tall. An invisible area
+   makes it a 24px target (WCAG 2.5.8) without moving or growing the credit;
+   it reaches the canvas's lower edge, below the panel's 2px padding. A's
+   editor keeps its look and behaviour. Its text takes the muted token:
+   React Flow's own #999 is 2.8:1 on the light canvas. */
+.react-flow__attribution a:not(:where(.a-editor *)) {
+  position: relative;
+}
+/* One class more than React Flow's own rule, which loads after this file. */
+.react-flow .react-flow__attribution a:not(:where(.a-editor *)) {
+  color: var(--muted-foreground);
+}
+.react-flow__attribution a:not(:where(.a-editor *))::before {
+  content: "";
+  position: absolute;
+  inset: -9px 0 -2px;
+}
+
+/* B's canvases: a block or a line reached with Tab shows a focus ring
+   (React Flow draws none on custom nodes). A line's ring is its wide
+   invisible stroke, shown faintly. A's editor keeps its look. */
+.react-flow .react-flow__node.selectable:focus-visible:not(:where(.a-editor *)) {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+.react-flow .react-flow__edge.selectable:focus-visible:not(:where(.a-editor *)) .react-flow__edge-interaction {
+  stroke: var(--ring);
+  stroke-opacity: 0.35;
+}
+
+/* While the theme changes (applyTheme in theme.ts), nothing animates its colours. */
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * The landing hero's canvas (components/landing/HeroCanvas and HeroMotion).
+ * Tiles float on two slow loops each, connectors draw in once, a packet runs
+ * a connector to a cloud whose tile answers with a ring, and the headline's
+ * selection box idles: its handles tick in turn and its cursor glides up the
+ * right edge and back. Transform and opacity only. Every rule sits behind
+ * no-preference, so under reduced motion the hero is the static rest state
+ * (tiles in place, lines drawn, no packet). HeroMotion sets data-paused while
+ * the hero is off screen. The loops ease like a sine (--ease-float); the
+ * standard easing stays for UI transitions and the one-off draw-in.
+ */
+:root {
+  --ease-float: cubic-bezier(0.37, 0, 0.63, 1);
+}
+
+@keyframes hero-float-y {
+  to {
+    transform: translateY(-6px);
+  }
+}
+@keyframes hero-float-x {
+  from {
+    transform: translateX(-2px) rotate(-0.5deg);
+  }
+  to {
+    transform: translateX(3px) rotate(0.5deg);
+  }
+}
+/* The line slides out of its own clip, so the dashes never stretch. */
+@keyframes hero-draw {
+  from {
+    transform: translateX(-100%);
+  }
+}
+/* Runs on a layer as long as its line: 100% is the line's far end. */
+@keyframes hero-packet {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+    animation-timing-function: var(--ease-float);
+  }
+  6% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 1;
+    transform: translateX(100%);
+  }
+  58%,
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+/* Shares hero-packet's loop: the ring shows as the packet lands (52%). */
+@keyframes hero-arrive {
+  0%,
+  51% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  72%,
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@keyframes hero-handle {
+  0%,
+  10%,
+  100% {
+    transform: scale(1);
+  }
+  4% {
+    transform: scale(1.45);
+  }
+}
+/* In em of the headline, so the glide fits the box at every size. */
+@keyframes hero-cursor {
+  0%,
+  28%,
+  76%,
+  100% {
+    transform: translate(0, 0);
+  }
+  42% {
+    transform: translate(0.02em, -0.4em);
+  }
+  60% {
+    transform: translate(-0.01em, -0.42em);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-float-y {
+    animation: hero-float-y 4s var(--ease-float) infinite alternate;
+  }
+  .hero-float-x {
+    animation: hero-float-x 4.5s var(--ease-float) infinite alternate;
+  }
+  .hero-draw {
+    animation: hero-draw 900ms var(--ease-standard) both;
+  }
+  .hero-packet {
+    animation: hero-packet 6s linear infinite both;
+  }
+  .hero-arrive {
+    animation: hero-arrive 6s var(--ease-standard) infinite both;
+  }
+  /* SelectionBox's children, in order: the dashed edge, the handles (top
+     left, top right, bottom left, bottom right), then the cursor. The text
+     between them is a text node, which nth-child does not count. */
+  .hero-selection > [aria-hidden]:nth-child(n + 2):nth-child(-n + 5) {
+    animation: hero-handle 5s var(--ease-standard) infinite;
+  }
+  .hero-selection > [aria-hidden]:nth-child(3) {
+    animation-delay: 0.15s;
+  }
+  .hero-selection > [aria-hidden]:nth-child(5) {
+    animation-delay: 0.3s;
+  }
+  .hero-selection > [aria-hidden]:nth-child(4) {
+    animation-delay: 0.45s;
+  }
+  .hero-selection > [aria-hidden]:nth-child(6):last-child {
+    animation: hero-cursor 9s var(--ease-float) infinite;
+  }
+  /* important: the selection-box rules above are more specific and their
+     animation shorthand would set the play state back to running. */
+  .hero-motion[data-paused] * {
+    animation-play-state: paused !important;
   }
 }

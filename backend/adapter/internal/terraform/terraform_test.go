@@ -219,6 +219,7 @@ func TestRunGivesTerraformOnlyTheRunsEnvironment(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"OS_APPLICATION_CREDENTIAL_SECRET=run-secret", "TF_IN_AUTOMATION=1", "ARGS init", "ARGS plan",
+		"TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE=1",
 		"TF_CLI_CONFIG_FILE=" + filepath.Join(r.WorkDir, j.RunID, cliConfigName)} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("terraform did not see %q", want)
@@ -269,6 +270,57 @@ func TestRunLocksEachDeployment(t *testing.T) {
 	wg.Wait()
 	if l.max.Load() != 1 {
 		t.Fatalf("%d runs of one deployment overlapped", l.max.Load())
+	}
+}
+
+// stepOverlapLauncher counts how many tasks of each step run at once.
+type stepOverlapLauncher struct {
+	mu       sync.Mutex
+	now, max map[string]int
+}
+
+func (o *stepOverlapLauncher) Launch(_ context.Context, t runtask.Task) error {
+	step := t.Args[0]
+	o.mu.Lock()
+	o.now[step]++
+	o.max[step] = max(o.max[step], o.now[step])
+	o.mu.Unlock()
+	// A plan outlasts an init, so plans overlap unless something serialises
+	// them.
+	d := 20 * time.Millisecond
+	if step == "plan" {
+		d = 150 * time.Millisecond
+	}
+	time.Sleep(d)
+	o.mu.Lock()
+	o.now[step]--
+	o.mu.Unlock()
+	return nil
+}
+
+// Local runs share the plugin cache, which Terraform does not promise is safe
+// for two installs at once, so init runs one at a time; plans still overlap.
+func TestRunsOfDifferentDeploymentsInitOneAtATime(t *testing.T) {
+	l := &stepOverlapLauncher{now: map[string]int{}, max: map[string]int{}}
+	r := newRunner(t, "/bin/terraform-not-run", l)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			j := Job{DeploymentID: uuid.NewString(), RunID: uuid.NewString(), Action: connectors.ActionPlan,
+				Files: map[string][]byte{"main.tf": []byte("")}, Log: &bytes.Buffer{}}
+			if err := r.Run(context.Background(), j); err != nil {
+				t.Errorf("run: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if l.max["init"] != 1 {
+		t.Fatalf("%d inits overlapped", l.max["init"])
+	}
+	if l.max["plan"] < 2 {
+		t.Fatalf("plans of different deployments never overlapped (max %d)", l.max["plan"])
 	}
 }
 

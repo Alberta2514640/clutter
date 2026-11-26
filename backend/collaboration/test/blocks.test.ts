@@ -131,17 +131,75 @@ describe("savedHash", () => {
     const shuffled: BlocksDocument = {
       engine: "blocks",
       edges: [...doc.edges].reverse(),
-      nodes: [...doc.nodes].reverse().map((n) => ({ data: { fields: n.data.fields, name: n.data.name }, position: n.position, type: n.type, id: n.id })),
+      nodes: [...doc.nodes].reverse().map((n) => ({ ...(n.width ? { height: n.height, width: n.width } : {}), data: { fields: n.data.fields, name: n.data.name }, position: n.position, type: n.type, id: n.id })),
     };
     expect(savedHash(fixture.name, shuffled)).toBe(fixture.hash);
   });
 
-  it("changes when the name, a position or a field changes", () => {
+  it("changes when the name, a position, a field or a box size changes", () => {
     const moved = structuredClone(doc);
     moved.nodes[0]!.position.x += 1;
     const edited = structuredClone(doc);
     edited.nodes[0]!.data.fields.flavor = "m1.large";
-    const hashes = [savedHash(fixture.name, doc), savedHash("Other", doc), savedHash(fixture.name, moved), savedHash(fixture.name, edited)];
-    expect(new Set(hashes).size).toBe(4);
+    const resized = structuredClone(doc);
+    Object.assign(resized.nodes.find((n) => n.id === "node-net")!, { width: 300, height: 160 });
+    const hashes = [savedHash(fixture.name, doc), savedHash("Other", doc), savedHash(fixture.name, moved), savedHash(fixture.name, edited), savedHash(fixture.name, resized)];
+    expect(new Set(hashes).size).toBe(5);
+  });
+
+  it("is the same as before for a diagram with no box sizes", () => {
+    const plain = { engine: "blocks", nodes: [{ id: "a", type: "vm", position: { x: 1, y: 2 }, data: { name: "x", fields: {} } }], edges: [] };
+    const withBadSize = { ...plain, nodes: [{ ...plain.nodes[0]!, width: 0, height: 10 }] };
+    expect(savedHash("n", parseSaved(withBadSize))).toBe(savedHash("n", parseSaved(plain)));
+  });
+});
+
+describe("box sizes", () => {
+  const box = (width: unknown, height: unknown) => ({ nodes: [{ id: "net", type: "network", position: { x: 0, y: 0 }, width, height, data: { name: "n", fields: {} } }] });
+
+  it("keeps a size when both width and height are positive numbers", () => {
+    expect(parseSaved(box(260, 160)).nodes[0]).toMatchObject({ width: 260, height: 160 });
+  });
+
+  it.each([
+    [260, undefined],
+    [undefined, 160],
+    [0, 160],
+    [-5, 160],
+    ["260", 160],
+    [Number.NaN, 160],
+    [Number.POSITIVE_INFINITY, 160],
+  ])("drops the size for width %j and height %j", (w, h) => {
+    const node = parseSaved(box(w, h)).nodes[0]!;
+    expect("width" in node || "height" in node).toBe(false);
+  });
+
+  it("stores the size as one entry and reads it back", () => {
+    const ydoc = filled(box(260, 160));
+    const node = ydoc.getMap("nodes").get("net") as Y.Map<unknown>;
+    expect(node.get("size")).toEqual({ width: 260, height: 160 });
+    expect(readDoc(ydoc).document.nodes[0]).toMatchObject({ width: 260, height: 160 });
+  });
+
+  it("does not add a size to a node that has none", () => {
+    const ydoc = filled(box(undefined, undefined));
+    expect((ydoc.getMap("nodes").get("net") as Y.Map<unknown>).has("size")).toBe(false);
+    expect("width" in readDoc(ydoc).document.nodes[0]!).toBe(false);
+  });
+
+  it("ignores a bad size that a client wrote", () => {
+    const ydoc = filled(box(260, 160));
+    (ydoc.getMap("nodes").get("net") as Y.Map<unknown>).set("size", { width: "wide", height: 160 });
+    expect("width" in readDoc(ydoc).document.nodes[0]!).toBe(false);
+  });
+
+  it("keeps a resize when two users change the size and a field at once", () => {
+    const a = filled(box(260, 160));
+    const b = new Y.Doc();
+    sync(a, b);
+    (a.getMap("nodes").get("net") as Y.Map<unknown>).set("size", { width: 400, height: 200 });
+    ((b.getMap("nodes").get("net") as Y.Map<unknown>).get("fields") as Y.Map<unknown>).set("cidr", "10.1.0.0/24");
+    sync(a, b);
+    expect(readDoc(b).document.nodes[0]).toMatchObject({ width: 400, height: 200, data: { fields: { cidr: "10.1.0.0/24" } } });
   });
 });

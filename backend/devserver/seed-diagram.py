@@ -40,6 +40,7 @@ def main():
         "description": "Local sample data for testing node movement",
     })["id"]
     stack = api(f"/cloudformation-stack-url/{org}?accountName=playground{suffix}&region=us-west-2")
+    # Same as internal/gateway/fakeaccount.go (ParseStackURL, FakeRoleArn).
     parsed = urlparse(stack["url"])
     query = parsed.fragment.split("?", 1)[1] if "?" in parsed.fragment else parsed.query
     unique = parse_qs(query)["param_UniqueId"][0]

@@ -4,17 +4,25 @@
 
 // Relative imports: Vitest runs this file without the "@/" alias.
 import type { Connection } from "../connections/types";
-import { joinAnd } from "./preview";
-import type { DeploymentStatus } from "./types";
+import type { DeploymentStatus, RunStatus } from "./types";
 
 export type RowAction = "preview" | "plan" | "apply" | "destroy" | "remove";
 
+// A run's action (plan, apply, destroy) is named by the same three labels.
 export const ACTION_LABEL: Record<RowAction, string> = {
   preview: "Preview Terraform",
   plan: "Plan",
   apply: "Deploy",
   destroy: "Destroy",
-  remove: "Remove",
+  remove: "Remove from diagram",
+};
+
+// Where a run, or one cloud of a split run, stands: "Deploy waiting to start".
+export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
+  queued: "waiting to start",
+  running: "running",
+  completed: "finished",
+  failed: "failed",
 };
 
 export type RowState = {
@@ -30,6 +38,11 @@ export type RowState = {
   checkFailed: boolean;
   // The cloud can build the saved diagram, minus the left-out blocks.
   ready: boolean;
+  // The diagram has blocks and the deployment leaves every one out, so a run
+  // would build nothing.
+  allLeftOut: boolean;
+  // The saved diagram has no blocks at all.
+  noBlocks: boolean;
 };
 
 export const REASON = {
@@ -38,10 +51,16 @@ export const REASON = {
   checking: "Clutter is still checking what this cloud can build.",
   checkFailed: "Clutter could not check what this cloud can build. Reload the page to try again.",
   notReady: "This cloud cannot build the diagram as it is. Fix the problems above, or leave those blocks out.",
+  allLeftOut: "Every block is left out of this deployment.",
+  noBlocks: "Add a block to the diagram first.",
   nothingBuilt: "Nothing is built yet.",
   destroyed: "Everything this deployment built is already removed.",
   live: "Destroy it first. It may still have resources in your cloud.",
 } as const;
+
+// allLeftOut reports whether a deployment leaves out every block of a
+// diagram that has some.
+export const allLeftOut = (blockIds: string[], exclusions: string[]) => blockIds.length > 0 && blockIds.every((id) => exclusions.includes(id));
 
 // Removing a deployment is offered only when it holds nothing in the cloud.
 export const canOfferRemove = (status: DeploymentStatus) => status === "new" || status === "destroyed";
@@ -53,8 +72,8 @@ export function actionReasons(s: RowState): Record<RowAction, string | null> {
   const check = first(s.checking && REASON.checking, s.checkFailed && REASON.checkFailed, !s.ready && REASON.notReady);
   return {
     preview: first(s.unsaved, check),
-    plan: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, check),
-    apply: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, check),
+    plan: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, s.noBlocks && REASON.noBlocks, s.allLeftOut && REASON.allLeftOut, check),
+    apply: first(s.running && REASON.running, s.saving && REASON.saving, s.unsaved, s.noBlocks && REASON.noBlocks, s.allLeftOut && REASON.allLeftOut, check),
     // A destroy does not read the diagram, so unsaved changes do not stop it.
     destroy: first(
       s.running && REASON.running,
@@ -64,18 +83,6 @@ export function actionReasons(s: RowState): Record<RowAction, string | null> {
     ),
     remove: first(s.running && REASON.running, s.saving && REASON.saving, !canOfferRemove(s.status) && REASON.live),
   };
-}
-
-// One line per distinct reason, naming the buttons it turns off, in the order
-// the buttons are shown: "Plan and Deploy are off. A run is in progress. ..."
-export function offLines(reasons: Partial<Record<RowAction, string | null>>, shown: RowAction[]): string[] {
-  const byReason = new Map<string, string[]>();
-  for (const a of shown) {
-    const r = reasons[a];
-    if (!r) continue;
-    byReason.set(r, [...(byReason.get(r) ?? []), ACTION_LABEL[a]]);
-  }
-  return [...byReason].map(([reason, labels]) => `${joinAnd(labels)} ${labels.length === 1 ? "is" : "are"} off. ${reason}`);
 }
 
 // What "Add deployment" can offer. "none": the organization has no
@@ -96,4 +103,13 @@ export function addDeploymentChoice(connections: Connection[], usedConnectionIds
   const usable = free.filter((c) => c.status === "working");
   const broken = free.filter((c) => c.status !== "working");
   return { state: usable.length === 0 ? "none_working" : "pick", usable, broken };
+}
+
+// startingConnection is the connection "Add deployment" opens on: one of
+// the example's first cloud for a split example (preferredConnector), else
+// the only usable one when there is exactly one, else none (the person picks).
+export function startingConnection(usable: Connection[], preferredConnector: string | null = null): string {
+  const preferred = preferredConnector ? usable.find((c) => c.connector === preferredConnector) : undefined;
+  if (preferred) return preferred.id;
+  return usable.length === 1 ? usable[0].id : "";
 }

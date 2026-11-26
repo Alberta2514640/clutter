@@ -13,8 +13,9 @@ import (
 // Problem codes only this connector reports; the shared ones are in
 // connectors.
 const (
-	codeNoNetwork     = "vm_without_network"
-	codeInvalidNodeID = "invalid_node_id"
+	codeNoNetwork      = "vm_without_network"
+	codeInvalidNodeID  = "invalid_node_id"
+	codePublicUnrouted = "public_vm_without_internet"
 )
 
 // OpenStack's limits as this connector builds.
@@ -28,12 +29,17 @@ const (
 
 // cloudNamePattern is the shape of a name that already exists in the cloud:
 // an image, a flavor or the external network. OpenStack allows more; this
-// keeps quotes, braces, backslashes and newlines out.
-var cloudNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:()+-]*$`)
+// keeps quotes, braces, dollar and percent signs, backslashes and newlines
+// out. Parentheses and square brackets stay in: public clouds name images
+// like "Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]" (VEXXHOST), and the image's
+// name_regex escapes them (regexp.QuoteMeta).
+var cloudNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:()\[\]+-]*$`)
 
 // model is a checked deployment: only included blocks, every value parsed.
 type model struct {
-	prefix          string
+	prefix string
+	// deploymentID tags what the deployment creates (ClutterDeployment).
+	deploymentID    string
 	image           string
 	externalNetwork string
 	vms             []vm
@@ -60,6 +66,11 @@ type vm struct {
 	networks     []string // node ids, sorted; the first carries the public address
 	firewalls    []string // node ids, sorted
 	peers        []string // node ids of VMs whose address it gets, sorted
+	// reachedBy are the node ids of VMs that get this VM's address, sorted:
+	// its peer security group lets them in.
+	reachedBy []string
+	// sshKey is the block's checked public key (connectors.SSHPublicKey), or "".
+	sshKey string
 	// userData is the startup script as base64 (connectors.StartupUserData),
 	// or "" for none. userDataExpr, when set instead, is the expression that
 	// builds the startup wrapper with the values the VM's edges hand it
@@ -71,6 +82,10 @@ type vm struct {
 
 type network struct {
 	id, name, cidr string
+	// routed is the block's private_internet field: the network joins the
+	// deployment's router, which gives its VMs the internet (SNAT), floating
+	// IPs and the deployment's other routed networks.
+	routed bool
 }
 
 type firewall struct {
@@ -94,10 +109,11 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 	var problems []connectors.Problem
 	add := func(p connectors.Problem) { problems = append(problems, p) }
 
-	out := model{prefix: d.Prefix}
+	out := model{prefix: d.Prefix, deploymentID: d.ID}
 	if !connectors.ValidPrefix(d.Prefix) {
 		add(connectors.Problem{Code: connectors.CodeDeploymentInvalid, Message: "The deployment's name prefix is not valid."})
 	}
+	problems = append(problems, connectors.DuplicateNames(g, d)...)
 
 	ids := make([]string, 0, len(g.Blocks))
 	for id := range g.Blocks {
@@ -108,7 +124,6 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 	sort.Strings(ids)
 
 	vms := map[string]*vm{}
-	firewallNames := map[string]string{}
 	for _, id := range ids {
 		b := g.Blocks[id]
 		if !translate.NodeIDPattern.MatchString(id) || b.ID != id {
@@ -128,9 +143,15 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 				add(fieldProblem(id, connectors.FieldStartupScript, err.Error()))
 			}
 			v.userData = ud
+			key, err := connectors.SSHPublicKey(b.Fields)
+			if err != nil {
+				add(fieldProblem(id, connectors.FieldSSHKey, err.Error()))
+			}
+			v.sshKey = key
 			out.vms = append(out.vms, v)
 		case connectors.KindNetwork:
 			n := network{id: id, name: name}
+			n.routed, _ = value(b.Fields, fieldPrivateInternet).(bool)
 			if s, ok := value(b.Fields, fieldCIDR).(string); ok {
 				cidr, err := networkCIDR(s)
 				if err != nil {
@@ -140,12 +161,9 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 			}
 			out.networks = append(out.networks, n)
 		case connectors.KindFirewall:
+			// Names differ across blocks (connectors.DuplicateNames), which
+			// matters here: a VM finds its firewalls by name.
 			f := firewall{id: id, name: name}
-			if other, dup := firewallNames[b.Name]; dup {
-				add(connectors.Problem{NodeID: id, Field: "name", Code: connectors.CodeDuplicateName,
-					Message: fmt.Sprintf("Another firewall (%s) has the same name. Firewall names must differ, because VMs find their firewalls by name.", other)})
-			}
-			firewallNames[b.Name] = id
 			if s, ok := value(b.Fields, fieldSourceCIDR).(string); ok {
 				src, err := connectors.ParseCIDR(s)
 				if err != nil {
@@ -232,6 +250,25 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 				Message: "Connect this VM to a network. On OpenStack every VM needs one."})
 		}
 	}
+	routed := map[string]bool{}
+	for _, n := range out.networks {
+		routed[n.id] = n.routed
+	}
+	for i := range out.vms {
+		v := &out.vms[i]
+		if v.public && len(v.networks) > 0 && !routed[v.networks[0]] {
+			add(connectors.Problem{NodeID: v.id, Code: codePublicUnrouted,
+				Message: "On OpenStack a public VM's first network needs internet access. Turn on \"Internet access for private servers\" for that network."})
+		}
+		for _, p := range v.peers {
+			t := vms[p]
+			t.reachedBy = append(t.reachedBy, v.id)
+			if len(t.networks) > 0 && !reaches(v.networks, t.networks[0], routed) {
+				add(connectors.Problem{EdgeSource: v.id, EdgeTarget: p, Code: connectors.CodePeerUnreachable,
+					Message: "On OpenStack these two VMs are in networks that cannot reach each other. Connect them to the same network, or turn on internet access for both networks."})
+			}
+		}
+	}
 	if cyc := connectors.AddressCycle(vmIDs, peers); cyc != "" {
 		add(connectors.Problem{NodeID: cyc, Code: connectors.CodeAddressCycle,
 			Message: "VMs that get each other's address form a circle, so none could start first. Remove one of those connections."})
@@ -281,11 +318,32 @@ func build(g connectors.Graph, d connectors.Deployment) (model, []connectors.Pro
 			out.vms[i].flavor = flavors[size]
 		}
 	}
-	if len(out.networks) > 0 || anyPublic(out.vms) {
+	if out.anyRouted() || anyPublic(out.vms) {
 		out.externalNetwork = settingName(d.Settings, settingExternalNetwork, add)
 	}
 
 	return out, problems
+}
+
+// reaches reports whether a VM on the networks from reaches an address on
+// network to: it shares that network, or both are on the deployment's router.
+func reaches(from []string, to string, routed map[string]bool) bool {
+	for _, n := range from {
+		if n == to || (routed[n] && routed[to]) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyRouted reports whether the deployment needs its router.
+func (m model) anyRouted() bool {
+	for _, n := range m.networks {
+		if n.routed {
+			return true
+		}
+	}
+	return false
 }
 
 // crossRules: OpenStack hands another cloud only a public VM's address, since
@@ -332,7 +390,7 @@ func settingName(settings map[string]any, f connectors.FieldSpec, add func(conne
 	}
 	if !validCloudName(s) {
 		add(connectors.Problem{Field: f.Name, Code: connectors.CodeInvalidValue,
-			Message: fmt.Sprintf("%s must start with a letter or digit and use only letters, digits, spaces and . _ : ( ) + - (at most %d characters).", f.Title, maxCloudNameLength)})
+			Message: fmt.Sprintf("%s must start with a letter or digit and use only letters, digits, spaces and . _ : ( ) [ ] + - (at most %d characters).", f.Title, maxCloudNameLength)})
 		return ""
 	}
 	return s

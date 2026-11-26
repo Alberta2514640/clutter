@@ -399,8 +399,7 @@ else
   # Clutter reaches DevStack at the VM's lima0 address, the HOST_IP its
   # catalog names. Lima also forwards the VM's ports to 127.0.0.1.
   if [[ "${vm_status}" == Running ]]; then
-    vm_ip="$(limactl shell --workdir / "${DEVSTACK_VM}" ip -4 -o addr show dev lima0 2>/dev/null |
-      awk '{ split($4, a, "/"); print a[1]; exit }' || true)"
+    vm_ip="$(devstack_vm_address)"
     loopback_url="http://127.0.0.1/identity/v3"
     loopback_ok=false
     if keystone_answers "${loopback_url}"; then loopback_ok=true; fi
@@ -427,6 +426,20 @@ else
     else
       warn "DevStack does not answer at http://${vm_ip}/identity/v3" \
         "Check that DevStack is installed in the VM (npm run devstack -- create) and that nothing blocks the VM's address."
+    fi
+    # DevStack's servers get their addresses in DEVSTACK_PUBLIC_RANGE, behind
+    # the VM. Its gateway is the VM's own br-ex address, where DevStack's web
+    # server answers too.
+    if [[ -n "${vm_ip}" && "${platform}" != other ]]; then
+      if curl -s -o /dev/null --max-time 1 "http://${DEVSTACK_PUBLIC_GATEWAY}/" >/dev/null 2>&1; then
+        ok "this machine reaches DevStack's public network (${DEVSTACK_PUBLIC_RANGE}), so its servers' addresses open here"
+      elif [[ "$(devstack_route_via)" == "${vm_ip}" ]]; then
+        warn "this machine sends ${DEVSTACK_PUBLIC_RANGE} to the VM, but ${DEVSTACK_PUBLIC_GATEWAY} does not answer" \
+          "Run npm run devstack -- start: it sets up DevStack's public network in the VM again."
+      else
+        warn "this machine does not reach DevStack's public network (${DEVSTACK_PUBLIC_RANGE}), where DevStack's servers get their addresses" \
+          "Run npm run devstack -- route (asks for your password) so this machine can open DevStack servers."
+      fi
     fi
   fi
 fi

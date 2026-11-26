@@ -36,7 +36,7 @@ const ID = "aws"
 // output RoleTemplateVersion) this connector expects. A test keeps the two
 // equal. A connection records it, so a later change to the role can tell
 // which users must update their stack.
-const RoleTemplateVersion = "8"
+const RoleTemplateVersion = "10"
 
 // Session lengths. A run's keys last one hour, the most STS gives when one
 // role assumes another (B's runner role assuming the user's role).
@@ -143,6 +143,11 @@ func (c *Connector) render(ctx context.Context, m *model) (map[string][]byte, er
 	if err != nil {
 		return nil, err
 	}
+	results, err := executeOwn("results.tf.tmpl", map[string]any{"Outputs": m.resultOutputs(c.endpoint)})
+	if err != nil {
+		return nil, err
+	}
+	files["results.tf"] = []byte(results)
 	return c.withEndpoint(files)
 }
 
@@ -174,7 +179,7 @@ var providers = []string{"hashicorp/aws", "hashicorp/archive", "hashicorp/random
 
 var (
 	errBadRole   = &connectors.UserError{Message: "The role ARN must look like arn:aws:iam::123456789012:role/name, and the external id must be filled in."}
-	errRefused   = &connectors.UserError{Message: "AWS did not let Clutter use this role. Check that the Clutter CloudFormation stack finished in your account and that the role ARN is its RoleArn output."}
+	errRefused   = &connectors.UserError{Message: "AWS did not let Clutter use this role. If Clutter's CloudFormation stack was deleted, Clutter has no access to this account: link it again to use it. Otherwise, check that the stack finished in your account and that the role ARN is its RoleArn output."}
 	errBadRegion = &connectors.UserError{Message: "AWS does not offer this region through Clutter. Choose another region."}
 	errTerraform = &connectors.UserError{Message: "Terraform stopped with an error. The run's log says why."}
 )
@@ -221,7 +226,7 @@ func (c *Connector) ApplyCross(ctx context.Context, run connectors.Run, g connec
 			&connectors.UserError{Message: "A value another cloud should hand this deployment is missing. Apply the deployment again."})
 	}
 	var outputs bytes.Buffer
-	res, err := c.apply(ctx, run, g, d, connectors.ExportsWriter(d, &outputs))
+	res, err := c.apply(ctx, run, g, d, &outputs)
 	if err != nil {
 		return connectors.RunResult{}, nil, err
 	}
@@ -306,6 +311,26 @@ func (c *Connector) Validate(g connectors.Graph, d connectors.Deployment) []conn
 	return nil
 }
 
+// natCost is what a NAT gateway costs, for the deploy confirmation (and the
+// network block's help, in manifest.go): $0.05 and $0.005 an hour in
+// ca-central-1, about $40 for a 730-hour month (AWS Price List API, AmazonEC2
+// and AmazonVPC offers, read 2026-11-14); data $0.05 a GB more.
+const natCost = "Internet access for private servers adds a NAT gateway on AWS: about $40 a month plus data."
+
+// Advice implements connectors.Advisor: each public VM nothing can reach,
+// and each network that gets a NAT gateway (a private server in it, with
+// internet access for private servers on).
+func (c *Connector) Advice(g connectors.Graph, d connectors.Deployment) []connectors.Problem {
+	m := newModel(g, d)
+	out := connectors.ClosedPublicVMs(g, d)
+	for _, id := range m.order {
+		if m.blocks[id].Kind == connectors.KindNetwork && m.networkNAT(id) {
+			out = append(out, connectors.Problem{NodeID: id, Code: connectors.CodeCost, Message: natCost})
+		}
+	}
+	return out
+}
+
 // Plan implements connectors.Connector.
 func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.PlanResult, error) {
 	log, err := c.run(ctx, run, &g, d, nil)
@@ -320,17 +345,19 @@ func (c *Connector) Plan(ctx context.Context, run connectors.Run, g connectors.G
 
 // Apply implements connectors.Connector.
 func (c *Connector) Apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment) (connectors.RunResult, error) {
-	return c.apply(ctx, run, g, d, nil)
+	var outputs bytes.Buffer
+	return c.apply(ctx, run, g, d, &outputs)
 }
 
-// apply applies g for d; outputs, when set, receives the run's outputs.
-func (c *Connector) apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment, outputs io.Writer) (connectors.RunResult, error) {
+// apply applies g for d. outputs receives the run's outputs, and the result's
+// Results are read from them.
+func (c *Connector) apply(ctx context.Context, run connectors.Run, g connectors.Graph, d connectors.Deployment, outputs *bytes.Buffer) (connectors.RunResult, error) {
 	m := newModel(g, d)
 	log, err := c.run(ctx, run, &g, d, outputs)
 	if err != nil {
 		return connectors.RunResult{}, err
 	}
-	res := connectors.RunResult{Resources: map[string]string{}}
+	res := connectors.RunResult{Resources: map[string]string{}, Results: connectors.ReadResults(outputs.Bytes(), g, d)}
 	for addr, nodeID := range m.primaryAddresses() {
 		if id, ok := log.created[addr]; ok {
 			res.Resources[nodeID] = id

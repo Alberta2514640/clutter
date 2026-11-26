@@ -68,7 +68,22 @@ describe("viewClouds", () => {
     const views = viewClouds(catalog, [deployment("p1", "general-openstack", "lab", null)], [connection("aws"), connection("gone")]);
     expect(views.map((v) => v.connector)).toEqual(["aws", "general-openstack"]);
     expect(views[0].deployments).toEqual([]);
-    expect(views[1].deployments).toEqual([{ id: "p1", connectionName: "lab", exclusions: [] }]);
+    expect(views[1].deployments).toEqual([{ id: "p1", connectionName: "lab", exclusions: [], only: null, away: [] }]);
+  });
+
+  it("lists a split deployment on each of its clouds, with the blocks each runs", () => {
+    const split: DeploymentListItem = {
+      ...deployment("s1", "general-openstack", "devstack", null),
+      placements: [
+        { connection_id: "c-aws", connection_name: "Local AWS", connector: "aws", region: "r", node_ids: ["n2"], settings: null },
+        { connection_id: "c-empty", connection_name: "Spare", connector: "mock", region: "r", node_ids: [], settings: null },
+      ],
+    };
+    const views = viewClouds(catalog, [split], []);
+    expect(views.map((v) => [v.connector, v.deployments])).toEqual([
+      ["aws", [{ id: "s1", connectionName: "Local AWS", exclusions: [], only: ["n2"], away: [] }]],
+      ["general-openstack", [{ id: "s1", connectionName: "devstack", exclusions: [], only: null, away: ["n2"] }]],
+    ]);
   });
 
   it("is empty with no deployments and no connections", () => {
@@ -129,7 +144,9 @@ describe("which blocks dim in which view", () => {
       status: null,
       statusDetail: "AWS builds it as S3.",
       badges: [],
+      viewCloud: { connector: "aws", title: views.find((v) => v.connector === "aws")!.title, shortName: "AWS", logoSrc: views.find((v) => v.connector === "aws")!.logoSrc },
     });
+    expect(nodeLook(BLOCKS_VIEW, views, bucket, "Bucket").viewCloud).toBeNull();
     expect(nodeLook("general-openstack", views, bucket, "Bucket")).toMatchObject({ subtitle: "Bucket", iconSrc: null, dimmed: true, status: "Not on OpenStack" });
   });
 
@@ -146,6 +163,19 @@ describe("which blocks dim in which view", () => {
   it("badges only clouds with a deployment, not clouds with only a connection", () => {
     const some = viewClouds(catalog, [deployment("a1", "aws", "prod", null)], [connection("general-openstack")]);
     expect(nodeLook(BLOCKS_VIEW, some, vm, "VM").badges.map((b) => b.cloud.connector)).toEqual(["aws"]);
+  });
+
+  it("badges a block of a split deployment with the cloud it runs on, not the one it was placed away from", () => {
+    const split: DeploymentListItem = {
+      ...deployment("s1", "general-openstack", "devstack", null),
+      placements: [{ connection_id: "c-aws", connection_name: "Local AWS", connector: "aws", region: "r", node_ids: ["n2"], settings: null }],
+    };
+    const v = viewClouds(catalog, [split], []);
+    expect(nodeLook(BLOCKS_VIEW, v, bucket, "Bucket").badges.map((b) => [b.cloud.connector, b.on])).toEqual([["aws", true]]);
+    expect(nodeLook(BLOCKS_VIEW, v, vm, "VM").badges.map((b) => [b.cloud.connector, b.on])).toEqual([["general-openstack", true]]);
+    const awsView = v.find((x) => x.connector === "aws")!;
+    expect(cloudBlockState(awsView, vm, "VM")).toMatchObject({ status: "elsewhere", dimmed: true, label: "On another cloud" });
+    expect(viewSummary(awsView, [vm, bucket], title)).toBe("Viewing as Amazon Web Services: 1 block runs on another cloud.");
   });
 
   it("falls back to the blocks view for a cloud that is not listed", () => {

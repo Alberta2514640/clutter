@@ -3,15 +3,35 @@ import {
   blockFields,
   blockTitle,
   cleanValues,
+  cloudOffers,
+  connectedBuilders,
   defaultValues,
-  edgeAllowed,
+  entryFor,
   fieldControl,
   fieldError,
+  fieldLabel,
+  fieldShown,
   paletteBlocks,
   parseInput,
+  settingsFor,
   valuesErrors,
 } from "./forms";
 import type { CatalogEntry, FieldSpec } from "./types";
+
+describe("fieldLabel", () => {
+  it("moves a title's own example into the hint under the field", () => {
+    expect(fieldLabel("Allowed incoming traffic (for example tcp/22,tcp/443,udp/1000-2000)")).toEqual({
+      label: "Allowed incoming traffic",
+      hint: "For example tcp/22,tcp/443,udp/1000-2000.",
+    });
+  });
+
+  it("keeps any other title whole, a short note in brackets included", () => {
+    expect(fieldLabel("Allowed source addresses (CIDR)")).toEqual({ label: "Allowed source addresses (CIDR)", hint: null });
+    expect(fieldLabel("Handler (empty uses the runtime's default)")).toEqual({ label: "Handler (empty uses the runtime's default)", hint: null });
+    expect(fieldLabel("Size in GB")).toEqual({ label: "Size in GB", hint: null });
+  });
+});
 
 const size: FieldSpec = { name: "size", title: "Size", type: "enum", required: true, default: "small", allowed: ["small", "medium", "large"] };
 const sizeGB: FieldSpec = { name: "size_gb", title: "Size in GB", type: "int", required: true, default: 10 };
@@ -29,7 +49,7 @@ const catalog: CatalogEntry[] = [
       title: "OpenStack",
       version: "1",
       blocks: [
-        { kind: "vm", treatment: "as-is", title: "VM", fields: [size, isPublic] },
+        { kind: "vm", treatment: "as-is", title: "VM", summary: "A server that runs your app", fields: [size, isPublic] },
         { kind: "network", treatment: "as-is", title: "Network", fields: [cidr] },
         { kind: "volume", treatment: "as-is", title: "Volume", fields: [sizeGB] },
         { kind: "bucket", treatment: "removed", title: "Bucket" },
@@ -64,11 +84,49 @@ const catalog: CatalogEntry[] = [
   },
 ];
 
+describe("connectedBuilders and fieldShown", () => {
+  it("lists only connected clouds that build a kind, with their service name and help", () => {
+    const withHelp = catalog.map((e) =>
+      e.manifest.connector === "aws"
+        ? { ...e, manifest: { ...e.manifest, blocks: (e.manifest.blocks ?? []).map((b) => (b.kind === "function" ? { ...b, help: ["Runtime: default provided.al2023."] } : b)) } }
+        : e,
+    );
+    expect(connectedBuilders(withHelp, "function", new Set(["aws"])).map((b) => [b.cloud.connector, b.service, b.help])).toEqual([
+      ["aws", "Function", ["Runtime: default provided.al2023."]],
+    ]);
+    expect(connectedBuilders(withHelp, "vm", new Set(["general-openstack"])).map((b) => b.cloud.connector)).toEqual(["general-openstack"]);
+    expect(connectedBuilders(withHelp, "function", new Set(["general-openstack"]))).toEqual([]);
+  });
+
+  it("shows internet access for private servers only on a network with a private VM", () => {
+    const field: FieldSpec = { name: "private_internet", title: "Internet access for private servers", type: "bool", required: false };
+    expect(fieldShown(field, { hasVM: false })).toBe(false);
+    expect(fieldShown(field, { hasVM: true })).toBe(true);
+    expect(fieldShown(cidr, { hasVM: false })).toBe(true);
+  });
+});
+
+describe("settingsFor", () => {
+  const runtime: FieldSpec = { name: "function_runtime", title: "Function runtime", type: "enum", required: false, allowed: ["a"], applies_to: ["function"] };
+  const type: FieldSpec = { name: "instance_type", title: "Instance type", type: "enum", required: false, allowed: ["t3.micro"], applies_to: ["vm"] };
+  const region: FieldSpec = { name: "zone", title: "Zone", type: "string", required: false };
+
+  it("keeps only the settings about the diagram's blocks, and those about every deployment", () => {
+    expect(settingsFor([runtime, type, region], ["vm", "network"]).map((f) => f.name)).toEqual(["instance_type", "zone"]);
+    expect(settingsFor([runtime, type, region], ["function"]).map((f) => f.name)).toEqual(["function_runtime", "zone"]);
+    expect(settingsFor([runtime, type], []).map((f) => f.name)).toEqual([]);
+    expect(settingsFor(null, ["vm"])).toEqual([]);
+  });
+});
+
 describe("paletteBlocks", () => {
   it("lists every block some cloud builds, standard blocks first in their fixed order, with the clouds that build it", () => {
     const palette = paletteBlocks(catalog);
     expect(palette.map((b) => b.kind)).toEqual(["vm", "network", "volume", "bucket", "function", "queue"]);
     expect(palette.find((b) => b.kind === "vm")?.clouds.map((c) => c.title)).toEqual(["OpenStack", "Amazon Web Services"]);
+    // The summary comes from the first cloud that has one.
+    expect(palette.find((b) => b.kind === "vm")?.summary).toBe("A server that runs your app");
+    expect(palette.find((b) => b.kind === "network")?.summary).toBe("");
     expect(palette.find((b) => b.kind === "bucket")?.clouds).toEqual([
       { connector: "aws", title: "Amazon Web Services", shortName: "AWS", logoSrc: "/clouds/aws/logo.svg" },
     ]);
@@ -78,6 +136,21 @@ describe("paletteBlocks", () => {
     expect(paletteBlocks([])).toEqual([]);
     expect(blockTitle(catalog, "volume")).toBe("Volume");
     expect(blockTitle(catalog, "mystery")).toBe("mystery");
+  });
+});
+
+describe("entryFor and cloudOffers", () => {
+  it("finds a connector's entry, or null when the catalog does not offer it", () => {
+    expect(entryFor(catalog, "aws")?.manifest.title).toBe("Amazon Web Services");
+    expect(entryFor(catalog, "gone")).toBeNull();
+    expect(entryFor(catalog, null)).toBeNull();
+  });
+
+  it("says whether a connector builds a kind, and never for one it removed or a connector it does not know", () => {
+    expect(cloudOffers(catalog, "aws", "bucket")).toBe(true);
+    expect(cloudOffers(catalog, "general-openstack", "bucket")).toBe(false);
+    expect(cloudOffers(catalog, "general-openstack", "vm")).toBe(true);
+    expect(cloudOffers(catalog, "gone", "vm")).toBe(false);
   });
 });
 
@@ -97,15 +170,6 @@ describe("blockFields", () => {
   it("gives a new block its defaults", () => {
     expect(defaultValues(blockFields(catalog, "vm"))).toEqual({ size: "small", public: false });
     expect(defaultValues(blockFields(catalog, "function"))).toEqual({});
-  });
-});
-
-describe("edgeAllowed", () => {
-  it("allows an edge some cloud can wire, in that direction only", () => {
-    expect(edgeAllowed(catalog, "vm", "network")).toBe(true);
-    expect(edgeAllowed(catalog, "function", "bucket")).toBe(true);
-    expect(edgeAllowed(catalog, "network", "vm")).toBe(false);
-    expect(edgeAllowed(catalog, "bucket", "network")).toBe(false);
   });
 });
 

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -100,6 +101,74 @@ func TestRenderNamesAddressesAndPin(t *testing.T) {
 	}
 }
 
+// TestRenderSurvivesChangesToALiveDeployment pins what a DevStack run found
+// when it changed a deployed diagram: an attached volume can grow, a renamed
+// firewall or VM leaves the server's security groups as they are, and a new
+// address range replaces the servers on that network with its subnet.
+func TestRenderSurvivesChangesToALiveDeployment(t *testing.T) {
+	c := newConnector(nil)
+	d := testDeployment(fixedDeployment)
+	render := func(g connectors.Graph) string {
+		t.Helper()
+		files, err := c.Render(g, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(files["main.tf"])
+	}
+	main := render(sampleGraph())
+	for _, want := range []string{
+		"enable_online_resize = true",
+		`name        = "` + d.Prefix + `.n3.firewall"`,
+		`description = "` + d.Prefix + `-fw"`,
+		"ignore_changes = [name]",
+		"replace_triggered_by = [openstack_networking_subnet_v2.b_n2.id]",
+	} {
+		if !strings.Contains(main, want) {
+			t.Errorf("main.tf lacks %q:\n%s", want, main)
+		}
+	}
+
+	// Renaming blocks changes only names Neutron and Nova update in place.
+	groupLines := func(main string) []string {
+		var out []string
+		for _, l := range strings.Split(main, "\n") {
+			if strings.Contains(l, `.firewall"`) || strings.Contains(l, `.peers"`) || strings.Contains(l, "security_groups =") || strings.Contains(l, "replace_triggered_by =") {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	rename := func(g connectors.Graph, ids ...string) connectors.Graph {
+		for _, id := range ids {
+			b := g.Blocks[id]
+			b.Name = "renamed-" + b.Name
+			g.Blocks[id] = b
+		}
+		return g
+	}
+	for name, pair := range map[string][2]connectors.Graph{
+		"firewall, VM and network": {sampleGraph(), rename(sampleGraph(), "n1", "n2", "n3")},
+		"VM with a peer group":     {twoTierGraph(), rename(twoTierGraph(), "db", "web", "db-fw")},
+	} {
+		before, after := groupLines(render(pair[0])), groupLines(render(pair[1]))
+		if len(before) == 0 || !reflect.DeepEqual(before, after) {
+			t.Errorf("%s: renaming changed a security group's name or a server's list:\n%q\n%q", name, before, after)
+		}
+	}
+	if peers := render(twoTierGraph()); !strings.Contains(peers, `name        = "`+d.Prefix+`.db.peers"`) {
+		t.Errorf("the peer group is not named by its VM's node id:\n%s", peers)
+	}
+
+	// A server on two networks is replaced when either subnet is.
+	g := sampleGraph()
+	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindNetwork, Name: "back", Fields: map[string]any{"cidr": "10.30.0.0/24"}}
+	g.Edges = append(g.Edges, connectors.Edge{Source: "n1", Target: "n5"})
+	if main := render(g); !strings.Contains(main, "replace_triggered_by = [openstack_networking_subnet_v2.b_n2.id, openstack_networking_subnet_v2.b_n5.id]") {
+		t.Errorf("the server is not replaced with each of its subnets:\n%s", main)
+	}
+}
+
 func TestRenderHonoursExclusions(t *testing.T) {
 	g := sampleGraph()
 	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindBucket, Name: "assets", Fields: map[string]any{}}
@@ -158,31 +227,32 @@ func TestHostileTextIsRefusedBeforeRendering(t *testing.T) {
 		}
 	}
 	cases := map[string]change{
-		"name with a quote":            rename("n1", "web\" }\nresource \"x\" \"y\" {"),
-		"name with interpolation":      rename("n2", "${file(\"/etc/passwd\")}"),
-		"name in capitals":             rename("n3", "Web"),
-		"image with a quote":           setSetting("image", "cirros\" } data \"external\" \"x\" {"),
-		"image with interpolation":     setSetting("image", "${path.module}"),
-		"image with a newline":         setSetting("image", "cirros\nprovisioner"),
-		"image with a backslash":       setSetting("image", `cirros\`),
-		"empty image":                  setSetting("image", "  "),
-		"flavor with a directive":      setSetting("flavor_small", "%{ if true }m1%{ endif }"),
-		"external network with braces": setSetting("external_network", "public}"),
-		"ingress with a shell command": setField("n3", "ingress", "tcp/22; rm -rf /"),
-		"ingress port out of range":    setField("n3", "ingress", "tcp/70000"),
-		"ingress range backwards":      setField("n3", "ingress", "tcp/90-80"),
-		"ingress unknown protocol":     setField("n3", "ingress", "sctp/22"),
-		"ingress with a quote":         setField("n3", "ingress", `tcp/22"`),
-		"source not a range":           setField("n3", "source_cidr", `0.0.0.0/0" }`),
-		"source with host bits":        setField("n3", "source_cidr", "10.0.0.1/24"),
-		"cidr not a range":             setField("n2", "cidr", "${var.x}"),
-		"cidr is IPv6":                 setField("n2", "cidr", "fd00::/64"),
-		"cidr too wide":                setField("n2", "cidr", "10.0.0.0/4"),
-		"volume size zero":             setField("n4", "size_gb", float64(0)),
-		"volume size not whole":        setField("n4", "size_gb", 1.5),
-		"size not allowed":             setField("n1", "size", "huge"),
-		"unknown field":                setField("n1", "user_data", "#!/bin/sh"),
-		"unknown setting":              setSetting("cloud", "x"),
+		"name with a quote":             rename("n1", "web\" }\nresource \"x\" \"y\" {"),
+		"name with interpolation":       rename("n2", "${file(\"/etc/passwd\")}"),
+		"name in capitals":              rename("n3", "Web"),
+		"image with a quote":            setSetting("image", "cirros\" } data \"external\" \"x\" {"),
+		"image with interpolation":      setSetting("image", "${path.module}"),
+		"image with a newline":          setSetting("image", "cirros\nprovisioner"),
+		"image with a backslash":        setSetting("image", `cirros\`),
+		"image with brackets and a ref": setSetting("image", "Ubuntu [${var.x}]"),
+		"empty image":                   setSetting("image", "  "),
+		"flavor with a directive":       setSetting("flavor_small", "%{ if true }m1%{ endif }"),
+		"external network with braces":  setSetting("external_network", "public}"),
+		"ingress with a shell command":  setField("n3", "ingress", "tcp/22; rm -rf /"),
+		"ingress port out of range":     setField("n3", "ingress", "tcp/70000"),
+		"ingress range backwards":       setField("n3", "ingress", "tcp/90-80"),
+		"ingress unknown protocol":      setField("n3", "ingress", "sctp/22"),
+		"ingress with a quote":          setField("n3", "ingress", `tcp/22"`),
+		"source not a range":            setField("n3", "source_cidr", `0.0.0.0/0" }`),
+		"source with host bits":         setField("n3", "source_cidr", "10.0.0.1/24"),
+		"cidr not a range":              setField("n2", "cidr", "${var.x}"),
+		"cidr is IPv6":                  setField("n2", "cidr", "fd00::/64"),
+		"cidr too wide":                 setField("n2", "cidr", "10.0.0.0/4"),
+		"volume size zero":              setField("n4", "size_gb", float64(0)),
+		"volume size not whole":         setField("n4", "size_gb", 1.5),
+		"size not allowed":              setField("n1", "size", "huge"),
+		"unknown field":                 setField("n1", "user_data", "#!/bin/sh"),
+		"unknown setting":               setSetting("cloud", "x"),
 		"node id with a quote": func(g *connectors.Graph, _ *connectors.Deployment) {
 			b := g.Blocks["n4"]
 			delete(g.Blocks, "n4")
@@ -232,7 +302,7 @@ func TestValidAcceptedVariants(t *testing.T) {
 	g.Blocks["n5"] = connectors.Block{ID: "n5", Kind: connectors.KindNetwork, Name: "back", Fields: map[string]any{}}
 	g.Edges = append(g.Edges, connectors.Edge{Source: "n1", Target: "n5"})
 	d := testDeployment(fixedDeployment)
-	d.Settings = map[string]any{"image": "Ubuntu 24.04 (Noble)"}
+	d.Settings = map[string]any{"image": "Ubuntu 24.04.2 LTS (x86_64) [2025-04-03]"}
 	if ps := c.Validate(g, d); len(ps) > 0 {
 		t.Fatalf("refused: %+v", ps)
 	}
@@ -242,7 +312,7 @@ func TestValidAcceptedVariants(t *testing.T) {
 	}
 	main := string(files["main.tf"])
 	for _, want := range []string{
-		`name_regex  = "^Ubuntu 24\\.04 \\(Noble\\)"`,
+		`name_regex  = "^Ubuntu 24\\.04\\.2 LTS \\(x86_64\\) \\[2025-04-03\\]"`,
 		`flavor_name     = "m1.tiny"`,
 		`cidr       = "10.0.0.0/24"`,
 		"depends_on = [openstack_networking_subnet_v2.b_n2, openstack_networking_subnet_v2.b_n5]",
@@ -310,8 +380,18 @@ func TestRunsGoThroughTheSharedRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(res.Resources) != 2 || res.Resources["n1"] != "9b1d5a8e-0000-4000-8000-0000000000a1" {
+	// Only the blocks the apply built or changed count: n3 has an id but
+	// was left as it was.
+	if len(res.Resources) != 2 || res.Resources["n1"] != "9b1d5a8e-0000-4000-8000-0000000000a1" || res.Resources["n2"] == "" {
 		t.Fatalf("apply resources %v", res.Resources)
+	}
+	// n1 is the sample's public VM: it has both addresses.
+	wantResults := []connectors.Result{
+		{Name: connectors.ResultPrivateAddress, Value: "10.0.0.12"},
+		{Name: connectors.ResultPublicAddress, Value: "172.24.4.10"},
+	}
+	if !reflect.DeepEqual(res.Results["n1"], wantResults) {
+		t.Fatalf("apply results %+v", res.Results)
 	}
 
 	if _, err := c.Destroy(ctx, connectors.Run{ID: uuid.NewString(), Action: connectors.ActionDestroy, Log: &log}, d); err != nil {

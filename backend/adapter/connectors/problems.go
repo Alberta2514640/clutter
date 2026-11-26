@@ -18,10 +18,19 @@ const (
 	CodeVolumeTwoVMs = "volume_on_two_vms"
 	// CodeAddressCycle is a circle of VMs that get each other's address.
 	CodeAddressCycle = "vm_address_cycle"
+	// CodePeerUnreachable is a VM to VM edge whose two VMs are in networks
+	// that cannot reach each other.
+	CodePeerUnreachable = "vm_peer_unreachable"
 	// CodeCrossNeedsPublic is a VM another cloud reaches that is not public.
 	CodeCrossNeedsPublic = "cross_needs_public"
 	// CodeCrossInvalid is a cross-cloud edge this cloud cannot serve.
 	CodeCrossInvalid = "cross_invalid"
+	// CodeCost is a note (Advisor) naming what a deployment costs beyond its
+	// blocks, such as a gateway billed by the hour.
+	CodeCost = "cost"
+	// CodeClosedPublicVM is a note (Advisor) on a public VM that no firewall
+	// lets anything in to (ClosedPublicVMs).
+	CodeClosedPublicVM = "public_vm_closed"
 )
 
 // Messages every connector shows for the same event.

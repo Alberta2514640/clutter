@@ -12,10 +12,10 @@ func TestParseIngress(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []IngressRule{
-		{Protocol: ProtocolTCP, FromPort: 22, ToPort: 22},
-		{Protocol: ProtocolUDP, FromPort: 1000, ToPort: 2000},
+		{Protocol: "tcp", FromPort: 22, ToPort: 22},
+		{Protocol: "udp", FromPort: 1000, ToPort: 2000},
 		{Protocol: ProtocolICMP},
-		{Protocol: ProtocolTCP, FromPort: 80, ToPort: 80},
+		{Protocol: "tcp", FromPort: 80, ToPort: 80},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)

@@ -38,3 +38,15 @@ Also check: the JSON schemas in `backend/infra/modules/templates/api-models/sche
 - `go -C backend/api build ./...`, `vet` and `test` on the generator package.
 - Read the rendered `.tf` and run `terraform fmt -check` and `terraform validate` on it in the scratchpad (`init -backend=false`).
 - Grep the label across the repo and confirm all five places use the same spelling.
+
+## A new block kind (not a new cloud)
+
+A block kind (VM, network, bucket and the rest) is part of the standard set every connector reads. Record an ADR first: a new kind changes the standard set. Then change, in one change:
+
+1. The kind constant and `StandardBlocks` in `backend/adapter/connectors/connectors.go`.
+2. Its portable fields in `standardFields`, in `backend/adapter/connectors/blocks.go`.
+3. Each connector's manifest: `backend/adapter/connectors/aws/manifest.go`, `backend/adapter/connectors/generalopenstack/manifest.go` and the mock's in `backend/adapter/connectors/mock/mock.go`. Every manifest must give every standard kind a treatment; a connector that cannot build it marks it `TreatmentRemoved`.
+4. Its colour in `KIND_TINT`, in `frontend/clutter/src/lib/features/catalog/display.ts`.
+5. Grep an existing kind (such as `http_api`) across `backend/adapter` and `frontend/clutter/src` for the other places that name kinds.
+
+Prove it with the contract tests: `backend/adapter/connectors/contract`, run by each connector's own tests and by `backend/adapter/tests/contract`.

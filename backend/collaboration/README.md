@@ -39,7 +39,7 @@ Run these in `backend/collaboration`. They need no database and no running app.
 
 ```bash
 npm run typecheck     # no errors
-npm test              # 5 files, 105 tests pass
+npm test              # 5 files, 118 tests pass
 ```
 
 ### Against the real app
@@ -93,11 +93,12 @@ The `y-websocket` client reconnects after every close. The editor must stop it o
 The saved format is B's (`blocksDocument.ts` in the frontend). The shared Yjs document holds the same data in three maps:
 
 ```text
-nodes : node id -> { kind, name, position: {x, y}, fields: one entry per field }
+nodes : node id -> { kind, name, position: {x, y}, size: {width, height}, fields: one entry per field }
 edges : edge id -> { source, target }
 meta  : { name, saved: { hash, by, at } }
 ```
 
+- `size` is there only for a network box. The saved format keeps it as `width` and `height` on the node. Both must be positive numbers, or the size is dropped.
 - `meta.saved.hash` is the hash of the last saved diagram. The editor shows "Saved" when the current hash matches it.
 - `test/fixtures` has a sample diagram in both formats, with its hash. The frontend's conversion must give the same results.
 
@@ -112,3 +113,4 @@ Each client can share who it is: `{ user: { id, name, color } }`. The service ig
 - `vitest` is pinned to 4.0.8, the same as the frontend. Version 4.1.12 does not install with npm 10.9.9.
 - The service listens on this machine only and has no TLS.
 - A user who loses access to a diagram stays in the room until they disconnect or their login ends.
+- A's `PUT /diagram` does not keep a node's `width` and `height` yet, so saved diagrams have no box sizes today. The editor works them out again when it loads a diagram.

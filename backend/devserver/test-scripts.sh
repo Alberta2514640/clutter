@@ -18,7 +18,7 @@ passed=0
 failed=0
 
 # The real commands the scripts may call besides the tools under test.
-real_tools=(bash env awk sed grep head df dirname cat tr)
+real_tools=(bash env awk sed grep head df dirname cat tr mv rm)
 
 # stub NAME BODY: a fake command that runs BODY.
 stub() {
@@ -176,9 +176,24 @@ run doctor.sh
 check "optional tools absent are notes" 0 "--    Lima: not found" "--    Playwright's Chromium: not installed" "--    LocalStack image: not pulled" \
   "OpenStack on this machine (DevStack)"
 
+# route_stubs: this machine's route for DevStack's public network. With
+# FAKE_ROUTE_VIA set, macOS's route and Linux's ip show a route through it;
+# otherwise the range goes to the default gateway.
+route_stubs() {
+  stub route '
+if [[ -n "${FAKE_ROUTE_VIA:-}" ]]; then
+  printf "   route to: 172.24.4.0\ndestination: 172.24.4.0\n       mask: 255.255.255.0\n    gateway: %s\n" "${FAKE_ROUTE_VIA}"
+else
+  printf "   route to: 172.24.4.0\ndestination: default\n       mask: default\n    gateway: 192.168.1.254\n"
+fi'
+  stub ip 'if [[ -n "${FAKE_ROUTE_VIA:-}" ]]; then echo "172.24.4.0/24 via ${FAKE_ROUTE_VIA} dev br0"; fi'
+}
+
 # A running devstack VM at 192.168.64.2. FAKE_KEYSTONE is curl's exit code for
-# the VM's address, FAKE_LOOPBACK for 127.0.0.1; everything else has nothing listening.
+# the VM's address, FAKE_LOOPBACK for 127.0.0.1, FAKE_GATEWAY for DevStack's
+# public gateway 172.24.4.1; everything else has nothing listening.
 fresh_stubs
+route_stubs
 stub limactl '
 case "$1" in
   --version) echo "limactl version 2.3.0" ;;
@@ -189,12 +204,28 @@ stub curl '
 case "$*" in
   *192.168.64.2/identity*) exit "${FAKE_KEYSTONE:-0}" ;;
   *127.0.0.1/identity*) exit "${FAKE_LOOPBACK:-0}" ;;
+  *172.24.4.1/*) exit "${FAKE_GATEWAY:-0}" ;;
   *) exit 7 ;;
 esac'
 run doctor.sh
 check "DevStack reachable" 0 "ok    Lima 2.3.0; VM devstack is Running" \
-  "ok    DevStack answers at http://192.168.64.2/identity/v3" "ok    DevStack answers at http://127.0.0.1/identity/v3 too"
+  "ok    DevStack answers at http://192.168.64.2/identity/v3" "ok    DevStack answers at http://127.0.0.1/identity/v3 too" \
+  "ok    this machine reaches DevStack's public network (172.24.4.0/24)"
 refute "DevStack reachable has no Local Network hint" "Local Network"
+refute "DevStack reachable has no route hint" "npm run devstack -- route"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Darwin
+check "DevStack public network not routed on macOS" 0 \
+  "warn  this machine does not reach DevStack's public network (172.24.4.0/24)" \
+  "Run npm run devstack -- route (asks for your password) so this machine can open DevStack servers." "Ready, with"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2
+check "DevStack public network routed but silent on macOS" 0 \
+  "warn  this machine sends 172.24.4.0/24 to the VM, but 172.24.4.1 does not answer" "npm run devstack -- start"
+refute "a routed machine gets no route hint" "Run npm run devstack -- route"
+
+run doctor.sh FAKE_GATEWAY=28 FAKE_OS=Linux FAKE_ROUTE_VIA=192.168.64.9
+check "DevStack public network routed elsewhere on Linux" 0 "Run npm run devstack -- route (asks for your password)"
 
 run doctor.sh FAKE_KEYSTONE=28 FAKE_OS=Darwin
 check "DevStack VM address blocked on macOS" 0 \
@@ -261,7 +292,8 @@ create_with() {
 }
 create_with "Apple M4 Pro"
 check "create makes, starts and installs on an M4" 0 "limactl create --tty=false --name devstack" "devstack/lima.yaml" \
-  "limactl start --tty=false devstack" "limactl shell --workdir / devstack bash -s" "npm run devstack -- credential"
+  "limactl start --tty=false devstack" "limactl shell --workdir / devstack bash -s" "npm run devstack -- credential" \
+  "limactl shell --workdir / devstack bash -s -- 172.24.4.0/24 172.24.4.1" "npm run devstack -- route"
 refute "an M4 keeps nested virtualization" "nestedVirtualization = false"
 
 create_with "Apple M1"
@@ -271,16 +303,255 @@ run_args devstack.sh credential
 check "credential refuses output that is not a terminal" 1 "runs only when its output is a terminal"
 refute "credential called nothing" "UNEXPECTED"
 
+# dashboard prints the address and the user; the password only to a terminal,
+# so here, with output to a file, the VM is never asked for it.
+stub limactl '
+case "$*" in
+  *--format*) echo Running ;;
+  *" address") echo "http://192.168.64.2/dashboard" ;;
+  *" password") echo "UNEXPECTED-password" ;;
+esac'
+run_args devstack.sh dashboard
+check "dashboard prints the address and the user" 0 "Dashboard  http://192.168.64.2/dashboard" "User       demo (project demo)" \
+  "shown only in a terminal"
+refute "dashboard keeps the password off a file" "UNEXPECTED"
+
+# route and start: a VM in state FAKE_VM (Running) at FAKE_VM_IP (192.168.64.2).
+# This limactl records its calls in calls.log, and this sudo only prints what it
+# was asked to run, so no test changes a real route.
+route_stubs
+stub limactl '
+echo "limactl $*" >>"'"${calls}"'"
+case "$*" in
+  *--format*) echo "${FAKE_VM:-Running}" ;;
+  *"ip -4 -o addr show dev lima0"*) echo "3: lima0    inet ${FAKE_VM_IP:-192.168.64.2}/24 metric 100 brd 192.168.64.255 scope global dynamic lima0" ;;
+  *"bash -s"*) cat >/dev/null; echo "network set in the VM" ;;
+esac'
+stub sudo '
+if [[ "$1" == -n && -n "${FAKE_SUDO_NEEDS_PASSWORD:-}" ]]; then exit 1; fi
+echo "FAKE-SUDO $*"'
+stub osascript 'echo "osascript $*" >>"'"${calls}"'"'
+# devstack_run [VAR=value ...] -- ARGS...: runs devstack.sh with those
+# variables and arguments, then adds limactl's calls to the output. Its input
+# is never a terminal, so a run from a terminal takes the same paths as CI.
+devstack_run() {
+  local -a vars=()
+  while [[ $# -gt 0 && "$1" != -- ]]; do
+    vars+=("$1")
+    shift
+  done
+  shift
+  rm -f "${calls}"
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" ${vars[@]+"${vars[@]}"} "${BASH_BIN}" "${DEVSERVER_DIR}/devstack.sh" "$@" </dev/null >"${out}" 2>&1 || rc=$?
+  if [[ -f "${calls}" ]]; then cat "${calls}" >>"${out}"; fi
+}
+
+devstack_run FAKE_OS=Darwin -- route --dry-run
+check "route --dry-run on macOS prints the add" 0 "Dry run: nothing is changed" \
+  "  sudo route -n add -net 172.24.4.0/24 192.168.64.2"
+refute "route --dry-run runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.9 -- route --dry-run
+check "route --dry-run replaces a route through the old address" 0 \
+  "  sudo route -n delete -net 172.24.4.0/24" "  sudo route -n add -net 172.24.4.0/24 192.168.64.2"
+
+devstack_run FAKE_OS=Linux -- route --dry-run
+check "route --dry-run on Linux prints the replace" 0 "  sudo ip route replace 172.24.4.0/24 via 192.168.64.2"
+refute "route --dry-run on Linux runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- route
+check "route through the VM already is left alone" 0 "already sends 172.24.4.0/24 to the devstack VM at 192.168.64.2"
+refute "route left alone runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin -- route
+check "route runs the add with sudo" 0 "FAKE-SUDO route -n add -net 172.24.4.0/24 192.168.64.2" \
+  "You are asked for your password, and nothing keeps it" "now sends 172.24.4.0/24 to the devstack VM at 192.168.64.2"
+refute "route with sudo open needs no password window" "osascript"
+
+devstack_run FAKE_OS=Darwin FAKE_SUDO_NEEDS_PASSWORD=1 -- route
+check "route with no terminal asks in the macOS password window" 0 "macOS asks for your password in a window" \
+  'osascript -e do shell script "route -n add -net 172.24.4.0/24 192.168.64.2"' "with administrator privileges"
+refute "route through the password window runs no sudo" "FAKE-SUDO route"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- route remove --dry-run
+check "route remove --dry-run on macOS" 0 "  sudo route -n delete -net 172.24.4.0/24"
+refute "route remove --dry-run runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Linux FAKE_ROUTE_VIA=192.168.64.2 -- route remove
+check "route remove on Linux" 0 "FAKE-SUDO ip route del 172.24.4.0/24" "Removed the route through 192.168.64.2"
+
+devstack_run FAKE_OS=Darwin FAKE_VM=Stopped -- route remove
+check "route remove with no route" 0 "nothing to remove"
+refute "route remove with no route runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_VM=Stopped -- route --dry-run
+check "route refuses a stopped VM" 1 "The devstack VM is Stopped. Start it first"
+refute "route on a stopped VM runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=Darwin FAKE_VM_IP=bogus -- route
+check "route refuses a VM with no lima0 address" 1 "has no lima0 address"
+refute "route with no address runs no sudo" "FAKE-SUDO"
+
+devstack_run FAKE_OS=FreeBSD -- route --dry-run
+check "route refuses outside macOS and Linux" 1 "route works on macOS and Linux only (this is FreeBSD)"
+refute "route outside macOS and Linux asks Lima nothing" "limactl"
+
+devstack_run -- route sideways
+check "route refuses an unknown argument" 2 "usage: npm run devstack"
+
+devstack_run FAKE_OS=Darwin -- start
+check "start on a running VM sets up DevStack's public network" 0 "The devstack VM is already running." \
+  "limactl shell --workdir / devstack bash -s -- 172.24.4.0/24 172.24.4.1" "network set in the VM" \
+  "run npm run devstack -- route (asks for your password)"
+
+devstack_run FAKE_OS=Darwin FAKE_ROUTE_VIA=192.168.64.2 -- start
+check "start with the route in place" 0 "network set in the VM"
+refute "start with the route in place gives no route hint" "run npm run devstack -- route"
+
+# network.sh checks its arguments and the VM's mark before it changes anything.
+rc=0
+env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" "${DEVSERVER_DIR}/devstack/network.sh" '172.24.4.0/24;x' 172.24.4.1 >"${out}" 2>&1 || rc=$?
+check "network.sh refuses a bad range" 2 "usage: network.sh FLOATING_RANGE GATEWAY"
+if [[ ! -f /etc/clutter-devstack ]]; then
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" "${DEVSERVER_DIR}/devstack/network.sh" 172.24.4.0/24 172.24.4.1 >"${out}" 2>&1 || rc=$?
+  check "network.sh refuses a VM lima.yaml did not make" 1 "was not made from backend/devserver/devstack/lima.yaml"
+  refute "network.sh outside the VM runs no sudo" "FAKE-SUDO"
+fi
+
 run_args devstack.sh status extra
 check "devstack.sh refuses an extra argument" 2 "usage: npm run devstack"
 
 echo
+echo "real-aws.sh"
+fresh_stubs
+conf="${work}/real-aws.conf"
+good_url="https://clutter-dev-templates-123456789012-ca-central-1.s3.ca-central-1.amazonaws.com/templates/cloudformation/client_side_terraform_deployer_role.yaml"
+# read_conf: runs lib.sh's read_real_aws_conf on ${conf}, as dev.sh does.
+read_conf() {
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" "${BASH_BIN}" -c 'source "$1/lib.sh" && read_real_aws_conf "$2" && echo "read ${REAL_AWS_ACCOUNT_ID} ${REAL_AWS_PROFILE} ${REAL_AWS_REGION}"' _ "${DEVSERVER_DIR}" "${conf}" >"${out}" 2>&1 || rc=$?
+}
+printf '# comment\nCLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\n' "${good_url}" >"${conf}"
+read_conf
+check "real-aws.conf: a good file is read" 0 "read 123456789012 clutter-dev-runner ca-central-1"
+printf 'CLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\nAWS_SECRET_ACCESS_KEY=x\n' "${good_url}" >"${conf}"
+read_conf
+check "real-aws.conf: an unknown key is refused" 1 "unknown key AWS_SECRET_ACCESS_KEY"
+printf 'CLUTTER_AWS_ACCOUNT_ID=$(touch %s/ran)\nCLUTTER_TEMPLATE_URL=http://example.com/x\nCLUTTER_RUNNER_PROFILE=a b\nCLUTTER_AWS_REGION=nowhere\n' "${work}" >"${conf}"
+read_conf
+check "real-aws.conf: bad values are refused" 1 "12-digit AWS account id" "must be https://BUCKET.s3.REGION.amazonaws.com/" "name of a profile" "an AWS region"
+if [[ -e "${work}/ran" ]]; then
+  failed=$((failed + 1))
+  echo "FAIL  real-aws.conf: a value ran as a command"
+else
+  passed=$((passed + 1))
+  echo "pass  real-aws.conf: values are never run"
+fi
+
+rm -f "${conf}"
+run real-aws.sh CLUTTER_REAL_AWS_CONF="${conf}"
+check "real-aws.sh with no action" 2 "usage: npm run real-aws"
+stub aws '
+case "$*" in
+  *"sts get-caller-identity --query Account"*) echo 123456789012 ;;
+  *"sts get-caller-identity --query Arn"*) echo "arn:aws:sts::123456789012:assumed-role/ClutterAdapterRunnerRole/botocore-session-1" ;;
+  *"cloudformation deploy"*) echo "FAKE-DEPLOY $*" ;;
+  *"describe-stacks"*BucketName*) echo clutter-dev-templates-123456789012-ca-central-1 ;;
+  *"describe-stacks"*TemplateURL*) echo "'"${good_url}"'" ;;
+  *"describe-stacks"*RunnerRoleArn*) echo arn:aws:iam::123456789012:role/ClutterAdapterRunnerRole ;;
+  *"s3 cp"*) echo "FAKE-UPLOAD $*" ;;
+  *"configure get role_arn"*) exit 1 ;;
+  *) echo "unexpected aws $*" >&2; exit 1 ;;
+esac'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status with no file" 0 "Real AWS is off"
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" setup >"${out}" 2>&1 || rc=$?
+check "real-aws.sh setup needs an admin profile" 2 "needs --admin-profile"
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" setup --admin-profile clutter-admin >"${out}" 2>&1 || rc=$?
+check "real-aws.sh setup" 0 "Clutter's account: 123456789012" "FAKE-DEPLOY" "--stack-name clutter-dev-real-aws" "CAPABILITY_NAMED_IAM" \
+  "FAKE-UPLOAD" "s3://clutter-dev-templates-123456789012-ca-central-1/templates/cloudformation/client_side_terraform_deployer_role.yaml" \
+  "Wrote backend/devserver/real-aws.conf" "[profile clutter-dev-runner]" "role_arn = arn:aws:iam::123456789012:role/ClutterAdapterRunnerRole" "source_profile = clutter-admin"
+read_conf
+check "real-aws.sh setup writes a file dev.sh reads" 0 "read 123456789012 clutter-dev-runner ca-central-1"
+stub curl 'echo 200'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status" 0 "Real AWS is on" "ok    the profile clutter-dev-runner acts as ClutterAdapterRunnerRole" "ok    CloudFormation can read the account-link template"
+stub curl 'echo 403'
+rc=0
+env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" "${BASH_BIN}" "${DEVSERVER_DIR}/real-aws.sh" status >"${out}" 2>&1 || rc=$?
+check "real-aws.sh status when the template cannot be read" 1 "FAIL  the account-link template answers 403"
+
+echo
+echo "dev.sh --aws"
+fresh_stubs
+aws_config="${work}/aws-config"
+printf '[profile clutter-dev-runner]\nregion = ca-central-1\n' >"${aws_config}"
+printf 'CLUTTER_AWS_ACCOUNT_ID=123456789012\nCLUTTER_TEMPLATE_URL=%s\nCLUTTER_RUNNER_PROFILE=clutter-dev-runner\nCLUTTER_AWS_REGION=ca-central-1\n' "${good_url}" >"${conf}"
+# dev_run [VAR=value ...] -- ARGS...: runs dev.sh with those variables and
+# arguments, real-aws.conf at ${conf} (when it exists) and the runner profile
+# in ${aws_config}. Docker is always stopped here, so every run ends at dev.sh's
+# tool checks: after it chose the AWS mode, and before it touches .state or a
+# Clutter that already runs on this machine.
+dev_run() {
+  local -a vars=()
+  while [[ $# -gt 0 && "$1" != -- ]]; do
+    vars+=("$1")
+    shift
+  done
+  shift
+  rc=0
+  env -i PATH="${stubs}" HOME="${home}" CLUTTER_REAL_AWS_CONF="${conf}" AWS_CONFIG_FILE="${aws_config}" FAKE_DOCKER=stopped \
+    ${vars[@]+"${vars[@]}"} "${BASH_BIN}" "${DEVSERVER_DIR}/dev.sh" "$@" >"${out}" 2>&1 || rc=$?
+}
+dev_run --
+check "auto with real-aws.conf uses real AWS" 1 "AWS mode (--aws auto): AWS runs build in REAL AWS accounts" "Docker is installed but not running"
+
+dev_run -- --aws localstack
+check "--aws localstack with LocalStack down stops" 1 "--aws localstack needs LocalStack" \
+  "Run npm run localstack -- start, then npm run dev -- --aws localstack again."
+refute "--aws localstack with LocalStack down checks no tool" "Docker is installed but not running"
+
+stub curl 'case "$*" in *127.0.0.1:4566/_localstack/health*) exit 0 ;; *) exit 7 ;; esac'
+dev_run -- --backend-only --aws=localstack
+check "--aws localstack with real-aws.conf uses LocalStack" 1 \
+  "AWS mode (--aws localstack): AWS runs apply against LocalStack on http://127.0.0.1:4566"
+refute "--aws localstack with real-aws.conf never uses real AWS" "REAL AWS"
+
+rm -f "${conf}"
+dev_run --
+check "auto without real-aws.conf uses LocalStack when it runs" 1 \
+  "AWS mode (--aws auto): AWS runs apply against LocalStack on http://127.0.0.1:4566"
+
+stub curl 'exit 7'
+dev_run --
+check "auto with neither stays local" 1 "AWS mode (--aws auto): renders and previews AWS Terraform; runs need a real AWS account"
+
+dev_run -- --backend-only --aws real
+check "--aws real without real-aws.conf stops" 1 "--aws real needs backend/devserver/real-aws.conf" "npm run real-aws -- setup"
+refute "--aws real without real-aws.conf checks no tool" "Docker is installed but not running"
+
+dev_run -- --aws cloud
+check "--aws refuses a bad value" 2 "--aws takes auto, localstack or real." "usage: npm run dev"
+dev_run -- --aws
+check "--aws refuses a missing value" 2 "--aws takes auto, localstack or real."
+dev_run -- --frontend-only --aws localstack
+check "--aws refuses --frontend-only" 2 "--aws goes with npm run dev or npm run dev:backend"
+
+echo
 echo "--help"
 fresh_stubs
-for script in doctor.sh setup.sh dev.sh stop.sh smoke.sh localstack.sh devstack.sh generated.sh; do
+for script in doctor.sh setup.sh dev.sh stop.sh smoke.sh localstack.sh devstack.sh generated.sh real-aws.sh; do
   run_args "${script}" --help
   check "${script} --help" 0 "usage: npm run"
 done
+run_args dev.sh --backend-only --help
+check "dev.sh --help explains --aws" 0 "--aws MODE" "localstack  LocalStack, even when real-aws.conf exists"
 run_args doctor.sh --nonsense
 check "doctor.sh refuses an unknown flag" 2 "usage: npm run doctor"
 run_args dev.sh --frontend-only

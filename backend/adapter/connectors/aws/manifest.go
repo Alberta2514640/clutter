@@ -1,7 +1,9 @@
 package aws
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/api/generic"
@@ -11,19 +13,21 @@ import (
 // a portable one connectors owns; StandardField panics on a name it does not
 // have, so a typo fails at start-up and in every test.
 var (
-	fieldSize        = connectors.StandardField(connectors.KindVM, "size").Name
-	fieldPublic      = connectors.StandardField(connectors.KindVM, "public").Name
-	fieldCIDR        = connectors.StandardField(connectors.KindNetwork, "cidr").Name
-	fieldIngress     = connectors.StandardField(connectors.KindFirewall, "ingress").Name
-	fieldSourceCIDR  = connectors.StandardField(connectors.KindFirewall, "source_cidr").Name
-	fieldSizeGB      = connectors.StandardField(connectors.KindVolume, "size_gb").Name
-	fieldVersioning  = connectors.StandardField(connectors.KindBucket, "versioning").Name
-	fieldMemoryMB    = connectors.StandardField(connectors.KindFunction, "memory_mb").Name
-	fieldTimeoutS    = connectors.StandardField(connectors.KindFunction, "timeout_s").Name
-	fieldKey         = connectors.StandardField(connectors.KindTable, "key").Name
-	fieldKeyType     = connectors.StandardField(connectors.KindTable, "key_type").Name
-	fieldDescription = connectors.StandardField(connectors.KindHTTPAPI, "description").Name
-	fieldCORS        = connectors.StandardField(connectors.KindHTTPAPI, "cors").Name
+	fieldSize            = connectors.StandardField(connectors.KindVM, "size").Name
+	fieldPublic          = connectors.StandardField(connectors.KindVM, "public").Name
+	fieldCIDR            = connectors.StandardField(connectors.KindNetwork, "cidr").Name
+	fieldPrivateInternet = connectors.StandardField(connectors.KindNetwork, "private_internet").Name
+	fieldForceDestroy    = connectors.StandardField(connectors.KindBucket, "force_destroy").Name
+	fieldIngress         = connectors.StandardField(connectors.KindFirewall, "ingress").Name
+	fieldSourceCIDR      = connectors.StandardField(connectors.KindFirewall, "source_cidr").Name
+	fieldSizeGB          = connectors.StandardField(connectors.KindVolume, "size_gb").Name
+	fieldVersioning      = connectors.StandardField(connectors.KindBucket, "versioning").Name
+	fieldMemoryMB        = connectors.StandardField(connectors.KindFunction, "memory_mb").Name
+	fieldTimeoutS        = connectors.StandardField(connectors.KindFunction, "timeout_s").Name
+	fieldKey             = connectors.StandardField(connectors.KindTable, "key").Name
+	fieldKeyType         = connectors.StandardField(connectors.KindTable, "key_type").Name
+	fieldDescription     = connectors.StandardField(connectors.KindHTTPAPI, "description").Name
+	fieldCORS            = connectors.StandardField(connectors.KindHTTPAPI, "cors").Name
 )
 
 // Deployment setting names: what is AWS's own, so it lives on the deployment.
@@ -58,11 +62,64 @@ func regions() []string {
 	return out
 }
 
-// runtimes returns the Lambda runtimes A supports (generic owns the list), sorted.
+// deprecatedRuntimes are runtimes A keeps (its seed's default) that B does
+// not offer: AWS deprecated provided.al2 on 2026-07-31.
+var deprecatedRuntimes = map[string]bool{"provided.al2": true}
+
+// runtimes returns the Lambda runtimes A supports (generic owns the list),
+// less the deprecated ones, sorted.
 func runtimes() []string {
-	out := generic.LambdaRuntimeNames()
+	var out []string
+	for _, r := range generic.LambdaRuntimeNames() {
+		if !deprecatedRuntimes[r] {
+			out = append(out, r)
+		}
+	}
 	sort.Strings(out)
 	return out
+}
+
+// defaultRuntime is the function runtime a deployment gets unless it picks
+// another (settingRuntime).
+const defaultRuntime = "provided.al2023"
+
+// functionHelp is what the block panel says about a function on AWS: where
+// its runtime is chosen, the handler each runtime family takes (generic owns
+// the defaults), and the variables a linked table or bucket arrives in
+// (functionEnv, connectors.EnvName).
+func functionHelp() []string {
+	defaultFor := func(prefix string) string {
+		for _, r := range runtimes() {
+			if strings.HasPrefix(r, prefix) {
+				return generic.LambdaRuntimes[r]
+			}
+		}
+		return ""
+	}
+	env := func(v string) string { return connectors.EnvName("<name>", v) }
+	return []string{
+		"Runtime: chosen per deployment under Advanced; the default is " + defaultRuntime + ".",
+		fmt.Sprintf("Handler: file.function for Node.js (default %s) and Python (default %s); %s runs your %s file.",
+			defaultFor("nodejs"), defaultFor("python"), defaultRuntime, generic.LambdaRuntimes[defaultRuntime]),
+		fmt.Sprintf("A linked table or bucket arrives as %s or %s, its region as %s.",
+			env(connectors.ValueTable), env(connectors.ValueBucket), env(connectors.ValueRegion)),
+	}
+}
+
+// vmHelp says which changes replace a deployed VM on AWS. In the AWS
+// provider (5.x), associate_public_ip_address, subnet_id and key_name force a
+// new instance, and user_data_base64 does with user_data_replace_on_change
+// (override.tf.tmpl); instance_type changes in place (stop, change, start),
+// and a changed key makes a new key pair under the same name (stableName), so
+// it does not. A rename changes only Name tags. A volume's zone never reads
+// the instance (vmZone), so attached volumes stay.
+func vmHelp() []string {
+	return []string{
+		"Changing Reachable from the internet, the startup script or the network replaces a deployed server: its own disk is lost; attached volumes move over.",
+		"Adding an SSH key, or a link that hands the server a value at first start, also replaces it.",
+		"A changed key reaches new servers only; a running server keeps the key it started with.",
+		"Changing the size restarts the server. A startup script runs only at first start, so have it set up anything that must keep running as a service.",
+	}
 }
 
 func manifest() connectors.Manifest {
@@ -77,33 +134,48 @@ func manifest() connectors.Manifest {
 		// Icons are AWS Architecture Icons. AWS publishes no security group
 		// icon, so the firewall keeps its neutral icon.
 		Blocks: []connectors.BlockSpec{
-			connectors.StandardBlock(connectors.KindVM, "VM").WithDisplay("EC2", "ec2"),
-			connectors.StandardBlock(connectors.KindNetwork, "Network").WithDisplay("VPC", "vpc"),
-			connectors.StandardBlock(connectors.KindFirewall, "Firewall").WithDisplay("Security group", ""),
-			connectors.StandardBlock(connectors.KindVolume, "Volume").WithDisplay("EBS", "ebs"),
-			connectors.StandardBlock(connectors.KindBucket, "Bucket").WithDisplay("S3", "s3"),
-			connectors.StandardBlock(connectors.KindFunction, "Function").WithDisplay("Lambda", "lambda"),
-			connectors.StandardBlock(connectors.KindTable, "Table").WithDisplay("DynamoDB", "dynamodb"),
-			connectors.StandardBlock(connectors.KindHTTPAPI, "HTTP API").WithDisplay("API Gateway", "api-gateway"),
+			connectors.StandardBlock(connectors.KindVM).WithDisplay("EC2", "ec2").WithHelp(vmHelp()...),
+			connectors.StandardBlock(connectors.KindNetwork).WithDisplay("VPC", "vpc").
+				WithHelp("Internet access for private servers adds a NAT gateway: about $40 a month plus data. Not needed when your servers are public."),
+			connectors.StandardBlock(connectors.KindFirewall).WithDisplay("Security group", ""),
+			connectors.StandardBlock(connectors.KindVolume).WithDisplay("EBS", "ebs"),
+			connectors.StandardBlock(connectors.KindBucket).WithDisplay("S3", "s3"),
+			connectors.StandardBlock(connectors.KindFunction).WithDisplay("Lambda", "lambda").WithHelp(functionHelp()...),
+			connectors.StandardBlock(connectors.KindTable).WithDisplay("DynamoDB", "dynamodb"),
+			connectors.StandardBlock(connectors.KindHTTPAPI).WithDisplay("API Gateway", "api-gateway"),
 		},
+		// Each rule matches a problem this connector's Validate reports
+		// (CodeVMTwoNetworks, connectors.CodeVolumeTwoVMs).
 		Edges: []connectors.EdgeSpec{
-			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM runs in the network"},
-			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM"},
-			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM"},
-			{Source: connectors.KindFunction, Target: connectors.KindBucket, Meaning: "the function can read the bucket"},
-			{Source: connectors.KindFunction, Target: connectors.KindTable, Meaning: "the function can read the table"},
-			{Source: connectors.KindHTTPAPI, Target: connectors.KindFunction, Meaning: "the HTTP API sends requests to the function"},
+			{Source: connectors.KindVM, Target: connectors.KindNetwork, Meaning: "the VM runs in the network",
+				Why: "Servers in one network can talk to each other privately.", SingleTarget: true, Rule: "A VM runs in one network."},
+			{Source: connectors.KindVolume, Target: connectors.KindVM, Meaning: "the volume is attached to the VM",
+				Why: "Gives the server more room for its data.", SingleTarget: true, Rule: "A volume attaches to one VM."},
+			{Source: connectors.KindFirewall, Target: connectors.KindVM, Meaning: "the firewall rules apply to the VM",
+				Why: "Only the traffic you allow can reach the server."},
+			{Source: connectors.KindFunction, Target: connectors.KindBucket, Meaning: "the function can read the bucket",
+				Why: "Your code can read the files it needs."},
+			{Source: connectors.KindFunction, Target: connectors.KindTable, Meaning: "the function can read the table",
+				Why: "Your code can look up data such as users or orders."},
+			{Source: connectors.KindHTTPAPI, Target: connectors.KindFunction, Meaning: "the HTTP API sends requests to the function",
+				Why: "A visit to the web address runs your code."},
 			// A VM's edges hand it values at first boot (connectors.StartupHCL);
 			// across clouds they are a split deployment's address and
 			// permission edges (connectors.CrossClass).
-			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts"},
-			{Source: connectors.KindVM, Target: connectors.KindBucket, Meaning: "the VM can read the bucket"},
-			{Source: connectors.KindVM, Target: connectors.KindTable, Meaning: "the VM can read the table"},
+			{Source: connectors.KindVM, Target: connectors.KindVM, Meaning: "the VM gets the other VM's address when it first starts",
+				Why: "Your app on the server can find the other server, such as its database."},
+			{Source: connectors.KindVM, Target: connectors.KindBucket, Meaning: "the VM can read the bucket",
+				Why: "Your app on the server can read the files it needs."},
+			{Source: connectors.KindVM, Target: connectors.KindTable, Meaning: "the VM can read the table",
+				Why: "Your app on the server can look up data such as users or orders."},
 		},
 		Settings: []connectors.FieldSpec{
-			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes},
-			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: "provided.al2023", Allowed: runtimes()},
-			{Name: settingArchitecture, Title: "Function processor", Type: connectors.FieldEnum, Default: "arm64", Allowed: []string{"arm64", "x86_64"}},
+			{Name: settingInstanceType, Title: "Instance type for every VM (instead of its size)", Type: connectors.FieldEnum, Allowed: instanceTypes,
+				AppliesTo: []connectors.BlockKind{connectors.KindVM}},
+			{Name: settingRuntime, Title: "Function runtime", Type: connectors.FieldEnum, Default: defaultRuntime, Allowed: runtimes(),
+				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},
+			{Name: settingArchitecture, Title: "Function processor", Type: connectors.FieldEnum, Default: "arm64", Allowed: []string{"arm64", "x86_64"},
+				AppliesTo: []connectors.BlockKind{connectors.KindFunction}},
 		},
 	}
 }

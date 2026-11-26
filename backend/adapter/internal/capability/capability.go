@@ -5,6 +5,7 @@ package capability
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/api/generic/hclsafe"
@@ -47,7 +48,7 @@ func Check(m connectors.Manifest, g connectors.Graph, d connectors.Deployment) R
 		spec, ok := m.Block(b.Kind)
 		if !ok || spec.Treatment == connectors.TreatmentRemoved {
 			r.Problems = append(r.Problems, connectors.Problem{NodeID: b.ID, Code: CodeUnsupportedBlock,
-				Message: fmt.Sprintf("%s cannot build a %s block. Remove it from the diagram or leave it out of this deployment.", m.Title, kindTitle(m, b.Kind))})
+				Message: fmt.Sprintf("%s cannot build this %s block. Run it on another cloud, leave it out of this deployment, or remove it from the diagram.", m.Title, kindTitle(m, b.Kind))})
 			continue
 		}
 		if err := hclsafe.CheckName(b.Name); err != nil {
@@ -79,11 +80,17 @@ func Check(m connectors.Manifest, g connectors.Graph, d connectors.Deployment) R
 }
 
 // CheckConnector is every check one deployment passes before it runs or is
-// previewed: Check against c's manifest, then c's own checks (Validate). It
-// is the only place B calls Validate, so a connector never repeats Check.
+// previewed: Check against c's manifest, then c's own checks (Validate), and
+// what c says the deployment costs beyond its blocks (connectors.Advisor), as
+// notes. It is the only place B calls Validate, so a connector never repeats
+// Check.
 func CheckConnector(c connectors.Connector, g connectors.Graph, d connectors.Deployment) Report {
 	r := Check(c.Manifest(), g, d)
 	r.Problems = Merge(r.Problems, c.Validate(g, d))
+	if a, ok := c.(connectors.Advisor); ok {
+		r.Notes = Merge(r.Notes, a.Advice(g, d))
+		sortProblems(r.Notes)
+	}
 	r.Ready = len(r.Problems) == 0
 	return r
 }
@@ -138,11 +145,20 @@ func checkFields(nodeID string, specs []connectors.FieldSpec, values map[string]
 	return out
 }
 
+// kindTitle names a kind inside a sentence: its title with each word that is
+// not an acronym in lower case ("bucket", "HTTP API").
 func kindTitle(m connectors.Manifest, k connectors.BlockKind) string {
-	if s, ok := m.Block(k); ok && s.Title != "" {
-		return s.Title
+	s, ok := m.Block(k)
+	if !ok || s.Title == "" {
+		return string(k)
 	}
-	return string(k)
+	words := strings.Fields(s.Title)
+	for i, w := range words {
+		if w != strings.ToUpper(w) {
+			words[i] = strings.ToLower(w)
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func sortProblems(ps []connectors.Problem) {

@@ -1,96 +1,105 @@
 # NOW
 
-Updated 2026-11-14.
+Updated 2026-11-21.
 
 ## Goal
 
-Clutter becomes one hosted product (B0) where users link their own clouds (world 2.1) and deploy one diagram to any of them: AWS through A today, and every cloud through B's connectors, OpenStack first (ADR-013, ADR-014). Make A safe first, build B beside it, then run it all in one cloud environment (ADR-015). C is A + A2 + B (ADR-011). Design: `docs/architecture/system-b-adapter-layer.md`. Build order: `docs/architecture/implementation-plan.md`. What exists: `docs/architecture/system-a-as-built.md`. Decisions: ADR-001 to ADR-024. Environments: `docs/architecture/environments.md`.
+Clutter becomes one hosted product (B0) where users link their own clouds (world 2.1) and deploy one diagram to any of them: AWS through A today, and every cloud through B's connectors, OpenStack first (ADR-013, ADR-014). Make A safe first, build B beside it, then run it all in one cloud environment (ADR-015). C is A + A2 + B (ADR-011).
+
+- Design: `docs/architecture/system-b-adapter-layer.md`.
+- Build order: `docs/architecture/implementation-plan.md`.
+- What exists: `docs/architecture/system-a-as-built.md`.
+- Decisions: ADR-001 to ADR-028 in `docs/decisions.md`.
+- Environments: `docs/architecture/environments.md`.
 
 ## Where it stands
 
-- Work happens in the fork (`origin`, `FayzanT/re-clutter`) and merges by pull request into the client's `Alberta2514640/clutter` (`upstream`). The fork's `main` has the harness, docs, devserver, Terraform preview and deploy command; the client's `main` stops at PR #96 and is 5 commits behind.
-- The `impl/b0` branch holds stage 1 and stages 3 to 6 (with 6b), and stage 7 in code. It is not merged yet; it goes to `main` in one pull request. Before that merge, a last commit on the branch removes the branch name from the docs (every "on `impl/b0`"), so `main` says only what is true there.
-- The design follows the team's plan (`docs/architecture/system-b-team-plan/`), revised 2026-11-13: Option 1 (ADR-006); B0 first (ADR-007); users' own accounts only (ADR-013); one diagram with many deployments, and an AWS connector in B that reuses A's templates (ADR-014); General first, a family of connectors with OpenStack (tested on DevStack) as its first provider (ADR-008, ADR-014). Live collaboration is another team's work. Patrii is low priority until it opens its API.
-- Neither PatriCloud nor TierHive has a public API today. Patrii: REST API and Terraform provider "coming soon" (`docs/research/patricloud/2026-10-26-patricloud-research.md`). TierHive: an alpha NAT VPS host whose API ships with its beta, "later in 2026 or early 2027" (`docs/research/tierhive/2026-10-30-tierhive-research.md`). Both wait for an API; General, which is how most new clouds arrive (`system-b-adapter-layer.md` § General), does not.
-- Local check results, with their dates, are owned by `backend/README.md` and `frontend/clutter/README.md`. On 2026-11-14 everything passes except `terraform fmt` on 6 of A's platform files.
-- The capstone's AWS hosting is gone (the API host is NXDOMAIN). A runs locally through `backend/devserver` (ADR-009), including a local S3: saving a diagram generates real Terraform, and all five resource types validate. The smoke test covers all 32 routes at 0 fail, and B's 32 checks pass (counts in `backend/devserver/README.md`). Deploy and running Ansible need the client's AWS account (`docs/architecture/environments.md`, ADR-015).
-- All 24 `upstream` branches are merged into `main` or stale, except `dev` (CI `actions/checkout` v6) and `database-seed` (an abandoned DynamoDB seed).
-- Waiting on the client: the list in § What we need from the client. Only stage 7 waits on it.
+- Work happens in the fork (`origin`) and merges by pull request into the client's repo (`upstream`). The client's `main` stops at PR #96, behind the fork's `main`.
+- Stages 1 to 6 (with 5b and 6b) are built and tested locally, AWS on LocalStack and OpenStack on DevStack.
+- Clutter on a laptop has deployed every example into a real AWS account and VEXXHOST (`docs/reports/2026-11-20-real-cloud-verification.pdf`). That run confirmed the customer role (ADR-027).
+- A's runner fixes still need Clutter hosted in AWS. Stage 7 is written in code and waits for the client's accounts.
+- Locally, A runs through `backend/devserver` (ADR-009). Deploy and running Ansible in A need the client's AWS account.
+- In flight: the website redesign (ADR-028) on `impl/ux-redesign`, not committed. Its local baseline passes: every example and block field on LocalStack and DevStack, and every check (`frontend/clutter/README.md` § Last browser check).
+- The redesigned site passed a real-cloud round on 2026-11-21 (real AWS and VEXXHOST, from a laptop): live updates, a split deployment, custom code, scaling and the ten-minute demo (`docs/demo.md`), with both clouds empty after. The dark theme is navy, and the landing media show it.
+- Waiting on the client: § What we need from the client. Only stage 7 waits on it.
+- Patrii and TierHive wait for a public API (`system-b-adapter-layer.md`). Patrii integration testing waits for it too (`test-suites/README.md`).
 
 ## Next
 
 ### The order
 
-The stages, their work, tests and "done when" are in `docs/architecture/implementation-plan.md`. Status:
+The stages, their work, tests and "done when" are in `docs/architecture/implementation-plan.md`.
 
-| Stage | Status |
-| --- | --- |
-| 0. Housekeeping: client repo up to date, decisions recorded, questions sent | decisions recorded (ADR-013 to ADR-024); design checked on 2026-11-13 (independent review, AWS template spike, DevStack test); merged into the fork's `main` (PR #4). Open: the client pull request and the message to the client |
-| 1. Make A safe (phase 0, below) | done in code on `impl/b0`: items 1 to 7, 10, 6b to 6d; item 8 decided (ADR-019); the JWT check in `generic.VerifyUserJWT`; the region from the environment (`generic.PlatformRegion`); the template code in `generic/tftemplate` (the golden test is byte-identical before and after). Open: item 9, and a real AWS deploy to confirm items 7 and 10 |
-| 2. A test cloud on the laptop (DevStack) | proven on one laptop (2026-11-13). The setup is in the repo: `npm run devstack -- create` makes the VM from `backend/devserver/devstack/` and installs DevStack, `credential` prints the values for the Connections page, and `npm run doctor` checks that the Mac reaches DevStack; the guide is `backend/devserver/README.md` § OpenStack on this machine (DevStack). Open: `create` and `credential` have not run on a fresh Mac yet |
-| 3. B's core | done on `impl/b0`: `backend/adapter` and `adapter-tables.sql`; the mock connector passes the contract tests; cross-tenant cases are refused; credentials never reach logs or responses; A2 starts B on `127.0.0.1:8790`, and `ADAPTER_CONNECTORS` has no default, so the hosted service never offers the mock by accident. Open: clean-up of orphaned secrets and state, idempotency keys, `role_template_version` on connections, single-instance `FailInterrupted` |
-| 4. General's OpenStack connector | built on `impl/b0` (`backend/adapter/connectors/generalopenstack`: contract tests, 29 hostile inputs, `terraform validate` with provider 3.4.0 on three renders; registered in B and enabled in A2). Its real test passed on 2026-11-13: `TestRealCloud`, run inside the DevStack VM with an application credential, planned 14 resources, built the VM, network, firewall and volume, destroyed them, and left nothing (39 s). Lists of flavors, images and external networks come from the user's cloud (`OptionLister`). The same run from the browser passed on 2026-11-14: a connection to DevStack verified, the flavor, image and external network lists matched the cloud, and deploy built 10 resources and destroy removed them, leaving DevStack as it was (the Mac reaches the VM once Local Network is on for the app that runs the stack). Open: `https` required for auth URLs in the cloud |
-| 5. The AWS connector | built on `impl/b0` (`backend/adapter/connectors/aws`): A's five templates through `generic/tftemplate`, changed only by stage 1 (escaping, item 7's role path and boundary, and the API Gateway fixes); three new templates (network, firewall, volume) uploaded by the platform Terraform; B's own edge-to-IAM step without A's four defects; the deployment id in every address and name; uploaded function code; A's linked roles listed at `.../linked-accounts`; `terraform validate` on five renders including two deployments of one diagram; `cfn-lint` clean on the dual-trust role, `RoleTemplateVersion` 8. Locally, `ADAPTER_AWS_STS=local` verifies a well-formed role and stops every run with "needs a real AWS account"; with LocalStack running, runs apply. Open: function environment variables (no map field type), the role-template version of A's existing rows, and the B runner role in the trust policy must exist before a stack names it (stage 7) |
-| 6. The frontend and the whole flow | built on `impl/b0`: B's editor (chosen by `engine: "blocks"`), the Connections page with one-click linked AWS accounts, the deploy panel (compatibility, exclusions, settings, preview, plan, deploy, destroy, logs), "New diagram" makes a building-block diagram, and an organization switcher. A headless browser ran the local demo on a wiped stack (screenshots checked by the lead). A run that fails before the cloud leaves the deployment's status alone (`connectors.ErrNothingBuilt`). Every feature ran end to end from the browser on 2026-11-14, AWS through LocalStack and OpenStack through DevStack. Open: "New diagram" makes two calls because A's diagram create ignores `data` |
-| 5b. Second review of B (2026-11-13) | fixed on `impl/b0`: AWS connections only from a linked role of the caller's organization (pasted external ids refused); the Terraform check parses HCL and allow-lists providers, also through a per-run CLI config; OpenStack verification refuses private and metadata addresses and plain http unless A2's local flag is set; every failure before the cloud is "nothing was built"; at most 3 active runs per organization; a permissions boundary on every role Clutter creates in a customer's account; run tasks sit in their own subnets whose network ACL refuses private, shared and link-local addresses, and the run task refuses an OpenStack auth URL whose host resolves to one. Open: the role-template version of a linked role is unknown (A does not record it; every stack at launch is the current template, so this matters only after the first template change); a bounded role's trust policy cannot be limited by IAM conditions; real AWS must confirm the network ACL |
-| 6b. No manual steps (pulled forward from stage 8, the person's call on 2026-11-13) | done on `impl/b0`: cloud icons and a "View as" switch (ADR-022); B's function code store; server setup through cloud-init (`startup_script` on every VM); OpenStack `clouds.yaml` upload and lists from the user's cloud; one diagram split across clouds in one deployment (ADR-020; scoped AWS keys created and destroyed on LocalStack); real AWS-shaped deploys on LocalStack (B: 51 resources for every block and edge; A: the three golden fixtures, after two fixes to A's API Gateway template; plan in `docs/research/aws/2026-11-13-localstack.md`); the landing page with `/privacy` and `/terms` (drafts for the client's lawyer), its screenshots, "View as" demo and demo clip; the new Clutter mark; the website hosted by the platform Terraform (ADR-023); the naming pass (paths, settings and code say "adapter", and the `/v1` naming rule is written once in `system-b-adapter-layer.md` § The inbound standard); a simple local start (`npm run doctor`, `setup`, `dev` and the one-command extras). Open: real clouds must confirm IAM enforcement, external ids, cloud-init and real EC2 (the test account); A's deployer image and Ansible did not run on LocalStack; the landing page scores 94 for performance on phones (accepted 2026-11-14: the last point needs Next's experimental `inlineCss`, which is global and costs returning users their cached stylesheet; `frontend/clutter/README.md`). Done on 2026-11-14: the landing screenshots and clip retaken from the polished app; the UX and visual polish pass (a fresh reviewer read 73 screenshots, one lane fixed all 25 findings, with before and after screenshots and no sideways scroll on phones); the real DevStack run through B's API; a final review; the docs and figures pass (wording and stale facts in progress on 2026-11-14; every figure redrawn to the code as built, a new figure of C (ADR-021), and the editor screenshot in the README, by the figures lane); then one pull request |
-| 7. The cloud | written in code on `impl/b0`: B on Fargate, one Fargate task per run, B's state bucket with S3's lock file, the run and state buckets, the images, and the website's service. Applying it needs the client's accounts |
-| 8. More targets | later |
+| Stage | Status | Open |
+| --- | --- | --- |
+| 0. Housekeeping | Done: decisions recorded, merged into the fork's `main` | The pull request to the client's repo, and the message to the client |
+| 1. Make A safe (phase 0, below) | Done in code, except item 9 | Item 9. A real AWS deploy of A's runners to confirm item 10. The rest: § Open defects in A |
+| 2. A test cloud on the laptop (DevStack) | Done: `npm run devstack` (`backend/devserver/README.md` § OpenStack on this machine (DevStack)) | An Intel Mac and Linux are untested; `create` is macOS-only |
+| 3. B's core | Done: `backend/adapter` and `adapter-tables.sql` | Clean-up of orphaned secrets and state. Idempotency keys. `role_template_version` on connections. Single-instance `FailInterrupted` |
+| 4. General's OpenStack connector | Done: tested on DevStack and VEXXHOST | Require `https` for auth URLs in the cloud |
+| 5. The AWS connector | Done: tested on LocalStack and a real AWS account | The role-template version of A's existing rows. The B runner role in the trust policy must exist before a stack names it (stage 7). When a VM with a mounted volume is replaced, the volume is detached from the running VM and can stay busy until the 5-minute timeout (`stop_instance_before_detaching` would fix it, but also stops a VM when only a volume is removed: a team decision). Removing a VM's network link does not replace the VM (`subnet_id` is optional and computed), so destroying that network then fails |
+| 5b. Second review of B | Done | A linked role's role-template version is unknown, because A does not record it (this matters only after the first template change). A bounded role's trust policy cannot be limited by IAM conditions. Real AWS must confirm the run tasks' network ACL |
+| 6. The frontend and the whole flow | Done | "New diagram" makes two calls, because A's diagram create ignores `data`. Optional: a last refresh in `useDiagramDeployments`. "Recent runs" lists only runs seen since the page opened, because B returns only the latest run and the last deploy (needs a B route). The editor caps block names at 32 characters while B accepts 64 |
+| 6b. No manual steps | Done | A's deployer image and Ansible did not run on LocalStack; they need Clutter hosted |
+| 7. The cloud | Written in code. World 2 works from a laptop (`npm run real-aws`, and any real OpenStack project) | Applying it needs the client's accounts. Not yet proven: hosting (world 1), Fargate runs and S3 state |
+| 8. More targets | Later | |
 
 Done for A means the 12-step test in `docs/architecture/environments.md` passes in the cloud. Done for the plan means the demo in `docs/architecture/system-b-adapter-layer.md` § What the user sees runs in the cloud.
 
 ### How the team uses this file
 
-- **Claim a task** by putting your name in its Owner cell, in the first commit of your branch, and open a draft pull request right away so others see it. Unclaim the same way.
+- **Claim a task** by telling the team which item you are on, and open a draft pull request right away so others see it (root `README.md` § How we work).
 - **Edit only your own rows**, plus the "Where it stands" line your merged work changes. Small edits to separate lines merge cleanly; never rewrite the whole file on a feature branch.
 - **Whoever merges a pull request** updates the task's Status to done and moves any new defect into "Open defects".
 
 ### Phase 0: make the seams safe
 
-These are stage 1, done before B's stages 3 to 6, in the order `docs/architecture/implementation-plan.md` § Stage 1 sets. Items 1 to 6 can be finished and checked locally; items 7 to 10 change A's AWS behaviour and are finished in code locally, then confirmed on the first AWS deploy.
+Phase 0 is stage 1 (`docs/architecture/implementation-plan.md` § Stage 1). Items 1 to 8 and 10 are done in code. What changed is in `docs/architecture/system-a-as-built.md` § What changed since the capstone. One item is open:
 
 | # | Task | Done when | Owner | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Authenticate `POST /terraform-engine`, make save and compile one authenticated sequence, and decide whether `GET /resources` stays public | the smoke test shows `POST /terraform-engine` refused without a valid caller; a handler test covers it | auth lane (ADR-018) | done on `impl/b0`: the JWT authorizer and the ownership check; `GET /resources` stays public on purpose |
-| 2 | Row-level security: enable it on every table in `backend/storage-sql`, with policies that keep each organization's rows to its members, and fix the `anon` policy on `supported_resources` | in the devserver's Postgres, the `anon` role can read no user, organization or account row; the smoke test stays at 0 fail | lead | done on `impl/b0` |
-| 3 | Validate and escape every canvas value before it reaches a template: allow-lists for enumerated fields, a name pattern, HCL escaping for free text including `${` and `%{` | generator tests (reading templates from disk) reject a bad name, an out-of-list value, `"`, `${` and a newline; valid diagrams still render | generator lane | done on `impl/b0`: allow-lists beside each generator; Lambda runtimes owned by `generic/lambda_runtimes.go` |
-| 4 | Set `GOOGLE_CLIENT_ID` on the log-in Lambda in `backend/infra/main.tf` and check `email_verified` in the handler | the devserver's route test passes with the new environment key; a handler test rejects a token with the wrong audience and an unverified email | lead and auth lane | done on `impl/b0` |
-| 5 | Ownership checks on every child id through one shared helper in `generic` (recent-activity, terraform-command-runner, code-upload, logs/live, ansible list-jobs) | a test per handler shows a member of organization X gets 403 or 404 for organization Y's project, diagram or run; the smoke test stays at 0 fail | auth lane | done on `impl/b0`; `logs/live` checks the task's overrides after `DescribeTasks` (a `task_arn` column, to check first, goes with item 10) |
-| 6 | Go tests green offline (put the live-S3 tests behind a build tag, fix the nil-connection panic), and remove the package exclusion in `.github/workflows/checks.yml` | `go -C backend/api test ./...` exits 0 with no AWS credentials, and the checks workflow runs every package | lead | done on `impl/b0` |
-| 6b | Update the frontend's packages: `npm audit` reported 21 issues (2 critical, 14 high), including Next.js itself, and `zod` and `sharp` directly | `npm audit` shows no critical or high issue in a package the app ships; type-check, lint, build and a browser check still pass | lead | done on `impl/b0`: next 16.4.6, sharp 0.35.5, zod 4.6.7 and transitive fixes; `npm audit --omit=dev` 0 vulnerabilities. `eslint-config-next` stays 16.0.1: newer versions add React Compiler lint errors in six of A's screens |
-| 6c | Generation bug: API Gateway with CORS off renders invalid Terraform | `terraform validate` passes for API Gateway with CORS off | generator lane | done on `impl/b0` |
-| 6d | `GetOutputs` hides template failures in all five generators, and `POST /terraform-engine` error bodies leak paths and SDK text | a failed output template fails the run; a test shows a generic error body | generator and auth lanes | done on `impl/b0` |
-| 7 | Narrow the customer role (`client_side_terraform_deployer_role.yaml`) to the actions the templates use | the policy lists named actions, no `*` on `iam`, `s3`, `ec2` or `ssm`; confirmed by a deploy in AWS later | lane: customer role and runner | done in code on `impl/b0`: named actions per service, IAM limited to the templates' role and profile names and two AWS managed policies, `RoleTemplateVersion` 8, `cfn-lint` clean; A's IAM step uses inline read-only role policies. The role changes or deletes only resources tagged `ManagedBy` (EC2, Lambda, DynamoDB, API Gateway), creates them only with that tag, and never adds it to a resource that lacks it, so it cannot tag the owner's instance `ManagedBy = Ansible` to reach it over SSM; both providers' `default_tags` set `ManagedBy = Clutter`. S3 bucket actions stay untagged (no bucket ABAC in provider 5.x). Roles carry the roles' boundary, and scoped-key users carry the narrower users' boundary (reads only on `c????????-*` buckets and tables). Real AWS must confirm: PassRole on instance profiles, the SSM document ARN, tag-on-create on every create, `aws:ResourceTag` on Lambda and DynamoDB tag-on-create, API Gateway children's tag inheritance, and that `/tags` is not checked on a create with tags. A's EC2 and Lambda roles sit under `/clutter/` with the boundary, so an A deployment made before this would replace those roles on its next apply, and an account linked with an older stack must update the stack first. Resources built before the `ManagedBy` default tag lack it, so a version 8 role cannot change or destroy them. No account is linked today, so nothing breaks now |
-| 8 | Verify a role ARN with STS before storing it in `submit-role-arn` | a handler test with a stubbed STS client rejects an ARN it cannot assume; confirmed in AWS later | lead | decided (ADR-019): B verifies with STS when a linked role becomes a connection and before each run; A keeps its format checks, so the customer role trusts no third principal |
 | 9 | A lock on customer Terraform state (an S3 backend with locking instead of the synced local file) | the deployer's generated backend block has locking; two parallel runs on one diagram are refused, confirmed in AWS later | free | open |
-| 10 | A's runner: stop handing it `PSQL_CONNECTION_STRING` (report status through the API instead), and start one task per run with only that run's role and external id | the runner's task definition and overrides contain no database string; a test shows one run cannot read another's credentials; confirmed in AWS later | lane: customer role and runner | done in code on `impl/b0` for both runners: no database string in the deployer or the Ansible runner (task definitions, overrides, images); each writes a status file to S3, and the API's read routes record it after their ownership checks (a file must name its own job and log key); a failed start is marked FAILED. Real AWS must confirm the S3 writes. Open, in § Open defects in A: the shared task role and the SQS message body |
-
-Then stages 2 to 6 (`docs/architecture/implementation-plan.md`).
 
 ## Open defects in A
 
-Fixed in code on `impl/b0` and still open on the client's `main` until it merges (what changed is in `docs/architecture/system-a-as-built.md` § What changed): the unauthenticated generation endpoint, template injection through `${...}`, row-level security, the customer role's wildcards, the Google audience and `email_verified` checks, the log-in handler's panic on a missing claim, ownership checks that stopped at membership (`recent-activity`, `terraform-command-runner`, `code-upload`, `logs/live`, `ansible/list-jobs`), the Lambda runtime mismatch, a "reads" edge that granted writes, the IAM step's wrong API Gateway type, API Gateway with CORS off, `GetOutputs` hiding failures, error bodies with paths and SDK text, the generator's `s3_path` without `terraform/`, the generator's dead code, the database string in both runners, a deploy row left `RUNNING` after a failed start, `code-upload` putting an unchecked name into the S3 key, API Gateway's own 403 without CORS headers, the recent-activity Lambda's log permission, image tags pushed as `:latest`, the Google client id written into the frontend, the frontend's Ansible polling that never stopped, and the frontend's dead `/register`, stub pages, mock members and first-organization pages.
+The defects stage 1 fixed in code stay open on the client's `main` until the fork's `main` reaches it. `docs/architecture/system-a-as-built.md` § What changed since the capstone lists them.
 
 Still open, verified at the code:
 
-- **Shared runner role (high).** A's deployer and Ansible runner share one task role that may assume any customer's Clutter role (`AllowClutterToDeployTerraformRole-*` in any account; the external id, which a run knows only for its own organization, is the guard) and may read and write the whole Clutter bucket. So one run can read or overwrite another customer's state and logs. Only a per-run role closes it, as B's runner has; A's AWS path retires after B covers it.
-- **The Ansible job's SQS message body carries the role ARN and external id,** so anyone who can read the queue gets them for every job. High.
-- Customer state is a local file synced to S3 without a lock (phase 0 item 9). Generated code and state for every customer sit in Clutter's own bucket, in the platform's region.
-- No invite route exists; an organization has only its creator. Any member can delete an organization (no role column).
+- **Shared runner role (high).** A's deployer and Ansible runner share one task role. It may assume any customer's Clutter role (`AllowClutterToDeployTerraformRole-*` in any account), and it may read and write the whole Clutter bucket. The external id, which a run knows only for its own organization, is the only guard. So one run can read or overwrite another customer's state and logs. Fix: a per-run role, as B's runner has. A's AWS path retires after B covers it.
+- **The Ansible job's SQS message body carries the role ARN and external id (high).** Anyone who can read the queue gets them for every job. No fix is chosen yet. Sending only the job id does not work alone: since stage 1 the runner has no database access, so it cannot look the role up. The fix belongs with the per-run role above (the run's own role, with only that run's values).
+- **Customer state has no lock.** It is a local file synced to S3 (phase 0 item 9). Generated code and state for every customer sit in Clutter's own bucket, in the platform's region.
+- **Unconfirmed until Clutter is hosted:**
+  - The runners' status files: each runner writes a status file to S3 instead of using the database string, and real AWS must confirm those writes (item 10).
+  - The SSM document ARN in the customer role, because Ansible runs only once Clutter is hosted (item 7).
+- **Customer role upgrades (item 7).**
+  - A's EC2 and Lambda roles now sit under `/clutter/` with the boundary. An A deployment made before that would replace those roles on its next apply.
+  - An account linked with an older stack must update the stack first.
+  - Resources built before the `ManagedBy` default tag lack it, so a version 8 or later role cannot change or destroy them.
+  - No user's account is linked in production today, so nothing breaks now.
+  - S3 bucket actions stay untagged, because provider 5.x cannot switch on bucket ABAC.
+- **Any member can delete an organization.** No invite route exists, so an organization has only its creator. A's delete handler checks membership only, and the website's Danger zone shows Delete to every member. Fix: team roles (an owner role in the database, checked by the delete handler, with the Danger zone shown only to owners).
 - A's frontend command type offers `plan`; A's backend accepts only `apply` and `destroy`.
 - The frontend's route guard lets any `clutter_token` cookie value through; it never verifies the token. Low impact (page shells only; data needs a real JWT).
 - A2's local run signs in with the capstone team's Google client id (`backend/devserver`); the cloud takes the client's own from `google_client_id`.
-- No deploy sends a region: the account-link page opens AWS in `ca-central-1`, but `runTerraform` sends none, so every deploy runs in the platform's region (`generic.DefaultRegion`). The `us-east-1` default is in the API Gateway JSON model, which API Gateway does not apply.
+- **No deploy sends a region.** The account-link page opens AWS in `ca-central-1`, but `runTerraform` sends none, so every deploy runs in the platform's region (`generic.DefaultRegion`). The `us-east-1` default is in the API Gateway JSON model, which API Gateway does not apply.
 - `submit-role-arn` stores the ARN with only a format check; B checks the role with STS when it becomes a connection (ADR-019).
 - JWT: no `iss` or `aud` claim, and validation is done by hand in `generic.VerifyUserJWT`. An empty secret is refused.
+- `logs/live` checks a task's overrides after `DescribeTasks`, not before. A `task_arn` column on `diagram_deployment_logs` would let it check first.
 - `role_arn` is in `ansible/list-jobs`'s response code but never written.
-- Canvas drift: the Lambda `memory_size` choice is ignored (the config panel sends strings and the generator reads numbers, so it is always 128); the code-upload handler is never saved, so Node and Python functions keep `handler = "main"`; the seed's default runtime is `provided.al2` and the generator's is `provided.al2023`.
+- **Canvas drift.**
+  - The Lambda `memory_size` choice is ignored: the config panel sends strings and the generator reads numbers, so it is always 128.
+  - The code-upload handler is never saved, so Node and Python functions keep `handler = "main"`.
+  - The seed's default runtime is `provided.al2`, and the generator's is `provided.al2023`.
 - `ansible/submit-job` reports every S3 error as 404 "playbook not found". `POST /terraform-engine` returns 400 "completed with errors" when its templates cannot load, so a platform failure looks like a user error.
 - The editor's "save to refresh" needs a change first, because Save is disabled on a clean diagram. Diagrams written through the API load as unsaved, so Preview stays disabled until Save.
-- From the 2026-11-13 template spike: an API Gateway to Lambda edge never routes traffic, because A's API Gateway template renders no method or integration for the target Lambda and the IAM step only grants the invoke permission; that permission uses a fixed `statement_id`, so AWS rejects a second API on the same function at apply time; A's Lambdas get no basic execution role, so they cannot write logs; the EC2 template pins an x86 image, so an ARM instance type fails.
+- **A's templates.**
+  - An API Gateway to Lambda edge never routes traffic: A's API Gateway template renders no method or integration for the target Lambda, and the IAM step only grants the invoke permission.
+  - That permission uses a fixed `statement_id`, so AWS rejects a second API on the same function at apply time.
+  - A's Lambdas get no basic execution role, so they cannot write logs.
+  - The EC2 template pins an x86 image, so an ARM instance type fails.
+- `eslint-config-next` stays at 16.0.1: newer versions add React Compiler lint errors in six of A's screens.
 - Minor: the Terraform branch of `ansible/run-task` is dead code; `application-tables.sql` fails on a re-run (`CREATE TYPE`).
-
-Closed: the audit suspected AWS keys were committed in `ac90930`. That commit added `.vscode/.bashrc` and a `.gitignore` entry only; no AWS key pattern appears in the tree or any commit.
 
 ## Not planned yet
 
@@ -104,6 +113,14 @@ Needed before real users, and not yet designed. Decide each before prod, with th
 - **Abuse and limits:** rate limits, and a cap on deploys, because each one runs a paid worker (B allows at most 3 active runs per organization).
 - **Template changes:** a template or provider version change can alter what an already-deployed diagram does on its next deploy.
 - **Audit log:** who deployed or destroyed what, and when.
+
+## Later ideas
+
+Not planned or designed yet. Each would be a manifest change in every connector that builds it.
+
+- **Write links:** a link that lets a function write to a bucket or a table, beside today's read links.
+- **A load balancer block.**
+- **A managed database block.**
 
 ## What we need from the client
 
@@ -124,7 +141,7 @@ One message, in one go. Defaults in brackets.
 
 ## Open questions
 
-Each has a default we act on until someone answers, and the person or source that settles it. Answered 2026-11-13 and recorded: B0 first (ADR-007), one diagram with many deployments (ADR-014, replaces "one cloud per diagram"), one cloud environment in `ca-central-1` (ADR-015), where credentials are stored (ADR-016), and that the client owns the accounts (§ What we need from the client).
+Each has a default we act on until someone answers, and the person or source that settles it. Answered questions are recorded as ADRs.
 
 | # | Question | Until answered, we | Settled by |
 | --- | --- | --- | --- |
@@ -135,7 +152,7 @@ Each has a default we act on until someone answers, and the person or source tha
 | 5 | Where does Terraform state go in B? | in the user's storage when their target has any, otherwise ours, encrypted and locked | the team, in stage 3 |
 | 6 | Does the other team's live collaboration need anything from the diagram document or B API? | keep the document's shape stable and tell them before changing it | the other team |
 | 7 | Should CI move to `actions/checkout` v6, as the client's `dev` branch does? | yes, the next time CI changes | the team |
-| 8 | Are ADR-001 to ADR-024 accepted? Only ADR-012 is. | act on them as written | the team, in one review; the client for scope and hosting (ADR-004, ADR-007, ADR-013, ADR-015) |
+| 8 | Are ADR-001 to ADR-028 accepted? Only ADR-012 is. | act on them as written | the team, in one review; the client for scope and hosting (ADR-004, ADR-007, ADR-013, ADR-015) |
 | 9 | Should removing a linked AWS account in A also remove the connections made from it? Today a connection keeps its own copy of the role and keeps working until the user deletes the stack in their account. | keep them separate; the Connections page lists each connection with its own Remove | the team |
 | 10 | The landing page lists which blocks each cloud builds, a copy of the connectors' manifests. | change the landing copy in the same change as a manifest | the team |
-| 11 | In A's editor a node placed at the top edge (the seeded S3 node, at y = 0) sits under the floating Back and Save toolbar, and the seeded diagram opens with Save on and Deploy off until it is saved once. Both were there before `impl/b0`. | leave A's editor as it is until C replaces it (ADR-021); a fix is a fit-to-view on load | the team |
+| 11 | In A's editor a node placed at the top edge (the seeded S3 node, at y = 0) sits under the floating Back and Save toolbar, and the seeded diagram opens with Save on and Deploy off until it is saved once. Both come from the capstone's code. | leave A's editor as it is until C replaces it (ADR-021); a fix is a fit-to-view on load | the team |

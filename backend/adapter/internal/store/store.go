@@ -7,12 +7,16 @@
 // diagram's project. The job runner's writes (RunStarted, RunFinished,
 // RunParts, SetDeploymentStatus) and FailInterrupted take no organization:
 // they act only on runs B itself queued, after the request that queued them
-// was scoped, and no request reaches them.
+// was scoped. One request reaches RunFinished: when the queue refuses a run,
+// the create-run handler fails the run it made a moment before with the
+// scoped CreateRun, so the id is never one the caller sent. No other request
+// reaches them.
 package store
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -61,19 +65,28 @@ func (s *Store) ApplySchema(ctx context.Context, sql string) error {
 
 // Connection is a connections row.
 type Connection struct {
-	ID                  string
-	OrganizationID      string
-	ConnectorID         string // column connector_type
-	Name                string
-	Region              string
-	Status              string
-	StatusDetail        *string
-	SecretRef           string
+	ID             string
+	OrganizationID string
+	ConnectorID    string // column connector_type
+	Name           string
+	Region         string
+	Status         string
+	StatusDetail   *string
+	SecretRef      string
+	// RoleTemplateVersion is the access template version a linked account
+	// reported (connectors.LinkedCredentials.TemplateVersion), or nil when it
+	// is not known. It is kept so a later template change can tell which
+	// connections must update. Nothing reads it back yet, and the aws
+	// connector never supplies one.
 	RoleTemplateVersion *string
 	CreatedBy           string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	VerifiedAt          *time.Time
+	// Diagrams is how many diagrams have a deployment that builds on the
+	// connection, as its own or through a placement. Deleting the connection
+	// removes those deployments.
+	Diagrams int
 }
 
 // Connection statuses.
@@ -83,13 +96,20 @@ const (
 	ConnectionDeleting = "deleting"
 )
 
+// connectionColumns are read from the connections table, unaliased, in every
+// statement that uses them. The diagram count reaches only deployments on
+// this connection, which belong to its organization (CreateDeployment,
+// insertPlacements).
 const connectionColumns = `id, organization_id, connector_type, name, region, status, status_detail,
-	secret_ref, role_template_version, COALESCE(created_by::text, ''), created_at, updated_at, verified_at`
+	secret_ref, role_template_version, COALESCE(created_by::text, ''), created_at, updated_at, verified_at,
+	(SELECT count(DISTINCT dd.diagram_id) FROM deployments dd
+		WHERE dd.connection_id = connections.id OR EXISTS (
+			SELECT 1 FROM deployment_placements ddp WHERE ddp.deployment_id = dd.id AND ddp.connection_id = connections.id))`
 
 func scanConnection(row pgx.Row) (Connection, error) {
 	var c Connection
 	err := row.Scan(&c.ID, &c.OrganizationID, &c.ConnectorID, &c.Name, &c.Region, &c.Status, &c.StatusDetail,
-		&c.SecretRef, &c.RoleTemplateVersion, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.VerifiedAt)
+		&c.SecretRef, &c.RoleTemplateVersion, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt, &c.VerifiedAt, &c.Diagrams)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Connection{}, ErrNotFound
 	}
@@ -207,8 +227,11 @@ type Deployment struct {
 	Settings     map[string]any
 	Exclusions   []string
 	Status       string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ConfigVersion counts the changes to its settings, exclusions and
+	// placements (UpdateDeployment), so it can be compared with a run's.
+	ConfigVersion int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 
 	ConnectorID string // the connection's connector_type
 	Region      string
@@ -322,9 +345,10 @@ func placementsOf(ctx context.Context, db q, orgID string, deploymentIDs []strin
 }
 
 // CreateDeployment binds a diagram to one of the organization's connections,
-// with its blocks placed on others. The caller has proved the diagram belongs
-// to orgID; the inserts prove every connection does. It returns ErrNotFound
-// for another organization's connection and ErrExists for a second deployment
+// with its blocks placed on others. The inserts prove that the diagram's
+// project and every connection belong to orgID, so a caller that skipped its
+// own check still inserts nothing. It returns ErrNotFound for another
+// organization's diagram or connection and ErrExists for a second deployment
 // of the same pair.
 func (s *Store) CreateDeployment(ctx context.Context, orgID, createdBy string, d Deployment) (Deployment, error) {
 	if d.Settings == nil {
@@ -341,9 +365,11 @@ func (s *Store) CreateDeployment(ctx context.Context, orgID, createdBy string, d
 	row := tx.QueryRow(ctx, `
 		INSERT INTO deployments (id, diagram_id, connection_id, settings, exclusions, status, created_by)
 		SELECT $1, $2, c.id, $4, $5, 'new', $6
-		FROM connections c
+		FROM connections c, diagrams g
+		JOIN projects p ON p.id = g.project_id
 		WHERE c.id = $3 AND c.organization_id = $7 AND c.status <> 'deleting'
-		FOR SHARE
+		  AND g.id = $2 AND p.organization_id = $7
+		FOR SHARE OF c
 		RETURNING status, created_at, updated_at`,
 		d.ID, d.DiagramID, d.ConnectionID, d.Settings, d.Exclusions, createdBy, orgID)
 	err = row.Scan(&d.Status, &d.CreatedAt, &d.UpdatedAt)
@@ -376,10 +402,10 @@ const orgScope = `
 func (s *Store) GetDeployment(ctx context.Context, orgID, id string) (Deployment, error) {
 	var d Deployment
 	err := s.Pool.QueryRow(ctx, `
-		SELECT d.id, d.diagram_id, d.connection_id, d.settings, d.exclusions, d.status, d.created_at, d.updated_at,
+		SELECT d.id, d.diagram_id, d.connection_id, d.settings, d.exclusions, d.status, d.config_version, d.created_at, d.updated_at,
 		       c.connector_type, c.region, c.secret_ref, c.name
 		FROM deployments d`+orgScope+` AND d.id = $1 AND c.status <> 'deleting'`, id, orgID).
-		Scan(&d.ID, &d.DiagramID, &d.ConnectionID, &d.Settings, &d.Exclusions, &d.Status, &d.CreatedAt, &d.UpdatedAt,
+		Scan(&d.ID, &d.DiagramID, &d.ConnectionID, &d.Settings, &d.Exclusions, &d.Status, &d.ConfigVersion, &d.CreatedAt, &d.UpdatedAt,
 			&d.ConnectorID, &d.Region, &d.SecretRef, &d.ConnectionName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Deployment{}, ErrNotFound
@@ -399,18 +425,66 @@ func (s *Store) GetDeployment(ctx context.Context, orgID, id string) (Deployment
 // latest run, if any.
 type DeploymentSummary struct {
 	Deployment
+	// ProjectID is the project of the deployment's diagram, in A's projects
+	// table.
+	ProjectID string
 	LatestRun *Run
+	// LastApply is the deployment's latest apply that completed, or nil.
+	LastApply *Run
+	// DiagramVersion is the version of the diagram as saved now (the version
+	// DiagramDocument reads), so it can be compared with LastApply's.
+	DiagramVersion *int
+}
+
+// nullableRun is a run read through a LEFT JOIN, whose columns are all null
+// when the deployment has no such run.
+type nullableRun struct {
+	r                                      Run
+	id, deployment, action, status, logKey *string
+	created                                *time.Time
+}
+
+// run returns the run, or nil when the join found none.
+func (n nullableRun) run() *Run {
+	if n.id == nil || n.deployment == nil || n.action == nil || n.status == nil || n.logKey == nil || n.created == nil {
+		return nil
+	}
+	r := n.r
+	r.ID, r.DeploymentID, r.Action, r.Status, r.LogKey, r.CreatedAt = *n.id, *n.deployment, *n.action, *n.status, *n.logKey, *n.created
+	return &r
 }
 
 // ListDeployments returns one diagram's deployments in an organization, oldest
 // first. The caller has proved the diagram belongs to orgID; the query still
 // scopes each row through its connection and its diagram's project.
 func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([]DeploymentSummary, error) {
+	return s.listDeployments(ctx, orgID, `d.diagram_id = $1`, diagramID)
+}
+
+// ListOrgDeployments returns every deployment in an organization, oldest
+// first, or only those of one project's diagrams when projectID is not empty.
+// The caller has proved the project, if any, belongs to orgID; the query still
+// scopes each row through its connection and its diagram's project.
+func (s *Store) ListOrgDeployments(ctx context.Context, orgID, projectID string) ([]DeploymentSummary, error) {
+	var project *string
+	if projectID != "" {
+		project = &projectID
+	}
+	return s.listDeployments(ctx, orgID, `($1::uuid IS NULL OR p.id = $1::uuid)`, project)
+}
+
+// listDeployments is the one list query behind ListDeployments and
+// ListOrgDeployments. filter is a fixed SQL condition on d, g or p, never a
+// caller's text, and reads its one value as $1; $2 is always orgID.
+func (s *Store) listDeployments(ctx context.Context, orgID, filter string, arg any) ([]DeploymentSummary, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT d.id, d.diagram_id, d.connection_id, d.settings, d.exclusions, d.status, d.created_at, d.updated_at,
-		       c.connector_type, c.region, c.name,
-		       lr.id, lr.deployment_id, lr.action, lr.status, lr.diagram_version, lr.failure, lr.log_key,
-		       lr.created_at, lr.started_at, lr.finished_at, lr.parts
+		SELECT d.id, d.diagram_id, d.connection_id, d.settings, d.exclusions, d.status, d.config_version, d.created_at, d.updated_at,
+		       c.connector_type, c.region, c.name, p.id,
+		       lr.id, lr.deployment_id, lr.action, lr.status, lr.diagram_version, lr.config_version, lr.failure, lr.log_key,
+		       lr.created_at, lr.started_at, lr.finished_at, lr.parts,
+		       la.id, la.deployment_id, la.action, la.status, la.diagram_version, la.config_version, la.failure, la.log_key,
+		       la.created_at, la.started_at, la.finished_at, la.parts,
+		       (SELECT COALESCE(max(h.version), 0) + 1 FROM diagram_history h WHERE h.diagram_id = d.diagram_id)
 		FROM deployments d
 		JOIN connections c ON c.id = d.connection_id
 		JOIN diagrams g ON g.id = d.diagram_id
@@ -418,8 +492,12 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 		LEFT JOIN LATERAL (
 			SELECT r.* FROM runs r WHERE r.deployment_id = d.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1
 		) lr ON true
-		WHERE d.diagram_id = $1 AND c.organization_id = $2 AND p.organization_id = $2 AND c.status <> 'deleting'
-		ORDER BY d.created_at, d.id`, diagramID, orgID)
+		LEFT JOIN LATERAL (
+			SELECT r.* FROM runs r WHERE r.deployment_id = d.id AND r.action = 'apply' AND r.status = 'completed'
+			ORDER BY r.created_at DESC, r.id DESC LIMIT 1
+		) la ON true
+		WHERE `+filter+` AND c.organization_id = $2 AND p.organization_id = $2 AND c.status <> 'deleting'
+		ORDER BY d.created_at, d.id`, arg, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -427,19 +505,18 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 	out := []DeploymentSummary{}
 	for rows.Next() {
 		var d DeploymentSummary
-		var runID, runDeployment, action, status, logKey *string
-		var r Run
-		var created *time.Time
-		if err := rows.Scan(&d.ID, &d.DiagramID, &d.ConnectionID, &d.Settings, &d.Exclusions, &d.Status, &d.CreatedAt, &d.UpdatedAt,
-			&d.ConnectorID, &d.Region, &d.ConnectionName,
-			&runID, &runDeployment, &action, &status, &r.DiagramVersion, &r.Failure, &logKey,
-			&created, &r.StartedAt, &r.FinishedAt, &r.Parts); err != nil {
+		var latest, last nullableRun
+		if err := rows.Scan(&d.ID, &d.DiagramID, &d.ConnectionID, &d.Settings, &d.Exclusions, &d.Status, &d.ConfigVersion, &d.CreatedAt, &d.UpdatedAt,
+			&d.ConnectorID, &d.Region, &d.ConnectionName, &d.ProjectID,
+			&latest.id, &latest.deployment, &latest.action, &latest.status, &latest.r.DiagramVersion, &latest.r.ConfigVersion, &latest.r.Failure, &latest.logKey,
+			&latest.created, &latest.r.StartedAt, &latest.r.FinishedAt, &latest.r.Parts,
+			&last.id, &last.deployment, &last.action, &last.status, &last.r.DiagramVersion, &last.r.ConfigVersion, &last.r.Failure, &last.logKey,
+			&last.created, &last.r.StartedAt, &last.r.FinishedAt, &last.r.Parts,
+			&d.DiagramVersion); err != nil {
 			return nil, err
 		}
-		if runID != nil && runDeployment != nil && action != nil && status != nil && logKey != nil && created != nil {
-			r.ID, r.DeploymentID, r.Action, r.Status, r.LogKey, r.CreatedAt = *runID, *runDeployment, *action, *status, *logKey, *created
-			d.LatestRun = &r
-		}
+		d.LatestRun = latest.run()
+		d.LastApply = last.run()
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {
@@ -468,7 +545,8 @@ func (s *Store) ListDeployments(ctx context.Context, orgID, diagramID string) ([
 // not be left without its blocks. Placements that change only a placed cloud's
 // settings are allowed then. The row lock also holds back a run being inserted (its
 // foreign key needs a share lock on the deployment) until the change commits.
-// A placement on another organization's connection is ErrNotFound.
+// A placement on another organization's connection is ErrNotFound. A real
+// change to any of the three adds one to its config_version.
 func (s *Store) UpdateDeployment(ctx context.Context, orgID, id string, settings map[string]any, exclusions []string, placements *[]Placement) (Deployment, error) {
 	if settings == nil {
 		settings = map[string]any{}
@@ -499,9 +577,9 @@ func (s *Store) UpdateDeployment(ctx context.Context, orgID, id string, settings
 	if active {
 		return Deployment{}, ErrRunActive
 	}
-	if _, err := tx.Exec(ctx, `UPDATE deployments SET settings = $2, exclusions = $3 WHERE id = $1`, found, settings, exclusions); err != nil {
-		return Deployment{}, err
-	}
+	// placed is whether the placements changed: a block moved, or a placed
+	// cloud's settings.
+	placed := false
 	if placements != nil {
 		current, err := placementsOf(ctx, tx, orgID, []string{found})
 		if err != nil {
@@ -515,10 +593,13 @@ func (s *Store) UpdateDeployment(ctx context.Context, orgID, id string, settings
 				if p.Settings == nil {
 					p.Settings = map[string]any{}
 				}
-				if _, err := tx.Exec(ctx, `UPDATE deployment_placements SET settings = $3 WHERE deployment_id = $1 AND connection_id = $2`,
-					found, p.ConnectionID, p.Settings); err != nil {
+				tag, err := tx.Exec(ctx, `UPDATE deployment_placements SET settings = $3
+					WHERE deployment_id = $1 AND connection_id = $2 AND settings IS DISTINCT FROM $3`,
+					found, p.ConnectionID, p.Settings)
+				if err != nil {
 					return Deployment{}, err
 				}
+				placed = placed || tag.RowsAffected() > 0
 			}
 		case live:
 			return Deployment{}, ErrLive
@@ -529,7 +610,17 @@ func (s *Store) UpdateDeployment(ctx context.Context, orgID, id string, settings
 			if err := insertPlacements(ctx, tx, orgID, found, *placements); err != nil {
 				return Deployment{}, err
 			}
+			placed = true
 		}
+	}
+	// A change adds one to config_version in the same statement; a PATCH that
+	// sends what is already saved changes nothing, so no run looks behind.
+	// Exclusions compare as a set, since their order means nothing.
+	if _, err := tx.Exec(ctx, `UPDATE deployments SET settings = $2, exclusions = $3,
+		config_version = config_version + CASE
+			WHEN $4::boolean OR settings IS DISTINCT FROM $2 OR NOT (exclusions @> $3 AND exclusions <@ $3) THEN 1 ELSE 0 END
+		WHERE id = $1`, found, settings, exclusions, placed); err != nil {
+		return Deployment{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Deployment{}, err
@@ -580,12 +671,15 @@ func (s *Store) DeleteDeployment(ctx context.Context, orgID, id string) error {
 }
 
 // DiagramDocument returns the saved document of a diagram in one of the
-// organization's projects, and its latest history version (nil when it has
-// none).
+// organization's projects, and the version of that document. A's save writes
+// the document it replaces to diagram_history as the next version, so history
+// row N holds the document before save N, and the saved document is one past
+// the latest row (1 for a diagram never saved again): the row it becomes on
+// the next save.
 func (s *Store) DiagramDocument(ctx context.Context, orgID, diagramID string) ([]byte, *int, error) {
 	var data []byte
 	var version *int
-	err := s.Pool.QueryRow(ctx, `SELECT g.data::text, (SELECT max(version) FROM diagram_history WHERE diagram_id = $1)
+	err := s.Pool.QueryRow(ctx, `SELECT g.data::text, (SELECT COALESCE(max(version), 0) + 1 FROM diagram_history WHERE diagram_id = $1)
 		FROM diagrams g JOIN projects p ON p.id = g.project_id
 		WHERE g.id = $1 AND p.organization_id = $2`, diagramID, orgID).Scan(&data, &version)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -601,21 +695,24 @@ type Run struct {
 	Action         string
 	Status         string
 	DiagramVersion *int
-	Failure        *string
-	LogKey         string
-	CreatedAt      time.Time
-	StartedAt      *time.Time
-	FinishedAt     *time.Time
+	// ConfigVersion is its deployment's config_version when the run was
+	// made, or nil for a run from before B recorded it.
+	ConfigVersion *int
+	Failure       *string
+	LogKey        string
+	CreatedAt     time.Time
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
 	// Parts is where each cloud of a split run stands, or nil.
 	Parts []jobs.PartProgress
 }
 
-const runColumns = `r.id, r.deployment_id, r.action, r.status, r.diagram_version, r.failure, r.log_key,
+const runColumns = `r.id, r.deployment_id, r.action, r.status, r.diagram_version, r.config_version, r.failure, r.log_key,
 	r.created_at, r.started_at, r.finished_at, r.parts`
 
 func scanRun(row pgx.Row) (Run, error) {
 	var r Run
-	err := row.Scan(&r.ID, &r.DeploymentID, &r.Action, &r.Status, &r.DiagramVersion, &r.Failure, &r.LogKey,
+	err := row.Scan(&r.ID, &r.DeploymentID, &r.Action, &r.Status, &r.DiagramVersion, &r.ConfigVersion, &r.Failure, &r.LogKey,
 		&r.CreatedAt, &r.StartedAt, &r.FinishedAt, &r.Parts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Run{}, ErrNotFound
@@ -669,14 +766,14 @@ func (s *Store) CreateRun(ctx context.Context, orgID, createdBy string, r Run, m
 	}
 	row := tx.QueryRow(ctx, `
 		WITH ins AS (
-			INSERT INTO runs (id, deployment_id, action, status, diagram_version, log_key, created_by)
-			SELECT $1, d.id, $3, 'queued', $4, $5, $6
+			INSERT INTO runs (id, deployment_id, action, status, diagram_version, config_version, log_key, created_by)
+			SELECT $1, d.id, $3, 'queued', $4, $8, $5, $6
 			FROM deployments d`+orgScope+` AND d.id = $7 AND c.status <> 'deleting'
 			FOR SHARE OF c
 			RETURNING *
 		)
 		SELECT `+runColumns+` FROM ins r`,
-		r.ID, orgID, r.Action, r.DiagramVersion, r.LogKey, createdBy, r.DeploymentID)
+		r.ID, orgID, r.Action, r.DiagramVersion, r.LogKey, createdBy, r.DeploymentID, r.ConfigVersion)
 	out, err := scanRun(row)
 	if generic.IsUniqueViolation(err) {
 		return Run{}, ErrRunActive
@@ -708,15 +805,33 @@ func (s *Store) RunStarted(ctx context.Context, runID string, at time.Time) erro
 	return nil
 }
 
-// RunFinished implements jobs.Store.
-func (s *Store) RunFinished(ctx context.Context, runID string, status jobs.Status, failure string, at time.Time) error {
+// RunFinished implements jobs.Store. The run and, with a change, its
+// deployment change in one transaction, so no reader sees one without the
+// other. A change for another deployment than the run's is refused.
+func (s *Store) RunFinished(ctx context.Context, runID string, status jobs.Status, failure string, at time.Time, change *jobs.DeploymentChange) error {
 	var f *string
 	if failure != "" {
 		f = &failure
 	}
-	_, err := s.Pool.Exec(ctx, `UPDATE runs SET status = $2, failure = $3, finished_at = $4 WHERE id = $1`,
-		runID, string(status), f, at)
-	return err
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // a no-op after commit
+	var deploymentID string
+	if err := tx.QueryRow(ctx, `UPDATE runs SET status = $2, failure = $3, finished_at = $4 WHERE id = $1 RETURNING deployment_id`,
+		runID, string(status), f, at).Scan(&deploymentID); err != nil {
+		return err
+	}
+	if change != nil {
+		if change.ID != deploymentID {
+			return fmt.Errorf("run %s belongs to deployment %s, not %s", runID, deploymentID, change.ID)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE deployments SET status = $2 WHERE id = $1`, deploymentID, string(change.Status)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // RunParts implements jobs.PartRecorder.

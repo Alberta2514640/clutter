@@ -1,0 +1,36 @@
+{
+  "id": "single-server",
+  "name": "Single server",
+  "level": "starter",
+  "description": "One server you can reach, in its own network.",
+  "clouds": ["aws", "general-openstack"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "private-net",
+        "type": "network",
+        "position": { "x": 300, "y": 0 },
+        "width": 260,
+        "height": 160,
+        "data": { "name": "private-net", "fields": { "cidr": "10.0.0.0/24" } }
+      },
+      {
+        "id": "server-fw",
+        "type": "firewall",
+        "position": { "x": 0, "y": 30 },
+        "data": { "name": "server-fw", "fields": { "ingress": "tcp/22, icmp", "source_cidr": "0.0.0.0/0" } }
+      },
+      {
+        "id": "server",
+        "type": "vm",
+        "position": { "x": 340, "y": 50 },
+        "data": { "name": "server", "fields": { "size": "small", "public": true } }
+      }
+    ],
+    "edges": [
+      { "id": "server-on-net", "source": "server", "target": "private-net" },
+      { "id": "fw-on-server", "source": "server-fw", "target": "server" }
+    ]
+  }
+}

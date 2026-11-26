@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/capability"
+	"github.com/Alberta2514640/clutter/backend/adapter/internal/examples"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/jobs"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/logstore"
 	"github.com/Alberta2514640/clutter/backend/adapter/internal/split"
@@ -38,6 +39,21 @@ func (a *API) catalog(w http.ResponseWriter, _ *http.Request) {
 		out = append(out, catalogEntry{Manifest: c.Manifest(), Credentials: c.Credentials(), HasLinkedAccounts: hasLinked})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// examples lists the built-in example diagrams this build can deploy: each
+// keeps only the clouds the registry offers.
+func (a *API) examples(w http.ResponseWriter, r *http.Request) {
+	all, err := examples.All()
+	if err != nil {
+		a.internal(w, r, "read the examples", err)
+		return
+	}
+	items := examples.Fitting(all, func(id string) bool {
+		_, ok := a.Registry.Get(id)
+		return ok
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // listLinkedAccounts lists the accounts the organization linked outside the
@@ -81,6 +97,9 @@ type connectionView struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	VerifiedAt     *time.Time `json:"verified_at"`
+	// Diagrams is how many diagrams deploy to it; deleting it removes those
+	// deployments.
+	Diagrams int `json:"diagrams"`
 }
 
 // connectionOut never carries the secret reference or any credential.
@@ -88,6 +107,7 @@ func connectionOut(c store.Connection) connectionView {
 	return connectionView{
 		ID: c.ID, OrganizationID: c.OrganizationID, Connector: c.ConnectorID, Name: c.Name, Region: c.Region,
 		Status: c.Status, StatusDetail: c.StatusDetail, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, VerifiedAt: c.VerifiedAt,
+		Diagrams: c.Diagrams,
 	}
 }
 
@@ -287,8 +307,9 @@ func (a *API) deleteConnection(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, "mark connection deleting", err)
 		return
 	}
-	// The connection is now hidden. If a step below fails, the tombstone keeps
-	// the secret reference so the clean-up can finish later.
+	// The connection is now hidden. If a step below fails, the row stays
+	// hidden in the deleting state with its secret reference; no job removes
+	// it yet (.claude/findings/NOW.md, stage 3).
 	ctx := context.WithoutCancel(r.Context())
 	if err := a.Credentials.Delete(ctx, row.SecretRef); err != nil {
 		a.internal(w, r, "delete connection credentials", err)
@@ -312,13 +333,18 @@ type deploymentView struct {
 	// Placements are the other clouds some of its blocks sit on (ADR-020).
 	Placements []placementView `json:"placements"`
 	Status     string          `json:"status"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
+	// ConfigVersion counts the changes to its settings, exclusions and
+	// placements; past last_apply's config_version means changes not
+	// deployed yet.
+	ConfigVersion int       `json:"config_version"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 func deploymentOut(d store.Deployment) deploymentView {
 	return deploymentView{ID: d.ID, DiagramID: d.DiagramID, ConnectionID: d.ConnectionID, Settings: d.Settings,
-		Exclusions: d.Exclusions, Placements: placementsOut(d.Placements), Status: d.Status, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
+		Exclusions: d.Exclusions, Placements: placementsOut(d.Placements), Status: d.Status, ConfigVersion: d.ConfigVersion,
+		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
 }
 
 // createDeploymentBody is the body of a new deployment. Its diagram is the one
@@ -399,7 +425,8 @@ func (a *API) createDeployment(w http.ResponseWriter, r *http.Request) {
 		rf.write(w)
 		return
 	}
-	// The inserts prove every connection belongs to this organization.
+	// The inserts prove again that the diagram and every connection belong to
+	// this organization.
 	d, err := a.Store.CreateDeployment(r.Context(), orgID, userID, store.Deployment{
 		ID: uuid.NewString(), DiagramID: diagramID, ConnectionID: connectionID,
 		Settings: settings, Exclusions: exclusions, Placements: placements,
@@ -537,6 +564,12 @@ type deploymentListItem struct {
 	ConnectionName string   `json:"connection_name"`
 	Region         string   `json:"region"`
 	LatestRun      *runView `json:"latest_run"`
+	// LastApply is its latest completed apply, whose results "What was built"
+	// shows, or null.
+	LastApply *runView `json:"last_apply"`
+	// DiagramVersion is the version of the diagram as saved now; newer than
+	// LastApply's diagram_version means changes not deployed yet.
+	DiagramVersion *int `json:"diagram_version"`
 }
 
 func (a *API) listDiagramDeployments(w http.ResponseWriter, r *http.Request) {
@@ -557,13 +590,57 @@ func (a *API) listDiagramDeployments(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]deploymentListItem, 0, len(ds))
 	for _, d := range ds {
-		item := deploymentListItem{deploymentView: deploymentOut(d.Deployment), Connector: d.ConnectorID,
-			ConnectionName: d.Deployment.ConnectionName, Region: d.Region}
-		if d.LatestRun != nil {
-			run := runOut(*d.LatestRun)
-			item.LatestRun = &run
+		out = append(out, listItemOut(d))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+func listItemOut(d store.DeploymentSummary) deploymentListItem {
+	item := deploymentListItem{deploymentView: deploymentOut(d.Deployment), Connector: d.ConnectorID,
+		ConnectionName: d.Deployment.ConnectionName, Region: d.Region, DiagramVersion: d.DiagramVersion}
+	if d.LatestRun != nil {
+		run := runOut(*d.LatestRun)
+		item.LatestRun = &run
+	}
+	if d.LastApply != nil {
+		run := runOut(*d.LastApply)
+		item.LastApply = &run
+	}
+	return item
+}
+
+// orgDeploymentListItem is one row of an organization's deployments: a
+// diagram's deploy panel row, with the project its diagram is in.
+type orgDeploymentListItem struct {
+	deploymentListItem
+	ProjectID string `json:"project_id"`
+}
+
+// listOrgDeployments lists every deployment in the organization, or with
+// ?project=<id> only those of that project's diagrams.
+func (a *API) listOrgDeployments(w http.ResponseWriter, r *http.Request) {
+	userID, orgID, ok := a.caller(w, r)
+	if !ok {
+		return
+	}
+	projectID := ""
+	if p := r.URL.Query().Get("project"); p != "" {
+		// The project belongs to this organization.
+		ids, err := generic.CheckOwnedIDsPSQL(r.Context(), a.Store.Pool, userID, orgID, p, "")
+		if err != nil {
+			a.authError(w, r, err)
+			return
 		}
-		out = append(out, item)
+		projectID = ids.ProjectID
+	}
+	ds, err := a.Store.ListOrgDeployments(r.Context(), orgID, projectID)
+	if err != nil {
+		a.internal(w, r, "list organization deployments", err)
+		return
+	}
+	out := make([]orgDeploymentListItem, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, orgDeploymentListItem{deploymentListItem: listItemOut(d), ProjectID: d.ProjectID})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -777,15 +854,18 @@ func (a *API) preview(w http.ResponseWriter, r *http.Request) {
 // ---- runs ----
 
 type runView struct {
-	ID             string     `json:"id"`
-	DeploymentID   string     `json:"deployment_id"`
-	Action         string     `json:"action"`
-	Status         string     `json:"status"`
-	DiagramVersion *int       `json:"diagram_version"`
-	Failure        *string    `json:"failure"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StartedAt      *time.Time `json:"started_at"`
-	FinishedAt     *time.Time `json:"finished_at"`
+	ID             string `json:"id"`
+	DeploymentID   string `json:"deployment_id"`
+	Action         string `json:"action"`
+	Status         string `json:"status"`
+	DiagramVersion *int   `json:"diagram_version"`
+	// ConfigVersion is the deployment's config_version the run was built
+	// from; null for a run from before B recorded it.
+	ConfigVersion *int       `json:"config_version"`
+	Failure       *string    `json:"failure"`
+	CreatedAt     time.Time  `json:"created_at"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 	// Parts is where each cloud of a split run stands, in the order the run
 	// takes them; null for a run on one cloud.
 	Parts []jobs.PartProgress `json:"parts"`
@@ -793,7 +873,7 @@ type runView struct {
 
 func runOut(r store.Run) runView {
 	return runView{ID: r.ID, DeploymentID: r.DeploymentID, Action: r.Action, Status: r.Status, DiagramVersion: r.DiagramVersion,
-		Failure: r.Failure, CreatedAt: r.CreatedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, Parts: r.Parts}
+		ConfigVersion: r.ConfigVersion, Failure: r.Failure, CreatedAt: r.CreatedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, Parts: r.Parts}
 }
 
 type createRunBody struct {
@@ -829,8 +909,12 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	runID := uuid.NewString()
+	// The run records the config_version of the settings it was loaded with,
+	// so a change saved after the load still shows as not deployed.
+	config := l.row.ConfigVersion
 	run, err := a.Store.CreateRun(r.Context(), orgID, userID, store.Run{
-		ID: runID, DeploymentID: l.row.ID, Action: string(body.Action), DiagramVersion: l.version, LogKey: logstore.KeyForRun(runID),
+		ID: runID, DeploymentID: l.row.ID, Action: string(body.Action), DiagramVersion: l.version, ConfigVersion: &config,
+		LogKey: logstore.KeyForRun(runID),
 	}, a.maxRunsPerOrg())
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -850,6 +934,7 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 	job := jobs.Job{
 		RunID: run.ID, Action: body.Action, Graph: l.graph, Deployment: l.dep,
 		SecretRef: l.row.SecretRef, LogKey: run.LogKey, Prior: jobs.DeploymentStatus(l.row.Status),
+		ConnectionName: l.row.ConnectionName,
 	}
 	if l.split != nil {
 		job.Parts = l.split.Parts
@@ -857,7 +942,7 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 	err = a.Jobs.Enqueue(job)
 	if err != nil {
 		ctx := context.WithoutCancel(r.Context())
-		if ferr := a.Store.RunFinished(ctx, run.ID, jobs.StatusFailed, queueBusy, time.Now()); ferr != nil {
+		if ferr := a.Store.RunFinished(ctx, run.ID, jobs.StatusFailed, queueBusy, time.Now(), nil); ferr != nil {
 			a.Logger.Error("could not fail an unqueued run", "run_id", run.ID, "err", ferr)
 		}
 		a.Logger.Warn("could not queue a run", "run_id", run.ID, "err", err)

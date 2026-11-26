@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { awsAccountNameHint, awsAccountNameProblem, awsRoleArnExample, awsRoleArnPattern } from "./rules";
+import { awsAccountNameHint, awsAccountNameProblem, awsRoleArnExample, awsRoleArnPattern, defaultTeamName, organizationNameProblem, teamDeleteGoes } from "./rules";
+
+describe("teamDeleteGoes", () => {
+  it("never says 0 projects, and words one project as one", () => {
+    expect(teamDeleteGoes(0)).toBe(", its diagrams and its connections");
+    expect(teamDeleteGoes(1)).toBe(", its project, its diagrams and its connections");
+    expect(teamDeleteGoes(3)).toBe(", its 3 projects, its diagrams and its connections");
+  });
+});
+
+describe("defaultTeamName", () => {
+  it("uses the first name from the profile", () => {
+    expect(defaultTeamName("Ada Lovelace")).toBe("Ada's team");
+    expect(defaultTeamName("  Grace  ")).toBe("Grace's team");
+  });
+
+  it("falls back to My team without a usable name", () => {
+    for (const name of [undefined, null, "", "   ", "Unknown User"]) expect(defaultTeamName(name)).toBe("My team");
+  });
+
+  it("always suggests a name the rules accept", () => {
+    for (const name of ["Al Smith", "A", "Bartholomew-Christopherson-Smythe Jones"]) {
+      expect(organizationNameProblem(defaultTeamName(name))).toBeNull();
+    }
+    expect(defaultTeamName("Bartholomew-Christopherson-Smythe Jones")).toBe("My team");
+  });
+});
 
 describe("awsAccountNameProblem", () => {
   it("accepts 4 to 32 letters and digits", () => {

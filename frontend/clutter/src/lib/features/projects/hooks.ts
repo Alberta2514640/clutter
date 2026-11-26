@@ -48,10 +48,15 @@ export const useProjectOrganization = (
 export const useCreateProject = (token?: string | null) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateProjectInput) => projectsApi.create(token as string, input),
+    // A's create answers without the diagram list; a new project has none.
+    mutationFn: async (input: CreateProjectInput) => {
+      const created = await projectsApi.create(token as string, input);
+      return { ...created, diagrams: created.diagrams ?? [] };
+    },
     onSuccess: (created) => {
       qc.setQueryData<Project[]>(projectKeys.list(created.organizationId), (prev) => [created, ...(prev ?? [])]);
       qc.setQueryData(projectKeys.detail(created.organizationId, created.id), created);
+      qc.setQueryData(projectKeys.owner(created.id), created.organizationId);
     },
   });
 };
@@ -61,10 +66,13 @@ export const useUpdateProject = (token?: string | null) => {
   return useMutation({
     mutationFn: (input: { projectId: string; data: UpdateProjectInput }) =>
       projectsApi.update(token as string, input.projectId, input.data),
+    // A's update answers with the project's own fields only, not its diagrams,
+    // so the cached diagram list is kept.
     onSuccess: (updated) => {
-      qc.setQueryData(projectKeys.detail(updated.organizationId, updated.id), updated);
+      const merge = (prev: Project): Project => ({ ...prev, ...updated, diagrams: prev.diagrams });
+      qc.setQueryData<Project>(projectKeys.detail(updated.organizationId, updated.id), (prev) => (prev ? merge(prev) : updated));
       qc.setQueryData<Project[]>(projectKeys.list(updated.organizationId), (prev) =>
-        (prev ?? []).map((p) => (p.id === updated.id ? updated : p))
+        (prev ?? []).map((p) => (p.id === updated.id ? merge(p) : p))
       );
     },
   });

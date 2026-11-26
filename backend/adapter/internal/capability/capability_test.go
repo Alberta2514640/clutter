@@ -79,6 +79,49 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// A problem names a block kind by its title, in a sentence's case (an
+// acronym stays), and offers running it on another cloud first.
+func TestCheckWordsKindsPlainly(t *testing.T) {
+	m := mock.New().Manifest()
+	g := connectors.Graph{
+		Blocks: map[string]connectors.Block{
+			"files": {ID: "files", Kind: connectors.KindBucket, Name: "files", Fields: map[string]any{}},
+			"api":   {ID: "api", Kind: connectors.KindHTTPAPI, Name: "api", Fields: map[string]any{}},
+		},
+	}
+	msgs := map[string]string{}
+	for _, p := range capability.Check(m, g, connectors.Deployment{}).Problems {
+		msgs[p.NodeID] = p.Message
+	}
+	if want := "Mock cloud cannot build this bucket block. Run it on another cloud, leave it out of this deployment, or remove it from the diagram."; msgs["files"] != want {
+		t.Errorf("files: %q, want %q", msgs["files"], want)
+	}
+	if want := "Mock cloud cannot build this HTTP API block."; len(msgs["api"]) < len(want) || msgs["api"][:len(want)] != want {
+		t.Errorf("api: %q", msgs["api"])
+	}
+}
+
+// A connector that names a cost beyond the blocks (connectors.Advisor) adds
+// it as a note, which never stops a run.
+type costly struct{ *mock.Connector }
+
+func (costly) Advice(connectors.Graph, connectors.Deployment) []connectors.Problem {
+	return []connectors.Problem{{NodeID: "net", Code: connectors.CodeCost, Message: "A gateway costs money."}}
+}
+
+func TestCheckConnectorAddsCostNotes(t *testing.T) {
+	g := connectors.Graph{Blocks: map[string]connectors.Block{
+		"vm": {ID: "vm", Kind: connectors.KindVM, Name: "web", Fields: map[string]any{}},
+	}}
+	r := capability.CheckConnector(costly{mock.New()}, g, connectors.Deployment{})
+	if !r.Ready || codes(r.Notes)["net"] != connectors.CodeCost {
+		t.Fatalf("report %+v", r)
+	}
+	if r = capability.CheckConnector(mock.New(), g, connectors.Deployment{}); len(r.Notes) != 0 {
+		t.Fatalf("a connector with no advice has notes: %+v", r.Notes)
+	}
+}
+
 func TestCheckReady(t *testing.T) {
 	m := mock.New().Manifest()
 	g := connectors.Graph{Blocks: map[string]connectors.Block{

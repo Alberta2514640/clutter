@@ -1,6 +1,11 @@
 // Package pgtest starts a throwaway Postgres in Docker with A's schema and
 // B's tables, for tests. Without Docker it returns ErrNoDocker, and the tests
 // that need it skip.
+//
+// It is a test-only helper: no package under cmd/ imports it. Its docker
+// commands run with a nil exec.Cmd.Env, so they inherit the test's
+// environment, which holds none of B's secrets. B's own child processes start
+// only through internal/runtask.
 package pgtest
 
 import (

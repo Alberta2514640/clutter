@@ -25,6 +25,11 @@ export type FieldSpec = {
   required: boolean;
   default?: unknown;
   allowed?: string[];
+  // One short line shown with the field.
+  help?: string;
+  // On a deployment setting: the block kinds it is about. Empty or missing
+  // means every deployment (settingsFor).
+  applies_to?: BlockKind[];
 };
 
 // connectors.BlockDisplay: the cloud's own name for the block and the key of
@@ -38,22 +43,34 @@ export type BlockSpec = {
   kind: BlockKind;
   treatment: Treatment;
   title: string;
+  // What the block is for, in a few plain words ("A private area for servers").
+  summary?: string;
   fields?: FieldSpec[];
   // Set on every block the cloud builds, never on a removed one.
   display?: BlockDisplay;
+  // What this cloud adds about the block, one short line each.
+  help?: string[];
 };
 
 // connectors.Display: the cloud's short name and the key of its logo. Keys
 // resolve to files under public/clouds/<connector>/ (catalog/display.ts).
+// note says what the cloud is when its title does not ("for testing; builds
+// nothing").
 export type ConnectorDisplay = {
   short_name: string;
   logo?: string;
+  note?: string;
 };
 
 export type EdgeSpec = {
   source: BlockKind;
   target: BlockKind;
   meaning: string;
+  // What the link is good for, in plain words.
+  why?: string;
+  // A source links to at most one block of the target kind; rule says so.
+  single_target?: boolean;
+  rule?: string;
 };
 
 export type Manifest = {

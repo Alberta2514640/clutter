@@ -1,6 +1,12 @@
 "use client";
 
 import { BaseEdge, getBezierPath, Position, useInternalNode, type EdgeProps, type InternalNode } from "@xyflow/react";
+import { ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { useCanvas, type EdgeCard } from "./canvasContext";
+import { kindIconClass } from "@/lib/features/catalog/display";
+import KindIcon from "./KindIcon";
 
 export const FLOATING_EDGE_TYPE = "floating";
 
@@ -46,14 +52,67 @@ function facingSides(s: Box, t: Box) {
 // An edge drawn between the sides of its two blocks that face each other,
 // whatever handle it was drawn from, so it never loops around a block. The
 // saved document keeps only source and target, so nothing about it changes.
-export default function FloatingEdge({ id, source, target, markerEnd, style, interactionWidth }: EdgeProps) {
+// Hovering it shows a small card: both ends, what the line means and why.
+export default function FloatingEdge({ id, source, target, markerEnd, style, interactionWidth, selected }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  const canvas = useCanvas();
+  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const s = sourceNode ? boxOf(sourceNode) : null;
   const t = targetNode ? boxOf(targetNode) : null;
   if (!s || !t) return null;
 
   const { sx, sy, sourcePosition, tx, ty, targetPosition } = facingSides(s, t);
   const [path] = getBezierPath({ sourceX: sx, sourceY: sy, sourcePosition, targetX: tx, targetY: ty, targetPosition });
-  return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />;
+  const card = hover ? canvas.edgeCard(source, target) : null;
+  return (
+    <g
+      data-testid="block-edge"
+      className="animate-fade-in"
+      onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY })}
+      onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setHover(null)}>
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        style={hover || selected ? { ...style, stroke: "var(--primary)", strokeWidth: 2 } : style}
+        interactionWidth={interactionWidth}
+      />
+      {card && hover && typeof document !== "undefined" && createPortal(<LinkCardView card={card} at={hover} />, document.body)}
+    </g>
+  );
+}
+
+// The hover card, beside the pointer, kept inside the window.
+function LinkCardView({ card, at }: { card: EdgeCard; at: { x: number; y: number } }) {
+  const left = Math.min(at.x + 14, window.innerWidth - 300);
+  const top = Math.min(at.y + 14, window.innerHeight - 140);
+  return (
+    <div
+      role="tooltip"
+      data-testid="link-card"
+      style={{ left, top }}
+      className="surface-raised text-popover-foreground pointer-events-none fixed z-[1000] w-72 rounded-xl border px-3 py-2.5 text-xs animate-fade-in">
+      <LinkCardBody card={card} />
+    </div>
+  );
+}
+
+// LinkCardBody is a line's card: the two ends with their icons, then what the
+// line means and why it helps. "How linking works" shows the same body.
+export function LinkCardBody({ card }: { card: EdgeCard }) {
+  return (
+    <>
+      <div className="flex items-center gap-1.5 font-medium">
+        <KindIcon kind={card.source} className={`${kindIconClass(card.source)} size-4 shrink-0`} />
+        <span className="truncate">{card.sourceName}</span>
+        <ArrowRight className="text-muted-foreground size-3.5 shrink-0" aria-label="to" />
+        <KindIcon kind={card.target} className={`${kindIconClass(card.target)} size-4 shrink-0`} />
+        <span className="truncate">{card.targetName}</span>
+      </div>
+      <p className="mt-1.5 leading-snug">{card.meaning}</p>
+      {card.why && <p className="text-muted-foreground mt-1 leading-snug">{card.why}</p>}
+    </>
+  );
 }

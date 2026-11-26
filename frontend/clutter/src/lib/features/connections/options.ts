@@ -46,11 +46,42 @@ export function settingView(f: FieldSpec, state: OptionsState, value: unknown, t
 
   const current = typeof value === "string" && value !== "" ? value : typeof f.default === "string" ? f.default : "";
   const listed = current === "" || choices.some((c) => c.value === current);
+  // B matches the image default by name prefix, so a default that starts a
+  // listed name is not an error: say what it picks.
+  const prefixDefault = current === f.default && choices.some((c) => c.value.startsWith(current));
+  const label = prefixDefault ? `${current} (default: the newest match in your cloud)` : `${current} (typed name)`;
   return {
     control: "list",
     current,
-    choices: listed ? choices : [{ value: current, label: `${current} (typed, not in your cloud's list)` }, ...choices],
+    choices: listed ? choices : [{ value: current, label }, ...choices],
   };
+}
+
+// applySuggestions puts the cloud's suggestion into each text setting the
+// user has not changed (unset, or still the manifest default) when that value
+// is not in the cloud's list and the suggestion is. A DevStack default on a
+// public cloud becomes a value that cloud has; a value the user chose stays.
+// picked names the settings it changed.
+export function applySuggestions(
+  spec: FieldSpec[],
+  values: Record<string, unknown>,
+  options: ConnectionOptions,
+): { values: Record<string, unknown>; picked: string[] } {
+  const out = { ...values };
+  const picked: string[] = [];
+  for (const f of spec) {
+    if (f.type !== "string") continue;
+    const s = options.suggested?.[f.name];
+    const choices = options.settings?.[f.name];
+    if (typeof s !== "string" || s === "" || !choices?.some((c) => c.value === s)) continue;
+    const v = values[f.name];
+    const untouched = v === undefined || v === null || v === "" || v === f.default;
+    const current = untouched ? f.default : v;
+    if (!untouched || choices.some((c) => c.value === current)) continue;
+    out[f.name] = s;
+    picked.push(f.name);
+  }
+  return { values: out, picked };
 }
 
 // optionsState maps the options query onto OptionsState. A query that has

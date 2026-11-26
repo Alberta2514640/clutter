@@ -134,10 +134,22 @@ func (f *fakeTerraform) Launch(_ context.Context, task runtask.Task) error {
 // fakeScopedSecret is the secret of the scoped key a fake apply returns.
 const fakeScopedSecret = "fakeScopedSecret/0123456789abcdefABCDEF"
 
-var crossOutputLine = regexp.MustCompile(`(?m)^output "(cross_x[0-9a-f]{10}_([a-z_]+))"`)
+var (
+	crossOutputLine  = regexp.MustCompile(`(?m)^output "(cross_x[0-9a-f]{10}_([a-z_]+))"`)
+	resultOutputLine = regexp.MustCompile(`(?m)^output "(result_(private_address|public_address|url|bucket|table)_[A-Za-z0-9_-]+)"`)
+)
 
-// fakeOutputs is `terraform output -json` for every cross_ output the run's
-// files declare.
+// fakeResults are the values a fake apply returns for each result.
+var fakeResults = map[string]string{
+	connectors.ResultPrivateAddress: "10.1.0.10",
+	connectors.ResultPublicAddress:  "198.51.100.7",
+	connectors.ResultURL:            "https://fake.execute-api.ca-central-1.amazonaws.com/v1/api_handler",
+	connectors.ResultBucket:         "c1-uploads-0a1b2c3d",
+	connectors.ResultTable:          "c1-orders",
+}
+
+// fakeOutputs is `terraform output -json` for every cross_ and result_
+// output the run's files declare.
 func fakeOutputs(dir string) string {
 	values := map[string]string{
 		connectors.ValueAddress:         "198.51.100.7",
@@ -154,6 +166,9 @@ func fakeOutputs(dir string) string {
 		for _, m := range crossOutputLine.FindAllStringSubmatch(string(body), -1) {
 			parts = append(parts, fmt.Sprintf(`%q: {"sensitive": %t, "type": "string", "value": %q}`,
 				m[1], connectors.SensitiveValue(m[2]), values[m[2]]))
+		}
+		for _, m := range resultOutputLine.FindAllStringSubmatch(string(body), -1) {
+			parts = append(parts, fmt.Sprintf(`%q: {"sensitive": false, "type": "string", "value": %q}`, m[1], fakeResults[m[2]]))
 		}
 	}
 	sort.Strings(parts)

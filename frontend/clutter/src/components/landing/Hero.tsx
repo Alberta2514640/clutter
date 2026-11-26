@@ -1,69 +1,65 @@
+import { DotGrid, SelectionBox } from "@/components/common/CanvasMotif";
+import ThemeScope from "@/components/common/ThemeScope";
+import { Button } from "@/components/ui/button";
+import { Play } from "lucide-react";
 import Link from "next/link";
-import motion from "./motion.module.css";
+import { HeroCanvas } from "./HeroCanvas";
+import { HeroMotion } from "./HeroMotion";
 import { Screenshot } from "./Screenshot";
 import { SHOTS } from "./shots";
-import { FOCUS_RING } from "./site";
 
-// Soft background shapes: plain CSS, no script. They drift slowly, and stay
-// still when the visitor asks for reduced motion.
-// The rotation sits on the outer box so the drift's own transform does not undo it.
-const shapes = [
-  { place: "left-[-12%] top-[10%] h-32 w-[36rem] rotate-12", tint: "from-indigo-500/20" },
-  { place: "right-[-8%] top-[38%] h-28 w-[30rem] -rotate-12", tint: "from-slate-400/15" },
-  { place: "left-[8%] top-[62%] h-20 w-72 -rotate-6", tint: "from-teal-400/15" },
-];
-
-// The entrance only moves things (motion.rise), so the first paint is complete.
-const delay = (ms: number) => ({ "--delay": `${ms}ms` }) as React.CSSProperties;
-
+// The hero: one headline on the canvas motif with a small living diagram
+// beside it (HeroCanvas, moved by HeroMotion), the sign-in action, and the
+// real product shot in a frame that straddles the dark hero and the light
+// page below.
 export function Hero() {
   return (
-    <section aria-labelledby="hero-title" className="relative overflow-hidden bg-[#020514]">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-teal-500/10 via-transparent to-indigo-500/10" />
-        {/* Fades into the demo section's colour, so the two read as one flow. */}
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-[#020514]" />
-        {shapes.map((s, i) => (
-          <div key={s.place} className={`absolute ${s.place}`}>
-            <div className={`h-full w-full rounded-full border border-white/10 bg-gradient-to-r to-transparent ${s.tint} ${motion.drift}`} style={{ animationDelay: `${i * -6}s` }} />
-          </div>
-        ))}
-      </div>
+    <>
+      {/* pt-16: the header (LandingHeader overHero) lies over this top strip. */}
+      <ThemeScope theme="dark" className="bg-hero grain text-hero-foreground relative isolate overflow-hidden pt-16">
+        <section aria-labelledby="hero-title">
+          <DotGrid fade="top" />
 
-      <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-16 md:px-6 md:pb-16 md:pt-24">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className={`mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300 ${motion.rise}`}>
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-teal-400" />
-            For AWS, OpenStack and private clouds
-          </p>
-          <h1 id="hero-title" className={`text-4xl font-bold tracking-tight text-white sm:text-6xl md:text-7xl ${motion.rise}`} style={delay(60)}>
-            One diagram.
-            <span className="block bg-gradient-to-r from-indigo-300 via-white to-teal-300 bg-clip-text pb-2 text-transparent">Every cloud you link.</span>
-          </h1>
-          <p className={`mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl ${motion.rise}`} style={delay(120)}>
-            Draw your system once in building blocks. Clutter deploys it to AWS and to any OpenStack cloud, public, private or in Canada, inside accounts you own.
-          </p>
-          <div className={`mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row ${motion.rise}`} style={delay(180)}>
-            <Link
-              href="/login"
-              className={`inline-flex items-center justify-center rounded-md bg-teal-400 px-6 py-3 font-medium text-black shadow-[0_10px_30px_rgba(45,212,191,0.25)] transition-[background-color,transform] hover:-translate-y-0.5 hover:bg-teal-300 motion-reduce:transition-none motion-reduce:hover:translate-y-0 ${FOCUS_RING}`}>
-              Sign in with Google
-            </Link>
-            <Link
-              href="#demo"
-              className={`inline-flex items-center justify-center rounded-md border border-slate-600 px-6 py-3 font-medium text-slate-100 transition-[border-color,transform] hover:-translate-y-0.5 hover:border-slate-400 motion-reduce:transition-none motion-reduce:hover:translate-y-0 ${FOCUS_RING}`}>
-              Watch the demo
-            </Link>
-          </div>
-          <p className={`mt-4 text-sm text-slate-400 ${motion.rise}`} style={delay(180)}>
-            New here? Your Google account creates your Clutter account.
-          </p>
-        </div>
+          <HeroMotion decor={<HeroCanvas />}>
+            <div className="relative mx-auto max-w-6xl px-4 pt-20 pb-28 text-center md:px-8 md:pt-28 md:pb-36">
+              <p className="micro-label mb-6">Diagram to Terraform to your cloud</p>
+              <h1 id="hero-title" className="mx-auto max-w-5xl text-[2.75rem] leading-[1.02] font-bold tracking-tighter text-balance sm:text-7xl lg:text-[5.75rem]">
+                One{" "}
+                {/* hero-selection: the handles pulse and the cursor idles (globals.css). */}
+                <SelectionBox cursorLabel="you" className="hero-selection mx-0.5 px-2 py-0.5 sm:px-3">
+                  diagram.
+                </SelectionBox>
+                <br />
+                Every cloud you link.
+              </h1>
+              <p className="text-muted-foreground mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-pretty md:text-xl">
+                Draw your system once in plain building blocks. Clutter writes the Terraform and builds it on AWS and OpenStack, inside the accounts you link.
+              </p>
+              <div className="mt-10 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+                {/* The one monochrome main action: white on the dark hero. */}
+                <Button asChild size="lg" className="bg-foreground text-background hover:bg-foreground/90 h-12 px-7 text-base">
+                  <Link href="/login">Sign in with Google</Link>
+                </Button>
+                <Button asChild size="lg" variant="outline" className="h-12 px-7 text-base">
+                  <Link href="#demo">
+                    <Play aria-hidden="true" />
+                    Watch the demo
+                  </Link>
+                </Button>
+              </div>
+              <p className="text-muted-foreground mt-4 text-sm">New here? Signing in creates your account.</p>
+            </div>
+          </HeroMotion>
+        </section>
+      </ThemeScope>
 
-        <div className={`mx-auto mt-14 max-w-5xl ${motion.rise}`} style={delay(240)}>
-          <Screenshot shot={SHOTS.editor} sizes="(min-width: 1072px) 1024px, calc(100vw - 32px)" hero />
+      {/* The shot's upper part sits on the hero, its lower part on the light page. */}
+      <div className="relative px-4 md:px-8">
+        <div aria-hidden="true" className="dark bg-hero grain absolute inset-x-0 top-0 h-1/2" />
+        <div className="relative mx-auto -mt-16 max-w-6xl md:-mt-24">
+          <Screenshot shot={SHOTS.editor} sizes="(min-width: 1216px) 1152px, calc(100vw - 32px)" hero />
         </div>
       </div>
-    </section>
+    </>
   );
 }

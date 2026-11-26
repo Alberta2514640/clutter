@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Alberta2514640/clutter/backend/adapter/connectors"
+	"github.com/Alberta2514640/clutter/backend/api/generic/hclsafe"
 	"github.com/google/uuid"
 )
 
@@ -84,6 +85,42 @@ func (m *model) physical(b *block, max int) string {
 	}
 	cut := max - len(m.d.Prefix) - 1 - 9
 	return m.d.Prefix + "-" + strings.TrimRight(b.Name[:cut], "-_") + "-" + shortHash(b.Name)
+}
+
+// stableName is a cloud name built from the node id, not the block's name,
+// for a resource whose name forces a new one and whose replacement is costly:
+// a security group AWS will not delete while an instance uses it, and a key
+// pair whose new name replaces the instance. A rename then changes only the
+// resource's Name tag. A block name holds no dot, so this name is never one
+// physical gives. Templates that use it ignore later changes to the name, so a
+// resource named before it keeps its name.
+func (m *model) stableName(b *block, what string) string {
+	return m.d.Prefix + "." + b.Part + "." + what
+}
+
+// The table key a new table block starts with. A table with this key keeps
+// its plain name (tableName).
+var (
+	defaultTableKey, _     = connectors.StandardField(connectors.KindTable, "key").Default.(string)
+	defaultTableKeyType, _ = connectors.StandardField(connectors.KindTable, "key_type").Default.(string)
+)
+
+// tableName is a table's cloud name. DynamoDB fixes a table's key when it is
+// made, so a changed key or key type replaces the table. The provider plans
+// that replacement create-before-destroy whenever an API reaches the table
+// through a function (A's API deployment sets create_before_destroy, and
+// Terraform carries it to everything the deployment depends on), and the new
+// table cannot take the old one's name. So a table whose key is not the
+// default carries a hash of its key and key type, and any key change is a new
+// name. The hash also makes a key type change visible: the provider compares
+// attribute blocks by name only, so it never plans a type change on its own
+// (hashicorp/terraform-provider-aws#22852).
+func (m *model) tableName(b *block) string {
+	key, keyType := b.str(fieldKey), b.str(fieldKeyType)
+	if key == defaultTableKey && keyType == defaultTableKeyType {
+		return m.physical(b, maxName)
+	}
+	return m.physical(b, maxName-9) + "-" + shortHash(key+":"+keyType)
 }
 
 func shortHash(s string) string {
@@ -189,7 +226,6 @@ func newModel(g connectors.Graph, d connectors.Deployment) *model {
 	}
 	m.settings(mf)
 
-	names := map[string]string{}
 	for id, b := range g.Blocks {
 		if d.Excluded(id) {
 			continue
@@ -215,16 +251,9 @@ func newModel(g connectors.Graph, d connectors.Deployment) *model {
 	}
 	sort.Strings(m.order)
 
+	m.problems = append(m.problems, connectors.DuplicateNames(g, d)...)
 	for _, id := range m.order {
-		b := m.blocks[id]
-		key := strings.ReplaceAll(b.Name, "_", "-")
-		if other, dup := names[key]; dup {
-			m.problem(connectors.Problem{NodeID: id, Field: "name", Code: connectors.CodeDuplicateName,
-				Message: fmt.Sprintf("Another block (%s) has the same name. On AWS each block needs its own name.", other)})
-			continue
-		}
-		names[key] = id
-		m.checkFields(b)
+		m.checkFields(m.blocks[id])
 	}
 	m.edges(g)
 	m.crossProblems = connectors.CheckCross(g, d, crossRules)
@@ -312,6 +341,27 @@ func (m *model) vmEnv(id string) ([]connectors.EnvValue, error) {
 	return append(env, imports...), nil
 }
 
+// functionEnv is what a function's "reads" edges hand it as environment
+// variables: the name and region of each bucket or table, under the names a
+// VM gets them (connectors.EnvName). Each value is a Terraform reference or
+// an allow-listed region, inside the HCL string A's lambda template writes.
+func (m *model) functionEnv(id string) map[string]string {
+	env := map[string]string{}
+	for _, r := range m.reads {
+		if r[0] != id {
+			continue
+		}
+		tb := m.blocks[r[1]]
+		if tb.Kind == connectors.KindBucket {
+			env[connectors.EnvName(tb.Name, connectors.ValueBucket)] = "${aws_s3_bucket." + tb.Addr + ".bucket}"
+		} else {
+			env[connectors.EnvName(tb.Name, connectors.ValueTable)] = "${aws_dynamodb_table." + tb.Addr + ".name}"
+		}
+		env[connectors.EnvName(tb.Name, connectors.ValueRegion)] = hclsafe.Escape(m.region)
+	}
+	return env
+}
+
 // missingImports reports whether an import has no value yet, which an apply
 // must never render.
 func (m *model) missingImports() bool {
@@ -360,6 +410,9 @@ func (m *model) checkFields(b *block) {
 		if _, err := connectors.StartupUserData(b.fields); err != nil {
 			m.fieldProblem(b.ID, connectors.FieldStartupScript, err.Error())
 		}
+		if _, err := connectors.SSHPublicKey(b.fields); err != nil {
+			m.fieldProblem(b.ID, connectors.FieldSSHKey, err.Error())
+		}
 	case connectors.KindNetwork:
 		if _, err := networkCIDR(b.str(fieldCIDR)); err != nil {
 			m.fieldProblem(b.ID, fieldCIDR, err.Error())
@@ -399,21 +452,34 @@ func (m *model) checkFields(b *block) {
 
 // The messages below are shown to the user as problems.
 var (
-	errNetworkCIDR      = errors.New("On AWS a network's address range must be an IPv4 range from /16 to /28, such as 10.0.0.0/24.")
+	errNetworkCIDR      = errors.New("On AWS a network's address range must be an IPv4 range from /16 to /27, such as 10.0.0.0/24.")
 	errFirewallNetworks = errors.New("On AWS a firewall applies within one network, but this one applies to VMs in different networks. Use one firewall per network.")
 )
 
 // networkCIDR checks a network's address range (connectors.ParseCIDR)
-// against AWS's VPC limits: IPv4, /16 to /28.
+// against AWS's VPC limits: IPv4, /16 to /27. The network splits its range
+// into two subnets (networkHalves), and AWS's smallest subnet is a /28.
 func networkCIDR(s string) (netip.Prefix, error) {
 	p, err := connectors.ParseCIDR(s)
 	if err != nil {
 		return netip.Prefix{}, err
 	}
-	if !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 28 {
+	if !p.Addr().Is4() || p.Bits() < 16 || p.Bits() > 27 {
 		return netip.Prefix{}, errNetworkCIDR
 	}
 	return p, nil
+}
+
+// networkHalves splits a network's range into its two subnets: the lower half
+// for private VMs, the upper half for public VMs and the NAT gateway.
+func networkHalves(p netip.Prefix) (private, public netip.Prefix) {
+	private = netip.PrefixFrom(p.Addr(), p.Bits()+1)
+	a := p.Addr().As4()
+	host := 32 - (p.Bits() + 1)
+	n := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3])
+	n += 1 << host
+	public = netip.PrefixFrom(netip.AddrFrom4([4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}), p.Bits()+1)
+	return private, public
 }
 
 // ingressRules reads a firewall's ingress field (connectors.ParseIngress)
@@ -519,6 +585,14 @@ func (m *model) edges(g connectors.Graph) {
 			if len(m.vmVolumes[id]) > maxVolumesPerVM {
 				m.problem(connectors.Problem{NodeID: id, Code: CodeTooManyVolumes, Message: fmt.Sprintf("Clutter attaches at most %d volumes to one VM.", maxVolumesPerVM)})
 			}
+			// Each network is its own VPC, and a VM with none is in the
+			// account's default VPC: two VPCs do not reach each other.
+			for _, peer := range m.vmPeers[id] {
+				if m.vmNetwork[id] != m.vmNetwork[peer] {
+					m.problem(connectors.Problem{EdgeSource: id, EdgeTarget: peer, Code: connectors.CodePeerUnreachable,
+						Message: "On AWS these two VMs are in different networks, which cannot reach each other. Connect them to the same network."})
+				}
+			}
 		case connectors.KindFirewall:
 			if _, err := m.firewallNetwork(id); err != nil {
 				m.problem(connectors.Problem{NodeID: id, Code: CodeFirewallNetworks, Message: err.Error()})
@@ -545,15 +619,75 @@ func (m *model) firewallNetwork(id string) (string, error) {
 	return net, nil
 }
 
-// networkPublic reports whether any VM in the network must be reachable from the
-// internet, so the network needs an internet gateway.
-func (m *model) networkPublic(id string) bool {
+// networkVMs reports whether the network holds a VM reachable from the
+// internet, and one that is not.
+func (m *model) networkVMs(id string) (public, private bool) {
 	for vm, net := range m.vmNetwork {
-		if net == id && m.blocks[vm].boolean(fieldPublic) {
-			return true
+		if net != id {
+			continue
+		}
+		if m.blocks[vm].boolean(fieldPublic) {
+			public = true
+		} else {
+			private = true
 		}
 	}
-	return false
+	return public, private
+}
+
+// networkNAT reports whether the network gets a NAT gateway: its private
+// VMs may reach the internet, and it has one.
+func (m *model) networkNAT(id string) bool {
+	_, private := m.networkVMs(id)
+	return private && m.blocks[id].boolean(fieldPrivateInternet)
+}
+
+// vmSubnet is the Terraform address of the subnet a VM runs in, or "" for
+// the account's default VPC.
+func (m *model) vmSubnet(id string) string {
+	net, ok := m.vmNetwork[id]
+	if !ok {
+		return ""
+	}
+	if m.blocks[id].boolean(fieldPublic) {
+		return m.blocks[net].Addr + "_public_subnet"
+	}
+	return m.blocks[net].Addr + "_subnet"
+}
+
+// vmZone is the availability zone a VM with volumes runs in, as an HCL
+// expression its volumes read. It never reads the instance, so a replaced VM
+// keeps its volumes: a volume's zone forces a new volume when it changes, and
+// a replaced instance's zone is unknown until it exists. A VM in a network
+// runs in its subnet's zone. A VM in the account's default VPC is pinned to
+// the zone the network template picks (the region's first available one),
+// because AWS otherwise picks a zone for each new instance (vmPinsZone).
+func (m *model) vmZone(id string) string {
+	if subnet := m.vmSubnet(id); subnet != "" {
+		return "aws_subnet." + subnet + ".availability_zone"
+	}
+	return "data.aws_availability_zones." + m.blocks[id].Addr + "_azs.names[0]"
+}
+
+// vmPinsZone reports whether a VM needs its zone pinned (vmZone): it has
+// volumes and no network.
+func (m *model) vmPinsZone(id string) bool {
+	_, inNetwork := m.vmNetwork[id]
+	return !inNetwork && len(m.vmVolumes[id]) > 0
+}
+
+// peersOf returns the VMs on this cloud that get a VM's address, sorted: the
+// VMs its peer security group lets in.
+func (m *model) peersOf(id string) []string {
+	var out []string
+	for _, src := range m.order {
+		for _, t := range m.vmPeers[src] {
+			if t == id {
+				out = append(out, src)
+			}
+		}
+	}
+	return out
 }
 
 // deviceName gives each volume on a VM its own device, /dev/sdf upward.

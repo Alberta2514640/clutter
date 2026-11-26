@@ -44,12 +44,12 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          # Function logs: AWSLambdaBasicExecutionRole, which B attaches,
-          # limited to Lambda's own log groups.
+          # Function logs: the streams and events of Lambda's own log
+          # groups. B creates each function's group first and lets the
+          # function write only to it.
           - Sid: FunctionLogs
             Effect: Allow
             Action:
-              - logs:CreateLogGroup
               - logs:CreateLogStream
               - logs:PutLogEvents
             Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/*"
@@ -182,682 +182,831 @@ Resources:
               StringEquals:
                 sts:ExternalId: !Ref ExternalId
 
-      Policies:
-      - PolicyName: TerraformDeployerRequiredPermissions
-        PolicyDocument:
-          Version: "2012-10-17"
-          Statement:
+      # Its permissions are in the six managed policies below. One role's
+      # inline policies may hold 10,240 characters in all, and these hold
+      # about 17,000, so AWS refused the stack (found on a real account,
+      # 2026-11-20). Each managed policy holds up to 6,144.
+      ManagedPolicyArns:
+        - !Ref DeployerPolicyEc2Reads
+        - !Ref DeployerPolicyEc2Instances
+        - !Ref DeployerPolicyLambdaApi
+        - !Ref DeployerPolicyDataLogs
+        - !Ref DeployerPolicyIamRoles
+        - !Ref DeployerPolicyIamUsersSsm
 
-            # Each list is what the AWS provider (hashicorp/aws ~> 5.0, the
-            # version A and B pin) calls to create, read, update and delete
-            # what Clutter renders: A's templates and B's under
-            # modules/s3/uploads/aws, B's iam/override/code templates
-            # (backend/adapter/connectors/aws/tmpl) and A's IAM step
-            # (terraform-engine/create/internal/generator/iam/policy.go),
-            # plus what A's Ansible runner sends over SSM. A template that
-            # needs another action adds it here and raises RoleTemplateVersion.
+  # ---------- The deployer role's permissions, in six managed policies ----------
 
-            # Clutter may change or delete only what it created. Every
-            # resource a template renders carries the tag ManagedBy from its
-            # create request: Clutter from the provider's default_tags (A's
-            # writer and B's provider.tf.tmpl), Ansible on instances from the
-            # ec2 template. Each create below requires that tag, each change
-            # or delete requires it on the resource, and no statement lets
-            # this role add it to a resource that lacks it, so the account
-            # owner's own instances, functions, tables and APIs stay out of
-            # reach. Reads stay on every resource: Terraform reads before it
-            # writes, and a read changes nothing.
+  # Each list is what the AWS provider (hashicorp/aws ~> 5.0, the
+  # version A and B pin) calls to create, read, update and delete
+  # what Clutter renders: A's templates and B's under
+  # modules/s3/uploads/aws, B's iam/override/code templates
+  # (backend/adapter/connectors/aws/tmpl) and A's IAM step
+  # (terraform-engine/create/internal/generator/iam/policy.go),
+  # plus what A's Ansible runner sends over SSM. A template that
+  # needs another action adds it here and raises RoleTemplateVersion.
 
-            # ---------- EC2: instances, networks, firewalls, volumes ----------
-            # No Describe action supports a resource or a tag condition.
-            - Sid: Ec2Reads
-              Effect: Allow
-              Action:
-                - ec2:DescribeAvailabilityZones
-                - ec2:DescribeIamInstanceProfileAssociations
-                - ec2:DescribeImages
-                - ec2:DescribeInstanceAttribute
-                - ec2:DescribeInstanceCreditSpecifications
-                - ec2:DescribeInstanceTypes
-                - ec2:DescribeInstances
-                - ec2:DescribeInternetGateways
-                - ec2:DescribeNetworkAcls
-                - ec2:DescribeNetworkInterfaces
-                - ec2:DescribeRouteTables
-                - ec2:DescribeSecurityGroupRules
-                - ec2:DescribeSecurityGroups
-                - ec2:DescribeSubnets
-                - ec2:DescribeTags
-                - ec2:DescribeVolumes
-                - ec2:DescribeVolumesModifications
-                - ec2:DescribeVpcAttribute
-                - ec2:DescribeVpcs
-              Resource: "*"
+  # Clutter may change or delete only what it created. Every
+  # resource a template renders carries the tag ManagedBy from its
+  # create request: Clutter from the provider's default_tags (A's
+  # writer and B's provider.tf.tmpl), Ansible on instances from the
+  # ec2 template. Each create below requires that tag, each change
+  # or delete requires it on the resource, and no statement lets
+  # this role add it to a resource that lacks it (API Gateway checks
+  # a tag change against the API too; ApiGatewayTagOnCreate), so the
+  # account owner's own instances, functions, tables and APIs stay
+  # out of reach. Two exceptions change owners' resources without the tag:
+  # S3Buckets (an empty bucket's deletion, tags, versioning and
+  # public access block) and ApiGatewayUntaggedChildren. Reads stay on every resource: Terraform reads before it
+  # writes, and a read changes nothing.
 
-            # A new VPC, subnet, route table, internet gateway, security
-            # group, volume or instance must carry ManagedBy in its create
-            # request.
-            - Sid: Ec2CreateTagged
-              Effect: Allow
-              Action:
-                - ec2:CreateInternetGateway
-                - ec2:CreateRouteTable
-                - ec2:CreateSecurityGroup
-                - ec2:CreateSubnet
-                - ec2:CreateVolume
-                - ec2:RunInstances
-              Resource:
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:internet-gateway/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:route-table/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*"
-              Condition:
-                StringEquals:
-                  aws:RequestTag/ManagedBy:
-                    - Clutter
-                    - Ansible
 
-            # Apart from the statement above: there a VPC is only a create's
-            # parent, an existing resource the request does not tag.
-            - Sid: Ec2CreateVpcTagged
-              Effect: Allow
-              Action: ec2:CreateVpc
-              Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
-              Condition:
-                StringEquals:
-                  aws:RequestTag/ManagedBy:
-                    - Clutter
-                    - Ansible
+  DeployerPolicyEc2Reads:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerEc2Reads-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: EC2 reads, creates and network changes."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ---------- EC2: instances, networks, firewalls, volumes ----------
+          # No Describe action supports a resource or a tag condition.
+          - Sid: Ec2Reads
+            Effect: Allow
+            Action:
+              - ec2:DescribeAddresses
+              - ec2:DescribeAddressesAttribute
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeIamInstanceProfileAssociations
+              - ec2:DescribeImages
+              - ec2:DescribeInstanceAttribute
+              - ec2:DescribeInstanceCreditSpecifications
+              - ec2:DescribeInstanceTypes
+              - ec2:DescribeInstances
+              - ec2:DescribeInternetGateways
+              - ec2:DescribeKeyPairs
+              - ec2:DescribeNatGateways
+              - ec2:DescribeNetworkAcls
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeRouteTables
+              - ec2:DescribeSecurityGroupRules
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeTags
+              - ec2:DescribeVolumes
+              - ec2:DescribeVolumesModifications
+              - ec2:DescribeVpcAttribute
+              - ec2:DescribeVpcs
+            Resource: "*"
+          # A new VPC, subnet, route table, internet gateway, NAT gateway,
+          # Elastic IP, key pair, security group, volume or instance must
+          # carry ManagedBy in its create request.
+          - Sid: Ec2CreateTagged
+            Effect: Allow
+            Action:
+              - ec2:AllocateAddress
+              - ec2:CreateInternetGateway
+              - ec2:CreateNatGateway
+              - ec2:CreateRouteTable
+              - ec2:CreateSecurityGroup
+              - ec2:CreateSubnet
+              - ec2:CreateVolume
+              - ec2:ImportKeyPair
+              - ec2:RunInstances
+            Resource:
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:elastic-ip/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:internet-gateway/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:key-pair/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:natgateway/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:route-table/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy:
+                  - Clutter
+                  - Ansible
+          # Apart from the statement above: there a VPC is only a create's
+          # parent, an existing resource the request does not tag.
+          - Sid: Ec2CreateVpcTagged
+            Effect: Allow
+            Action: ec2:CreateVpc
+            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy:
+                  - Clutter
+                  - Ansible
+          # A subnet or route table goes only in a VPC Clutter made.
+          - Sid: Ec2CreateInClutterVpcs
+            Effect: Allow
+            Action:
+              - ec2:CreateRouteTable
+              - ec2:CreateSubnet
+            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # A NAT gateway goes only in a subnet and VPC Clutter made, with
+          # an Elastic IP Clutter allocated (B's network template).
+          - Sid: Ec2NatGatewayInClutterNetworks
+            Effect: Allow
+            Action: ec2:CreateNatGateway
+            Resource:
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:elastic-ip/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # A firewall with no network goes in the account's default VPC,
+          # which Clutter did not make. Creating a tagged group there
+          # changes nothing that is already in it.
+          - Sid: Ec2SecurityGroupsInAnyVpc
+            Effect: Allow
+            Action: ec2:CreateSecurityGroup
+            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
 
-            # A subnet or route table goes only in a VPC Clutter made.
-            - Sid: Ec2CreateInClutterVpcs
-              Effect: Allow
-              Action:
-                - ec2:CreateRouteTable
-                - ec2:CreateSubnet
-              Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
+  DeployerPolicyEc2Instances:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerEc2Instances-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: EC2 instances, rules, tags and changes."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # What a new instance uses or creates with it: Amazon's image, the
+          # key pair the user named, a subnet and security group (the
+          # default VPC's for A's instances, Clutter's for B's), and the
+          # root volume and network interface RunInstances creates, which
+          # the provider does not tag. Ec2CreateTagged requires the tag on
+          # the instance itself.
+          - Sid: Ec2RunInstancesWith
+            Effect: Allow
+            Action: ec2:RunInstances
+            Resource:
+              - !Sub "arn:${AWS::Partition}:ec2:*::image/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:key-pair/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:network-interface/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
+              - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*"
+          # A rule a security group gains is new; the group it goes in must
+          # carry the tag (Ec2ChangeClutterResources).
+          - Sid: Ec2NewSecurityGroupRules
+            Effect: Allow
+            Action:
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:AuthorizeSecurityGroupIngress
+            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group-rule/*"
+          # Tags sent inside a create request: allowed only for the
+          # resources that request creates.
+          - Sid: Ec2TagOnCreate
+            Effect: Allow
+            Action: ec2:CreateTags
+            Resource: "*"
+            Condition:
+              StringEquals:
+                ec2:CreateAction:
+                  - AllocateAddress
+                  - AuthorizeSecurityGroupEgress
+                  - AuthorizeSecurityGroupIngress
+                  - CreateInternetGateway
+                  - CreateNatGateway
+                  - CreateRouteTable
+                  - CreateSecurityGroup
+                  - CreateSubnet
+                  - CreateVolume
+                  - CreateVpc
+                  - ImportKeyPair
+                  - RunInstances
+          # Tags change later only on a resource that already carries
+          # ManagedBy, and ManagedBy only to one of Clutter's values.
+          - Sid: Ec2TagClutterResources
+            Effect: Allow
+            Action:
+              - ec2:CreateTags
+              - ec2:DeleteTags
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy:
+                  - Clutter
+                  - Ansible
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy:
+                  - Clutter
+                  - Ansible
+          # Every change and delete: only on resources that carry ManagedBy.
+          # Each action names every resource it touches (an instance and a
+          # volume for AttachVolume, a route table and a subnet for
+          # AssociateRouteTable), and each must carry the tag.
+          - Sid: Ec2ChangeClutterResources
+            Effect: Allow
+            Action:
+              - ec2:AssociateIamInstanceProfile
+              - ec2:AssociateRouteTable
+              - ec2:AttachInternetGateway
+              - ec2:AttachVolume
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:CreateRoute
+              - ec2:DeleteInternetGateway
+              - ec2:DeleteKeyPair
+              - ec2:DeleteNatGateway
+              - ec2:DeleteRoute
+              - ec2:DeleteRouteTable
+              - ec2:DeleteSecurityGroup
+              - ec2:DeleteSubnet
+              - ec2:DeleteVolume
+              - ec2:DeleteVpc
+              - ec2:DetachInternetGateway
+              - ec2:DetachVolume
+              - ec2:DisassociateAddress
+              - ec2:DisassociateIamInstanceProfile
+              - ec2:DisassociateRouteTable
+              - ec2:ModifyInstanceAttribute
+              - ec2:ModifyInstanceMetadataOptions
+              - ec2:ModifySecurityGroupRules
+              - ec2:ModifySubnetAttribute
+              - ec2:ModifyVolume
+              - ec2:ModifyVpcAttribute
+              - ec2:ReplaceIamInstanceProfileAssociation
+              - ec2:ReplaceRoute
+              - ec2:ReleaseAddress
+              - ec2:ReplaceRouteTableAssociation
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:StartInstances
+              - ec2:StopInstances
+              - ec2:TerminateInstances
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy:
+                  - Clutter
+                  - Ansible
+          # Detaching an Elastic IP by its association id is authorized
+          # against no address or interface: real AWS names the resource
+          # arn:aws:ec2:<region>:<account>:*/* (2026-11-20), so no tag
+          # condition can hold for it (ADR-027).
+          - Sid: Ec2DisassociateAddresses
+            Effect: Allow
+            Action: ec2:DisassociateAddress
+            Resource: "*"
 
-            # A firewall with no network goes in the account's default VPC,
-            # which Clutter did not make. Creating a tagged group there
-            # changes nothing that is already in it.
-            - Sid: Ec2SecurityGroupsInAnyVpc
-              Effect: Allow
-              Action: ec2:CreateSecurityGroup
-              Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:vpc/*"
+  DeployerPolicyLambdaApi:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerLambdaApi-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: Lambda and API Gateway."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ---------- Lambda: functions and their invoke permissions ----------
+          - Sid: LambdaReads
+            Effect: Allow
+            Action:
+              - lambda:GetFunction
+              - lambda:GetFunctionCodeSigningConfig
+              - lambda:GetPolicy
+              - lambda:ListTags
+              - lambda:ListVersionsByFunction
+            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
+          - Sid: LambdaCreateTagged
+            Effect: Allow
+            Action: lambda:CreateFunction
+            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+          # CreateFunction with tags also checks TagResource, and IAM puts a
+          # new function's tags in aws:ResourceTag for that check, so this
+          # allows a create's tags and later tags on Clutter's functions,
+          # and never ManagedBy on a function that lacks it.
+          - Sid: LambdaTagClutterFunctions
+            Effect: Allow
+            Action: lambda:TagResource
+            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy: Clutter
+          - Sid: LambdaChangeClutterFunctions
+            Effect: Allow
+            Action:
+              - lambda:DeleteFunction
+              - lambda:RemovePermission
+              - lambda:UntagResource
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # Only API Gateway may be let in (B's iam template), never "*" or
+          # another account.
+          - Sid: LambdaInvokeFromApiGateway
+            Effect: Allow
+            Action: lambda:AddPermission
+            Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+                lambda:Principal: apigateway.amazonaws.com
+          # ---------- API Gateway: REST APIs and their tags only ----------
+          - Sid: ApiGatewayReads
+            Effect: Allow
+            Action: apigateway:GET
+            Resource:
+              - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis"
+              - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*"
+              - !Sub "arn:${AWS::Partition}:apigateway:*::/tags/*"
+          - Sid: ApiGatewayCreateTagged
+            Effect: Allow
+            Action: apigateway:POST
+            Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/restapis"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+          # A REST API's resources, methods, integrations, deployments and
+          # stages inherit its tags for this check, so this reaches only
+          # Clutter's APIs.
+          - Sid: ApiGatewayChangeClutterApis
+            Effect: Allow
+            Action:
+              - apigateway:DELETE
+              - apigateway:PATCH
+              - apigateway:POST
+              - apigateway:PUT
+            Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # API Gateway does not list method responses and integration
+          # responses (B's CORS answers) among the children that inherit a
+          # REST API's tags, so these carry no tag condition. On an API
+          # Clutter did not make they change nothing callers see: a change
+          # goes live only with a new deployment, which needs the tag.
+          - Sid: ApiGatewayUntaggedChildren
+            Effect: Allow
+            Action:
+              - apigateway:DELETE
+              - apigateway:PATCH
+              - apigateway:POST
+              - apigateway:PUT
+            Resource:
+              - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/responses/*"
+              - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/integration/responses/*"
+          # The tags path carries no tag condition of its own. Here tags
+          # change only without ManagedBy; ApiGatewayTagOnCreate is the one
+          # statement that may set it.
+          - Sid: ApiGatewayTagsWithoutManagedBy
+            Effect: Allow
+            Action:
+              - apigateway:DELETE
+              - apigateway:PUT
+            Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/tags/*"
+            Condition:
+              ForAllValues:StringNotEquals:
+                aws:TagKeys: ManagedBy
+          # A REST API is created with its tags, and API Gateway checks a PUT
+          # on the tags path for them (ADR-027). Tagging an existing API also
+          # needs apigateway:PATCH on that API, which only Clutter's APIs
+          # allow (ApiGatewayChangeClutterApis), so this cannot adopt the
+          # owner's APIs: tested on real AWS on 2026-11-20. Only Clutter's
+          # two tag keys, with ManagedBy = Clutter.
+          - Sid: ApiGatewayTagOnCreate
+            Effect: Allow
+            Action: apigateway:PUT
+            Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/tags/*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - ManagedBy
+                  - ClutterDeployment
 
-            # What a new instance uses or creates with it: Amazon's image, the
-            # key pair the user named, a subnet and security group (the
-            # default VPC's for A's instances, Clutter's for B's), and the
-            # root volume and network interface RunInstances creates, which
-            # the provider does not tag. Ec2CreateTagged requires the tag on
-            # the instance itself.
-            - Sid: Ec2RunInstancesWith
-              Effect: Allow
-              Action: ec2:RunInstances
-              Resource:
-                - !Sub "arn:${AWS::Partition}:ec2:*::image/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:key-pair/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:network-interface/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:subnet/*"
-                - !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*"
+  DeployerPolicyDataLogs:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerDataLogs-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: DynamoDB, S3 and CloudWatch Logs."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ---------- DynamoDB: tables, never their items ----------
+          - Sid: DynamoDbReads
+            Effect: Allow
+            Action:
+              - dynamodb:DescribeContinuousBackups
+              - dynamodb:DescribeTable
+              - dynamodb:DescribeTimeToLive
+              - dynamodb:ListTagsOfResource
+            Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
+          - Sid: DynamoDbCreateTagged
+            Effect: Allow
+            Action: dynamodb:CreateTable
+            Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+          # CreateTable with tags also checks TagResource; as for Lambda, a
+          # new table's tags are its aws:ResourceTag for that check.
+          - Sid: DynamoDbTagClutterTables
+            Effect: Allow
+            Action: dynamodb:TagResource
+            Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy: Clutter
+          - Sid: DynamoDbChangeClutterTables
+            Effect: Allow
+            Action:
+              - dynamodb:DeleteTable
+              - dynamodb:UntagResource
+              - dynamodb:UpdateContinuousBackups
+              - dynamodb:UpdateTable
+              - dynamodb:UpdateTimeToLive
+            Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # ---------- S3: buckets, and objects only to empty B's ----------
+          # No tag condition here: S3 checks a bucket's tags only on a
+          # bucket with ABAC switched on (s3:PutBucketAbac), which the AWS
+          # provider ~> 5.0 cannot do, and A's bucket names are the user's
+          # own, so no name pattern covers them. The changes this allows on
+          # any bucket are deleting an empty bucket and setting its tags,
+          # versioning and public access block; none reads or writes an
+          # object, and none can make one public without a bucket policy
+          # or ACL, which this role can set on no bucket but B's (below).
+          - Sid: S3Buckets
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:GetAccelerateConfiguration
+              - s3:GetBucketAcl
+              - s3:GetBucketCORS
+              - s3:GetBucketLogging
+              - s3:GetBucketObjectLockConfiguration
+              - s3:GetBucketPolicy
+              - s3:GetBucketPublicAccessBlock
+              - s3:GetBucketRequestPayment
+              - s3:GetBucketTagging
+              - s3:GetBucketVersioning
+              - s3:GetBucketWebsite
+              - s3:GetEncryptionConfiguration
+              - s3:GetLifecycleConfiguration
+              - s3:GetReplicationConfiguration
+              - s3:ListBucket
+              - s3:PutBucketPublicAccessBlock
+              - s3:PutBucketTagging
+              - s3:PutBucketVersioning
+            Resource: !Sub "arn:${AWS::Partition}:s3:::*"
+          # B's buckets only, named with a deployment prefix
+          # (connectors.PrefixFor): the policy that refuses requests not
+          # made over TLS (B's defaults template), which Block Public Access
+          # keeps from ever making a bucket public, and emptying a bucket
+          # whose "Delete files on destroy" field is on (force_destroy), so
+          # destroying it can delete it.
+          - Sid: S3DeploymentBucketPolicies
+            Effect: Allow
+            Action:
+              - s3:DeleteBucketPolicy
+              - s3:ListBucketVersions
+              - s3:PutBucketPolicy
+            Resource: !Sub "arn:${AWS::Partition}:s3:::c????????-*"
+          - Sid: S3EmptyDeploymentBuckets
+            Effect: Allow
+            Action:
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+            Resource: !Sub "arn:${AWS::Partition}:s3:::c????????-*/*"
+          # ---------- CloudWatch Logs: each function's own log group ----------
+          # B creates /aws/lambda/<function> for every function it builds,
+          # all named with a deployment prefix, with a 30-day retention.
+          # DescribeLogGroups supports no resource. A new group must carry
+          # ManagedBy in its create request, and every change, tag or
+          # delete needs it on the group.
+          - Sid: LogsReads
+            Effect: Allow
+            Action: logs:DescribeLogGroups
+            Resource: "*"
+          - Sid: LogsReadDeploymentGroups
+            Effect: Allow
+            Action: logs:ListTagsForResource
+            Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+          - Sid: LogsCreateTagged
+            Effect: Allow
+            Action: logs:CreateLogGroup
+            Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+            Condition:
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+          # As for Lambda: a new group's tags are its aws:ResourceTag for
+          # the TagResource check its create makes.
+          - Sid: LogsTagClutterGroups
+            Effect: Allow
+            Action: logs:TagResource
+            Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy: Clutter
+          - Sid: LogsChangeClutterGroups
+            Effect: Allow
+            Action:
+              - logs:DeleteLogGroup
+              - logs:DeleteRetentionPolicy
+              - logs:PutRetentionPolicy
+              - logs:UntagResource
+            Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/lambda/c????????-*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
 
-            # A rule a security group gains is new; the group it goes in must
-            # carry the tag (Ec2ChangeClutterResources).
-            - Sid: Ec2NewSecurityGroupRules
-              Effect: Allow
-              Action:
-                - ec2:AuthorizeSecurityGroupEgress
-                - ec2:AuthorizeSecurityGroupIngress
-              Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group-rule/*"
+  DeployerPolicyIamRoles:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerIamRoles-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: IAM roles and their boundaries."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ---------- IAM: only the roles and instance profiles the templates make ----------
+          # The templates put every role and instance profile under the
+          # path /clutter/: the lambda template names its role
+          # <function>-lambda-role and the ec2 template <instance>-ssm-role
+          # and <instance>-ssm-profile. A role or profile the account's
+          # owner made sits at another path, so this role can never read,
+          # change, delete or pass it. No group or managed policy, users
+          # and access keys only as the scoped keys below, and never this
+          # role itself
+          # (/AllowClutterToDeployTerraformRole-*). Reading and removing
+          # need no boundary: neither adds a permission.
+          - Sid: IamTemplateRoles
+            Effect: Allow
+            Action:
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy
+              - iam:GetRole
+              - iam:GetRolePolicy
+              - iam:ListAttachedRolePolicies
+              - iam:ListInstanceProfilesForRole
+              - iam:ListRolePolicies
+              - iam:ListRoleTags
+              - iam:UntagRole
+              - iam:UpdateRole
+              - iam:UpdateRoleDescription
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+          # A new role must carry PermissionsBoundary, so even a policy that
+          # says "*" stays inside it, and the tag ManagedBy = Clutter. The
+          # provider sends both inside CreateRole. Only Clutter's tag keys:
+          # ManagedBy from the templates, ClutterDeployment from B's
+          # provider default_tags.
+          - Sid: IamCreateTemplateRoles
+            Effect: Allow
+            Action: iam:CreateRole
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              ArnEquals:
+                iam:PermissionsBoundary: !Ref PermissionsBoundary
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - ManagedBy
+                  - ClutterDeployment
+          # Tags change only within Clutter's keys, and ManagedBy only to
+          # Clutter.
+          - Sid: IamTagTemplateRoles
+            Effect: Allow
+            Action: iam:TagRole
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy: Clutter
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - ManagedBy
+                  - ClutterDeployment
+          # An inline policy only on a role with the boundary. There is no
+          # UpdateAssumeRolePolicy: the templates never change a role's
+          # trust, and a new trust is how a role would be opened to another
+          # account. There is no PutRolePermissionsBoundary: every role
+          # under /clutter/ gets its boundary when it is created.
+          - Sid: IamPolicyOnBoundedRoles
+            Effect: Allow
+            Action: iam:PutRolePolicy
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              ArnEquals:
+                iam:PermissionsBoundary: !Ref PermissionsBoundary
+          # A boundary, once set, stays, and neither boundary policy ever
+          # changes from here.
+          - Sid: NoBoundaryRemoval
+            Effect: Deny
+            Action:
+              - iam:DeleteRolePermissionsBoundary
+              - iam:DeleteUserPermissionsBoundary
+            Resource: "*"
+          - Sid: NoBoundaryEdit
+            Effect: Deny
+            Action:
+              - iam:CreatePolicyVersion
+              - iam:DeletePolicy
+              - iam:DeletePolicyVersion
+              - iam:SetDefaultPolicyVersion
+            Resource:
+              - !Ref PermissionsBoundary
+              - !Ref UserPermissionsBoundary
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerEc2Reads-${UniqueId}"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerEc2Instances-${UniqueId}"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerLambdaApi-${UniqueId}"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerDataLogs-${UniqueId}"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerIamRoles-${UniqueId}"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/clutter/ClutterDeployerIamUsersSsm-${UniqueId}"
+          - Sid: IamTemplateInstanceProfiles
+            Effect: Allow
+            Action:
+              - iam:AddRoleToInstanceProfile
+              - iam:CreateInstanceProfile
+              - iam:DeleteInstanceProfile
+              - iam:GetInstanceProfile
+              - iam:ListInstanceProfileTags
+              - iam:RemoveRoleFromInstanceProfile
+              - iam:TagInstanceProfile
+              - iam:UntagInstanceProfile
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/clutter/*-ssm-profile"
+          # Only the AWS managed policy the templates attach: SSM access for
+          # instances (ec2 template). Attaching also needs the boundary on
+          # the role. A function's log writing is an inline policy on its
+          # own log group (B's iam template); detaching still covers the
+          # managed policy B attached to functions before.
+          - Sid: IamAttachTemplatePolicies
+            Effect: Allow
+            Action: iam:AttachRolePolicy
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              ArnEquals:
+                iam:PolicyARN: !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+                iam:PermissionsBoundary: !Ref PermissionsBoundary
+          - Sid: IamDetachTemplatePolicies
+            Effect: Allow
+            Action: iam:DetachRolePolicy
+            Resource:
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+              - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              ArnEquals:
+                iam:PolicyARN:
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+                  - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 
-            # Tags sent inside a create request: allowed only for the
-            # resources that request creates.
-            - Sid: Ec2TagOnCreate
-              Effect: Allow
-              Action: ec2:CreateTags
-              Resource: "*"
-              Condition:
-                StringEquals:
-                  ec2:CreateAction:
-                    - AuthorizeSecurityGroupEgress
-                    - AuthorizeSecurityGroupIngress
-                    - CreateInternetGateway
-                    - CreateRouteTable
-                    - CreateSecurityGroup
-                    - CreateSubnet
-                    - CreateVolume
-                    - CreateVpc
-                    - RunInstances
+  DeployerPolicyIamUsersSsm:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ClutterDeployerIamUsersSsm-${UniqueId}"
+      Path: /clutter/
+      Description: "Clutter deployer role permissions: IAM users and keys, PassRole and SSM."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ---------- IAM: scoped keys for split deployments ----------
+          # When a VM on another cloud reads a bucket or table here, B's
+          # cross template (backend/adapter/connectors/aws/tmpl/cross.tf.tmpl)
+          # creates one user under /clutter/ with UserPermissionsBoundary,
+          # one inline policy that allows only that edge's reads on that
+          # one bucket or table, and one access key, and deletes all three
+          # when the deployment is destroyed (ADR-020). These are the calls
+          # the AWS provider (~> 5.0, checked against v5.100) makes for
+          # aws_iam_user without force_destroy, aws_iam_user_policy and
+          # aws_iam_access_key. Reading and removing need no boundary:
+          # neither adds a permission.
+          - Sid: IamScopedKeyUsers
+            Effect: Allow
+            Action:
+              - iam:DeleteAccessKey
+              - iam:DeleteUser
+              - iam:DeleteUserPolicy
+              - iam:GetUser
+              - iam:GetUserPolicy
+              - iam:ListAccessKeys
+              - iam:ListGroupsForUser
+              - iam:UntagUser
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
+          # A new user must carry UserPermissionsBoundary, never the roles'
+          # wider one, and the tag ManagedBy = Clutter, with only Clutter's
+          # tag keys, as a role.
+          - Sid: IamCreateScopedKeyUsers
+            Effect: Allow
+            Action: iam:CreateUser
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
+            Condition:
+              ArnEquals:
+                iam:PermissionsBoundary: !Ref UserPermissionsBoundary
+              StringEquals:
+                aws:RequestTag/ManagedBy: Clutter
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - ManagedBy
+                  - ClutterDeployment
+          - Sid: IamTagScopedKeyUsers
+            Effect: Allow
+            Action: iam:TagUser
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
+            Condition:
+              StringEqualsIfExists:
+                aws:RequestTag/ManagedBy: Clutter
+              ForAllValues:StringEquals:
+                aws:TagKeys:
+                  - ManagedBy
+                  - ClutterDeployment
+          # An inline policy only on a user with the users' boundary.
+          - Sid: IamPolicyOnBoundedUsers
+            Effect: Allow
+            Action: iam:PutUserPolicy
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
+            Condition:
+              ArnEquals:
+                iam:PermissionsBoundary: !Ref UserPermissionsBoundary
+          # A key only for a user Clutter created (CreateAccessKey takes no
+          # boundary condition, so the tag stands in for it).
+          - Sid: IamScopedKeys
+            Effect: Allow
+            Action: iam:CreateAccessKey
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
+            Condition:
+              StringEquals:
+                aws:ResourceTag/ManagedBy: Clutter
+          # ---------- IAM PassRole: Clutter's function roles to Lambda, instance roles to EC2 ----------
+          - Sid: PassFunctionRoles
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
+            Condition:
+              StringEquals:
+                iam:PassedToService: lambda.amazonaws.com
+          # IfExists: AddRoleToInstanceProfile also checks PassRole, and
+          # its request may carry no iam:PassedToService.
+          - Sid: PassInstanceRoles
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
+            Condition:
+              StringEqualsIfExists:
+                iam:PassedToService: ec2.amazonaws.com
+          # ---------- SSM: the AMI lookup and A's Ansible runner ----------
+          # The ec2 template reads the Amazon Linux AMI id from a public
+          # parameter, which has no account in its ARN.
+          - Sid: SsmPublicAmiParameters
+            Effect: Allow
+            Action: ssm:GetParameter
+            Resource: !Sub "arn:${AWS::Partition}:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
+          # The Ansible runner runs AWS-RunShellScript on instances the ec2
+          # template tagged ManagedBy=Ansible, and nothing else. This role
+          # can set that tag only on an instance it launches
+          # (Ec2CreateTagged), never on one the account's owner made.
+          - Sid: SsmRunShellScriptDocument
+            Effect: Allow
+            Action: ssm:SendCommand
+            Resource: !Sub "arn:${AWS::Partition}:ssm:*::document/AWS-RunShellScript"
+          - Sid: SsmRunOnAnsibleInstances
+            Effect: Allow
+            Action: ssm:SendCommand
+            Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals:
+                ssm:resourceTag/ManagedBy: Ansible
+          # Neither action supports a resource ARN.
+          - Sid: SsmCommandResults
+            Effect: Allow
+            Action:
+              - ssm:GetCommandInvocation
+              - ssm:ListCommands
+            Resource: "*"
 
-            # Tags change later only on a resource that already carries
-            # ManagedBy, and ManagedBy only to one of Clutter's values.
-            - Sid: Ec2TagClutterResources
-              Effect: Allow
-              Action:
-                - ec2:CreateTags
-                - ec2:DeleteTags
-              Resource: "*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy:
-                    - Clutter
-                    - Ansible
-                StringEqualsIfExists:
-                  aws:RequestTag/ManagedBy:
-                    - Clutter
-                    - Ansible
-
-            # Every change and delete: only on resources that carry ManagedBy.
-            # Each action names every resource it touches (an instance and a
-            # volume for AttachVolume, a route table and a subnet for
-            # AssociateRouteTable), and each must carry the tag.
-            - Sid: Ec2ChangeClutterResources
-              Effect: Allow
-              Action:
-                - ec2:AssociateIamInstanceProfile
-                - ec2:AssociateRouteTable
-                - ec2:AttachInternetGateway
-                - ec2:AttachVolume
-                - ec2:AuthorizeSecurityGroupEgress
-                - ec2:AuthorizeSecurityGroupIngress
-                - ec2:CreateRoute
-                - ec2:DeleteInternetGateway
-                - ec2:DeleteRoute
-                - ec2:DeleteRouteTable
-                - ec2:DeleteSecurityGroup
-                - ec2:DeleteSubnet
-                - ec2:DeleteVolume
-                - ec2:DeleteVpc
-                - ec2:DetachInternetGateway
-                - ec2:DetachVolume
-                - ec2:DisassociateIamInstanceProfile
-                - ec2:DisassociateRouteTable
-                - ec2:ModifyInstanceAttribute
-                - ec2:ModifySecurityGroupRules
-                - ec2:ModifySubnetAttribute
-                - ec2:ModifyVolume
-                - ec2:ModifyVpcAttribute
-                - ec2:ReplaceIamInstanceProfileAssociation
-                - ec2:ReplaceRoute
-                - ec2:ReplaceRouteTableAssociation
-                - ec2:RevokeSecurityGroupEgress
-                - ec2:RevokeSecurityGroupIngress
-                - ec2:StartInstances
-                - ec2:StopInstances
-                - ec2:TerminateInstances
-              Resource: "*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy:
-                    - Clutter
-                    - Ansible
-
-            # ---------- Lambda: functions and their invoke permissions ----------
-            - Sid: LambdaReads
-              Effect: Allow
-              Action:
-                - lambda:GetFunction
-                - lambda:GetFunctionCodeSigningConfig
-                - lambda:GetPolicy
-                - lambda:ListTags
-                - lambda:ListVersionsByFunction
-              Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-
-            - Sid: LambdaCreateTagged
-              Effect: Allow
-              Action: lambda:CreateFunction
-              Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-              Condition:
-                StringEquals:
-                  aws:RequestTag/ManagedBy: Clutter
-
-            # CreateFunction with tags also checks TagResource, and IAM puts a
-            # new function's tags in aws:ResourceTag for that check, so this
-            # allows a create's tags and later tags on Clutter's functions,
-            # and never ManagedBy on a function that lacks it.
-            - Sid: LambdaTagClutterFunctions
-              Effect: Allow
-              Action: lambda:TagResource
-              Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-                StringEqualsIfExists:
-                  aws:RequestTag/ManagedBy: Clutter
-
-            - Sid: LambdaChangeClutterFunctions
-              Effect: Allow
-              Action:
-                - lambda:DeleteFunction
-                - lambda:RemovePermission
-                - lambda:UntagResource
-                - lambda:UpdateFunctionCode
-                - lambda:UpdateFunctionConfiguration
-              Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-
-            # Only API Gateway may be let in (B's iam template), never "*" or
-            # another account.
-            - Sid: LambdaInvokeFromApiGateway
-              Effect: Allow
-              Action: lambda:AddPermission
-              Resource: !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-                  lambda:Principal: apigateway.amazonaws.com
-
-            # ---------- API Gateway: REST APIs and their tags only ----------
-            - Sid: ApiGatewayReads
-              Effect: Allow
-              Action: apigateway:GET
-              Resource:
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis"
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*"
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/tags/*"
-
-            - Sid: ApiGatewayCreateTagged
-              Effect: Allow
-              Action: apigateway:POST
-              Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/restapis"
-              Condition:
-                StringEquals:
-                  aws:RequestTag/ManagedBy: Clutter
-
-            # A REST API's resources, methods, integrations, deployments and
-            # stages inherit its tags for this check, so this reaches only
-            # Clutter's APIs.
-            - Sid: ApiGatewayChangeClutterApis
-              Effect: Allow
-              Action:
-                - apigateway:DELETE
-                - apigateway:PATCH
-                - apigateway:POST
-                - apigateway:PUT
-              Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-
-            # API Gateway does not list request validators, method responses
-            # and integration responses among the children that inherit a
-            # REST API's tags, so these carry no tag condition. On an API
-            # Clutter did not make they change nothing callers see: a change
-            # goes live only with a new deployment, which needs the tag.
-            - Sid: ApiGatewayUntaggedChildren
-              Effect: Allow
-              Action:
-                - apigateway:DELETE
-                - apigateway:PATCH
-                - apigateway:POST
-                - apigateway:PUT
-              Resource:
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/requestvalidators*"
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/responses/*"
-                - !Sub "arn:${AWS::Partition}:apigateway:*::/restapis/*/methods/*/integration/responses/*"
-
-            # The tags path carries no tag condition of its own, so tags
-            # change there only without ManagedBy: a REST API gets ManagedBy
-            # in its create request (ApiGatewayCreateTagged) and never later.
-            - Sid: ApiGatewayTagsWithoutManagedBy
-              Effect: Allow
-              Action:
-                - apigateway:DELETE
-                - apigateway:PUT
-              Resource: !Sub "arn:${AWS::Partition}:apigateway:*::/tags/*"
-              Condition:
-                ForAllValues:StringNotEquals:
-                  aws:TagKeys: ManagedBy
-
-            # ---------- DynamoDB: tables, never their items ----------
-            - Sid: DynamoDbReads
-              Effect: Allow
-              Action:
-                - dynamodb:DescribeContinuousBackups
-                - dynamodb:DescribeTable
-                - dynamodb:DescribeTimeToLive
-                - dynamodb:ListTagsOfResource
-              Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
-
-            - Sid: DynamoDbCreateTagged
-              Effect: Allow
-              Action: dynamodb:CreateTable
-              Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
-              Condition:
-                StringEquals:
-                  aws:RequestTag/ManagedBy: Clutter
-
-            # CreateTable with tags also checks TagResource; as for Lambda, a
-            # new table's tags are its aws:ResourceTag for that check.
-            - Sid: DynamoDbTagClutterTables
-              Effect: Allow
-              Action: dynamodb:TagResource
-              Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-                StringEqualsIfExists:
-                  aws:RequestTag/ManagedBy: Clutter
-
-            - Sid: DynamoDbChangeClutterTables
-              Effect: Allow
-              Action:
-                - dynamodb:DeleteTable
-                - dynamodb:UntagResource
-                - dynamodb:UpdateTable
-                - dynamodb:UpdateTimeToLive
-              Resource: !Sub "arn:${AWS::Partition}:dynamodb:*:${AWS::AccountId}:table/*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-
-            # ---------- S3: buckets, never their objects ----------
-            # No tag condition here: S3 checks a bucket's tags only on a
-            # bucket with ABAC switched on (s3:PutBucketAbac), which the AWS
-            # provider ~> 5.0 cannot do, and A's bucket names are the user's
-            # own, so no name pattern covers them. The changes this allows on
-            # any bucket are deleting an empty bucket and setting its tags,
-            # versioning and public access block; none reads or writes an
-            # object, and none can make one public without a bucket policy
-            # or ACL, which this role cannot set.
-            - Sid: S3Buckets
-              Effect: Allow
-              Action:
-                - s3:CreateBucket
-                - s3:DeleteBucket
-                - s3:GetAccelerateConfiguration
-                - s3:GetBucketAcl
-                - s3:GetBucketCORS
-                - s3:GetBucketLogging
-                - s3:GetBucketObjectLockConfiguration
-                - s3:GetBucketPolicy
-                - s3:GetBucketPublicAccessBlock
-                - s3:GetBucketRequestPayment
-                - s3:GetBucketTagging
-                - s3:GetBucketVersioning
-                - s3:GetBucketWebsite
-                - s3:GetEncryptionConfiguration
-                - s3:GetLifecycleConfiguration
-                - s3:GetReplicationConfiguration
-                - s3:ListBucket
-                - s3:PutBucketPublicAccessBlock
-                - s3:PutBucketTagging
-                - s3:PutBucketVersioning
-              Resource: !Sub "arn:${AWS::Partition}:s3:::*"
-
-            # ---------- IAM: only the roles and instance profiles the templates make ----------
-            # The templates put every role and instance profile under the
-            # path /clutter/: the lambda template names its role
-            # <function>-lambda-role and the ec2 template <instance>-ssm-role
-            # and <instance>-ssm-profile. A role or profile the account's
-            # owner made sits at another path, so this role can never read,
-            # change, delete or pass it. No group or managed policy, users
-            # and access keys only as the scoped keys below, and never this
-            # role itself
-            # (/AllowClutterToDeployTerraformRole-*). Reading and removing
-            # need no boundary: neither adds a permission.
-            - Sid: IamTemplateRoles
-              Effect: Allow
-              Action:
-                - iam:DeleteRole
-                - iam:DeleteRolePolicy
-                - iam:GetRole
-                - iam:GetRolePolicy
-                - iam:ListAttachedRolePolicies
-                - iam:ListInstanceProfilesForRole
-                - iam:ListRolePolicies
-                - iam:ListRoleTags
-                - iam:UntagRole
-                - iam:UpdateRole
-                - iam:UpdateRoleDescription
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-
-            # A new role must carry PermissionsBoundary, so even a policy that
-            # says "*" stays inside it, and the tag ManagedBy = Clutter. The
-            # provider sends both inside CreateRole. Only Clutter's tag keys:
-            # ManagedBy from the templates, ClutterDeployment from B's
-            # provider default_tags.
-            - Sid: IamCreateTemplateRoles
-              Effect: Allow
-              Action: iam:CreateRole
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                ArnEquals:
-                  iam:PermissionsBoundary: !Ref PermissionsBoundary
-                StringEquals:
-                  aws:RequestTag/ManagedBy: Clutter
-                ForAllValues:StringEquals:
-                  aws:TagKeys:
-                    - ManagedBy
-                    - ClutterDeployment
-
-            # Tags change only within Clutter's keys, and ManagedBy only to
-            # Clutter.
-            - Sid: IamTagTemplateRoles
-              Effect: Allow
-              Action: iam:TagRole
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                StringEqualsIfExists:
-                  aws:RequestTag/ManagedBy: Clutter
-                ForAllValues:StringEquals:
-                  aws:TagKeys:
-                    - ManagedBy
-                    - ClutterDeployment
-
-            # An inline policy only on a role with the boundary. There is no
-            # UpdateAssumeRolePolicy: the templates never change a role's
-            # trust, and a new trust is how a role would be opened to another
-            # account. There is no PutRolePermissionsBoundary: every role
-            # under /clutter/ gets its boundary when it is created.
-            - Sid: IamPolicyOnBoundedRoles
-              Effect: Allow
-              Action: iam:PutRolePolicy
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                ArnEquals:
-                  iam:PermissionsBoundary: !Ref PermissionsBoundary
-
-            # A boundary, once set, stays, and neither boundary policy ever
-            # changes from here.
-            - Sid: NoBoundaryRemoval
-              Effect: Deny
-              Action:
-                - iam:DeleteRolePermissionsBoundary
-                - iam:DeleteUserPermissionsBoundary
-              Resource: "*"
-
-            - Sid: NoBoundaryEdit
-              Effect: Deny
-              Action:
-                - iam:CreatePolicyVersion
-                - iam:DeletePolicy
-                - iam:DeletePolicyVersion
-                - iam:SetDefaultPolicyVersion
-              Resource:
-                - !Ref PermissionsBoundary
-                - !Ref UserPermissionsBoundary
-
-            - Sid: IamTemplateInstanceProfiles
-              Effect: Allow
-              Action:
-                - iam:AddRoleToInstanceProfile
-                - iam:CreateInstanceProfile
-                - iam:DeleteInstanceProfile
-                - iam:GetInstanceProfile
-                - iam:ListInstanceProfileTags
-                - iam:RemoveRoleFromInstanceProfile
-                - iam:TagInstanceProfile
-                - iam:UntagInstanceProfile
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/clutter/*-ssm-profile"
-
-            # Only the AWS managed policies the templates attach: SSM access
-            # for instances (ec2 template) and log writing for functions (B's
-            # iam template). Attaching also needs the boundary on the role.
-            - Sid: IamAttachTemplatePolicies
-              Effect: Allow
-              Action: iam:AttachRolePolicy
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                ArnEquals:
-                  iam:PolicyARN:
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-                  iam:PermissionsBoundary: !Ref PermissionsBoundary
-
-            - Sid: IamDetachTemplatePolicies
-              Effect: Allow
-              Action: iam:DetachRolePolicy
-              Resource:
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-                - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                ArnEquals:
-                  iam:PolicyARN:
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
-                    - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-
-            # ---------- IAM: scoped keys for split deployments ----------
-            # When a VM on another cloud reads a bucket or table here, B's
-            # cross template (backend/adapter/connectors/aws/tmpl/cross.tf.tmpl)
-            # creates one user under /clutter/ with UserPermissionsBoundary,
-            # one inline policy that allows only that edge's reads on that
-            # one bucket or table, and one access key, and deletes all three
-            # when the deployment is destroyed (ADR-020). These are the calls
-            # the AWS provider (~> 5.0, checked against v5.100) makes for
-            # aws_iam_user without force_destroy, aws_iam_user_policy and
-            # aws_iam_access_key. Reading and removing need no boundary:
-            # neither adds a permission.
-            - Sid: IamScopedKeyUsers
-              Effect: Allow
-              Action:
-                - iam:DeleteAccessKey
-                - iam:DeleteUser
-                - iam:DeleteUserPolicy
-                - iam:GetUser
-                - iam:GetUserPolicy
-                - iam:ListAccessKeys
-                - iam:ListGroupsForUser
-                - iam:UntagUser
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
-
-            # A new user must carry UserPermissionsBoundary, never the roles'
-            # wider one, and the tag ManagedBy = Clutter, with only Clutter's
-            # tag keys, as a role.
-            - Sid: IamCreateScopedKeyUsers
-              Effect: Allow
-              Action: iam:CreateUser
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
-              Condition:
-                ArnEquals:
-                  iam:PermissionsBoundary: !Ref UserPermissionsBoundary
-                StringEquals:
-                  aws:RequestTag/ManagedBy: Clutter
-                ForAllValues:StringEquals:
-                  aws:TagKeys:
-                    - ManagedBy
-                    - ClutterDeployment
-
-            - Sid: IamTagScopedKeyUsers
-              Effect: Allow
-              Action: iam:TagUser
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
-              Condition:
-                StringEqualsIfExists:
-                  aws:RequestTag/ManagedBy: Clutter
-                ForAllValues:StringEquals:
-                  aws:TagKeys:
-                    - ManagedBy
-                    - ClutterDeployment
-
-            # An inline policy only on a user with the users' boundary.
-            - Sid: IamPolicyOnBoundedUsers
-              Effect: Allow
-              Action: iam:PutUserPolicy
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
-              Condition:
-                ArnEquals:
-                  iam:PermissionsBoundary: !Ref UserPermissionsBoundary
-
-            # A key only for a user Clutter created (CreateAccessKey takes no
-            # boundary condition, so the tag stands in for it).
-            - Sid: IamScopedKeys
-              Effect: Allow
-              Action: iam:CreateAccessKey
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/clutter/*"
-              Condition:
-                StringEquals:
-                  aws:ResourceTag/ManagedBy: Clutter
-
-            # ---------- IAM PassRole: Clutter's function roles to Lambda, instance roles to EC2 ----------
-            - Sid: PassFunctionRoles
-              Effect: Allow
-              Action: iam:PassRole
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-lambda-role"
-              Condition:
-                StringEquals:
-                  iam:PassedToService: lambda.amazonaws.com
-
-            # IfExists: AddRoleToInstanceProfile also checks PassRole, and
-            # its request may carry no iam:PassedToService.
-            - Sid: PassInstanceRoles
-              Effect: Allow
-              Action: iam:PassRole
-              Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/clutter/*-ssm-role"
-              Condition:
-                StringEqualsIfExists:
-                  iam:PassedToService: ec2.amazonaws.com
-
-            # ---------- SSM: the AMI lookup and A's Ansible runner ----------
-            # The ec2 template reads the Amazon Linux AMI id from a public
-            # parameter, which has no account in its ARN.
-            - Sid: SsmPublicAmiParameters
-              Effect: Allow
-              Action: ssm:GetParameter
-              Resource: !Sub "arn:${AWS::Partition}:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
-
-            # The Ansible runner runs AWS-RunShellScript on instances the ec2
-            # template tagged ManagedBy=Ansible, and nothing else. This role
-            # can set that tag only on an instance it launches
-            # (Ec2CreateTagged), never on one the account's owner made.
-            - Sid: SsmRunShellScriptDocument
-              Effect: Allow
-              Action: ssm:SendCommand
-              Resource: !Sub "arn:${AWS::Partition}:ssm:*::document/AWS-RunShellScript"
-
-            - Sid: SsmRunOnAnsibleInstances
-              Effect: Allow
-              Action: ssm:SendCommand
-              Resource: !Sub "arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*"
-              Condition:
-                StringEquals:
-                  ssm:resourceTag/ManagedBy: Ansible
-
-            # Neither action supports a resource ARN.
-            - Sid: SsmCommandResults
-              Effect: Allow
-              Action:
-                - ssm:GetCommandInvocation
-                - ssm:ListCommands
-              Resource: "*"
 
 Outputs:
   RoleArn:
@@ -875,4 +1024,4 @@ Outputs:
   # Raise this whenever the role's trust or permissions change, so a connection
   # can tell which stacks need updating. B's AWS connector holds the same value.
   RoleTemplateVersion:
-    Value: "8"
+    Value: "10"

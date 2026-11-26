@@ -73,6 +73,9 @@ type store struct {
 	fail        map[string]string
 	done        chan string
 	deployments map[string]DeploymentStatus
+	// apart holds the deployments whose status was written apart from a
+	// run's end (only a split run's roll-back may do that).
+	apart map[string]bool
 }
 
 func newStore() *store {
@@ -86,10 +89,16 @@ func (s *store) RunStarted(_ context.Context, id string, _ time.Time) error {
 	return nil
 }
 
-func (s *store) RunFinished(_ context.Context, id string, st Status, failure string, _ time.Time) error {
+func (s *store) RunFinished(_ context.Context, id string, st Status, failure string, _ time.Time, change *DeploymentChange) error {
 	s.mu.Lock()
 	s.runs[id] = append(s.runs[id], st)
 	s.fail[id] = failure
+	if change != nil {
+		if s.deployments == nil {
+			s.deployments = map[string]DeploymentStatus{}
+		}
+		s.deployments[change.ID] = change.Status
+	}
 	s.mu.Unlock()
 	s.done <- id
 	return nil
@@ -100,8 +109,13 @@ func (s *store) SetDeploymentStatus(_ context.Context, id string, st DeploymentS
 	defer s.mu.Unlock()
 	if s.deployments == nil {
 		s.deployments = map[string]DeploymentStatus{}
+		s.apart = map[string]bool{}
+	}
+	if s.apart == nil {
+		s.apart = map[string]bool{}
 	}
 	s.deployments[id] = st
+	s.apart[id] = true
 	return nil
 }
 
@@ -113,9 +127,10 @@ func (broker) Credentials(context.Context, string) (connectors.Secrets, error) {
 
 // fake is a connector whose plan does what the test needs.
 type fake struct {
-	plan  func(ctx context.Context, run connectors.Run) error
-	apply func() error
-	built map[string]string
+	plan    func(ctx context.Context, run connectors.Run) error
+	apply   func() error
+	built   map[string]string
+	results map[string][]connectors.Result
 }
 
 func (fake) ID() string { return "fake" }
@@ -140,7 +155,7 @@ func (f fake) Apply(context.Context, connectors.Run, connectors.Graph, connector
 	if f.apply != nil {
 		return connectors.RunResult{}, f.apply()
 	}
-	return connectors.RunResult{Resources: f.built}, nil
+	return connectors.RunResult{Resources: f.built, Results: f.results}, nil
 }
 func (fake) Destroy(context.Context, connectors.Run, connectors.Deployment) (connectors.RunResult, error) {
 	return connectors.RunResult{}, nil
@@ -153,9 +168,26 @@ func setup(t *testing.T, c connectors.Connector, logBuf io.Writer) (*Runner, *st
 	}
 	st, logs := newStore(), logstore.NewMemory()
 	r := New(Config{Registry: reg, Store: st, Broker: broker{}, Logs: logs, Workers: 1,
-		Logger: slog.New(slog.NewTextHandler(logBuf, nil))})
+		Logger: slog.New(slog.NewTextHandler(logBuf, nil)), Now: func() time.Time { return testNow }})
 	r.Start()
 	return r, st, logs
+}
+
+// testNow is the runner's clock in these tests.
+var testNow = time.Date(2026, 11, 21, 10, 42, 3, 0, time.UTC)
+
+// endLine is the line that ends every run's log.
+func endLine(runID string) string { return "Run " + runID + " ended at 10:42:03 UTC.\n" }
+
+// readLog returns a run's whole log.
+func readLog(t *testing.T, logs *logstore.Memory, key string) string {
+	t.Helper()
+	rc, err := logs.Open(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
+	return string(b)
 }
 
 func job(id string) Job {
@@ -191,13 +223,14 @@ func TestAFailingConnectorNeverLeaksTheCredential(t *testing.T) {
 	}
 }
 
-// B's own apply line counts the blocks a connector built, and says so: it must
-// not read as Terraform's resource count, which is printed earlier and larger.
+// B's own apply line counts the blocks a connector built or changed in the
+// run, and says so: it must not read as Terraform's resource count, which is
+// printed earlier and larger, and an apply that changed nothing says so.
 func TestTheApplyLineCountsBlocks(t *testing.T) {
 	for n, want := range map[int]string{
-		0: "Apply complete: 0 blocks built.\n",
-		1: "Apply complete: 1 block built.\n",
-		6: "Apply complete: 6 blocks built.\n",
+		0: "Apply complete: everything is up to date.\n",
+		1: "Apply complete: 1 block built or changed.\n",
+		6: "Apply complete: 6 blocks built or changed.\n",
 	} {
 		built := map[string]string{}
 		for i := range n {
@@ -213,14 +246,108 @@ func TestTheApplyLineCountsBlocks(t *testing.T) {
 		if err := r.Stop(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		rc, err := logs.Open(j.LogKey)
-		if err != nil {
-			t.Fatal(err)
+		b := readLog(t, logs, j.LogKey)
+		if !strings.HasSuffix(b, want+endLine(j.RunID)) || strings.Contains(b, "resources") {
+			t.Errorf("%d blocks: log ends %q, want %q", n, b, want)
 		}
-		b, _ := io.ReadAll(rc) //nolint:errcheck // memory reader
-		if !strings.HasSuffix(string(b), want) || strings.Contains(string(b), "resources") {
-			t.Errorf("%d blocks: log ends %q, want %q", n, string(b), want)
+	}
+}
+
+// The log opens with a line a person reads: the action, the cloud and the
+// connection by name, and when it started, with no id in it. The run's id
+// ends the log, so it still names the run it belongs to.
+func TestTheLogOpensWithNamesAndEndsWithTheRunsID(t *testing.T) {
+	r, st, logs := setup(t, fake{plan: func(context.Context, connectors.Run) error { return nil }}, io.Discard)
+	j := job(uuid.NewString())
+	j.ConnectionName = "audit mock"
+	if err := r.Enqueue(j); err != nil {
+		t.Fatal(err)
+	}
+	<-st.done
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	b := readLog(t, logs, j.LogKey)
+	first, _, _ := strings.Cut(b, "\n")
+	if first != "Plan on Fake (audit mock), started 10:42:03 UTC." {
+		t.Fatalf("first line %q", first)
+	}
+	if !strings.HasSuffix(b, endLine(j.RunID)) || strings.Count(b, j.RunID) != 1 || strings.Contains(b, j.Deployment.ID) {
+		t.Fatalf("log %q: want the run's id once, on the last line, and no deployment id", b)
+	}
+}
+
+// A problem line names the block or the line as the diagram does, never by
+// node id, and a name that would break the line falls back to the id.
+func TestAProblemNamesItsBlock(t *testing.T) {
+	g := connectors.Graph{Blocks: map[string]connectors.Block{
+		"n1": {ID: "n1", Kind: connectors.KindVM, Name: "web"},
+		"n2": {ID: "n2", Kind: connectors.KindVM, Name: "db"},
+		"n3": {ID: "n3", Kind: connectors.KindVM, Name: "two\nlines"},
+	}}
+	for p, want := range map[connectors.Problem]string{
+		{NodeID: "n1", Message: "m"}:                       "web: ",
+		{EdgeSource: "n1", EdgeTarget: "n2", Message: "m"}: "web to db: ",
+		{NodeID: "n3", Message: "m"}:                       "n3: ",
+		{Message: "m"}:                                     "",
+		{NodeID: "gone", Message: "m"}:                     "gone: ",
+	} {
+		if got := problemWhere(g, p); got != want {
+			t.Errorf("problemWhere(%+v) = %q, want %q", p, got, want)
 		}
+	}
+}
+
+// An apply's blocks follow B's apply line, one "Built:" line each with the
+// block's kind and name as this apply built it, then its results, one
+// "Result:" line each, by node id. A left-out block is not named, and a value
+// that could break the line is left out.
+func TestTheApplyWritesItsBlocksAndResults(t *testing.T) {
+	r, st, logs := setup(t, fake{built: map[string]string{"web": "i-1"}, results: map[string][]connectors.Result{
+		"web": {{Name: connectors.ResultPrivateAddress, Value: "10.0.0.5"}, {Name: connectors.ResultPublicAddress, Value: "203.0.113.9"}},
+		"api": {{Name: connectors.ResultURL, Value: "https://x.example/v1/items"}},
+		"bad": {{Name: connectors.ResultTable, Value: "two words"}},
+	}}, io.Discard)
+	j := job(uuid.NewString())
+	j.Action = connectors.ActionApply
+	j.Graph = connectors.Graph{Blocks: map[string]connectors.Block{
+		"web": {ID: "web", Kind: connectors.KindVM, Name: "web", Fields: map[string]any{}},
+		"api": {ID: "api", Kind: connectors.KindHTTPAPI, Name: "orders-api", Fields: map[string]any{}},
+		"old": {ID: "old", Kind: connectors.KindBucket, Name: "old-files", Fields: map[string]any{}},
+	}}
+	j.Deployment.Exclusions = []string{"old"}
+	if err := r.Enqueue(j); err != nil {
+		t.Fatal(err)
+	}
+	<-st.done
+	if err := r.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	b := readLog(t, logs, j.LogKey)
+	want := "Apply complete: 1 block built or changed.\n" +
+		"Built: api http_api orders-api\n" +
+		"Built: web vm web\n" +
+		"Result: api url https://x.example/v1/items\n" +
+		"Result: web private_address 10.0.0.5\n" +
+		"Result: web public_address 203.0.113.9\n" +
+		endLine(j.RunID)
+	if !strings.HasSuffix(b, want) {
+		t.Fatalf("log ends %q, want %q", b, want)
+	}
+}
+
+// The capability check refuses a bad name before any apply; writeBuilt still
+// leaves out a block whose line a space or a missing name would break.
+func TestWriteBuiltLeavesOutALineItCannotWrite(t *testing.T) {
+	g := connectors.Graph{Blocks: map[string]connectors.Block{
+		"web":  {ID: "web", Kind: connectors.KindVM, Name: "web"},
+		"odd":  {ID: "odd", Kind: connectors.KindTable, Name: "two words"},
+		"none": {ID: "none", Kind: connectors.KindTable},
+	}}
+	var b bytes.Buffer
+	writeBuilt(&b, g, connectors.Deployment{})
+	if got, want := b.String(), "Built: web vm web\n"; got != want {
+		t.Fatalf("wrote %q, want %q", got, want)
 	}
 }
 
@@ -376,9 +503,15 @@ func TestOnlyAFailureAfterTheCloudMarksTheDeploymentFailed(t *testing.T) {
 			}
 			st.mu.Lock()
 			got, set := st.deployments[j.Deployment.ID]
+			apart := st.apart[j.Deployment.ID]
 			st.mu.Unlock()
 			if set != c.set || got != c.want {
 				t.Fatalf("deployment status = %q (set %v), want %q (set %v)", got, set, c.want, c.set)
+			}
+			// The status must come with the run's end, in one write, never
+			// in a second one a reader could see the run finish before.
+			if apart {
+				t.Fatal("the deployment's status was written apart from the run's end")
 			}
 		})
 	}

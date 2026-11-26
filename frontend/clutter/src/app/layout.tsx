@@ -2,6 +2,7 @@
 
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { themeScript } from "@/components/common/theme";
 import { SITE_URL } from "@/components/landing/site";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -23,11 +24,20 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// Every screen is dark, so the shadcn tokens use their dark values (the
-// `dark` class turns on the `.dark` block in globals.css).
+// The server renders the default theme, dark. The inline script in <head>
+// runs before the first paint and takes `dark` off <html> when the viewer
+// chose light (or system on a light system), so a reload never flashes the
+// wrong theme
+// (components/common/theme.ts). Parts with a fixed theme are ThemeScopes.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+    // suppressHydrationWarning: the theme script changes this element's class
+    // and style before React loads, and browser extensions (QuillBot, password
+    // managers) add attributes to it. It covers this element only.
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`} style={{ colorScheme: "dark" }} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="font-sans antialiased">
         <Providers>{children}</Providers>
       </body>

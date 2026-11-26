@@ -5,6 +5,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { DiagramSummary, Project } from "../projects/types";
 import { diagramApi } from "./api";
 import { emptyBlocksDocument, isBlocksDocument, type BlocksDocument } from "./blocksDocument";
+import { hasDrawnDiagram } from "./drawn";
 import { diagramKeys } from "./keys";
 import { filesPredateStatus } from "./types";
 import type {
@@ -44,6 +45,25 @@ export const useHasOlderDiagrams = (token: string | null | undefined, projectIds
   };
 };
 
+// Whether any diagram in these projects holds a block, for the checklist's
+// "Draw your setup". Shares the diagram lists' cache with useDiagrams.
+export const useHasDrawnDiagram = (token: string | null | undefined, projectIds: string[]) => {
+  const queries = useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: diagramKeys.list(projectId),
+      queryFn: () => diagramApi.list(token as string, projectId),
+      enabled: !!token,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+  return {
+    isLoading: queries.some((q) => q.isLoading),
+    isError: queries.some((q) => q.isError && !q.data),
+    refetch: () => queries.forEach((q) => void q.refetch()),
+    drawn: hasDrawnDiagram(queries.map((q) => q.data)),
+  };
+};
+
 export const useDiagram = (token?: string | null, projectId?: string | null, diagramId?: string | null) => {
   return useQuery({
     queryKey: projectId && diagramId ? diagramKeys.detail(projectId, diagramId) : ["diagram", "detail", "missing"],
@@ -73,20 +93,21 @@ export const useTerraformFiles = (token: string | null, projectId: string, diagr
 
 // A new diagram is a building-block diagram, which B's editor opens. A's create
 // route always starts a diagram empty and unmarked, so the marker is saved
-// next; if that fails, the unmarked diagram is removed again.
+// next, with the document to start from (an example's blocks) or an empty
+// one; if that fails, the unmarked diagram is removed again.
 export const useCreateDiagram = (token?: string | null) => {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: CreateDiagramInput & { organizationId: string }) => {
-      const { organizationId: _orgId, ...payload } = input;
+    mutationFn: async (input: CreateDiagramInput & { organizationId: string; document?: BlocksDocument }) => {
+      const { organizationId: _orgId, document, ...payload } = input;
       const created = await diagramApi.create(token as string, payload);
       try {
         return await diagramApi.update(token as string, {
           projectId: payload.projectId,
           diagramId: created.id,
           name: created.name,
-          data: emptyBlocksDocument(),
+          data: document ?? emptyBlocksDocument(),
         });
       } catch (err) {
         await diagramApi.delete(token as string, payload.projectId, created.id).catch(() => undefined);

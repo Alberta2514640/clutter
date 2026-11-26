@@ -83,7 +83,6 @@ if pgrep -f "${STATE_DIR}/bin/" >/dev/null 2>&1; then
   echo "Stopping leftover Lambda processes ..."
   pkill -f "${STATE_DIR}/bin/" || true
 fi
-rm -f "${STATE_DIR}/lambda.pids"
 
 # Compose needs the password variable set to parse the file, even to stop.
 if [[ -s "${STATE_DIR}/pg_password" ]]; then

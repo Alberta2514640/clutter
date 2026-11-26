@@ -2,14 +2,23 @@ import { describe, expect, it } from "vitest";
 import type { Connection } from "../connections/types";
 import {
   blockCloud,
+  cloudBlocks,
   cloudChoices,
   cloudsLine,
   crossNotes,
+  deploymentTitle,
+  examplePresets,
+  exampleSplitFor,
+  missingExampleClouds,
   movePlacement,
+  needsTwoClouds,
   orderedClouds,
   partLines,
+  placeBlock,
   placementReason,
+  placementSuggestions,
   splitOnly,
+  suggestedPlacements,
   withPlacementSettings,
 } from "./placements";
 import type { Compatibility, Placement } from "./types";
@@ -33,6 +42,82 @@ const conn = (id: string, connector: string, status: Connection["status"] = "wor
   created_at: "",
   updated_at: "",
   verified_at: null,
+});
+
+describe("example presets", () => {
+  const hybrid = {
+    name: "Hybrid",
+    clouds: ["general-openstack", "aws"],
+    placements: [{ connector: "aws", node_ids: ["files"] }],
+    document: { nodes: [{ id: "web", type: "vm" }, { id: "files", type: "bucket" }] },
+  };
+  const single = { name: "Web server", clouds: ["aws", "general-openstack"], document: { nodes: [{ id: "files", type: "bucket" }] } };
+  const offers = (connector: string, kind: string) => connector === "aws" || kind !== "bucket";
+
+  it("finds the split example a diagram came from by its placed blocks' ids and kinds", () => {
+    const split = exampleSplitFor([single, hybrid], blocks);
+    expect(split?.primary).toBe("general-openstack");
+    expect([...(split?.placed ?? [])]).toEqual([["files", "aws"]]);
+    expect(exampleSplitFor([hybrid], [{ id: "files", kind: "vm", name: "files" }])).toBeNull();
+    expect(exampleSplitFor([hybrid], [{ id: "x1", kind: "bucket", name: "files" }])).toBeNull();
+  });
+
+  it("names the example's clouds the team has no working connection to", () => {
+    const split = exampleSplitFor([hybrid], blocks);
+    expect(missingExampleClouds(split, [conn("a", "aws")])).toEqual(["general-openstack"]);
+    expect(missingExampleClouds(split, [conn("a", "aws"), conn("o", "general-openstack", "failed")])).toEqual(["general-openstack"]);
+    expect(missingExampleClouds(split, [conn("o", "general-openstack")])).toEqual(["aws"]);
+    expect(missingExampleClouds(split, [conn("a", "aws"), conn("o", "general-openstack")])).toEqual([]);
+    expect(missingExampleClouds(null, [])).toEqual([]);
+  });
+
+  // The examples as B serves them (backend/adapter/internal/examples): node
+  // ids and kinds only, which is all the match reads.
+  const doc = (nodes: [string, string][]) => ({ nodes: nodes.map(([id, type]) => ({ id, type })) });
+  const asBlocks = (nodes: [string, string][]) => nodes.map(([id, kind]) => ({ id, kind, name: id }));
+  const fileStorageNodes: [string, string][] = [["files", "bucket"]];
+  const fullAppNodes: [string, string][] = [
+    ["web-fw", "firewall"], ["web", "vm"], ["files", "bucket"], ["db-fw", "firewall"], ["db-data", "volume"],
+    ["db", "vm"], ["app-net", "network"], ["orders-api", "http_api"], ["orders", "function"], ["orders-table", "table"],
+  ];
+  const hybridNodes: [string, string][] = [["app-fw", "firewall"], ["app", "vm"], ["app-net", "network"], ["files", "bucket"]];
+  const served = [
+    { name: "File storage", clouds: ["aws"], document: doc(fileStorageNodes) },
+    { name: "Full app", clouds: ["aws"], document: doc(fullAppNodes) },
+    { name: "Hybrid", clouds: ["general-openstack", "aws"], placements: [{ connector: "aws", node_ids: ["files"] }], document: doc(hybridNodes) },
+  ];
+
+  it("matches the whole example document, so Full app and File storage are not Hybrid", () => {
+    expect(exampleSplitFor(served, asBlocks(fullAppNodes))).toBeNull();
+    expect(exampleSplitFor(served, asBlocks(fileStorageNodes))).toBeNull();
+  });
+
+  it("matches a diagram made from Hybrid, also after the user adds a block", () => {
+    const split = exampleSplitFor(served, asBlocks(hybridNodes));
+    expect(split?.name).toBe("Hybrid");
+    expect(split?.primary).toBe("general-openstack");
+    expect([...(split?.placed ?? [])]).toEqual([["files", "aws"]]);
+    expect(exampleSplitFor(served, [...asBlocks(hybridNodes), { id: "n-1a2b", kind: "table", name: "orders" }])?.name).toBe("Hybrid");
+  });
+
+  it("does not match Hybrid once one of its blocks is gone or changed kind", () => {
+    expect(exampleSplitFor(served, asBlocks(hybridNodes.filter(([id]) => id !== "app-fw")))).toBeNull();
+    expect(exampleSplitFor(served, asBlocks(hybridNodes.map(([id, k]) => [id, id === "app" ? "function" : k] as [string, string])))).toBeNull();
+  });
+
+  it("does not match a hand-drawn diagram", () => {
+    const drawn = asBlocks([["n-7f3c", "vm"], ["n-91d0", "bucket"], ["n-44aa", "network"], ["n-0b1e", "firewall"]]);
+    expect(exampleSplitFor(served, drawn)).toBeNull();
+  });
+
+  it("puts each placed block on a working connection of its cloud, only when the deployment is on the first cloud", () => {
+    const split = exampleSplitFor([hybrid], blocks);
+    const connections = [conn("c-os", "general-openstack"), conn("c-broken", "aws", "failed"), conn("c-aws", "aws")];
+    const presets = examplePresets(split, connections[0], connections, offers, blocks);
+    expect([...presets].map(([id, c]) => [id, c.id])).toEqual([["files", "c-aws"]]);
+    expect(examplePresets(split, connections[2], connections, offers, blocks).size).toBe(0);
+    expect(examplePresets(null, connections[0], connections, offers, blocks).size).toBe(0);
+  });
 });
 
 describe("blockCloud", () => {
@@ -165,8 +250,73 @@ describe("partLines", () => {
         { connection_id: "c-lab", name: "lab", step: "rollback", status: "rolled_back" },
         { connection_id: "c-aws", name: "aws", step: "apply", status: "failed" },
         { connection_id: "c-x", name: "x", step: "apply", status: "skipped" },
+        { connection_id: "c-y", name: "y", step: "plan", status: "queued" },
       ]).map((l) => l.text),
-    ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed"]);
+    ).toEqual(["lab: rolled back", "aws: deploy failed", "x: deploy not started, because an earlier cloud failed", "y: plan waiting to start"]);
     expect(partLines(null)).toEqual([]);
+  });
+});
+
+describe("placeBlock", () => {
+  it("moves a block to a cloud and puts it back in the deployment, so it is built somewhere", () => {
+    expect(placeBlock("c-os", [], ["files", "gone"], blocks, "files", "c-aws")).toEqual({
+      placements: [{ connection_id: "c-aws", node_ids: ["files"], settings: {} }],
+      exclusions: [],
+    });
+  });
+
+  it("keeps the other left-out blocks", () => {
+    expect(placeBlock("c-aws", [lab], ["web", "files"], blocks, "db", "c-aws").exclusions).toEqual(["web", "files"]);
+  });
+});
+
+describe("cloudBlocks", () => {
+  it("lists the blocks one connection of a deployment runs", () => {
+    expect(cloudBlocks("c-aws", [lab], blocks, "c-lab").map((b) => b.id)).toEqual(["db"]);
+    expect(cloudBlocks("c-aws", [lab], blocks, "c-aws").map((b) => b.id)).toEqual(["web", "files"]);
+  });
+});
+
+describe("deploymentTitle", () => {
+  it("names every connection a split deployment builds on", () => {
+    expect(deploymentTitle("devstack", [{ ...lab, connection_name: "Local AWS" }])).toBe("devstack + Local AWS");
+    expect(deploymentTitle("devstack", [{ ...lab, node_ids: [] }])).toBe("devstack");
+    expect(deploymentTitle("devstack", null)).toBe("devstack");
+  });
+});
+
+describe("needsTwoClouds", () => {
+  it("is true when blocks are placed elsewhere or the own cloud cannot build some", () => {
+    expect(needsTwoClouds([lab], 0)).toBe(true);
+    expect(needsTwoClouds([], 1)).toBe(true);
+    expect(needsTwoClouds([{ ...lab, node_ids: [] }], 0)).toBe(false);
+    expect(needsTwoClouds(null, 0)).toBe(false);
+  });
+});
+
+describe("placementSuggestions", () => {
+  const offers = (connector: string, kind: string) => connector === "aws" || kind !== "bucket";
+  const files = blocks[2];
+
+  it("suggests the first other working connection whose cloud can build the block", () => {
+    const connections = [conn("c-os", "general-openstack"), conn("c-broken", "aws", "failed"), conn("c-aws", "aws")];
+    expect(placementSuggestions([files], "c-os", connections, offers)).toEqual([{ block: files, connection: connections[2] }]);
+  });
+
+  it("suggests nothing when no other connection can build it", () => {
+    expect(placementSuggestions([files], "c-os", [conn("c-os", "general-openstack"), conn("c-os2", "general-openstack")], offers)).toEqual([]);
+  });
+
+  it("groups the chosen blocks into one placement per connection", () => {
+    expect(
+      suggestedPlacements([
+        { blockId: "files", connectionId: "c-aws" },
+        { blockId: "db", connectionId: "c-aws" },
+        { blockId: "web", connectionId: "c-lab" },
+      ]),
+    ).toEqual([
+      { connection_id: "c-aws", node_ids: ["db", "files"], settings: {} },
+      { connection_id: "c-lab", node_ids: ["web"], settings: {} },
+    ]);
   });
 });

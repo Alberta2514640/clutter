@@ -1,0 +1,34 @@
+{
+  "id": "serverless-api",
+  "name": "Serverless API",
+  "level": "intermediate",
+  "description": "An HTTP API that runs a function, which reads a table. It answers out of the box.",
+  "clouds": ["aws"],
+  "document": {
+    "engine": "blocks",
+    "nodes": [
+      {
+        "id": "items-api",
+        "type": "http_api",
+        "position": { "x": 0, "y": 0 },
+        "data": { "name": "items-api", "fields": { "description": "Items API", "cors": true } }
+      },
+      {
+        "id": "items",
+        "type": "function",
+        "position": { "x": 320, "y": 0 },
+        "data": { "name": "items", "fields": { "memory_mb": 256, "timeout_s": 10 } }
+      },
+      {
+        "id": "items-table",
+        "type": "table",
+        "position": { "x": 640, "y": 0 },
+        "data": { "name": "items-table", "fields": { "key": "id", "key_type": "string" } }
+      }
+    ],
+    "edges": [
+      { "id": "api-to-fn", "source": "items-api", "target": "items" },
+      { "id": "fn-reads-table", "source": "items", "target": "items-table" }
+    ]
+  }
+}

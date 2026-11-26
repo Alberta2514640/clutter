@@ -10,6 +10,9 @@ export interface BlocksNode {
   id: string;
   type: string;
   position: { x: number; y: number };
+  // The size of a network's box. B saves it for networks only.
+  width?: number;
+  height?: number;
   data: { name: string; fields: Record<string, unknown> };
 }
 
@@ -31,6 +34,25 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 // It can give a different order on another machine.
 const byId = (a: { id: string }, b: { id: string }): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+// A box size is kept only when both width and height are good numbers.
+// The frontend reads it the same way.
+function sizeOf(width: unknown, height: unknown): { width: number; height: number } | null {
+  return positive(width) && positive(height) ? { width, height } : null;
+}
+
+// Make a node, with the size only when there is one.
+function makeNode(
+  id: string,
+  type: string,
+  position: { x: number; y: number },
+  size: { width: number; height: number } | null,
+  data: { name: string; fields: Record<string, unknown> },
+): BlocksNode {
+  return size ? { id, type, position, width: size.width, height: size.height, data } : { id, type, position, data };
+}
+
 // Read a saved document. It can hold anything, so we check every value.
 // Bad nodes and edges are skipped. This follows fromBlocksDocument in the frontend.
 export function parseSaved(data: unknown): BlocksDocument {
@@ -43,15 +65,18 @@ export function parseSaved(data: unknown): BlocksDocument {
     if (!isRecord(n) || typeof n.id !== "string" || typeof n.type !== "string") continue;
     const pos = isRecord(n.position) ? n.position : {};
     const d = isRecord(n.data) ? n.data : {};
-    doc.nodes.push({
-      id: n.id,
-      type: n.type,
-      position: { x: typeof pos.x === "number" ? pos.x : 0, y: typeof pos.y === "number" ? pos.y : 0 },
-      data: {
-        name: typeof d.name === "string" ? d.name : "",
-        fields: isRecord(d.fields) ? { ...d.fields } : {},
-      },
-    });
+    doc.nodes.push(
+      makeNode(
+        n.id,
+        n.type,
+        { x: typeof pos.x === "number" ? pos.x : 0, y: typeof pos.y === "number" ? pos.y : 0 },
+        sizeOf(n.width, n.height),
+        {
+          name: typeof d.name === "string" ? d.name : "",
+          fields: isRecord(d.fields) ? { ...d.fields } : {},
+        },
+      ),
+    );
   }
 
   const ids = new Set(doc.nodes.map((n) => n.id));
@@ -101,7 +126,8 @@ export function savedHash(name: string, doc: BlocksDocument): string {
 
 // Fill an empty shared document from the saved copy. Only the server does this.
 // Layout:
-//   nodes: map of node id -> map { kind, name, position, fields (a map) }
+//   nodes: map of node id -> map { kind, name, position, size (only for a box), fields (a map) }
+//          size is { width, height } in one entry, so the two always change together.
 //   edges: map of edge id -> { source, target }
 //   meta:  map { name, saved: { hash, by, at } }
 export function fillDoc(ydoc: Y.Doc, saved: unknown, name: string): void {
@@ -116,6 +142,7 @@ export function fillDoc(ydoc: Y.Doc, saved: unknown, name: string): void {
       node.set("kind", n.type);
       node.set("name", n.data.name);
       node.set("position", { x: n.position.x, y: n.position.y });
+      if (n.width !== undefined && n.height !== undefined) node.set("size", { width: n.width, height: n.height });
       node.set("fields", fields);
       nodes.set(n.id, node);
     }
@@ -141,18 +168,22 @@ export function readDoc(ydoc: Y.Doc): { name: string; document: BlocksDocument }
     const name = node.get("name");
     const pos = node.get("position");
     const fields = node.get("fields");
-    nodes.push({
-      id,
-      type: kind,
-      position: {
-        x: isRecord(pos) && typeof pos.x === "number" ? pos.x : 0,
-        y: isRecord(pos) && typeof pos.y === "number" ? pos.y : 0,
-      },
-      data: {
-        name: typeof name === "string" ? name : "",
-        fields: fields instanceof Y.Map ? (fields.toJSON() as Record<string, unknown>) : {},
-      },
-    });
+    const size = node.get("size");
+    nodes.push(
+      makeNode(
+        id,
+        kind,
+        {
+          x: isRecord(pos) && typeof pos.x === "number" ? pos.x : 0,
+          y: isRecord(pos) && typeof pos.y === "number" ? pos.y : 0,
+        },
+        isRecord(size) ? sizeOf(size.width, size.height) : null,
+        {
+          name: typeof name === "string" ? name : "",
+          fields: fields instanceof Y.Map ? (fields.toJSON() as Record<string, unknown>) : {},
+        },
+      ),
+    );
   });
 
   const edges: BlocksEdge[] = [];

@@ -1,11 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { deploymentsApi } from "./api";
 import { deploymentKeys } from "./keys";
 import { isActive } from "./types";
-import type { CreateDeploymentInput, DeploymentListItem, RunAction, RunStatus, UpdateDeploymentInput } from "./types";
+import type { CreateDeploymentInput, DeploymentListItem, Run, RunAction, UpdateDeploymentInput } from "./types";
 
-// How often the deploy panel asks about a run in progress. B pushes nothing.
-const RUN_POLL_MS = 2000;
+// How often a deployment list asks about a run in progress. B pushes nothing.
+export const RUN_POLL_MS = 2000;
+
+// Every list of the organization's deployments (orgHooks.ts) shows the rows a
+// mutation changes, so every mutation refreshes them when it settles.
+const refreshOrganizationLists = (qc: QueryClient) => void qc.invalidateQueries({ queryKey: deploymentKeys.organizations() });
 
 // One diagram's deployments, each with its latest run. It polls while any run
 // is queued or running, so status and logs stay live.
@@ -31,12 +35,12 @@ export const useCompatibility = (token?: string | null, organizationId?: string 
 };
 
 // The preview is rendered on demand and never kept: an old one must not stand
-// in for a later save.
-export const usePreview = (token: string | null, organizationId: string | null, deploymentId: string, open: boolean) => {
+// in for a later save. The code panel mounts it only while it is open.
+export const usePreview = (token: string | null, organizationId: string | null, deploymentId: string) => {
   return useQuery({
     queryKey: deploymentKeys.preview(organizationId ?? "", deploymentId),
     queryFn: () => deploymentsApi.preview(token as string, organizationId as string, deploymentId),
-    enabled: open && !!token && !!organizationId,
+    enabled: !!token && !!organizationId,
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -45,24 +49,30 @@ export const usePreview = (token: string | null, organizationId: string | null, 
 
 // A run's log. The key carries the run's status, so the log is read once more
 // when the run ends, and it polls only while the run is active.
-export const useRunLogs = (token: string | null, organizationId: string | null, runId: string | null, status: RunStatus | null) => {
-  const active = status === "queued" || status === "running";
+export const useRunLogs = (token: string | null, organizationId: string | null, run: Run | null) => {
+  const runId = run?.id ?? null;
   return useQuery({
-    queryKey: [...deploymentKeys.runLogs(organizationId ?? "", runId ?? ""), status ?? ""],
+    queryKey: [...deploymentKeys.runLogs(organizationId ?? "", runId ?? ""), run?.status ?? ""],
     queryFn: () => deploymentsApi.runLogs(token as string, organizationId as string, runId as string),
     enabled: !!token && !!organizationId && !!runId,
     staleTime: 0,
     retry: false,
-    refetchInterval: active ? RUN_POLL_MS : false,
+    refetchInterval: isActive(run) ? RUN_POLL_MS : false,
   });
 };
 
-// After a save, every deployment's compatibility and preview may change.
+// After a save, every deployment's compatibility and preview may change, and
+// so does the saved diagram's version each deployment list row carries
+// (diagram_version), which "Update" compares with the last deploy's
+// (changesNotDeployed). Without the list refetched, a save left "Up to date"
+// on until something else refetched it.
 export const useInvalidateDeploymentChecks = () => {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: [...deploymentKeys.base, "compatibility"] });
     qc.removeQueries({ queryKey: [...deploymentKeys.base, "preview"] });
+    void qc.invalidateQueries({ queryKey: [...deploymentKeys.base, "diagram"] });
+    refreshOrganizationLists(qc);
   };
 };
 
@@ -74,6 +84,7 @@ export const useCreateDeployment = (token?: string | null) => {
     onSuccess: (_created, vars) => {
       void qc.invalidateQueries({ queryKey: deploymentKeys.forDiagram(vars.organizationId, vars.data.diagram_id) });
     },
+    onSettled: () => refreshOrganizationLists(qc),
   });
 };
 
@@ -90,6 +101,7 @@ export const useUpdateDeployment = (token?: string | null) => {
       void qc.invalidateQueries({ queryKey: deploymentKeys.compatibility(vars.organizationId, vars.deploymentId) });
       qc.removeQueries({ queryKey: deploymentKeys.preview(vars.organizationId, vars.deploymentId) });
     },
+    onSettled: () => refreshOrganizationLists(qc),
   });
 };
 
@@ -111,17 +123,19 @@ export const useRemoveDeployment = (token?: string | null) => {
     },
     onSettled: (_none, _err, vars) => {
       void qc.invalidateQueries({ queryKey: deploymentKeys.forDiagram(vars.organizationId, vars.diagramId) });
+      refreshOrganizationLists(qc);
     },
   });
 };
 
-export const useStartRun =(token?: string | null) => {
+export const useStartRun = (token?: string | null) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { organizationId: string; diagramId: string; deploymentId: string; action: RunAction }) =>
       deploymentsApi.startRun(token as string, input.organizationId, input.deploymentId, input.action),
     onSettled: (_run, _err, vars) => {
       void qc.invalidateQueries({ queryKey: deploymentKeys.forDiagram(vars.organizationId, vars.diagramId) });
+      refreshOrganizationLists(qc);
     },
   });
 };

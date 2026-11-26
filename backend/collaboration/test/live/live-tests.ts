@@ -191,6 +191,8 @@ function asSaved(doc: any): BlocksDocument {
     id,
     type: n.kind,
     position: n.position,
+    // Same key order as the saved sample, so the JSON text compares equal.
+    ...(n.size ? { width: n.size.width, height: n.size.height } : {}),
     data: { name: n.name, fields: n.fields ?? {} },
   }));
   const edges = Object.entries(doc.getMap("edges").toJSON() as Record<string, any>).map(([id, e]) => ({ id, source: e.source, target: e.target }));

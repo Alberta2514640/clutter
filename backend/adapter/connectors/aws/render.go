@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -26,10 +28,148 @@ type TemplateSource interface {
 //go:embed tmpl/*.tf.tmpl
 var ownTemplates embed.FS
 
-// placeholderCode is Clutter's placeholder code, which a function gets until
-// code is uploaded for it. It is the same text as
-// backend/infra/modules/s3/uploads/bootstrap.zip.
-const placeholderCode = "Welcome to your Lambda! You can upload your own code and take it from there."
+// sampleMessage is what a function answers until code is uploaded for it.
+const sampleMessage = "Hello from Clutter. Upload your code to replace this."
+
+// placeholderCode is the one file a function gets when Clutter has no sample
+// code for its runtime and handler: it does not answer.
+const placeholderCode = "Clutter has no sample code for this runtime and handler. Upload your code to run the function."
+
+// The sample's answer names the tables and buckets the function's links hand
+// it (functionEnv), read from its environment at run time, so the answer
+// shows what the function received: {"message": "...", "table": "<name>"}, or
+// "tables": [...] when it has several. The variables end in these suffixes
+// (connectors.EnvName).
+var (
+	sampleTableSuffix  = "_" + strings.ToUpper(connectors.ValueTable)
+	sampleBucketSuffix = "_" + strings.ToUpper(connectors.ValueBucket)
+)
+
+// sampleMessageJSON is sampleMessage as a JSON string. It holds no quote,
+// backslash or dollar, so each sample can carry it as plain text.
+var sampleMessageJSON = func() string {
+	b, _ := json.Marshal(sampleMessage)
+	if strings.ContainsAny(sampleMessage, `'"\$`) {
+		panic("aws: the sample message holds a quote, a backslash or a dollar")
+	}
+	return string(b)
+}()
+
+// sampleHandler is a handler the Python and Node.js samples can serve: one
+// file name and one function name, both plain identifiers.
+var sampleHandler = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$`)
+
+// sampleFile is one file of a function's sample code.
+type sampleFile struct{ Name, Content string }
+
+// sampleCode is the code a function with no upload runs: a few lines that
+// answer every request with status 200 and a JSON body (the shape API
+// Gateway's proxy integration reads) holding sampleMessage and the names of
+// its linked tables and buckets, for the deployment's runtime and the
+// function's handler. A custom runtime (provided.*) runs its bootstrap file
+// whatever the handler; it uses only sh, env and curl, which the
+// provided.al2023 image holds (AWS's custom runtime tutorial uses the same).
+// ok is false for a runtime or handler Clutter has no sample for.
+func sampleCode(runtime, handler string) (files []sampleFile, ok bool) {
+	switch {
+	case strings.HasPrefix(runtime, "provided."):
+		return []sampleFile{{Name: "bootstrap", Content: `#!/bin/sh
+# Clutter's sample code. Upload your own code to replace it.
+set -eu
+api="http://${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime/invocation"
+# The answer names the tables and buckets this function's links hand it.
+q='\"'
+tables=""
+ntables=0
+buckets=""
+nbuckets=0
+set -f
+for pair in $(env); do
+  value="${pair#*=}"
+  case "$value" in
+    "" | *[!A-Za-z0-9._-]*) continue ;;
+  esac
+  case "${pair%%=*}" in
+    CLUTTER_*` + sampleTableSuffix + `)
+      tables="$tables${tables:+,}$q$value$q"
+      ntables=$((ntables + 1))
+      ;;
+    CLUTTER_*` + sampleBucketSuffix + `)
+      buckets="$buckets${buckets:+,}$q$value$q"
+      nbuckets=$((nbuckets + 1))
+      ;;
+  esac
+done
+set +f
+body="{${q}message${q}:${q}` + sampleMessage + `${q}"
+if [ "$ntables" -eq 1 ]; then body="$body,${q}table${q}:$tables"; fi
+if [ "$ntables" -gt 1 ]; then body="$body,${q}tables${q}:[$tables]"; fi
+if [ "$nbuckets" -eq 1 ]; then body="$body,${q}bucket${q}:$buckets"; fi
+if [ "$nbuckets" -gt 1 ]; then body="$body,${q}buckets${q}:[$buckets]"; fi
+answer="{\"statusCode\":200,\"headers\":{\"Content-Type\":\"application/json\"},\"body\":\"$body}\"}"
+while true; do
+  headers="$(mktemp)"
+  curl -sS -o /dev/null -D "$headers" "$api/next"
+  id=$(grep -Fi Lambda-Runtime-Aws-Request-Id "$headers" | tr -d '[:space:]' | cut -d: -f2)
+  rm -f "$headers"
+  curl -sS -o /dev/null -X POST "$api/$id/response" -d "$answer"
+done
+`}}, true
+	case strings.HasPrefix(runtime, "python"):
+		m := sampleHandler.FindStringSubmatch(handler)
+		if m == nil {
+			return nil, false
+		}
+		return []sampleFile{{Name: m[1] + ".py", Content: `# Clutter's sample code. Upload your own code to replace it.
+import json as _clutter_json
+import os as _clutter_os
+import re as _clutter_re
+
+
+def ` + m[2] + `(event, context):
+    # The answer names the tables and buckets this function's links hand it.
+    body = {"message": ` + sampleMessageJSON + `}
+    for kind, suffix in (("table", "` + sampleTableSuffix + `"), ("bucket", "` + sampleBucketSuffix + `")):
+        names = sorted(v for k, v in _clutter_os.environ.items() if k.startswith("CLUTTER_") and k.endswith(suffix) and _clutter_re.fullmatch(r"[A-Za-z0-9._-]+", v))
+        if len(names) == 1:
+            body[kind] = names[0]
+        elif names:
+            body[kind + "s"] = names
+    return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": _clutter_json.dumps(body)}
+`}}, true
+	case strings.HasPrefix(runtime, "nodejs"):
+		m := sampleHandler.FindStringSubmatch(handler)
+		if m == nil {
+			return nil, false
+		}
+		return []sampleFile{{Name: m[1] + ".mjs", Content: `// Clutter's sample code. Upload your own code to replace it.
+export const ` + m[2] + ` = async () => {
+  // The answer names the tables and buckets this function's links hand it.
+  const body = { message: ` + sampleMessageJSON + ` };
+  for (const [kind, suffix] of [["table", "` + sampleTableSuffix + `"], ["bucket", "` + sampleBucketSuffix + `"]]) {
+    const names = Object.entries(process.env)
+      .filter(([k, v]) => k.startsWith("CLUTTER_") && k.endsWith(suffix) && /^[A-Za-z0-9._-]+$/.test(v ?? ""))
+      .map(([, v]) => v)
+      .sort();
+    if (names.length === 1) body[kind] = names[0];
+    else if (names.length > 1) body[kind + "s"] = names;
+  }
+  return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+};
+`}}, true
+	}
+	return nil, false
+}
+
+// functionSample is a function's code when nothing is uploaded for it: the
+// sample, or the one file that says there is none. answers is true for a
+// sample that answers requests.
+func (m *model) functionSample(b *block) (files []sampleFile, answers bool) {
+	if files, ok := sampleCode(m.runtime, m.handler(b)); ok {
+		return files, true
+	}
+	return []sampleFile{{Name: "welcome.txt", Content: placeholderCode}}, false
+}
 
 // kindTemplates maps a block kind to its template folder under templates/aws.
 // vm, bucket, function, table and http_api are A's templates, unchanged;
@@ -172,26 +312,38 @@ func (m *model) render(ctx context.Context, src TemplateSource) (map[string][]by
 	if err != nil {
 		return nil, err
 	}
+	dv, err := m.defaultsVars()
+	if err != nil {
+		return nil, err
+	}
+	defaults, err := executeOwn("defaults.tf.tmpl", dv)
+	if err != nil {
+		return nil, err
+	}
 	files := map[string][]byte{
 		"main.tf":     []byte(main.String()),
 		"outputs.tf":  []byte(strings.TrimLeft(outputs.String(), "\n")),
 		"iam.tf":      []byte(iam),
 		"override.tf": []byte(override),
+		"defaults.tf": []byte(defaults),
 	}
-	// An override file cannot add a block, so the placeholder zips are in
+	// An override file cannot add a block, so the sample code's zips are in
 	// their own primary file. A function with uploaded code needs none.
-	var placeholders []functionVars
-	fns, _ := ov["Functions"].([]functionVars)
-	for _, f := range fns {
-		if f.Hash == "" {
-			placeholders = append(placeholders, f)
+	var samples []sampleVars
+	for _, id := range m.order {
+		b := m.blocks[id]
+		if b.Kind != connectors.KindFunction || b.Code != nil {
+			continue
 		}
+		files, _ := m.functionSample(b)
+		v := sampleVars{Addr: b.Addr, Zip: b.Addr + ".zip"}
+		for _, f := range files {
+			v.Files = append(v.Files, sampleFile{Name: hclsafe.Escape(f.Name), Content: hclsafe.Escape(f.Content)})
+		}
+		samples = append(samples, v)
 	}
-	if len(placeholders) > 0 {
-		code, err := executeOwn("code.tf.tmpl", map[string]any{
-			"Functions":       placeholders,
-			"PlaceholderText": hclsafe.Escape(placeholderCode),
-		})
+	if len(samples) > 0 {
+		code, err := executeOwn("code.tf.tmpl", map[string]any{"Functions": samples})
 		if err != nil {
 			return nil, err
 		}
@@ -244,28 +396,62 @@ func (m *model) crossVars() map[string]any {
 	}
 }
 
+// replaceTriggers is the replace_triggered_by list of a VM: the references
+// its startup values read (vmEnv), joined for HCL, or "" for none. When one of
+// them is unknown at plan time because its resource is being replaced, the
+// provider plans an update and only finds the replacement during apply, which
+// Terraform refuses as an inconsistent final plan. Listing them puts the
+// replacement in the plan. It goes in A's ec2 template, not override.tf,
+// because Terraform drops replace_triggered_by from an override file (ADR-026).
+func (m *model) replaceTriggers(id string) (string, error) {
+	env, err := m.vmEnv(id)
+	if err != nil {
+		return "", err
+	}
+	var refs []string
+	for _, e := range env {
+		if e.Ref != "" {
+			refs = append(refs, e.Ref)
+		}
+	}
+	return strings.Join(refs, ", "), nil
+}
+
 // vars is one block's variable map for its template. Every value is either
 // built by B from checked parts (addresses, names, numbers, allow-listed
 // values) or escaped for an HCL string.
 func (m *model) vars(b *block) (map[string]any, error) {
 	switch b.Kind {
 	case connectors.KindVM:
+		triggers, err := m.replaceTriggers(b.ID)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"InstanceType": m.vmInstanceType(b),
-			// B links no key pair: access is through SSM, as in A.
-			"KeyName": "",
+			// A key pair the block names is set in override.tf, as a
+			// reference, so the instance waits for it.
+			"KeyName":            "",
+			"ReplaceTriggeredBy": triggers,
 		}, nil
 	case connectors.KindNetwork:
 		cidr, err := networkCIDR(b.str(fieldCIDR))
 		if err != nil {
 			return nil, err
 		}
+		private, public := networkHalves(cidr)
+		hasPublic, _ := m.networkVMs(b.ID)
+		nat := m.networkNAT(b.ID)
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"NetworkName":  m.physical(b, maxName),
 			"CIDR":         cidr.String(),
-			"Public":       m.networkPublic(b.ID),
+			"PrivateCIDR":  private.String(),
+			"PublicCIDR":   public.String(),
+			// The NAT gateway reaches the internet through the internet gateway.
+			"Public": hasPublic || nat,
+			"NAT":    nat,
 		}, nil
 	case connectors.KindFirewall:
 		rules, err := firewallRules(b.str(fieldIngress), b.str(fieldSourceCIDR))
@@ -282,16 +468,19 @@ func (m *model) vars(b *block) (map[string]any, error) {
 		}
 		return map[string]any{
 			"ResourceName":    b.Addr,
-			"GroupName":       m.physical(b, maxName),
+			"GroupName":       m.stableName(b, "firewall"),
+			"TagName":         m.physical(b, maxName),
 			"VPCResourceName": vpc,
 			"Ingress":         rules,
 		}, nil
 	case connectors.KindVolume:
 		size, _ := b.integer(fieldSizeGB)
+		vm := m.volumeVM[b.ID]
 		return map[string]any{
 			"ResourceName":         b.Addr,
 			"VolumeName":           m.physical(b, maxName),
-			"InstanceResourceName": m.blocks[m.volumeVM[b.ID]].Addr,
+			"InstanceResourceName": m.blocks[vm].Addr,
+			"AvailabilityZone":     m.vmZone(vm),
 			"SizeGB":               size,
 			"VolumeType":           "gp3",
 			"DeviceName":           m.deviceName(b.ID),
@@ -306,7 +495,7 @@ func (m *model) vars(b *block) (map[string]any, error) {
 	case connectors.KindTable:
 		return map[string]any{
 			"ResourceName": b.Addr,
-			"TableName":    m.physical(b, maxName),
+			"TableName":    m.tableName(b),
 			"BillingMode":  "PAY_PER_REQUEST",
 			"HashKey":      b.str(fieldKey),
 			"HashKeyType":  keyTypes[b.str(fieldKeyType)],
@@ -326,19 +515,20 @@ func (m *model) vars(b *block) (map[string]any, error) {
 			"Architecture":         m.architecture,
 			"MemorySize":           memory,
 			"Filename":             b.Addr + ".zip",
-			"EnvironmentVariables": map[string]string{},
+			"EnvironmentVariables": m.functionEnv(b.ID),
 		}, nil
 	case connectors.KindHTTPAPI:
 		return map[string]any{
 			"ResourceName": b.Addr,
 			"APIName":      m.physical(b, maxName),
 			"Description":  hclsafe.Escape(b.str(fieldDescription)),
-			"StageName":    "v1",
-			"EnableCORS":   b.boolean(fieldCORS),
-			// AWS deploys an API only when it has a method: the CORS answer or a route.
-			"HasMethods": b.boolean(fieldCORS) || len(m.apiRoutes[b.ID]) > 0,
-			// Only the CORS answer reads this; each route takes every method.
-			"HTTPMethods": "GET,POST,PUT,PATCH,DELETE",
+			"StageName":    apiStage,
+			// A's template answers CORS only at the API's root, where B has no
+			// route; iam.tf answers it on each route instead.
+			"EnableCORS": false,
+			// AWS deploys an API only when it has a method; B's every API has a
+			// route (CodeAPIWithoutRoute).
+			"HasMethods": len(m.apiRoutes[b.ID]) > 0,
 		}, nil
 	}
 	return nil, fmt.Errorf("no AWS template for %q blocks", b.Kind)
@@ -348,12 +538,31 @@ func (m *model) vars(b *block) (map[string]any, error) {
 // (a function's role, or a VM's instance role).
 type readVars struct{ Addr, Name, Role, Target string }
 
-type routeVars struct{ Addr, API, Function, PathPart, StatementID string }
+type routeVars struct {
+	Addr, API, Function, PathPart, StatementID string
+	// CORS is the API's cors field: the route answers a browser's preflight.
+	CORS bool
+}
+
+// peerVars is the security group that lets the VMs that get Target's address
+// reach it. VPC is the network's Terraform address, or "" for the account's
+// default VPC.
+type peerVars struct {
+	// Name is the group's cloud name (stableName); TagName is its Name tag.
+	Addr, Name, TagName, VPC, Target string
+	Sources                          []peerSource
+}
+
+type peerSource struct{ Addr, Part string }
+
+// peerGroup is the Terraform address of a VM's peer security group.
+func peerGroup(vm *block) string { return vm.Addr + "_peers" }
 
 func (m *model) iamVars() map[string]any {
 	var functions []string
 	var bucketReads, tableReads []readVars
 	var routes []routeVars
+	var peers []peerVars
 	for _, id := range m.order {
 		if b := m.blocks[id]; b.Kind == connectors.KindFunction {
 			functions = append(functions, b.Addr)
@@ -394,31 +603,124 @@ func (m *model) iamVars() map[string]any {
 				PathPart: fn.Name,
 				// Unique per API, so two APIs on one function do not collide.
 				StatementID: "AllowInvokeFrom-" + api.Addr,
+				CORS:        api.boolean(fieldCORS),
 			})
 		}
+	}
+	for _, id := range m.order {
+		vm := m.blocks[id]
+		sources := m.peersOf(id)
+		if vm.Kind != connectors.KindVM || len(sources) == 0 {
+			continue
+		}
+		p := peerVars{
+			Addr:    peerGroup(vm),
+			Name:    m.stableName(vm, "peers"),
+			TagName: m.physical(vm, maxName-len(".peers")) + ".peers",
+			Target:  vm.Addr,
+		}
+		if net, ok := m.vmNetwork[id]; ok {
+			p.VPC = m.blocks[net].Addr
+		}
+		for _, s := range sources {
+			p.Sources = append(p.Sources, peerSource{Addr: m.blocks[s].Addr, Part: m.blocks[s].Part})
+		}
+		peers = append(peers, p)
 	}
 	return map[string]any{
 		"Functions":   functions,
 		"BucketReads": bucketReads,
 		"TableReads":  tableReads,
 		"Routes":      routes,
+		"Peers":       peers,
 	}
 }
 
+// Stage throttling for every HTTP API: 100 requests a second on average and
+// bursts of 200, well under the account's regional limit (10,000 and 5,000),
+// so one API cannot use it all, and a loop or a flood of calls costs at most
+// that much.
+const (
+	apiRateLimit  = 100
+	apiBurstLimit = 200
+	apiStage      = "v1"
+)
+
+type logGroupVars struct{ Addr, Name string }
+
+// keyPairVars is one VM's key pair: Name is its cloud name (stableName),
+// TagName its Name tag.
+type keyPairVars struct{ Addr, Name, TagName, Key string }
+
+// defaultsVars feeds defaults.tf: each function's log group, each bucket's
+// TLS-only policy, each API's throttling, each VM's key pair and the zone
+// list of each VM whose zone is pinned (vmPinsZone).
+func (m *model) defaultsVars() (map[string]any, error) {
+	var functions []logGroupVars
+	var buckets, apis, zones []string
+	var keys []keyPairVars
+	for _, id := range m.order {
+		b := m.blocks[id]
+		switch b.Kind {
+		case connectors.KindFunction:
+			functions = append(functions, logGroupVars{Addr: b.Addr, Name: m.physical(b, maxFunctionName)})
+		case connectors.KindBucket:
+			buckets = append(buckets, b.Addr)
+		case connectors.KindHTTPAPI:
+			apis = append(apis, b.Addr)
+		case connectors.KindVM:
+			key, err := connectors.SSHPublicKey(b.fields)
+			if err != nil {
+				return nil, err
+			}
+			if key != "" {
+				keys = append(keys, keyPairVars{Addr: b.Addr, Name: m.stableName(b, "key"), TagName: m.physical(b, maxName), Key: hclsafe.Escape(key)})
+			}
+			if m.vmPinsZone(id) {
+				zones = append(zones, b.Addr)
+			}
+		}
+	}
+	return map[string]any{
+		"Functions":  functions,
+		"Buckets":    buckets,
+		"APIs":       apis,
+		"KeyPairs":   keys,
+		"Zones":      zones,
+		"RateLimit":  apiRateLimit,
+		"BurstLimit": apiBurstLimit,
+	}, nil
+}
+
 type instanceVars struct {
+	// Subnet is the subnet's whole Terraform address after "aws_subnet.".
 	Addr, Subnet   string
 	SecurityGroups []string
 	Public         bool
+	// KeyPair is the address of the VM's aws_key_pair, or "" for none.
+	KeyPair string
+	// Name is the instance's Name tag: the block's name, as an HCL string.
+	Name string
 	// UserData is the user_data_base64 argument (model.userData): an HCL
 	// string of base64, or an expression that builds the startup wrapper, or
 	// "" for none.
 	UserData string
+	// Zone is the availability_zone argument (vmZone) for a VM whose zone is
+	// pinned (vmPinsZone), or "" to leave the zone to the subnet or to AWS.
+	Zone string
 }
 
-// functionVars is one function's code: the zip code.tf builds from the
-// placeholder text, or, when Hash is set, the uploaded zip the Terraform
-// runner stages as Zip.
+// functionVars is one function's code: the zip code.tf builds from its sample
+// code, or, when Hash is set, the uploaded zip the Terraform runner stages as
+// Zip.
 type functionVars struct{ Addr, Zip, Hash string }
+
+// sampleVars is one function's sample code as code.tf zips it: each file's
+// name and content already escaped for an HCL string.
+type sampleVars struct {
+	Addr, Zip string
+	Files     []sampleFile
+}
 
 // handler is a function's entry point: its own field, or the runtime's
 // default when the field is empty.
@@ -444,22 +746,42 @@ func (m *model) archives() []terraform.Archive {
 type apiVars struct {
 	Addr   string
 	Routes []string
+	CORS   bool
+}
+
+type bucketVars struct {
+	Addr         string
+	ForceDestroy bool
 }
 
 func (m *model) overrideVars() (map[string]any, error) {
 	var instances []instanceVars
 	var functions []functionVars
 	var apis []apiVars
+	var buckets []bucketVars
+	var tables []string
 	for _, id := range m.order {
 		b := m.blocks[id]
 		switch b.Kind {
 		case connectors.KindVM:
-			v := instanceVars{Addr: b.Addr, Public: b.boolean(fieldPublic)}
-			if net, ok := m.vmNetwork[id]; ok {
-				v.Subnet = m.blocks[net].Addr
+			v := instanceVars{
+				Addr:   b.Addr,
+				Public: b.boolean(fieldPublic),
+				Subnet: m.vmSubnet(id),
+				Name:   hclsafe.Escape(m.physical(b, maxName)),
 			}
 			for _, fw := range m.vmFirewalls[id] {
 				v.SecurityGroups = append(v.SecurityGroups, m.blocks[fw].Addr)
+			}
+			if len(m.peersOf(id)) > 0 {
+				v.SecurityGroups = append(v.SecurityGroups, peerGroup(b))
+			}
+			key, err := connectors.SSHPublicKey(b.fields)
+			if err != nil {
+				return nil, err
+			}
+			if key != "" {
+				v.KeyPair = b.Addr
 			}
 			// The script reaches HCL only as base64; values reach it only
 			// checked and escaped (connectors.StartupHCL).
@@ -468,6 +790,9 @@ func (m *model) overrideVars() (map[string]any, error) {
 				return nil, err
 			}
 			v.UserData = ud
+			if m.vmPinsZone(id) {
+				v.Zone = m.vmZone(id)
+			}
 			instances = append(instances, v)
 		case connectors.KindFunction:
 			f := functionVars{Addr: b.Addr, Zip: b.Addr + ".zip"}
@@ -480,18 +805,80 @@ func (m *model) overrideVars() (map[string]any, error) {
 			}
 			functions = append(functions, f)
 		case connectors.KindHTTPAPI:
-			v := apiVars{Addr: b.Addr}
+			v := apiVars{Addr: b.Addr, CORS: b.boolean(fieldCORS)}
 			for _, fnID := range m.apiRoutes[id] {
 				v.Routes = append(v.Routes, b.Addr+"_to_"+m.blocks[fnID].Part)
 			}
 			apis = append(apis, v)
+		case connectors.KindBucket:
+			buckets = append(buckets, bucketVars{Addr: b.Addr, ForceDestroy: b.boolean(fieldForceDestroy)})
+		case connectors.KindTable:
+			tables = append(tables, b.Addr)
 		}
 	}
 	return map[string]any{
 		"Instances": instances,
 		"Functions": functions,
 		"APIs":      apis,
+		"Buckets":   buckets,
+		"Tables":    tables,
 	}, nil
+}
+
+// resultOutput is one output of results.tf: a connectors.ResultOutputName and
+// a Terraform expression built from checked parts.
+type resultOutput struct{ Name, Value string }
+
+// resultOutputs are what an apply tells the user about each block
+// (connectors.ResultNames): a VM's private address and, when it is public, its
+// public one, and with an endpoint that it is simulated; a bucket's and a
+// table's name; an HTTP API's address, on its
+// first route, which answers. endpoint is the connector's endpoint (LocalStack
+// on a laptop, "" on AWS): there the API's address is the endpoint's own form,
+// since AWS's execute-api name does not reach LocalStack.
+func (m *model) resultOutputs(endpoint string) []resultOutput {
+	var out []resultOutput
+	add := func(id, name, value string) {
+		if key, ok := connectors.ResultOutputName(id, name); ok {
+			out = append(out, resultOutput{Name: key, Value: value})
+		}
+	}
+	for _, id := range m.order {
+		b := m.blocks[id]
+		switch b.Kind {
+		case connectors.KindVM:
+			add(id, connectors.ResultPrivateAddress, "aws_instance."+b.Addr+".private_ip")
+			if b.boolean(fieldPublic) {
+				add(id, connectors.ResultPublicAddress, "aws_instance."+b.Addr+".public_ip")
+			}
+			// LocalStack records an instance but never boots it.
+			if endpoint != "" {
+				add(id, connectors.ResultSimulated, `"`+connectors.ResultSimulatedEmulator+`"`)
+			}
+		case connectors.KindFunction:
+			if b.Code == nil {
+				if _, answers := m.functionSample(b); answers {
+					add(id, connectors.ResultCode, `"`+connectors.ResultCodeSample+`"`)
+				}
+			}
+		case connectors.KindBucket:
+			add(id, connectors.ResultBucket, "aws_s3_bucket."+b.Addr+".bucket")
+		case connectors.KindTable:
+			add(id, connectors.ResultTable, "aws_dynamodb_table."+b.Addr+".name")
+		case connectors.KindHTTPAPI:
+			routes := m.apiRoutes[id]
+			if len(routes) == 0 {
+				continue // no route, so no stage and no address (CodeAPIWithoutRoute)
+			}
+			path := hclsafe.Escape(m.blocks[routes[0]].Name)
+			if endpoint != "" {
+				add(id, connectors.ResultURL, `"`+hclsafe.Escape(endpoint)+"/restapis/${aws_api_gateway_rest_api."+b.Addr+".id}/"+apiStage+"/_user_request_/"+path+`"`)
+			} else {
+				add(id, connectors.ResultURL, `"${aws_api_gateway_stage.`+b.Addr+"_stage[0].invoke_url}/"+path+`"`)
+			}
+		}
+	}
+	return out
 }
 
 // primaryAddresses maps each block's main Terraform resource to its node id,

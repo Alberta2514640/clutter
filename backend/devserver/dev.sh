@@ -1,23 +1,44 @@
 #!/usr/bin/env bash
 # The one way to start Clutter locally (`npm run dev` at the repo root): A through the gateway, and B
-# beside it. Development only. No AWS.
+# beside it. Development only. No real AWS unless --aws chooses it.
 #   dev.sh                 checks the tools, starts Postgres and the backend (gateway and B API), then
 #                          runs the frontend in this terminal. Ctrl+C stops everything.
 #   dev.sh --backend-only  starts Postgres and the backend, then returns. Stop with stop.sh.
 #   dev.sh --frontend-only runs only the website, against a backend already started with
 #                          --backend-only. Ctrl+C stops the website alone.
+#   dev.sh --aws MODE      where B's AWS runs go: auto (the default), localstack or real
+#                          (choose_aws below). Works with --backend-only too.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-usage="usage: npm run dev | npm run dev:backend | npm run dev:frontend"
+usage="usage: npm run dev [-- --aws auto|localstack|real] | npm run dev:backend | npm run dev:frontend"
 backend_only=false
 frontend_only=false
-case "$*" in
-  "") ;;
-  --backend-only) backend_only=true ;;
-  --frontend-only) frontend_only=true ;;
-  -h | --help | "--backend-only --help" | "--frontend-only --help")
-    cat <<EOF
+help=false
+aws_flag=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --backend-only) backend_only=true ;;
+    --frontend-only) frontend_only=true ;;
+    -h | --help) help=true ;;
+    --aws | --aws=*)
+      if [[ "$1" == --aws ]]; then
+        aws_flag="${2:-}"
+        [[ $# -lt 2 ]] || shift
+      else
+        aws_flag="${1#--aws=}"
+      fi
+      case "${aws_flag}" in
+        auto | localstack | real) ;;
+        *) echo "--aws takes auto, localstack or real." >&2; echo "${usage}" >&2; exit 2 ;;
+      esac
+      ;;
+    *) echo "${usage}" >&2; exit 2 ;;
+  esac
+  shift
+done
+if ${help}; then
+  cat <<EOF
 ${usage}
 
 Starts Clutter on this machine: Postgres in Docker, A's Lambdas behind a local API
@@ -26,12 +47,31 @@ Gateway, B API, and the website in this terminal. Ctrl+C stops it all and keeps 
                         returns; stop it with npm run stop
   npm run dev:frontend  (dev.sh --frontend-only) runs only the website, in this terminal,
                         against a backend started with npm run dev:backend
+  --aws MODE            where B's AWS runs go, for example npm run dev -- --aws localstack
+                          auto        the default: real AWS when backend/devserver/real-aws.conf
+                                      exists, else LocalStack when it runs, else nowhere
+                          localstack  LocalStack, even when real-aws.conf exists; start it
+                                      first with npm run localstack -- start
+                          real        real AWS accounts, which costs money; needs
+                                      npm run real-aws -- setup first
 Run npm run setup once after cloning, and npm run doctor when a tool seems missing.
 EOF
-    exit 0
-    ;;
-  *) echo "${usage}" >&2; exit 2 ;;
-esac
+  exit 0
+fi
+if ${backend_only} && ${frontend_only}; then
+  echo "${usage}" >&2
+  exit 2
+fi
+if ${frontend_only} && [[ -n "${aws_flag}" ]]; then
+  echo "--aws goes with npm run dev or npm run dev:backend: the backend chooses its AWS mode when it starts." >&2
+  exit 2
+fi
+
+# The command that started this run, for the "run it again" hints.
+again="npm run dev"
+${backend_only} && again="npm run dev:backend"
+to_localstack="${again} -- --aws localstack"
+if [[ -n "${aws_flag}" ]]; then again="${again} -- --aws ${aws_flag}"; fi
 
 need() {
   command -v "$1" >/dev/null || { echo "Missing $1. $2 Run npm run doctor for the install command." >&2; exit 1; }
@@ -39,6 +79,85 @@ need() {
 gateway_healthy() {
   curl -fs --max-time 1 "http://${API_ADDR}/dev/healthz" >/dev/null
 }
+localstack_healthy() {
+  curl -fs --max-time 1 "${LOCALSTACK_ENDPOINT}/_localstack/health" >/dev/null
+}
+
+# choose_aws: where B's AWS connector sends AWS runs, by --aws (aws_flag).
+#   real        real AWS accounts (npm run real-aws writes real-aws.conf), and the
+#               account-link flow names Clutter's real account and template.
+#   localstack  LocalStack on this machine (npm run localstack -- start): B gets its
+#               keys from LocalStack's STS, so an AWS deploy applies for real here.
+#   auto        real when real-aws.conf exists, else localstack when LocalStack
+#               answers, else neither: B renders and previews, and every AWS run
+#               stops at "needs a real AWS account".
+# It sets gateway_aws, adapter_aws, aws_mode and aws_next, and prints the choice.
+# It runs before anything starts, so a choice that cannot work stops nothing.
+choose_aws() {
+  local target aws_config
+  case "${aws_flag:-auto}" in
+    real)
+      [[ -f "${REAL_AWS_CONF}" ]] || {
+        echo "--aws real needs backend/devserver/real-aws.conf, and there is none. Run npm run real-aws -- setup first." >&2
+        exit 1
+      }
+      target=real
+      ;;
+    localstack)
+      localstack_healthy || {
+        echo "--aws localstack needs LocalStack, and nothing answers on ${LOCALSTACK_ENDPOINT}. Run npm run localstack -- start, then ${again} again." >&2
+        exit 1
+      }
+      target=localstack
+      ;;
+    auto)
+      if [[ -f "${REAL_AWS_CONF}" ]]; then
+        target=real
+      elif localstack_healthy; then
+        target=localstack
+      else
+        target=none
+      fi
+      ;;
+  esac
+  gateway_aws=()
+  adapter_aws=(ADAPTER_AWS_STS=local)
+  aws_mode="renders and previews AWS Terraform; runs need a real AWS account"
+  # The second line of the AWS start message: how to get real local AWS runs.
+  aws_next="For real AWS deploys here: npm run localstack -- start, then ${again} again (it restarts Clutter)."
+  case "${target}" in
+    real)
+      read_real_aws_conf "${REAL_AWS_CONF}" || {
+        echo "Fix backend/devserver/real-aws.conf (npm run real-aws -- setup writes it), or use LocalStack: ${to_localstack}" >&2
+        exit 1
+      }
+      aws_config="${AWS_CONFIG_FILE:-${HOME}/.aws/config}"
+      if ! grep -qxF "[profile ${REAL_AWS_PROFILE}]" "${aws_config}" 2>/dev/null; then
+        echo "Real AWS is on (backend/devserver/real-aws.conf), but ${aws_config} has no [profile ${REAL_AWS_PROFILE}]." >&2
+        echo "Add the profile npm run real-aws -- setup printed, or use LocalStack: ${to_localstack}" >&2
+        exit 1
+      fi
+      gateway_aws=(-clutter-account-id "${REAL_AWS_ACCOUNT_ID}" -template-url "${REAL_AWS_TEMPLATE_URL}")
+      # B reads the runner profile from ~/.aws (so HOME), and nothing else from
+      # this shell's AWS settings except where the config files are.
+      adapter_aws=(ADAPTER_AWS_STS=sts "HOME=${HOME}" "AWS_PROFILE=${REAL_AWS_PROFILE}" "AWS_REGION=${REAL_AWS_REGION}")
+      [[ -n "${AWS_CONFIG_FILE:-}" ]] && adapter_aws+=("AWS_CONFIG_FILE=${AWS_CONFIG_FILE}")
+      [[ -n "${AWS_SHARED_CREDENTIALS_FILE:-}" ]] && adapter_aws+=("AWS_SHARED_CREDENTIALS_FILE=${AWS_SHARED_CREDENTIALS_FILE}")
+      aws_mode="AWS runs build in REAL AWS accounts, as ${REAL_AWS_RUNNER_ROLE} in ${REAL_AWS_ACCOUNT_ID} (profile ${REAL_AWS_PROFILE}); they cost money"
+      aws_next="Destroy what you build. Back to LocalStack: ${to_localstack}"
+      if command -v aws >/dev/null && ! aws --profile "${REAL_AWS_PROFILE}" --region "${REAL_AWS_REGION}" sts get-caller-identity >/dev/null 2>&1; then
+        aws_next="The profile ${REAL_AWS_PROFILE} cannot sign in, so AWS connections will not verify: run aws sso login, then npm run real-aws -- status.${nl}             ${aws_next}"
+      fi
+      ;;
+    localstack)
+      adapter_aws=(ADAPTER_AWS_STS=localstack "ADAPTER_AWS_ENDPOINT=${LOCALSTACK_ENDPOINT}")
+      aws_mode="AWS runs apply against LocalStack on ${LOCALSTACK_ENDPOINT}"
+      aws_next=""
+      ;;
+  esac
+  echo "AWS mode (--aws ${aws_flag:-auto}): ${aws_mode}"
+}
+nl=$'\n'
 
 need curl "The scripts need curl."
 if ${frontend_only}; then
@@ -47,6 +166,7 @@ if ${frontend_only}; then
     exit 1
   fi
 else
+  choose_aws
   need go "Clutter needs Go."
   need docker "Clutter needs Docker."
   need openssl "The scripts need openssl."
@@ -133,7 +253,7 @@ if gateway_healthy || gateway_process_alive || adapter_healthy || adapter_proces
   echo "Clutter is already running; restarting it so it picks up your code."
   # stop.sh's errors stay visible: it fails when an earlier dev.sh is still stopping.
   if ! "${DEVSERVER_DIR}/stop.sh" >/dev/null; then
-    echo "Could not stop the running Clutter. Run npm run stop, then npm run dev again." >&2
+    echo "Could not stop the running Clutter. Run npm run stop, then ${again} again." >&2
     exit 1
   fi
 fi
@@ -168,7 +288,7 @@ show_log() {
   if grep -q "password authentication failed" "$1" 2>/dev/null; then
     echo >&2
     echo "The database was made by another copy of Clutter on this machine, with a different password." >&2
-    echo "Run npm run stop -- --wipe to start with a clean database, then npm run dev again." >&2
+    echo "Run npm run stop -- --wipe to start with a clean database, then ${again} again." >&2
   fi
 }
 
@@ -189,19 +309,29 @@ quietly compose up -d --wait postgres
 quietly go -C "${DEVSERVER_DIR}" build -o "${STATE_DIR}/gateway" ./cmd/gateway
 quietly go -C "${REPO_DIR}/backend/adapter" build -o "${STATE_DIR}/adapter-api" ./cmd/api
 
+# B accepts an OpenStack auth URL over plain http at a private address
+# (DevStack's) only with this flag. The gateway reads the same flag, and its
+# DevStack link route refuses without it.
+allow_private_targets=1
+
 # A clean environment: no AWS_* or other variables from this shell reach the
-# gateway. Go needs PATH and HOME (for its caches).
+# gateway. Go needs PATH and HOME (for its caches); limactl, for the DevStack
+# link route, needs them too.
 nohup env -i \
   PATH="${PATH}" HOME="${HOME}" TMPDIR="${TMPDIR:-/tmp}" \
   ${GOPROXY:+GOPROXY="${GOPROXY}"} ${GOFLAGS:+GOFLAGS="${GOFLAGS}"} \
   JWT_SECRET="${JWT_SECRET}" \
   PSQL_CONNECTION_STRING="${PSQL_CONNECTION_STRING}" \
+  ADAPTER_ALLOW_PRIVATE_TARGETS="${allow_private_targets}" \
   "${STATE_DIR}/gateway" \
     -api-dir "${REPO_DIR}/backend/api" \
     -state-dir "${STATE_DIR}" \
     -api-addr "${API_ADDR}" \
+    -adapter-addr "${ADAPTER_ADDR}" \
+    -devstack-vm "${DEVSTACK_VM}" \
     -front-addr "${FRONT_ADDR}" \
     -frontend-upstream "${FRONTEND_UPSTREAM}" \
+    ${gateway_aws[@]+"${gateway_aws[@]}"} \
   > "${STATE_DIR}/gateway.log" 2>&1 &
 gateway_pid=$!
 write_pid_file gateway "${gateway_pid}" "${STATE_DIR}/gateway"
@@ -226,22 +356,7 @@ fi
 # B API, with the same JWT secret as A (it verifies A's tokens) and only the
 # variables it needs. It applies adapter-tables.sql at start-up. Connection
 # credentials are encrypted under .state/adapter with the key kept in .state.
-# When LocalStack runs (npm run localstack -- start), B's AWS connector gets
-# its keys from LocalStack's STS and sends every run there, so an AWS deploy
-# applies for real on this machine. Otherwise every AWS run stops at "needs a
-# real AWS account".
-adapter_aws=(ADAPTER_AWS_STS=local)
-aws_mode="renders and previews AWS Terraform; runs need a real AWS account"
-again="npm run dev"
-${backend_only} && again="npm run dev:backend"
-# The second line of the AWS start message: how to get real local AWS runs.
-aws_next="For real AWS deploys here: npm run localstack -- start, then ${again} again (it restarts Clutter)."
-if curl -fs --max-time 1 "${LOCALSTACK_ENDPOINT}/_localstack/health" >/dev/null; then
-  adapter_aws=(ADAPTER_AWS_STS=localstack "ADAPTER_AWS_ENDPOINT=${LOCALSTACK_ENDPOINT}")
-  aws_mode="AWS runs apply against LocalStack on ${LOCALSTACK_ENDPOINT}"
-  aws_next=""
-fi
-nl=$'\n'
+# adapter_aws, from choose_aws, says where its AWS runs go.
 mkdir -p "${ADAPTER_DATA_DIR}"
 chmod 700 "${ADAPTER_DATA_DIR}"
 nohup env -i \
@@ -256,7 +371,7 @@ nohup env -i \
   ADAPTER_CONNECTORS=mock,general-openstack,aws \
   ADAPTER_AWS_TEMPLATE_DIR="${REPO_DIR}/backend/infra/modules/s3/uploads/aws" \
   "${adapter_aws[@]}" \
-  ADAPTER_ALLOW_PRIVATE_TARGETS=1 \
+  ADAPTER_ALLOW_PRIVATE_TARGETS="${allow_private_targets}" \
   ADAPTER_ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000" \
   "${STATE_DIR}/adapter-api" \
   > "${STATE_DIR}/adapter.log" 2>&1 &

@@ -60,7 +60,7 @@ func Run(t *testing.T, f Fixture) {
 		f.Timeout = time.Minute
 	}
 	t.Run("manifest is well formed", func(t *testing.T) { manifest(t, f) })
-	t.Run("manifest says how the UI shows the cloud and every block it builds", func(t *testing.T) { display(t, f) })
+	t.Run("manifest says how the UI shows and explains the cloud, every block it builds and every edge", func(t *testing.T) { display(t, f) })
 	t.Run("display keys name icon files the frontend serves", func(t *testing.T) { iconFiles(t, f) })
 	t.Run("credential spec is well formed", func(t *testing.T) { credentialSpec(t, f) })
 	t.Run("verify refuses bad credentials", func(t *testing.T) { verify(t, f) })
@@ -202,9 +202,10 @@ func manifest(t *testing.T, f Fixture) {
 	}
 }
 
-// display checks that the cloud has a short name and a logo, and that every
-// block it builds names its service. Check refuses a malformed display; this
-// refuses a missing one.
+// display checks that the cloud has a short name and a logo, that every
+// block it builds names its service and says what it is for, and that every
+// edge says what it means and why it helps. Check refuses a malformed
+// display; this refuses a missing one.
 func display(t *testing.T, f Fixture) {
 	m := f.New().Manifest()
 	if m.Display.ShortName == "" || m.Display.Logo == "" {
@@ -216,6 +217,14 @@ func display(t *testing.T, f Fixture) {
 		}
 		if b.Display == nil || b.Display.Name == "" {
 			t.Fatalf("block %q is built (%s) but has no display name", b.Kind, b.Treatment)
+		}
+		if b.Summary == "" {
+			t.Fatalf("block %q is built (%s) but has no summary", b.Kind, b.Treatment)
+		}
+	}
+	for _, e := range m.Edges {
+		if e.Meaning == "" || e.Why == "" {
+			t.Fatalf("edge %s->%s needs a meaning and a why", e.Source, e.Target)
 		}
 	}
 }
@@ -542,11 +551,14 @@ func (r *Recorder) RunStarted(_ context.Context, runID string, _ time.Time) erro
 }
 
 // RunFinished implements jobs.Store.
-func (r *Recorder) RunFinished(_ context.Context, runID string, s jobs.Status, failure string, _ time.Time) error {
+func (r *Recorder) RunFinished(_ context.Context, runID string, s jobs.Status, failure string, _ time.Time, change *jobs.DeploymentChange) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.history[runID] = append(r.history[runID], s)
 	r.failures[runID] = failure
+	if change != nil {
+		r.deployments[change.ID] = change.Status
+	}
 	if ch, ok := r.done[runID]; ok {
 		close(ch)
 		delete(r.done, runID)

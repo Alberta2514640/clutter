@@ -168,11 +168,17 @@ func (f *fakeTerraform) Launch(_ context.Context, t runtask.Task) error {
 		fmt.Fprint(t.Output, "Plan: 11 to add, 0 to ")
 		fmt.Fprintln(t.Output, "change, 0 to destroy.")
 	case "apply":
-		fmt.Fprintln(t.Output, "Apply complete! Resources: 11 added, 0 changed, 0 destroyed.")
+		// n1 is built and n2 changed; n3 is left as it was, so only its
+		// output is printed.
+		fmt.Fprintln(t.Output, "openstack_compute_instance_v2.b_n1: Creation complete after 12s [id=9b1d5a8e-0000-4000-8000-0000000000a1]")
+		fmt.Fprintln(t.Output, "openstack_networking_network_v2.b_n2: Modifications complete after 1s [id=9b1d5a8e-0000-4000-8000-0000000000a2]")
+		fmt.Fprintln(t.Output, "openstack_networking_router_interface_v2.b_n2: Creation complete after 3s [id=9b1d5a8e-0000-4000-8000-0000000000b2]")
+		fmt.Fprintln(t.Output, "Apply complete! Resources: 2 added, 1 changed, 0 destroyed.")
 		fmt.Fprint(t.Output, "\nOutputs:\n\n")
 		fmt.Fprintln(t.Output, `address_n1 = "172.24.4.10"`)
 		fmt.Fprintln(t.Output, `id_n1 = "9b1d5a8e-0000-4000-8000-0000000000a1"`)
 		fmt.Fprintln(t.Output, `id_n2 = "9b1d5a8e-0000-4000-8000-0000000000a2"`)
+		fmt.Fprintln(t.Output, `id_n3 = "9b1d5a8e-0000-4000-8000-0000000000a3"`)
 	case "destroy":
 		fmt.Fprintln(t.Output, "Destroy complete! Resources: 11 destroyed.")
 	case runtask.OutputStep:
@@ -183,6 +189,15 @@ func (f *fakeTerraform) Launch(_ context.Context, t runtask.Task) error {
 				if name, ok := strings.CutPrefix(line, `output "cross_`); ok {
 					name = "cross_" + strings.TrimSuffix(name, `" {`)
 					parts = append(parts, fmt.Sprintf(`%q: {"sensitive": false, "type": "string", "value": "172.24.4.77"}`, name))
+				}
+				// Every result_ output, as a private or a public address.
+				if name, ok := strings.CutPrefix(line, `output "result_`); ok {
+					name = "result_" + strings.TrimSuffix(name, `" {`)
+					value := "10.0.0.12"
+					if strings.HasPrefix(name, "result_public_address_") {
+						value = "172.24.4.10"
+					}
+					parts = append(parts, fmt.Sprintf(`%q: {"sensitive": false, "type": "string", "value": %q}`, name, value))
 				}
 			}
 		}

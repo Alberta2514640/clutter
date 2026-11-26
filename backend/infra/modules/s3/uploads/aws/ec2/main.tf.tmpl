@@ -47,4 +47,12 @@ resource "aws_instance" "{{.ResourceName}}" {
     Name      = "{{.ResourceName}}"
     ManagedBy = "Ansible"
   }
+{{- if .ReplaceTriggeredBy}}
+
+  # Set only by B (ADR-026): Terraform ignores replace_triggered_by in an
+  # override file, so it must be in this block.
+  lifecycle {
+    replace_triggered_by = [{{.ReplaceTriggeredBy}}]
+  }
+{{- end}}
 }

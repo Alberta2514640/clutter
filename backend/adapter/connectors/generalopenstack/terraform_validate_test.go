@@ -29,6 +29,11 @@ func TestRenderedTerraformValidates(t *testing.T) {
 	private.Blocks["n1"].Fields["public"] = false
 	script := sampleGraph()
 	script.Blocks["n1"].Fields[connectors.FieldStartupScript] = hostileScript
+	peers := twoTierGraph()
+	peers.Blocks["web"].Fields[connectors.FieldSSHKey] = testSSHKey
+	unrouted := twoTierGraph()
+	unrouted.Blocks["back"].Fields["private_internet"] = false
+	unrouted.Edges = unrouted.Edges[:4]
 
 	cases := map[string]struct {
 		g connectors.Graph
@@ -38,6 +43,10 @@ func TestRenderedTerraformValidates(t *testing.T) {
 		"firewall and volume out": {sampleGraph(), excluded},
 		"no public address":       {private, testDeployment(fixedDeployment)},
 		"startup script":          {script, testDeployment(fixedDeployment)},
+		// Two networks on one router, a peer group and a key pair; then a
+		// network with internet access off.
+		"peers and key":      {peers, testDeployment(fixedDeployment)},
+		"network off router": {unrouted, testDeployment(fixedDeployment)},
 		// A split deployment's OpenStack parts.
 		"values from other clouds": {importGraph(), importDeployment(true)},
 		"address for other clouds": {exportGraph(), exportDeployment()},

@@ -1,50 +1,76 @@
-import { Building2, KeyRound, MapPin, Trash2 } from "lucide-react";
+import { KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
 import motion from "./motion.module.css";
+import { Kicker, SectionHeading } from "./Section";
 
-const points = [
+// How an AWS account is linked, as the real-cloud test did it
+// (docs/reports/2026-11-20-real-cloud-verification.pdf, pages 1 and 11).
+const linkSteps = [
+  { who: "You", title: "Open AWS from Clutter", text: "CloudFormation opens in your account with Clutter's template filled in." },
+  { who: "Your account", title: "The stack makes a role", text: "Only Clutter can switch into it, and only with your own external id." },
+  { who: "Clutter", title: "Clutter checks the link", text: "Paste the role's ARN. Clutter switches into the role to prove it works, then saves it." },
+  { who: "Every run", title: "Keys for an hour at most", text: "Each plan, deploy and destroy gets keys from the role that last at most one hour." },
+];
+
+// The limits, true as written. The role has exceptions on buckets and
+// addresses (ADR-027), so never write "changes only what it built"; the
+// first fact names only what the role cannot touch.
+const facts = [
   {
-    icon: Building2,
-    title: "Clutter builds only in accounts you link",
-    text: "Everything a deployment creates lands in your own cloud account. Clutter never builds your resources in an account of its own.",
+    icon: ShieldCheck,
+    title: "A narrow role",
+    text: "The role cannot change or delete servers, functions, tables or APIs that Clutter did not create.",
   },
   {
     icon: KeyRound,
-    title: "Keys are encrypted and never shown again",
-    text: "A credential you save is stored encrypted, and Clutter never shows it again, not even to you. For AWS there are no keys: you give Clutter a role, and you can remove it at any time.",
+    title: "No AWS keys to hand over",
+    text: "You never give Clutter AWS keys. For OpenStack you add an application credential; Clutter stores it encrypted and never shows it again.",
   },
   {
-    icon: MapPin,
-    title: "Clutter runs in Canada",
-    text: "Clutter's servers and database run in Canada (Central). Your diagrams, connections and run logs are stored there. Sign-in goes through Google.",
+    icon: Users,
+    title: "Only your team",
+    text: "Each team has its own projects, diagrams and connections, and only its members see them.",
   },
   {
     icon: Trash2,
-    title: "You can remove everything",
-    text: "Destroy deletes everything a deployment built. Clutter will not delete a connection while a deployment on it still holds resources.",
+    title: "Leave any time",
+    text: "Destroy removes what a deployment built. Then delete the connection, and the stack or credential in your cloud, and Clutter can no longer reach it.",
   },
 ];
 
 export function Trust() {
   return (
-    <section id="trust" aria-labelledby="trust-title" className="scroll-mt-16 border-t border-slate-800/60 bg-black">
-      <div className="mx-auto max-w-6xl px-4 py-16 md:px-6 md:py-24">
-        <div className={`mb-10 max-w-2xl ${motion.reveal}`}>
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">Security</p>
-          <h2 id="trust-title" className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-            Your accounts stay yours
-          </h2>
+    <section id="security" aria-labelledby="security-title" className="border-border bg-card grain scroll-mt-20 border-y py-20 md:py-28">
+      <div className="mx-auto max-w-6xl px-4 md:px-8">
+        <div className={`max-w-3xl ${motion.reveal}`}>
+          <Kicker>Security</Kicker>
+          <SectionHeading id="security-title">Your account. A narrow role. No AWS keys.</SectionHeading>
+          <p className="text-muted-foreground mt-5 text-lg leading-relaxed">Everything a deployment builds lands in your own cloud account. Here is how Clutter gets in, and what it can touch.</p>
         </div>
-        <ul className={`grid gap-6 sm:grid-cols-2 ${motion.reveal}`}>
-          {points.map(({ icon: Icon, title, text }) => (
-            <li
-              key={title}
-              className="flex gap-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-6 transition-[transform,border-color] duration-300 hover:-translate-y-1 hover:border-slate-600 motion-reduce:transition-none motion-reduce:hover:translate-y-0">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-400/40 bg-teal-400/10">
-                <Icon className="h-5 w-5 text-teal-300" aria-hidden="true" />
+
+        <ol aria-label="How an AWS account is linked" className={`mt-12 grid gap-4 md:grid-cols-4 ${motion.reveal}`}>
+          {linkSteps.map((s, i) => (
+            <li key={s.title} className="surface-card p-5">
+              <p className="micro-label mb-3 flex items-center gap-2">
+                <span aria-hidden="true" className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-[11px] tracking-normal">
+                  {i + 1}
+                </span>
+                {s.who}
+              </p>
+              <h3 className="font-semibold">{s.title}</h3>
+              <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">{s.text}</p>
+            </li>
+          ))}
+        </ol>
+
+        <ul className={`mt-12 grid gap-x-10 gap-y-8 md:grid-cols-2 ${motion.reveal}`}>
+          {facts.map(({ icon: Icon, title, text }) => (
+            <li key={title} className="flex gap-4">
+              <span className="border-primary/25 bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg border">
+                <Icon className="text-link size-5" aria-hidden="true" />
               </span>
               <div>
-                <h3 className="mb-2 font-semibold text-white">{title}</h3>
-                <p className="text-sm leading-relaxed text-slate-300">{text}</p>
+                <h3 className="font-semibold">{title}</h3>
+                <p className="text-muted-foreground mt-1.5 leading-relaxed">{text}</p>
               </div>
             </li>
           ))}
